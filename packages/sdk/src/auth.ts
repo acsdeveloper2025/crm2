@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { StrongPasswordSchema, type UserRole } from './users.js';
+import type { PendingPolicy } from './policies.js';
 
 /**
  * @crm2/sdk — the Authentication contract (ADR-0014). JWT-pair: a stateless access token
@@ -46,6 +47,10 @@ export interface LoginResponse {
   mustChangePassword: boolean;
   /** true when an admin requires MFA but the user has not enrolled yet — the FE prompts enrolment. */
   mustEnrollMfa: boolean;
+  /** true when the user has unaccepted active policies — the FE blocks into the accept screen. */
+  mustAcceptPolicies: boolean;
+  /** the active policies this user still owes acceptance for (empty when mustAcceptPolicies is false). */
+  pendingPolicies: PendingPolicy[];
 }
 
 /** MFA contract (slice 5): TOTP enrol/verify + status. A 401 `MFA_REQUIRED` on login means the

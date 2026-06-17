@@ -37,3 +37,4 @@ export * from './jobs.js';
 export * from './savedViews.js';
 export * from './bulk.js';
 export * from './client.js';
+export * from './policies.js';
