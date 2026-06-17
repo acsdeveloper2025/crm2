@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: '22'
+  NODE_VERSION: '24'
   PNPM_VERSION: '9'
 
 jobs:
@@ -140,6 +140,11 @@ jobs:
       - name: Apply migrations (seeds dev admin for login)
         run: |
           for f in db/v2/migrations/*.sql; do psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"; done
+      # Operational fixture: the datagrid (row-select bulk bar, CPV master-detail) and
+      # pipeline (row-select → Assign) specs need real rows to act on; migrations leave
+      # the operational tables empty. Idempotent, deterministic — see db/v2/seed/e2e.seed.sql.
+      - name: Seed operational fixture (clients/products/CPV/case+task)
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/v2/seed/e2e.seed.sql
       - name: Install Playwright browser
         run: pnpm --filter @crm2/web exec playwright install --with-deps chromium
       - name: 49-50 + 29. Responsive viewport + axe a11y (boots API + web)

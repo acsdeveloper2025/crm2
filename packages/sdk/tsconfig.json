@@ -1,1 +1,6 @@
-{ "extends": "../../tsconfig.base.json", "include": ["src"] }
+{
+  "extends": "../../tsconfig.base.json",
+  "_comment": "Isomorphic client: uses web-standard fetch/Blob/Response, so it typechecks against DOM (not @types/node). Keeps the SDK independent of the @types/node version.",
+  "compilerOptions": { "lib": ["ES2022", "DOM"], "types": [] },
+  "include": ["src"]
+}

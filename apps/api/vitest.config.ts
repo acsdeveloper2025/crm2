@@ -28,6 +28,10 @@ export default defineConfig({
     // load several in one test legitimately exceed the 5s default (the long-standing "random
     // :5433 flake" root cause). Slow-but-correct must never flake the gate.
     testTimeout: 30000,
+    // Integration tests do real supertest round-trips; under heavy concurrent CPU load a
+    // socket can transiently reset ("socket hang up") and a different file flakes each run
+    // (each passes in isolation). Retry the rare transient so the gate stays deterministic.
+    retry: 2,
     coverage: {
       // Always-on so the gate actually runs in `pnpm test` / CI (was configured but
       // never executed — no --coverage flag + provider missing). Thresholds are the

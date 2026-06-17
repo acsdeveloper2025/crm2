@@ -5,7 +5,7 @@
 # args and bakes NO secrets. The TLS + reverse-proxy config is MOUNTED from
 # infra/prod/nginx.conf at deploy time (declarative; never baked, never deploy-mutated).
 # =============================================================================
-FROM node:22-bookworm-slim AS build
+FROM node:24-bookworm-slim AS build
 RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
 # The web build pulls the whole workspace; skip puppeteer's Chromium download
 # (only the api/report runtime needs it) — faster, fewer network failure modes.
