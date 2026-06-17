@@ -1,6 +1,7 @@
 import { randomUUID, randomBytes } from 'node:crypto';
 import { loadEnv } from '@crm2/config';
 import {
+  AcceptPoliciesSchema,
   ChangePasswordSchema,
   LoginSchema,
   RefreshSchema,
@@ -142,12 +143,16 @@ export const authService = {
     // (the FE blocks into the change-password screen). Exempt roles carry passwordExpiryDays = null.
     const attrs = await getRoleAttributes(creds.role);
     const expired = passwordExpired(creds.passwordSetAt, attrs?.passwordExpiryDays ?? null);
+    // Policy-acceptance gate (ADR-0042): a user owing acceptance is blocked into the accept screen.
+    const pendingPolicies = await repo.pendingPoliciesForUser(creds.id);
     return {
       user: await withResolvedPermissions(user),
       tokens,
       mustChangePassword: creds.passwordMustChange || expired,
       // admin-required but not yet enrolled → the FE prompts the user to set up MFA.
       mustEnrollMfa: creds.mfaRequired && !creds.mfaEnrolled,
+      mustAcceptPolicies: pendingPolicies.length > 0,
+      pendingPolicies,
     };
   },
 
@@ -199,6 +204,17 @@ export const authService = {
     await repo.revokeAllForUser(userId);
   },
 
+  /** Self-service: record the user's acceptance of the given pending policy ids (ADR-0042). */
+  async acceptPolicies(
+    userId: string,
+    input: unknown,
+    ip: string | null,
+    userAgent: string | null,
+  ): Promise<void> {
+    const v = AcceptPoliciesSchema.parse(input);
+    await repo.acceptPolicies(userId, v.policyIds, ip, userAgent, v.source);
+  },
+
   async refresh(input: unknown, ip: string | null): Promise<AuthTokens> {
     const v = RefreshSchema.parse(input);
     const claims = await verifyRefreshToken(v.refreshToken);
@@ -211,6 +227,9 @@ export const authService = {
     // is refused so the client must re-login — where login returns mustChangePassword and forces it.
     const attrs = await getRoleAttributes(status.role);
     if (passwordExpired(status.passwordSetAt, attrs?.passwordExpiryDays ?? null)) throw invalidRefresh();
+    // Policy-acceptance gate (ADR-0042): an unaccepted active policy refuses refresh, forcing a re-login
+    // where login returns mustAcceptPolicies and blocks the user into the accept screen.
+    if ((await repo.pendingPoliciesForUser(claims.userId)).length > 0) throw invalidRefresh();
     // Rotate: the presented refresh token is single-use. The new token carries the SAME device label
     // (so the session keeps its identity across refreshes) and the current request IP.
     await repo.revokeRefresh(claims.jti);
