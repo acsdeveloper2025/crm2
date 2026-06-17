@@ -1,8 +1,11 @@
 @import '@crm2/ui-theme/tokens.css';
+@import 'tailwindcss';
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Tailwind v4 loads the frozen v3 design tokens (the @crm2/ui-theme preset:
+   semantic colors → CSS vars, custom radius/font/shadow/fontSize scale) via the
+   legacy JS config. The color system is a PERMANENT FREEZE (docs/COLOR_SYSTEM_FREEZE.md),
+   so the config is kept verbatim rather than re-expressed as @theme. */
+@config '../tailwind.config.js';
 
 @layer components {
   .input {
