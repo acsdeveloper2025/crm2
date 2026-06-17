@@ -1,4 +1,4 @@
-import type { AuthUser, SessionInfo } from '@crm2/sdk';
+import type { AuthUser, PendingPolicy, SessionInfo } from '@crm2/sdk';
 import { query } from '../../platform/db.js';
 
 interface Credentials {
@@ -224,5 +224,41 @@ export const authRepository = {
       `UPDATE auth_refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`,
       [userId],
     );
+  },
+
+  // ── Policy acceptance gate (ADR-0042) ──
+  /** Active+effective policies this user has NOT accepted at the current content_version (ADR-0042). */
+  async pendingPoliciesForUser(userId: string): Promise<PendingPolicy[]> {
+    return query<PendingPolicy>(
+      `SELECT p.id, p.code, p.name, p.content, p.content_version
+         FROM policies p
+        WHERE p.is_active = true AND p.effective_from <= now()
+          AND NOT EXISTS (
+            SELECT 1 FROM policy_acceptances pa
+             WHERE pa.user_id = $1 AND pa.policy_id = p.id AND pa.content_version = p.content_version)
+        ORDER BY p.created_at`,
+      [userId],
+    );
+  },
+
+  /** Record acceptance for the given active policy ids, snapshotting the SERVER-side content_version
+   *  (the client's claim is ignored). Idempotent. Returns the number of policies accepted. */
+  async acceptPolicies(
+    userId: string,
+    policyIds: number[],
+    ip: string | null,
+    userAgent: string | null,
+    source: 'WEB' | 'MOBILE',
+  ): Promise<number> {
+    const rows = await query<{ policyId: number }>(
+      `INSERT INTO policy_acceptances (user_id, policy_id, content_version, ip, user_agent, source)
+       SELECT $1, p.id, p.content_version, $3::inet, $4, $5
+         FROM policies p
+        WHERE p.id = ANY($2::int[]) AND p.is_active = true AND p.effective_from <= now()
+       ON CONFLICT (user_id, policy_id, content_version) DO NOTHING
+       RETURNING policy_id`,
+      [userId, policyIds, ip, userAgent, source],
+    );
+    return rows.length;
   },
 };
