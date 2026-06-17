@@ -1,0 +1,267 @@
+/**
+ * My Profile (self-service). Mirrors v1's profile page, v2-native: an Identity card (read-only
+ * identity + an inline edit of the only self-editable contact fields, email & phone, + the avatar)
+ * and a Change Password card. MFA + active sessions live on the dedicated /security page, linked from
+ * here (not duplicated). All reads/writes go to the self-scoped `/users/me` + `/auth/change-password`
+ * endpoints — a user only ever touches their own record.
+ */
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { UpdateSelfProfileSchema, ChangePasswordSchema, type UserView } from '@crm2/sdk';
+import { api, ApiError } from '../../lib/sdk.js';
+import { UserPhoto } from '../../components/UserPhoto.js';
+import { PasswordPolicyChecklist, isPasswordStrong } from '../../components/PasswordPolicyChecklist.js';
+
+const ME = ['me-profile'];
+
+/** One read-only labelled field. Renders an em-dash when empty so every row keeps its height. */
+function Field({ label, value }: { label: string; value: string | null | undefined }) {
+  return (
+    <div>
+      <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dd className="mt-0.5 text-sm text-foreground">{value || '—'}</dd>
+    </div>
+  );
+}
+
+function IdentityCard({ me }: { me: UserView }) {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [email, setEmail] = useState(me.email ?? '');
+  const [phone, setPhone] = useState(me.phone ?? '');
+  const [error, setError] = useState<string | null>(null);
+
+  const save = useMutation({
+    mutationFn: () => {
+      // Empty string clears the value (→ null); validate the shape before the round-trip.
+      const payload = { email: email.trim() || null, phone: phone.trim() || null };
+      const parsed = UpdateSelfProfileSchema.safeParse(payload);
+      if (!parsed.success) {
+        const first = parsed.error.issues[0];
+        throw new ApiError(
+          0,
+          first?.path[0] === 'phone'
+            ? 'Enter a valid phone (e.g. +919876543210).'
+            : 'Enter a valid email address.',
+        );
+      }
+      return api<UserView>('PATCH', '/api/v2/users/me/profile', payload);
+    },
+    onSuccess: () => {
+      setEditing(false);
+      setError(null);
+      void qc.invalidateQueries({ queryKey: ME });
+      toast.success('Contact details updated.');
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.code : 'Could not save. Try again.'),
+  });
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-5 shadow-sm">
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <h2 className="font-semibold">Identity</h2>
+        <span
+          className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+            me.isActive ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
+          }`}
+        >
+          {me.isActive ? 'Active' : 'Inactive'}
+        </span>
+      </div>
+
+      <div className="mb-5">
+        <UserPhoto self />
+      </div>
+
+      <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Field label="Full name" value={me.name} />
+        <Field label="Username" value={me.username} />
+        <Field label="Employee ID" value={me.employeeId} />
+        <Field label="Role" value={me.role.replace(/_/g, ' ')} />
+        <Field label="Department" value={me.departmentName} />
+        <Field label="Designation" value={me.designationName} />
+        <Field label="Reports to" value={me.reportsToName} />
+      </dl>
+
+      <div className="mt-5 border-t border-border pt-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold">Contact</h3>
+          {!editing && (
+            <button type="button" className="btn-ghost text-sm" onClick={() => setEditing(true)}>
+              Edit
+            </button>
+          )}
+        </div>
+
+        {editing ? (
+          <div className="space-y-3">
+            <div>
+              <label
+                htmlFor="me-email"
+                className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+              >
+                Email
+              </label>
+              <input
+                id="me-email"
+                className="input"
+                type="email"
+                value={email}
+                placeholder="name@example.com"
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="me-phone"
+                className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+              >
+                Phone
+              </label>
+              <input
+                id="me-phone"
+                className="input"
+                value={phone}
+                placeholder="+919876543210"
+                onChange={(e) => setPhone(e.target.value)}
+              />
+            </div>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+            <div className="flex gap-2">
+              <button className="btn" onClick={() => save.mutate()} disabled={save.isPending}>
+                {save.isPending ? 'Saving…' : 'Save'}
+              </button>
+              <button
+                className="btn-ghost"
+                onClick={() => {
+                  setEditing(false);
+                  setError(null);
+                  setEmail(me.email ?? '');
+                  setPhone(me.phone ?? '');
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Email" value={me.email} />
+            <Field label="Phone" value={me.phone} />
+          </dl>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ChangePasswordCard() {
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const change = useMutation({
+    mutationFn: () => {
+      if (next !== confirm) throw new ApiError(0, 'The new passwords do not match.');
+      const parsed = ChangePasswordSchema.safeParse({ currentPassword: current, newPassword: next });
+      if (!parsed.success)
+        throw new ApiError(0, 'New password needs 8+ characters with upper, lower, a digit and a symbol.');
+      return api('POST', '/api/v2/auth/change-password', parsed.data);
+    },
+    onSuccess: () => {
+      setCurrent('');
+      setNext('');
+      setConfirm('');
+      setError(null);
+      toast.success('Password changed. Other devices will need to sign in again.');
+    },
+    onError: (e) =>
+      setError(
+        e instanceof ApiError && e.code === 'INVALID_CREDENTIALS'
+          ? 'Your current password is incorrect.'
+          : e instanceof ApiError && e.message
+            ? e.message
+            : 'Could not change the password. Try again.',
+      ),
+  });
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-5 shadow-sm">
+      <h2 className="mb-1 font-semibold">Change password</h2>
+      <p className="mb-4 text-sm text-muted-foreground">
+        Set a new password. Other signed-in devices are signed out for safety.
+      </p>
+      <div className="max-w-sm space-y-3">
+        <input
+          className="input"
+          type="password"
+          autoComplete="current-password"
+          placeholder="Current password"
+          value={current}
+          onChange={(e) => setCurrent(e.target.value)}
+        />
+        <input
+          className="input"
+          type="password"
+          autoComplete="new-password"
+          placeholder="New password"
+          value={next}
+          onChange={(e) => setNext(e.target.value)}
+        />
+        {next.length > 0 && <PasswordPolicyChecklist password={next} />}
+        <input
+          className="input"
+          type="password"
+          autoComplete="new-password"
+          placeholder="Confirm new password"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+        />
+        {confirm.length > 0 && next !== confirm && (
+          <p className="text-xs text-destructive">Passwords do not match.</p>
+        )}
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        <button
+          className="btn"
+          onClick={() => change.mutate()}
+          disabled={change.isPending || !current || !isPasswordStrong(next) || next !== confirm}
+        >
+          {change.isPending ? 'Updating…' : 'Update password'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function ProfilePage() {
+  const me = useQuery({ queryKey: ME, queryFn: () => api<UserView>('GET', '/api/v2/users/me/profile') });
+
+  return (
+    <div className="max-w-2xl space-y-4">
+      <div>
+        <h1 className="text-xl font-bold tracking-tight">My Profile</h1>
+        <p className="text-sm text-muted-foreground">
+          Your identity and contact details.{' '}
+          <Link to="/security" className="text-primary hover:underline">
+            Two-factor authentication and active sessions
+          </Link>{' '}
+          live on the Security page.
+        </p>
+      </div>
+
+      {me.isLoading ? (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : me.data ? (
+        <>
+          <IdentityCard me={me.data} />
+          <ChangePasswordCard />
+        </>
+      ) : (
+        <p className="text-sm text-destructive">Could not load your profile.</p>
+      )}
+    </div>
+  );
+}

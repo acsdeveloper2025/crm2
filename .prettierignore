@@ -1,0 +1,9 @@
+**/dist/**
+**/node_modules/**
+**/coverage/**
+**/.turbo/**
+pnpm-lock.yaml
+db/**/*.sql
+*.md
+# generated API surface (ADR-0031) — deterministic JSON.stringify; git-diff-gated by `pnpm openapi`
+apps/api/openapi.json

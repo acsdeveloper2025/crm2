@@ -1,0 +1,49 @@
+# CRM2 — Project Index
+**The single entry point.** A new engineer (or AI agent) should understand the entire platform from this page and its links. Architecture, data model, design, stack, engineering standards, and governance are **FROZEN** — build only. Read in the order below.
+
+## 0. Start here (read first, in order)
+0. [SESSION_KICKOFF.md](./SESSION_KICKOFF.md) — how to start a new session consistently (which memory + docs to read, current progress, standing rules).
+1. [ACS_CRM_2.0_MASTER_MEMORY.md](./ACS_CRM_2.0_MASTER_MEMORY.md) — the single source of truth (architecture/data-model/UI/tech/security freeze + status + §7.5 enforcement + §7.6 governance).
+2. [docs/ENGINEERING_STANDARDS.md](./docs/ENGINEERING_STANDARDS.md) — data-access + repository + reporting + naming + enforcement.
+3. [docs/DESIGN_AND_STACK_FREEZE.md](./docs/DESIGN_AND_STACK_FREEZE.md) — stack + design system.
+4. [docs/CI_CD_STANDARDS.md](./docs/CI_CD_STANDARDS.md) — the 40-rule machine-enforcement matrix + CI gate order.
+5. [AGENT_RULES.md](./AGENT_RULES.md) · [CTO_RULES.md](./CTO_RULES.md) — how to work here + the review gate.
+
+## 1. Architecture & decisions (ADRs)
+[docs/adr/](./docs/adr/README.md) — why the system is built this way. Change a frozen decision only via a **superseding ADR + CTO + domain-owner** sign-off.
+- [ADR-0001](./docs/adr/ADR-0001-verification-unit-registry-model.md) Verification Unit model · [ADR-0002](./docs/adr/ADR-0002-case-task-verification-unit-model.md) Case→Task→Verification Unit · [ADR-0003](./docs/adr/ADR-0003-postgresql-17.md) PostgreSQL 17 · [ADR-0004](./docs/adr/ADR-0004-no-prisma-no-orm.md) No Prisma · [ADR-0005](./docs/adr/ADR-0005-repository-pattern-data-access.md) Repository pattern · [ADR-0006](./docs/adr/ADR-0006-verification-workspace.md) Verification Workspace · [ADR-0007](./docs/adr/ADR-0007-naming-standards.md) Naming · [ADR-0008](./docs/adr/ADR-0008-design-system.md) Design system · [ADR-0009](./docs/adr/ADR-0009-feature-flags.md) Feature flags · [ADR-0010](./docs/adr/ADR-0010-reporting-strategy.md) Reporting · [ADR-0011](./docs/adr/ADR-0011-api-versioning-strategy.md) API versioning · [ADR-0012](./docs/adr/ADR-0012-mobile-integration-strategy.md) Mobile integration · [ADR-0013](./docs/adr/ADR-0013-governance-engineering-standards.md) Governance & engineering · [ADR-0014](./docs/adr/ADR-0014-authentication-session-management.md) Authentication · [ADR-0015](./docs/adr/ADR-0015-case-workspace-and-per-client-product-reporting.md) Case Workspace & per-client+product Reporting → [CASE_WORKSPACE_AND_REPORTING_FREEZE.md](./docs/CASE_WORKSPACE_AND_REPORTING_FREEZE.md) · [ADR-0016](./docs/adr/ADR-0016-rate-management-resolution-versioning-workspace.md) Rate Management (**SUPERSEDED → ADR-0018**; the old 4-table resolution chain) · [ADR-0017](./docs/adr/ADR-0017-effective-from-temporal-usability-gating.md) Effective-From temporal usability gating (master data + CPV) → [EFFECTIVE_FROM_STANDARD.md](./docs/EFFECTIVE_FROM_STANDARD.md) · [ADR-0018](./docs/adr/ADR-0018-rate-management-flat-one-table-model.md) Rate Management — flat one-table model `(client,product,VU,location,rate_type)→amount`, effective-dated (supersedes 0016) · [ADR-0019](./docs/adr/ADR-0019-concurrency-and-editing-standard.md) Concurrency & editing — optimistic concurrency control → [CONCURRENCY_AND_EDITING_STANDARD.md](./docs/CONCURRENCY_AND_EDITING_STANDARD.md). New ADRs use [_template.md](./docs/adr/_template.md).
+
+## 2. Data model & database
+- Model: **Case → Task → Verification Unit** (ADR-0002). Registry: [db/v2/REGISTRY_SPEC.md](./db/v2/REGISTRY_SPEC.md), [db/v2/BUILD_GATE_REGISTRY_LOCK.md](./db/v2/BUILD_GATE_REGISTRY_LOCK.md). Migrations: `db/v2/migrations/` (DDL source of truth). Seed: `db/v2/seed/` (68 units).
+- [DATABASE_CHANGE_PROCESS.md](./DATABASE_CHANGE_PROCESS.md) — DDL only via reviewed migrations.
+
+## 3. API & contracts
+- [API_VERSIONING_POLICY.md](./API_VERSIONING_POLICY.md) — `/api/v2`, additive-only, no silent breaking change (ADR-0011).
+- [DOCUMENTATION_AS_CODE.md](./DOCUMENTATION_AS_CODE.md) — OpenAPI = API SoT, migrations = DB SoT, **SDK = the only integration layer for web AND mobile**.
+- [MOBILE_API_COMPATIBILITY_MATRIX.md](./MOBILE_API_COMPATIBILITY_MATRIX.md) — mobile is a first-class consumer; current `/api/mobile` contract → v2 obligations; never break it (ADR-0012).
+
+## 4. Engineering standards & enforcement
+- [docs/CI_CD_STANDARDS.md](./docs/CI_CD_STANDARDS.md) (matrix) · [docs/ENGINEERING_STANDARDS.md](./docs/ENGINEERING_STANDARDS.md) · [DEVELOPMENT_WORKFLOW.md](./DEVELOPMENT_WORKFLOW.md) · [BUILD_GUIDE.md](./BUILD_GUIDE.md) · [BUILD_METHOD.md](./BUILD_METHOD.md) (multi-agent + CTO) · **[docs/AGENT_ORG.md](./docs/AGENT_ORG.md)** (the 9-role Audit Panel — CEO · Principal Engineer · DB · Security · Performance · Design-Quality · API/Contract · Caching & Scalability · Reliability/SRE — + per-role persistent ledgers in [docs/agents/](./docs/agents/)) · [CONTRIBUTING.md](./CONTRIBUTING.md) · [ALLOWED_DEPENDENCIES.md](./ALLOWED_DEPENDENCIES.md).
+- Local gate: `pnpm verify`. Config: `tsconfig.base.json`, `eslint.config.js`, `.prettierrc.json`, `.dependency-cruiser.cjs`, `knip.json`, `.gitleaks.toml`, `.husky/`, `.github/workflows/ci.yml`.
+
+## 5. Design system & UI standards
+- [docs/DESIGN_AND_STACK_FREEZE.md](./docs/DESIGN_AND_STACK_FREEZE.md) · [docs/COLOR_SYSTEM_FREEZE.md](./docs/COLOR_SYSTEM_FREEZE.md) (blue/slate tokens) · [docs/UPPERCASE_DISPLAY_STANDARD.md](./docs/UPPERCASE_DISPLAY_STANDARD.md) (visual-only). Tokens: `packages/ui-theme`.
+- [UI_STANDARDS.md](./UI_STANDARDS.md) (UI index) · [docs/MANAGEMENT_LIST_STANDARD.md](./docs/MANAGEMENT_LIST_STANDARD.md) (Created/Updated columns · accordion master-detail) · **[docs/PAGINATION_AND_LOADING_STANDARDS.md](./docs/PAGINATION_AND_LOADING_STANDARDS.md)** (FROZEN — pagination · loading bands · Hexagon loader · background jobs) · **[docs/DATAGRID_STANDARD.md](./docs/DATAGRID_STANDARD.md)** (FROZEN — the ONE Universal DataGrid; TanStack Table; search/filter/sort/paginate server-side · saved views · export · URL state · a11y) · **[docs/IMPORT_EXPORT_STANDARD.md](./docs/IMPORT_EXPORT_STANDARD.md)** (FROZEN — DataGrid = sole export entry · one `@crm2/import-engine` · `≥10k`=job · import flow+validation+audit) · **[docs/RESPONSIVE_DESIGN_STANDARD.md](./docs/RESPONSIVE_DESIGN_STANDARD.md)** (FROZEN — responsive-first web: mobile-up 320/768/1024/1440 · no desktop-only · responsive nav/grids/dialogs · table→card on mobile · Playwright viewport tests).
+
+## 6. Security & compliance
+- [SECURITY_STANDARDS.md](./SECURITY_STANDARDS.md) (governance + cadence) · [SECURITY_GUIDE.md](./SECURITY_GUIDE.md) (practitioner) · [DATA_RETENTION_POLICY.md](./DATA_RETENTION_POLICY.md) · [BUSINESS_RULES.md](./BUSINESS_RULES.md) (audit/RBAC rules).
+
+## 7. Operations & resilience
+- [OPERATIONS_GUIDE.md](./OPERATIONS_GUIDE.md) · [DISASTER_RECOVERY.md](./DISASTER_RECOVERY.md) (quarterly restore drill) · [OBSERVABILITY_STANDARDS.md](./OBSERVABILITY_STANDARDS.md) · [MONITORING_STRATEGY.md](./MONITORING_STRATEGY.md) · [PERFORMANCE_STANDARDS.md](./PERFORMANCE_STANDARDS.md) (<2s) · [RELEASE_GUIDE.md](./RELEASE_GUIDE.md) + [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md).
+- **Runbooks** [(index)](./runbooks/README.md): [api-outage](./runbooks/api-outage.md) · [db-outage](./runbooks/db-outage.md) · [redis-outage](./runbooks/redis-outage.md) · [report-worker-outage](./runbooks/report-worker-outage.md) · [storage-outage](./runbooks/storage-outage.md) · [queue-backlog](./runbooks/queue-backlog.md) · [failed-deployment](./runbooks/failed-deployment.md).
+
+## 8. Governance & long-term protection
+- **Architecture governance (drift-prevention):** [docs/ARCHITECTURE_GOVERNANCE.md](./docs/ARCHITECTURE_GOVERNANCE.md) · **[docs/FROZEN_DECISIONS_REGISTRY.md](./docs/FROZEN_DECISIONS_REGISTRY.md)** (the SoT of LOCKED decisions) · [FREEZE_LOCK_REPORT.md](./FREEZE_LOCK_REPORT.md) (enforcement per decision) · [docs/COMPLIANCE_GAPS_REGISTRY.md](./docs/COMPLIANCE_GAPS_REGISTRY.md) (fixed/deferred/retrofit/ratchet + audit history — never delete findings) · [ARCHITECTURE_CHANGE_REQUEST.md](./ARCHITECTURE_CHANGE_REQUEST.md) (ACR template). No new pattern/framework/library without ADR + Impact + Alternatives + Migration + CTO. Default = reuse.
+- [BUSINESS_RULES.md](./BUSINESS_RULES.md) · [DOMAIN_OWNERSHIP.md](./DOMAIN_OWNERSHIP.md) · [LONG_TERM_PROTECTION.md](./LONG_TERM_PROTECTION.md) (never change without architectural review) · [UPGRADE_POLICY.md](./UPGRADE_POLICY.md) · [TECH_DEBT_POLICY.md](./TECH_DEBT_POLICY.md) · [TEST_DATASET_STRATEGY.md](./TEST_DATASET_STRATEGY.md) (golden dataset).
+
+## 9. Build order & status
+**VU (done) → Clients → Products → CPV → Cases → Tasks → Assignment → Verification Workspace → Reports → MIS → Billing**; then Dashboard, Field Monitoring, Admin, workers. Live status: MASTER_MEMORY §8. Reference module: `apps/api/src/modules/verificationUnits/` + `apps/web/src/features/verificationUnits/`.
+
+## 10. Repo layout
+`apps/` (acs-api-v2 · acs-web-v2 · worker · report-worker) · `packages/` (ui-theme · sdk · access · config · test-utils · logger) · `db/v2/` · `docs/` · `runbooks/` · `scripts/`. Repo overview: [README.md](./README.md). Separate repos: **mobile** = `crm-mobile-native` (independent). v1 = `CRM-APP-MONOREPO-PROD` (untouched).
+- **Packages & platform-capability ownership:** [ALLOWED_DEPENDENCIES.md](./ALLOWED_DEPENDENCIES.md) (allowed deps + package boundaries) · **[docs/PLATFORM_CAPABILITIES_OWNERSHIP.md](./docs/PLATFORM_CAPABILITIES_OWNERSHIP.md)** (where DataGrid / import / export live + which packages they consume; extraction DEFERRED). 6 packages, 4 apps; no new package without ADR.

@@ -1,0 +1,21 @@
+# Build-context excludes for the CRM2 images. Keep source (apps/packages/db) +
+# manifests; drop installed deps (re-installed fresh in-image), build output,
+# caches, secrets, and docs.
+**/node_modules
+**/dist
+**/.turbo
+**/coverage
+**/playwright-report
+**/test-results
+**/.vite
+.git
+.github
+*.md
+**/*.md
+.env
+.env.*
+!.env.example
+!**/.env.example
+**/secrets
+*.log
+.DS_Store

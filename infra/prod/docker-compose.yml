@@ -1,0 +1,173 @@
+# =============================================================================
+# CRM2 production stack (single box behind crm.allcheckservices.com).
+#
+# Invoked by infra/prod/deploy.sh over SSH:
+#   docker compose -f infra/prod/docker-compose.yml --env-file /opt/crm2/secrets/.env.prod up -d
+#
+# Services: db (pg18) · minio (+init) · migrate (one-shot) · api · edge.
+# valkey + out-of-process worker/report tiers are commented below — enable when
+# the job tier moves out-of-process (today jobs run IN the api, REDIS_* unset).
+#
+# Secrets arrive ONLY via env_file (/opt/crm2/secrets/.env.prod, mode 600, never
+# committed) + the firebase file mount. Images stay environment-neutral.
+# =============================================================================
+name: crm2
+
+services:
+  db:
+    image: postgres:18-alpine
+    container_name: crm2_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      TZ: Asia/Kolkata
+      PGTZ: Asia/Kolkata
+    volumes:
+      # PG18: data dir is /var/lib/postgresql (NOT /…/data) — see dev compose note.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    mem_limit: 4g
+
+  minio:
+    image: minio/minio:latest
+    container_name: crm2_minio
+    restart: unless-stopped
+    command: server /data --console-address ':9001'
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY}
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    mem_limit: 1g
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: crm2_minio_init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 ${S3_ACCESS_KEY_ID} ${S3_SECRET_ACCESS_KEY}; do sleep 1; done;
+      mc mb -p local/${S3_BUCKET};
+      exit 0;
+      "
+    restart: "no"
+
+  # One-shot: apply the 66 idempotent SQL migrations (ON_ERROR_STOP) then the
+  # seeds (best-effort). Runs from the repo root so the locations \copy FROM
+  # PROGRAM 'gzip -dc db/v2/seed/…' relative path resolves.
+  migrate:
+    image: postgres:18-alpine
+    container_name: crm2_migrate
+    depends_on:
+      db:
+        condition: service_healthy
+    working_dir: /repo
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    volumes:
+      - ../../:/repo:ro
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        for f in db/v2/migrations/*.sql; do
+          echo "migrate: $$f"; psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$$f"
+        done
+        echo "seed: verification_units"; psql "$$DATABASE_URL" -q -f db/v2/seed/verification_units.seed.sql || echo "  (seed warn)"
+        echo "seed: locations (157k pincodes)"; psql "$$DATABASE_URL" -q -f db/v2/seed/locations.seed.sql || echo "  (seed warn)"
+        echo "migrate: done"
+    restart: "no"
+
+  api:
+    image: ${IMAGE_REGISTRY:-ghcr.io/acsdeveloper2025}/crm2-api:${IMAGE_TAG:-latest}
+    container_name: crm2_api
+    init: true
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      ROLE: api
+      NODE_ENV: production
+      PORT: "4000"
+      FIREBASE_SERVICE_ACCOUNT_PATH: /run/secrets/firebase-service-account
+    env_file:
+      - ${ENV_FILE:-/opt/crm2/secrets/.env.prod}
+    secrets:
+      - firebase-service-account
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4000/api/v2/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    stop_grace_period: 30s
+    shm_size: 1gb
+    mem_limit: 2g
+
+  edge:
+    image: ${IMAGE_REGISTRY:-ghcr.io/acsdeveloper2025}/crm2-web:${IMAGE_TAG:-latest}
+    container_name: crm2_edge
+    init: true
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - certbot_webroot:/var/www/certbot
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/_edge_health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    mem_limit: 256m
+
+  # ---- FUTURE: out-of-process job tier (enable with REDIS_QUEUE_URL set) -----
+  # valkey:
+  #   image: valkey/valkey:8-alpine
+  #   container_name: crm2_valkey
+  #   restart: unless-stopped
+  #   command: ["valkey-server","--requirepass","${VALKEY_PASSWORD}","--appendonly","yes","--maxmemory-policy","noeviction"]
+  #   volumes: [valkeydata:/data]
+  #   healthcheck: { test: ["CMD","valkey-cli","-a","${VALKEY_PASSWORD}","ping"], interval: 10s, timeout: 5s, retries: 5 }
+  # worker:   { <<: *api-like, environment: { ROLE: worker } }
+  # report-worker: { <<: *api-like, environment: { ROLE: report } }
+
+volumes:
+  pgdata:
+    name: crm2_pgdata
+  miniodata:
+    name: crm2_miniodata
+  certbot_webroot:
+    name: crm2_certbot_webroot
+  # valkeydata: { name: crm2_valkeydata }
+
+secrets:
+  firebase-service-account:
+    file: ${FIREBASE_SECRET_FILE:-/opt/crm2/secrets/firebase-service-account.json}

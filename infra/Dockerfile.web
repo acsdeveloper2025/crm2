@@ -1,0 +1,23 @@
+# syntax=docker/dockerfile:1.7
+# =============================================================================
+# CRM2 edge image — builds the static SPA and serves it via nginx. The web app
+# talks to the API same-origin (relative /api/v2/…), so the build takes NO build
+# args and bakes NO secrets. The TLS + reverse-proxy config is MOUNTED from
+# infra/prod/nginx.conf at deploy time (declarative; never baked, never deploy-mutated).
+# =============================================================================
+FROM node:22-bookworm-slim AS build
+RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
+# The web build pulls the whole workspace; skip puppeteer's Chromium download
+# (only the api/report runtime needs it) — faster, fewer network failure modes.
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+WORKDIR /app
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json ./
+COPY apps ./apps
+COPY packages ./packages
+RUN pnpm install --frozen-lockfile
+RUN pnpm --filter @crm2/web build
+
+FROM nginx:1.27-alpine AS runtime
+RUN apk add --no-cache wget
+COPY --from=build /app/apps/web/dist /usr/share/nginx/html
+EXPOSE 80 443

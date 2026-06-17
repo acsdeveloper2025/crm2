@@ -1,0 +1,148 @@
+# =============================================================================
+# CRM2 push→deploy pipeline (green/red). On push to main:
+#   1. gate         — install + typecheck + lint + build. RED here blocks deploy.
+#   2. build-images — build & push crm2-api + crm2-web to GHCR (tagged by SHA).
+#   3. deploy       — SSH to the box, run infra/prod/deploy.sh (blue-green with
+#                     auto-rollback), then smoke the external HTTPS endpoint.
+# Image namespace follows ${{ github.repository_owner }} (auto-tracks an org rename).
+# All deploy secrets are GitHub Actions secrets — never in the repo.
+# =============================================================================
+name: deploy
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Image tag to deploy (default: github.sha)'
+        required: false
+        default: ''
+
+concurrency:
+  group: crm2-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '9'
+  REGISTRY: ghcr.io
+
+jobs:
+  # ---- GREEN/RED gate: nothing ships unless this passes --------------------
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}', cache: 'pnpm' }
+      - run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Lint
+        run: pnpm lint
+      - name: Build
+        run: pnpm build
+
+  # ---- Build & push images -------------------------------------------------
+  build-images:
+    needs: gate
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve tag
+        id: tag
+        run: |
+          if [ -n "${{ inputs.image_tag }}" ]; then
+            echo "tag=${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build & push crm2-api
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: infra/Dockerfile.api
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/crm2-api:${{ steps.tag.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/crm2-api:latest
+          cache-from: type=gha,scope=crm2-api
+          cache-to: type=gha,scope=crm2-api,mode=max
+      - name: Build & push crm2-web
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: infra/Dockerfile.web
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/crm2-web:${{ steps.tag.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/crm2-web:latest
+          cache-from: type=gha,scope=crm2-web
+          cache-to: type=gha,scope=crm2-web,mode=max
+
+  # ---- Deploy on the box ---------------------------------------------------
+  # Gated on the DEPLOY_ENABLED repo variable so the first push only builds &
+  # validates images; set `gh variable set DEPLOY_ENABLED -b true` once the box
+  # is cut over to enable auto-deploy on every subsequent push to main.
+  deploy:
+    needs: build-images
+    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_TAG: ${{ needs.build-images.outputs.tag }}
+    steps:
+      - name: Install SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.PRODUCTION_SSH_KEY }}
+      - name: Pin known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.KNOWN_HOSTS_PIN }}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Deploy (blue-green + rollback)
+        env:
+          HOST: ${{ secrets.PRODUCTION_HOST }}
+          PORT: ${{ secrets.PRODUCTION_SSH_PORT }}
+          DEPLOY_USER: ${{ secrets.PRODUCTION_USER }}
+          OWNER: ${{ github.repository_owner }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
+        run: |
+          set -e
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$DEPLOY_USER@$HOST" bash -s <<EOF
+            set -e
+            trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            export IMAGE_TAG="$IMAGE_TAG"
+            export IMAGE_REGISTRY="ghcr.io/$OWNER"
+            bash /opt/crm2/app/infra/prod/deploy.sh
+          EOF
+      - name: Smoke external HTTPS
+        run: |
+          for i in 1 2 3 4 5 6; do
+            if curl -fsS --max-time 10 https://crm.allcheckservices.com/_edge_health; then
+              echo "smoke OK"; exit 0
+            fi
+            sleep 5
+          done
+          echo "smoke FAILED" >&2; exit 1

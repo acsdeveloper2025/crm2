@@ -1,0 +1,18 @@
+import { Router } from 'express';
+import { authorize, PERMISSIONS } from '@crm2/access';
+import { billingController as c } from './controller.js';
+
+/**
+ * /api/v2/billing (ADR-0036, slice 5b) — the per-case Billing & Commission read-model. Gated
+ * `billing.view` (MANAGER + BACKEND_USER + SA); export on `data.export`. Read-only; amounts derived.
+ */
+export const billingRoutes: Router = Router();
+
+// `/cases/export` is a literal 2-segment path — declare before `/cases/:id/tasks` (3-segment) for clarity.
+// Gated `billing.view` (NOT just data.export): the export carries the SAME sensitive bill+commission
+// amounts as the list, so it must share the list's audience — otherwise a data.export-only role
+// (TEAM_LEADER) blocked from /cases could exfiltrate the amounts via export (Security/CEO panel BLOCK).
+// All billing.view holders also hold data.export, so this loses no legitimate access.
+billingRoutes.get('/cases/export', authorize(PERMISSIONS.BILLING_VIEW), c.export);
+billingRoutes.get('/cases', authorize(PERMISSIONS.BILLING_VIEW), c.listCases);
+billingRoutes.get('/cases/:id/tasks', authorize(PERMISSIONS.BILLING_VIEW), c.caseTasks);

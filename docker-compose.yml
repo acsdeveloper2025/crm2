@@ -1,0 +1,121 @@
+# Local development databases for CRM2 (v2).
+#
+# Two Postgres 18 instances, each on a NAMED volume so the data survives container
+# restart AND removal (the previous ad-hoc `docker run` containers used anonymous
+# volumes and were lost when the machine idled — see docs / Claude memory).
+#
+#   dev-db  →  :54329 / crm2_dev     — the dev API (:4000) database (durable; holds real data)
+#   test-db →  :5433  / crm2_test  — the `pnpm verify` / test-harness database (rebuilt per run)
+#
+# Auth is `trust` (no password) — LOCAL DEV ONLY, never staging/prod. The DATABASE_URLs are:
+#   dev   postgresql://postgres@127.0.0.1:54329/crm2_dev
+#   test  postgresql://postgres@127.0.0.1:5433/crm2_test
+#
+# Usage:
+#   docker compose up -d                 # start both (data persists across restarts)
+#   # first time / after a reset, load the dev DB:
+#   for f in db/v2/migrations/*.sql; do psql postgresql://postgres@127.0.0.1:54329/crm2_dev -f "$f"; done
+#   psql postgresql://postgres@127.0.0.1:54329/crm2_dev -f db/v2/seed/locations.seed.sql
+#   psql postgresql://postgres@127.0.0.1:54329/crm2_dev -f db/v2/seed/verification_units.seed.sql
+#   # (migration 0009 self-seeds the admin/admin123 SUPER_ADMIN)
+#
+# The test-db needs no manual load — `@crm2/test-utils` createTestDb applies the
+# migrations into it on every run.
+#
+# NOTE (Postgres 18): the named volume mounts at `/var/lib/postgresql` (NOT
+# `/var/lib/postgresql/data`) — PG18 moved the data dir into a subdirectory and the
+# image refuses to start if a volume is mounted at the old `/data` path.
+
+name: crm2
+
+services:
+  dev-db:
+    image: postgres:18-alpine
+    container_name: crm2_dev_pg
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_DB: crm2_dev
+    ports:
+      - '54329:5432'
+    volumes:
+      - crm2_dev_pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d crm2_dev']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  test-db:
+    image: postgres:18-alpine
+    container_name: crm2_test_pg
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_DB: crm2_test
+    ports:
+      - '5433:5432'
+    volumes:
+      - crm2_test_pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d crm2_test']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # Object store (ADR-0021) for local dev — the S3-compatible backend so attachment/photo storage
+  # (STORAGE_BACKEND=minio) works without AWS. Bucket auto-created by the one-shot `minio-init`.
+  minio:
+    image: minio/minio:latest
+    container_name: crm2_minio
+    command: server /data --console-address ':9001'
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - crm2_miniodata:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'mc ready local || exit 1']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: crm2_minio_init
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 minioadmin minioadmin; do sleep 1; done;
+      mc mb -p local/crm2-dev;
+      exit 0;
+      "
+    restart: 'no'
+
+  # Valkey (frozen Redis, MASTER_MEMORY §3) — backs the BullMQ job queue (REDIS_QUEUE_URL) and the
+  # socket.io fan-out adapter (REDIS_CACHE_URL) so a ROLE=worker process can run jobs out-of-process
+  # and still push job:progress/job:done to the API's connected clients. Queue data is transient → no
+  # volume. Dev defaults to the in-process runner (env unset); set the two URLs to exercise the worker.
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: crm2_valkey
+    # Host 6380 (v1's crm_redis owns 6379) → REDIS_QUEUE_URL/REDIS_CACHE_URL use redis://127.0.0.1:6380.
+    ports:
+      - '6380:6379'
+    healthcheck:
+      test: ['CMD', 'valkey-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  crm2_dev_pgdata:
+  crm2_test_pgdata:
+  crm2_miniodata:

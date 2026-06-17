@@ -1,0 +1,14 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": ["tsconfig.base.json", ".eslintrc.cjs", "eslint.config.js", ".prettierrc.json"],
+  "tasks": {
+    "build": { "dependsOn": ["^build"], "outputs": ["dist/**"] },
+    "typecheck": { "dependsOn": ["^build"], "inputs": ["src/**", "tsconfig*.json"] },
+    "lint": { "inputs": ["src/**", "eslint.config.js", ".eslintrc.cjs"] },
+    "test": {
+      "dependsOn": ["^build"],
+      "inputs": ["src/**", "../../db/v2/**"],
+      "env": ["DATABASE_URL", "LOG_LEVEL", "NODE_ENV"]
+    }
+  }
+}

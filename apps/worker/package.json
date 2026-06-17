@@ -1,0 +1,11 @@
+{
+  "name": "@crm2/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "BullMQ general worker — runs the acs-api-v2 image with ROLE=worker. Implemented in a later build step.",
+  "scripts": {
+    "build": "echo 'worker: deploy target over api image (ROLE=worker)'",
+    "test": "echo 'no tests yet'"
+  }
+}

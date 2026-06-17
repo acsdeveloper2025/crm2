@@ -1,0 +1,14 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "workspaces": {
+    "apps/api": { "entry": ["src/main.ts", "src/**/*.test.ts"], "project": "src/**/*.ts" },
+    "apps/web": {
+      "entry": ["src/main.tsx", "src/**/*.test.{ts,tsx}"],
+      "project": "src/**/*.{ts,tsx}"
+    },
+    "apps/worker": { "entry": ["src/**/*.ts"], "project": "src/**/*.ts" },
+    "apps/report-worker": { "entry": ["src/**/*.ts"], "project": "src/**/*.ts" },
+    "packages/*": { "entry": ["src/index.ts", "src/**/*.test.ts"], "project": "src/**/*.ts" }
+  },
+  "ignoreDependencies": ["@crm2/test-utils"]
+}

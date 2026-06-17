@@ -1,0 +1,89 @@
+@import '@crm2/ui-theme/tokens.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .input {
+    @apply w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-ring disabled:bg-muted disabled:text-muted-foreground;
+  }
+  .btn {
+    @apply rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50;
+  }
+  .btn-ghost {
+    @apply rounded-md border border-input px-3 py-1.5 text-sm text-foreground hover:bg-accent disabled:opacity-50;
+  }
+
+  /* Hexagon Loader (PAGINATION_AND_LOADING_STANDARDS §7) — indeterminate mode marches a
+     dash segment around the hexagon outline (pathLength=100). Determinate mode sets
+     stroke-dashoffset directly instead. Geometric, not a spinning circle / bar / dots. */
+  .hex-march {
+    animation: acs-hex-march 1.2s linear infinite;
+  }
+  /* Determinate mode animates the fill toward the real percentage. */
+  .hex-fill {
+    transition: stroke-dashoffset 300ms ease;
+  }
+  /* Reduced-motion users get a static hexagon; the role=status text still announces loading. */
+  @media (prefers-reduced-motion: reduce) {
+    .hex-march {
+      animation: none;
+    }
+    .hex-fill {
+      transition: none;
+    }
+  }
+  @keyframes acs-hex-march {
+    from {
+      stroke-dashoffset: 0;
+    }
+    to {
+      stroke-dashoffset: -100;
+    }
+  }
+
+  /*
+   * Responsive table → card (RESPONSIVE_DESIGN_STANDARD §"Table strategy").
+   * Below md (mobile) a `.rtable` collapses each row into a stacked card; every
+   * `<td>` shows its column name via `data-label`. Interim mechanism until the
+   * Universal DataGrid owns the column strategy platform-wide (then `.rtable`
+   * + the data-label props are removed).
+   *
+   * Selectors use the CHILD combinator (`> tbody > tr > td`) so an `.rtable`
+   * styles ONLY its own rows — a nested table inside an expanded row is NOT
+   * touched (it cards independently only if it too carries `.rtable`).
+   * `colSpan` rows (loading/empty/error states + expanded detail panels) and
+   * opt-out cells (`data-label=""`) stay full-width blocks with no label; those
+   * cells keep their own alignment/padding classes.
+   */
+  @media (max-width: 767px) {
+    table.rtable > thead {
+      @apply sr-only;
+    }
+    table.rtable,
+    table.rtable > tbody,
+    table.rtable > tbody > tr,
+    table.rtable > tbody > tr > td {
+      @apply block w-full;
+    }
+    table.rtable > tbody > tr {
+      @apply mb-3 rounded-lg border border-border bg-card p-3 shadow-sm last:mb-0;
+    }
+    table.rtable > tbody > tr > td {
+      @apply flex items-center justify-between gap-4 border-0 px-0 py-1 text-right;
+    }
+    table.rtable > tbody > tr > td::before {
+      content: attr(data-label);
+      @apply text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground;
+    }
+    table.rtable > tbody > tr > td[colspan],
+    table.rtable > tbody > tr > td[data-label=''] {
+      @apply block;
+    }
+    table.rtable > tbody > tr > td[colspan]::before,
+    table.rtable > tbody > tr > td[data-label='']::before {
+      content: '';
+    }
+  }
+}

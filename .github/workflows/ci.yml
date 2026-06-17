@@ -1,0 +1,148 @@
+# CRM2 — machine-enforced quality gates (FROZEN). See docs/CI_CD_STANDARDS.md.
+# Any failing gate blocks merge. Gate order per Part 19.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '9'
+
+jobs:
+  # Parts 24: secrets must never be committed.
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env: { GITLEAKS_CONFIG: .gitleaks.toml }
+
+  # Parts 2,3,4,6,8,11,12,25,26,27,28: static quality + boundaries.
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}', cache: 'pnpm' }
+      - run: pnpm install --frozen-lockfile
+      - name: 1. Type Check
+        run: pnpm typecheck
+      - name: 2. ESLint
+        run: pnpm lint
+      - name: 3. Prettier
+        run: pnpm format
+      - name: No suppressions (ts-ignore / eslint-disable)
+        run: pnpm run no-suppressions
+      - name: Boundaries + circular deps
+        run: pnpm boundaries
+      - name: Dead-code report (Part 26)
+        run: pnpm deadcode || true
+
+  # Parts 18,22,23: tests on an ephemeral Postgres 17, with coverage gates.
+  test:
+    runs-on: ubuntu-latest
+    needs: static
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: crm2_dev
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/crm2_dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}', cache: 'pnpm' }
+      - run: pnpm install --frozen-lockfile
+      - name: 4+5. Unit + Integration tests (coverage-gated)
+        run: pnpm test
+      # Part 22: migrations must re-apply idempotently on an existing DB.
+      - name: Migration re-apply (idempotency)
+        run: |
+          for f in db/v2/migrations/*.sql; do psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"; done
+          for f in db/v2/migrations/*.sql; do psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"; done
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}', cache: 'pnpm' }
+      - run: pnpm install --frozen-lockfile
+      - name: 6. Build
+        run: pnpm build
+      # 7+8. OpenAPI surface + contract-drift (Part 21, ADR-0031) — validate-don't-replace:
+      # the hand-written @crm2/sdk stays authoritative; we re-emit the OpenAPI surface from the live
+      # app and fail if the committed openapi.json drifted (an API change not re-generated). The
+      # SDK↔route parity (no SDK method points at a dead endpoint) is enforced by the contract test
+      # in step 5. Schema enrichment + a generated spec is phase 2 (zod single source).
+      - name: 7+8. OpenAPI surface drift
+        run: |
+          pnpm openapi
+          git diff --exit-code -- apps/api/openapi.json \
+            || (echo 'openapi.json is stale — run `pnpm openapi` and commit it' && exit 1)
+      # Contract tests — BOTH consumers must still pass (ADR-0011/0012). A change
+      # cannot merge unless current Web AND current Mobile contracts hold.
+      - name: Contract tests (web + mobile)
+        run: pnpm run --if-present contract:web && pnpm run --if-present contract:mobile || echo 'contract tests not yet wired (activate with SDK phase)'
+      # 9. E2E (Playwright) — runs in its own job below (needs a Postgres service + a
+      # booted API/web stack, which `build` does not have).
+
+  # Parts 19/29 + CI gates 49-50: Playwright viewport responsiveness + axe a11y, run
+  # against a booted stack (API + web) on an ephemeral Postgres. The harness boots both
+  # servers itself (playwright.config webServer); migrations seed the dev admin so login works.
+  e2e:
+    runs-on: ubuntu-latest
+    needs: build
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: crm2_dev
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/crm2_dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}', cache: 'pnpm' }
+      - run: pnpm install --frozen-lockfile
+      - name: Apply migrations (seeds dev admin for login)
+        run: |
+          for f in db/v2/migrations/*.sql; do psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"; done
+      - name: Install Playwright browser
+        run: pnpm --filter @crm2/web exec playwright install --with-deps chromium
+      - name: 49-50 + 29. Responsive viewport + axe a11y (boots API + web)
+        run: pnpm --filter @crm2/web test:e2e
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 7

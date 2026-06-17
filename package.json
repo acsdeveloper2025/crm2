@@ -1,0 +1,51 @@
+{
+  "name": "crm2",
+  "private": true,
+  "version": "0.1.0",
+  "description": "CRM2 — separate v2 workspace (modular monolith). v1 is untouched.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "eslint .",
+    "typecheck": "turbo run typecheck",
+    "format": "prettier --check .",
+    "format:write": "prettier --write .",
+    "boundaries": "depcruise apps packages --config .dependency-cruiser.cjs",
+    "deadcode": "knip",
+    "no-suppressions": "node scripts/check-suppressions.mjs",
+    "verify": "pnpm typecheck && pnpm lint && pnpm format && pnpm no-suppressions && pnpm boundaries && pnpm test && pnpm build",
+    "dev:api": "pnpm --filter @crm2/api dev",
+    "dev:web": "pnpm --filter @crm2/web dev",
+    "prepare": "husky",
+    "openapi": "pnpm --filter @crm2/api openapi"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.10.0",
+    "@vitest/coverage-v8": "^2.0.0",
+    "dependency-cruiser": "^16.4.0",
+    "eslint": "^9.10.0",
+    "eslint-config-prettier": "^9.1.0",
+    "husky": "^9.1.0",
+    "knip": "^5.30.0",
+    "lint-staged": "^15.2.0",
+    "prettier": "^3.3.0",
+    "turbo": "^2.0.0",
+    "typescript": "^5.5.0",
+    "typescript-eslint": "^8.6.0",
+    "vitest": "^2.0.0"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --max-warnings=0",
+      "prettier --write"
+    ],
+    "*.{js,cjs,mjs,json,css}": [
+      "prettier --write"
+    ]
+  }
+}

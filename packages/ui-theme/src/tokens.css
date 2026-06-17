@@ -1,0 +1,246 @@
+/**
+ * @crm2/ui-theme — THE single color source for CRM2. PERMANENT FREEZE (2026-06-04).
+ * ---------------------------------------------------------------------------------------
+ * Identity:   Primary = Blue (blue-600) · Secondary/neutral = Slate · Inter + JetBrains Mono.
+ * Light = default (White + Slate + Blue). Dark = `.dark` on <html> (Charcoal + Slate + Blue).
+ * Style:      80% Twenty CRM · 10% Linear · 10% Salesforce. Professional, data-dense, calm,
+ *             long-hour operational comfort. NO neobrutalism / glassmorphism / heavy gradients.
+ * Contract:   components consume SEMANTIC Tailwind tokens (bg-background, text-foreground,
+ *             bg-primary, text-st-approved …) — NEVER raw colors / #hex / slate-* / dark: overrides.
+ *             `.dark` swaps the variable values; component classes stay identical.
+ * Format:     HSL channel triplets ("H S% L%") so Tailwind can apply opacity (shadcn convention).
+ * No further color decisions are required after this freeze.
+ */
+
+:root {
+  /* ---- Base surfaces (White + Slate) ---------------------------------------------- */
+  --background: 0 0% 100%; /* page            (white)        */
+  --foreground: 217 33% 17%; /* primary text    (slate-800)    */
+
+  --surface: 0 0% 100%; /* default surface = card (white) */
+  --surface-muted: 210 40% 98%; /* sunken/zebra    (slate-50)     */
+  --surface-sunken: 210 40% 96%; /* deepest panel   (slate-100)    */
+
+  --card: 0 0% 100%;
+  --card-foreground: 217 33% 17%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 217 33% 17%;
+
+  /* ---- Brand: Primary = Blue ------------------------------------------------------- */
+  --primary: 221 83% 53%; /* blue-600 — brand / primary action            */
+  --primary-foreground: 0 0% 100%;
+  --primary-hover: 224 76% 48%; /* blue-700 — hover/active                       */
+  --primary-muted: 214 95% 93%; /* blue-100 — soft brand tint (selected rows)    */
+
+  /* ---- Secondary = Slate ----------------------------------------------------------- */
+  --secondary: 210 40% 96%; /* slate-100 — secondary surface/button         */
+  --secondary-foreground: 215 25% 27%; /* slate-700                                     */
+  --secondary-hover: 214 32% 91%; /* slate-200                                     */
+
+  --muted: 210 40% 96%; /* slate-100 */
+  --muted-foreground: 215 16% 43%; /* secondary text — darkened from slate-500 for WCAG AA (≥4.5:1 on slate-50/100) */
+  --accent: 210 40% 96%; /* hover background (slate-100)                  */
+  --accent-foreground: 217 33% 17%; /* slate-800                                     */
+
+  /* ---- Lines & focus --------------------------------------------------------------- */
+  --border: 214 32% 91%; /* slate-200 */
+  --border-strong: 213 27% 84%; /* slate-300 — emphasised dividers               */
+  --input: 214 32% 91%; /* slate-200 */
+  --ring: 221 83% 53%; /* blue-600 — focus ring = brand                 */
+
+  /* ---- Semantic feedback ----------------------------------------------------------- */
+  --destructive: 0 72% 51%; /* red-600  (Danger)   */
+  --destructive-foreground: 0 0% 100%;
+  --success: 142 71% 36%; /* green-600           */
+  --success-foreground: 0 0% 100%;
+  --warning: 38 92% 50%; /* amber-500           */
+  --warning-foreground: 26 90% 16%; /* dark text on amber  */
+  --info: 200 98% 39%; /* sky-600 (distinct from primary blue)          */
+  --info-foreground: 0 0% 100%;
+
+  /* ---- Workflow status (chip = strong fg + soft bg) -------------------------------- */
+  /* strong (text/dot/border)            soft (chip background) */
+  --st-pending: 215 19% 35%;
+  --st-pending-bg: 210 40% 96%; /* slate   */
+  --st-assigned: 263 70% 50%;
+  --st-assigned-bg: 251 91% 95%; /* violet  */
+  --st-in-progress: 221 83% 45%; /* darkened from 53% for WCAG AA on blue-100 */
+  --st-in-progress-bg: 214 95% 93%; /* blue   */
+  --st-submitted: 193 82% 31%;
+  --st-submitted-bg: 185 96% 90%; /* cyan    */
+  --st-under-review: 26 90% 37%;
+  --st-under-review-bg: 48 96% 89%; /* amber   */
+  --st-approved: 142 72% 25%; /* darkened from 29% for WCAG AA on green-100 */
+  --st-approved-bg: 141 79% 90%; /* green   */
+  --st-rejected: 0 74% 42%;
+  --st-rejected-bg: 0 93% 94%; /* red     */
+  --st-revisit: 21 90% 35%; /* darkened from 42% for WCAG AA on orange-100 */
+  --st-revisit-bg: 34 100% 92%; /* orange  */
+
+  /* ---- Table / row interaction ----------------------------------------------------- */
+  --row-hover: 210 40% 98%; /* slate-50  */
+  --row-selected: 214 100% 97%; /* blue-50   */
+  --row-selected-border: 214 95% 87%; /* blue-200  */
+
+  /* ---- Dashboard charts (categorical, colorblind-aware, no gradients) -------------- */
+  --chart-1: 221 83% 53%; /* blue   */
+  --chart-2: 142 71% 36%; /* green  */
+  --chart-3: 38 92% 50%; /* amber  */
+  --chart-4: 262 83% 58%; /* violet */
+  --chart-5: 192 91% 36%; /* cyan   */
+  --chart-6: 350 89% 60%; /* rose   */
+
+  /* ---- Shape & type ---------------------------------------------------------------- */
+  --radius: 0.5rem;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
+
+  /* ---- Elevation (3 levels only — no decorative shadows) --------------------------- */
+  --shadow-sm: 0 1px 2px 0 hsl(217 33% 17% / 0.06);
+  --shadow-md: 0 4px 12px -2px hsl(217 33% 17% / 0.1);
+  --shadow-lg: 0 12px 32px -8px hsl(217 33% 17% / 0.18);
+}
+
+.dark {
+  /* ---- Base surfaces (Charcoal + Slate) ------------------------------------------- */
+  --background: 222 28% 9%; /* charcoal                     */
+  --foreground: 210 20% 92%;
+
+  --surface: 222 24% 12%;
+  --surface-muted: 222 20% 15%;
+  --surface-sunken: 222 22% 10%;
+
+  --card: 222 24% 12%;
+  --card-foreground: 210 20% 92%;
+  --popover: 222 24% 13%;
+  --popover-foreground: 210 20% 92%;
+
+  /* ---- Brand stays blue (slightly lighter for dark contrast) ----------------------- */
+  --primary: 217 91% 60%; /* blue-500 */
+  --primary-foreground: 222 28% 9%;
+  --primary-hover: 213 94% 68%; /* blue-400 */
+  --primary-muted: 222 47% 20%; /* deep blue tint for selected rows */
+
+  --secondary: 222 18% 20%;
+  --secondary-foreground: 210 20% 92%;
+  --secondary-hover: 222 16% 26%;
+
+  --muted: 222 18% 20%;
+  --muted-foreground: 215 16% 64%;
+  --accent: 222 18% 20%;
+  --accent-foreground: 210 20% 92%;
+
+  --border: 222 16% 22%;
+  --border-strong: 222 14% 30%;
+  --input: 222 16% 22%;
+  --ring: 217 91% 60%;
+
+  --destructive: 0 63% 50%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 142 60% 45%;
+  --success-foreground: 222 28% 9%;
+  --warning: 38 92% 55%;
+  --warning-foreground: 26 90% 12%;
+  --info: 199 89% 55%;
+  --info-foreground: 222 28% 9%;
+
+  /* ---- Workflow status (dark: lighter fg + deep tinted bg) ------------------------- */
+  --st-pending: 215 16% 70%;
+  --st-pending-bg: 222 16% 20%;
+  --st-assigned: 255 92% 78%;
+  --st-assigned-bg: 258 35% 22%;
+  --st-in-progress: 213 94% 72%;
+  --st-in-progress-bg: 222 47% 22%;
+  --st-submitted: 187 85% 60%;
+  --st-submitted-bg: 193 60% 18%;
+  --st-under-review: 43 96% 60%;
+  --st-under-review-bg: 30 50% 18%;
+  --st-approved: 142 65% 60%;
+  --st-approved-bg: 144 40% 16%;
+  --st-rejected: 0 84% 70%;
+  --st-rejected-bg: 0 45% 20%;
+  --st-revisit: 28 92% 62%;
+  --st-revisit-bg: 24 50% 18%;
+
+  /* ---- Table / row interaction ----------------------------------------------------- */
+  --row-hover: 222 20% 15%;
+  --row-selected: 222 47% 18%;
+  --row-selected-border: 222 47% 28%;
+
+  /* ---- Charts (brightened for dark) ----------------------------------------------- */
+  --chart-1: 217 91% 65%;
+  --chart-2: 142 65% 55%;
+  --chart-3: 38 92% 60%;
+  --chart-4: 262 83% 70%;
+  --chart-5: 192 85% 55%;
+  --chart-6: 350 89% 68%;
+
+  --shadow-sm: 0 1px 2px 0 hsl(0 0% 0% / 0.4);
+  --shadow-md: 0 4px 12px -2px hsl(0 0% 0% / 0.5);
+  --shadow-lg: 0 12px 32px -8px hsl(0 0% 0% / 0.6);
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: var(--font-sans);
+    font-size: 14px; /* data-dense base */
+    line-height: 1.45;
+  }
+
+  /* ===========================================================================
+   * CRM2 UPPERCASE DISPLAY STANDARD (PERMANENT) — matches CRM2 V1 visual style.
+   * VISUAL ONLY: user-visible text renders UPPERCASE via CSS. Stored values are
+   * NEVER transformed (no DB/API/input mutation) — see docs/UPPERCASE_DISPLAY_STANDARD.md.
+   *   • Display surfaces (dashboard/pipeline/cases/tasks/units/tables/cards/labels/
+   *     headings/badges/buttons/selects) → uppercase.
+   *   • EXCLUDED (render original case): editable inputs & textareas (WYSIWYG — the
+   *     screen must equal the stored value), technical/identifier strings (code/pre/
+   *     kbd/samp/.font-mono), external links, and anything tagged .case-sensitive.
+   *   • Render every case-sensitive datum (email, URL, file name, hash, JWT/token,
+   *     API key, OTP, LOS/Application/Bank reference & other external IDs) in
+   *     `.font-mono` or `.case-sensitive` so it is preserved automatically.
+   * =========================================================================== */
+  body {
+    text-transform: uppercase;
+  }
+  /* Form controls don't inherit text-transform from body (UA stylesheet) — force
+     buttons & selects to follow the display policy; inputs/textareas stay verbatim. */
+  button,
+  select,
+  optgroup,
+  option {
+    text-transform: uppercase;
+  }
+  input,
+  textarea,
+  [contenteditable='true'],
+  code,
+  pre,
+  kbd,
+  samp,
+  .font-mono,
+  .case-sensitive,
+  a[href^='http'],
+  a[href^='mailto:'],
+  a[href^='tel:'] {
+    text-transform: none;
+  }
+  /* Consistent keyboard focus across the app (state feedback only, ≤150ms). */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 1px;
+    border-radius: 2px;
+  }
+  ::selection {
+    background: hsl(var(--primary) / 0.18);
+  }
+}

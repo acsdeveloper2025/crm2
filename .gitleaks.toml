@@ -1,0 +1,16 @@
+# CRM2 — secret detection (Part 24). Machine-enforced in CI via gitleaks.
+title = "CRM2 gitleaks"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Local-dev placeholders only — never real secrets."
+regexes = [
+  '''dev-only-insecure-secret-change-me''',
+  '''postgresql://postgres@127\.0\.0\.1''',
+]
+paths = [
+  '''pnpm-lock\.yaml''',
+  '''.*\.example$''',
+]

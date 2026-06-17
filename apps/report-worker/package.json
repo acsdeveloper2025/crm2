@@ -1,0 +1,11 @@
+{
+  "name": "@crm2/report-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "PDF/report worker — runs the acs-api-v2 image with ROLE=report. Implemented in a later build step.",
+  "scripts": {
+    "build": "echo 'report-worker: deploy target over api image (ROLE=report)'",
+    "test": "echo 'no tests yet'"
+  }
+}

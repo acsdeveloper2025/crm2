@@ -1,0 +1,254 @@
+# CRM2 — MASTER MEMORY (Single Source of Truth)
+> 🧭 New here? Start at **[PROJECT_INDEX.md](./PROJECT_INDEX.md)** — the single entry point linking memory · ADRs · standards · governance · security · operations · API/mobile.
+**This file supersedes the 30+ audit/design docs for day-to-day development.** Architecture is CLOSED. Build only. Read this; re-read the audit series only for deep rationale.
+**Repo:** `acsdeveloper2025/acs-crm-2` (PRIVATE) · local folder `crm2/` · package `crm2`. Separate from v1 (`CRM-APP-MONOREPO-PROD`), zero code dependency. Design/audit docs (paper trail) live in the v1 repo's `docs/acs-simplification-audit-2026-06-04/`.
+
+---
+
+## 1 — ARCHITECTURE FREEZE
+
+| Area | Decision | Status | Reason |
+|---|---|---|---|
+| **Infrastructure** | Modular monolith; separate v2 codebase/DB/Redis/API/deploy, co-resident, v1 untouched | 🔒 | ~2 writes/sec peak = 3 orders under one node; microservices unjustified |
+| **Database** | PostgreSQL **17** (PG18 deferred to managed-GA) | 🔒 | RDS-available, stable data-dir layout, banking-conservative |
+| **Redis** | **Valkey 8** (Redis-compatible, BSD-licensed); split **queue (noeviction)** vs **cache (LRU)** instances + HA | 🔒 | license-clean; queue/cache policy conflict forbids one instance |
+| **Storage** | Object store (**MinIO → S3**), immutable+versioned+object-lock, sha256, signed-URL serve; **never local volume** | 🔒 | v1 lost photo bytes on a volume rebuild |
+| **API** | Express modular monolith, ROLE-gated (api/worker/report), stateless JWT + per-route authorize + scope | 🔒 | proven in v1; clean process split |
+| **Frontend** | React 19 SPA (5 screens), feature-first | 🔒 | — |
+| **Reporting** | Views (`v_`) + Materialized Views (`mv_`) via raw-SQL reporting repositories | 🔒 | analytics is raw-SQL territory |
+| **RBAC** | 6 roles, permission-code-driven; default-deny tenancy guard | 🔒 | matches validated v1 seed |
+| **Hierarchy** | central recursive scope (`userScope`/`dataScope` equiv); scope-cache at scale | 🔒 | multi-tenant, scales to 500 |
+| **Navigation** | OPERATIONS (Dashboard·Pipeline·Cases·MIS&Billing·Field Monitoring) + ADMINISTRATION (7) | 🔒 | KYC Queue **merged into Pipeline**; MIS+Billing **merged** |
+| **Verification Units** | one unified catalog (9 field ∪ 59 KYC ≈68), 17 metadata fields, CPV-gated | 🔒 | locked registry |
+| **Task Model** | **Case → Task → Verification Unit** (Decision B: one task table + subtype) | 🔒 | KYC = a subtype, not a separate engine |
+| **Workspace Model** | one Document/Task Workspace (two-pane, status-adaptive); KYC = a mode | 🔒 | = Zion NewDataQC, governed |
+
+---
+
+## 2 — DATA MODEL FREEZE
+
+**Final: `Case → Task → Verification Unit`** (vocabulary "Task" kept; NOT renamed to "Document").
+
+| | Accepted | Rejected | Why |
+|---|---|---|---|
+| **Leaf model** | **B** — one Task table + subtype extensions | A (Case→Task→VerificationType: too coarse, 59 KYC docs collapse to 1) · C (separate field/KYC engines: the dual model we eliminate) · D (Case→Document: "Document" wrong for field visits) | proven by prod evidence (9 vtypes vs 59 doctypes) |
+| **Verification Types** | become FIELD_VISIT units in the unified catalog (9) | the standalone `verification_types` table as the only axis | too coarse for KYC |
+| **Document Types** | become KYC_DOCUMENT units in the unified catalog (59) | `document_types` as the KYC verification axis | unify the catalog |
+| **KYC model** | a **subtype** (kind=KYC_DOCUMENT); KYC_VERIFIER read-only, BE finalizes | the parallel `kyc_verification_cycles` engine + synthetic KYC vtype | greenfield removes the v1 artifact; reverification = a new Task with lineage |
+| **Reverification** | one verb: clone-to-new-Task with lineage (revisit=field, recheck=KYC) | separate cycle table | structurally identical |
+| **Billing model** | per **completed Task**; profile decides path: `AGENT_COMMISSION` (field) / `CLIENT_INVOICE` (KYC) | per-cycle billing engine | one granularity |
+| **Commission model** | per completed Task, **field-kind units only** | KYC commission | KYC is invoice-only |
+
+> Earlier docs recommended **C (hybrid)** — that was correct **for v1 retrofit** (don't disturb the shipped KYC engine). v2 is greenfield → **B**. No live contradiction; B supersedes C for v2.
+
+---
+
+## 3 — UI/UX FREEZE
+
+- **Design style:** 80% **Twenty CRM** (adopt) · 10% **Linear** (⌘K, speed, density) · 10% **Salesforce** (grid patterns; reject chrome). Phantom UI rejected; Notion typography-only.
+- **Rejected aesthetics:** neobrutalism, glassmorphism, heavy gradients, decorative motion (motion ≤150ms, state-feedback only).
+- **Theme:** light = default, dark = optional (`.dark` swaps CSS variables). No `dark:` overrides in components.
+- **Design tokens:** `packages/ui-theme` (tokens.css CSS variables + tailwind preset) — the **only** color source. No hardcoded colors / no page-specific palettes.
+- **Components:** shadcn/ui (copied into `acs-web-v2/src/components/ui`, owned in-app), Radix primitives, lucide-react icons, sonner toasts, RHF + zodResolver. Loading/empty/error states mandatory.
+- **Pagination, loading & long-running ops (FROZEN 2026-06-05):** SoT `docs/PAGINATION_AND_LOADING_STANDARDS.md` + `UI_STANDARDS.md`. Every list is **server-side paginated** (default 25; 25/50/100/200; max 500 MIS-only; `>500` forbidden; single envelope `{items,totalCount,page,pageSize,totalPages,sort,filters}`; params `page/limit/search/sortBy/sortOrder/filters`) and **search-first**. Loading bands: 0–300ms none · 300ms–1s skeleton · 1–3s loader+% · 3–8s loader+%+operation · **>8s background job**. **Hexagon loader** with **real** stage-based % (no spinners/old bars/bouncing dots); **skeleton rows** on tables. Exports + any `>8s` op = background jobs (bell/toast/in-app). DB: indexes, no `SELECT *`, no full scans, `EXPLAIN` reviewed.
+- **Universal DataGrid (FROZEN 2026-06-05):** SoT `docs/DATAGRID_STANDARD.md`. **ONE** table component for the whole platform = `apps/web/src/components/ui/data-grid/` (conceptual `@crm2/ui/DataGrid`; app-internal — **no `@crm2/ui` package**, per §4). **TanStack Table** foundation + TanStack Query + URL state + `@crm2/sdk`. 20 mandatory features (global+column search, Excel-style header filters, multi-column filter, server sort/pagination, column visibility, saved views, export-current-view XLSX/CSV via job, URL-state persistence, loading/empty/error/permission states, row selection, bulk actions, sticky headers, responsive, keyboard nav, a11y). **Server-side only** for search/filter/sort/pagination — no client-side ops on operational data. No custom/page-specific/raw tables (fails review). Built once at the first operational list; pre-freeze tables retrofit (§8). CI gates 45–48.
+- **Concurrency & editing (FROZEN 2026-06-05):** SoT `docs/CONCURRENCY_AND_EDITING_STANDARD.md` (ADR-0019). **Optimistic Concurrency Control** for ALL admin editing: `version int` on every editable table; guarded `UPDATE … SET …, version=version+1, updated_at=now(), updated_by=$actor WHERE id=$id AND version=$expected RETURNING …`; 0 rows → **404** or **409 `STALE_UPDATE`** (+`current`); updates **require** version (else **400 VERSION_REQUIRED**); reads return version; multi-stmt = `withTransaction`; every change appends an **immutable** audit/history row; **bulk = per-row OCC** partial-success (large=job); FE **Conflict dialog** (reload & re-apply / discard) — **no silent overwrite, no pessimistic locks**. CI gates 51–53. Current code is last-write-wins → retrofit cohort C-10 (`version` missing on ~9 tables; only `rates` has change history).
+- **Responsive-First Web Design (FROZEN 2026-06-05):** SoT `docs/RESPONSIVE_DESIGN_STANDARD.md`. The web app is **responsive-first / device-agnostic** — every screen designed **mobile-up** (320 → 768 → 1024 → 1440), **no desktop-only design, no horizontal overflow**. Responsive nav (persistent sidebar `lg+`, **hamburger→Sheet `<lg`**), grids mobile-up (`grid-cols-1 md:…`, never bare `grid-cols-N`), dialogs `w-full`+scroll/Sheet, filters `flex-wrap`. **Table strategy:** desktop DataGrid → tablet condensed → **mobile card/list** (never a wide table on a phone; interim tables min. `overflow-x-auto`). Playwright viewport testing required (320/768/1024/1440); CI gates 49–50. Scope = WEB only (NOT offline/mobile-app/mobile-workflow first). Pre-freeze screens = retrofit cohort (§8). Change only via superseding ADR + CTO + owner.
+- **Universal Import/Export (FROZEN 2026-06-05):** SoT `docs/IMPORT_EXPORT_STANDARD.md`. First-class platform capability, NOT per-module. **Export = the DataGrid is the sole export surface** (Current View · Selected Rows · All Matching; XLSX/CSV/PDF; respects search/filters/sort/columns/saved-view; `<10k` immediate, `≥10k` background job). **Import = one `@crm2/import-engine`** (app-internal — `apps/api/src/platform/import/`, contracts in `@crm2/sdk`; a real package needs an ADR) with the fixed flow template→fill→upload→validate→preview→confirm→background→result (Total/Success/Failed/Duration + error file) + permanent import audit; domains plug in Template/Validator/Mapper/Processor only. Import-enabled: Clients/Products/VU/CPV/Rates/Country/State/City/Pincode/Users/Case-Creation/Bulk-Assignment. Forbidden import: audit/billing/commission/system/notification history. Build DEFERRED (gaps registry B-13/B-14); standard LOCKED now so the first build is the reusable one.
+
+---
+
+## 4 — TECHNOLOGY FREEZE
+
+| Tech | Version |
+|---|---|
+| Node.js | 22 LTS |
+| TypeScript | 5.7+ |
+| React | 19 |
+| React Router | 7 |
+| TanStack Query | v5 |
+| Tailwind CSS | v4 |
+| shadcn/ui | latest (owned in-app) |
+| Radix UI | latest |
+| **Prisma** | **❌ REJECTED** |
+| PostgreSQL | 17 |
+| Valkey | 8 (Redis-compatible) |
+| Vitest | v3 |
+| Playwright | latest 1.x |
+| pnpm | 10 |
+| Turbo | 2 |
+| Zod | 3 |
+| Docker | Engine 27 + Compose v2 |
+| Edge | nginx |
+| OpenAPI | zod-to-openapi (emit) + openapi-typescript (consume) |
+
+**Prisma — REJECTED.** Every core table is integrity-heavy in ways `schema.prisma` can't model (CHECK, triggers, partitioning, partial-unique, recursive CTE) → a partial schema + raw-SQL on every table + drift risk. Hybrid (Prisma-CRUD + views-reporting) evaluated and rejected: the *transactional core*, not just reporting, fights Prisma. **Primary = raw `pg` + repository + zod.**
+
+**Canonical packages (5):** `ui-theme · sdk · access · config · test-utils`. No `@crm2/contracts` (merged into sdk), no `@crm2/ui` (app-internal). → The frozen **Universal DataGrid** (`docs/DATAGRID_STANDARD.md`) is therefore owned **in-app** at `apps/web/src/components/ui/data-grid/`, NOT a package (the spec's `@crm2/ui/DataGrid` is conceptual).
+
+**Table framework (FROZEN 2026-06-05):** **TanStack Table** (headless) is the only table foundation — the Universal DataGrid is built on it. No alternative table framework. Server-side search/filter/sort/pagination via `@crm2/sdk` (`docs/DATAGRID_STANDARD.md`).
+
+**Platform-capability locations (FROZEN 2026-06-05):** SoT `docs/PLATFORM_CAPABILITIES_OWNERSHIP.md`. All app-internal; **package extraction DEFERRED**. **DataGrid** → `apps/web/src/components/ui/data-grid/` (deps TanStack Table/Query · `@crm2/sdk` query+envelope · `@crm2/ui-theme` tokens · `@crm2/access` perms). **Import engine** → `apps/api/src/platform/import/` + `apps/worker/` (jobs) + web `components/import/` + `@crm2/sdk` contracts. **Export engine** → `apps/api/src/platform/export/` + `apps/report-worker/` (≥10k jobs) + DataGrid export menu. Package scope clarified (not expanded into new packages): ui-theme=grid/filter/skeleton/dialog token classes (tokens-only) · logger=import/export/job **audit logs** · sdk=import/export/saved-view/DataGrid-query **contracts** · access=`data.import`/`data.export` · config=limits+storage+queue.
+
+---
+
+## 5 — DATA ACCESS FREEZE
+
+- **Repository pattern:** per-domain `repositories/` — `<entity>.repository.ts` (transactional CRUD) · `<entity>-report.repository.ts` (raw-SQL analytics, read-only) · `<entity>-view.repository.ts` (reads `v_`/`mv_`) · shared `scope.repository.ts` (recursive CTE). Typed camelCase returns; parameterized; services→repos→db, no layer-skips.
+- **Reporting:** Dashboard/MIS → `mv_*` (worker-refreshed CONCURRENTLY); Billing/Commission → raw-SQL repos + `mv_*` rollups; TAT → `v_*` live.
+- **Views:** `v_` live / `mv_` precomputed; defined in migrations; consumed only via view repositories.
+- **✅ Raw SQL allowed:** repositories + migrations (views/triggers/CHECK/partitions/recursive/aggregations), always parameterized.
+- **❌ Raw SQL forbidden:** controllers, services (business logic), UI handlers, string-interpolated user input, analytics in a transactional repo.
+
+---
+
+## 6 — NAMING STANDARD
+
+| Layer | Convention | Example |
+|---|---|---|
+| PostgreSQL | `snake_case` | `verification_units.required_form_code` |
+| snake→camel bridge | `camelize()` at repo edge (no ORM) | → `requiredFormCode` |
+| API payloads | `camelCase` | `{ requiredFormCode }` |
+| Backend TS | `camelCase` | `verificationUnitService` |
+| Frontend TS | `camelCase` | `useVerificationUnits` |
+| Routes | `kebab-case` | `/api/v2/verification-units` |
+| Env vars | `UPPER_SNAKE_CASE` | `DATABASE_URL` |
+| **Redis/Valkey keys** | `lower:colon:namespaced` | `vu:list:<scope>`, `scope:user:<id>`; BullMQ job IDs use `__` not `:` |
+| Domain CODE values | `UPPER_SNAKE` | `RESIDENCE`, `KYC_DOCUMENT` |
+
+SQL stays snake, TS stays camel, single conversion at `camelize()`. Never `AS "camelName"`, never `row.snake_case`.
+
+---
+
+## 7 — SECURITY FREEZE
+
+- **RBAC (amended by ADR-0022 "Access Control 2.0", owner-signed 2026-06-10):** roles are DATA — the 6 system roles above are seeded rows (`roles` table, delete/deactivate-locked; SUPER_ADMIN fully locked via `grants_all`) and the admin can create CUSTOM roles; the role→permission mapping is DB-editable (`role_permissions`; the permission CATALOG stays code-owned in `@crm2/access`); zero role-name literals in api business logic (CI drift-gate). Day-0 seed = the matrix described here (parity-tested).
+- **Hierarchy (amended by ADR-0022):** per-ROLE visibility mode (`roles.hierarchy_mode`: ALL/SUBTREE/DIRECT_TEAM/SELF; seeded SA=ALL · MANAGER=SUBTREE · TL=DIRECT_TEAM · others=SELF) + per-role scope-DIMENSION wiring (`role_scope_dimensions`, EXPAND/RESTRICT over the code-owned 7-dimension registry: CLIENT/PRODUCT/PINCODE/AREA/STATE/CITY/VERIFICATION_TYPE) + ONE generic `user_scope_assignments`. Visibility = `(hierarchy OR expand) AND restrict`, fail-closed at every layer (`platform/scope`).
+- **Scope enforcement:** **default-deny tenancy guard** — every list/read route declares scope or the app refuses to boot (kills the cross-tenant-leak class). Record-level access validation on detail routes.
+- **Audit logging:** append-only, hash-chained, partitioned monthly, off-DB copy; immutable grant.
+- **PII/DPDP:** `pii_sensitive` flag on units (day-1, auto-true for IDENTITY/FINANCIAL) → drives masking/field-encryption; consent + retention + legal-hold columns in the schema from day 1 (retrofitting after millions of PII rows is the one expensive late change).
+- **Other invariants:** two-layer result (immutable FE/verifier + append-only backend), §65B sha256 evidence, scoped signed-URL serve, JWT stateless + refresh denylist, status-transition trigger.
+
+---
+
+## 7.5 — ENGINEERING ENFORCEMENT FREEZE (machine-enforced, 2026-06-04)
+
+All engineering discipline is enforced by tooling, not convention. **Source of truth = `docs/CI_CD_STANDARDS.md` (enforcement matrix, 40 rules → mechanism → file).** Rule files: `AGENT_RULES.md`, `CTO_RULES.md`, `CONTRIBUTING.md`, `DEVELOPMENT_WORKFLOW.md`, `BUILD_GUIDE.md`, `ALLOWED_DEPENDENCIES.md`, `docs/UPPERCASE_DISPLAY_STANDARD.md`, `docs/COLOR_SYSTEM_FREEZE.md`.
+
+- **TypeScript:** all strict flags (`tsconfig.base.json`: strict + noUncheckedIndexedAccess + exactOptionalPropertyTypes + noImplicitOverride + noFallthroughCasesInSwitch + noPropertyAccessFromIndexSignature). `any`/`@ts-ignore`/`@ts-nocheck`/`@ts-expect-error` forbidden — no override.
+- **ESLint** (`eslint.config.js`, flat): bans `any`, ts-suppressions, **all `eslint-disable`** (`noInlineConfig` + `scripts/check-suppressions.mjs` fails CI on presence), `console.*`, TODO/FIXME/HACK/TEMP, magic numbers (business layer), FE raw `fetch`/`axios`, controller→repository imports.
+- **Prettier** (`.prettierrc.json`) `--check` in CI. **Centralized logger** `@crm2/logger` (trace/debug/info/warn/error/fatal). **Structured errors** `AppError`+`ErrorCode` (`platform/errors.ts`); no bare `throw new Error`.
+- **Boundaries** (`.dependency-cruiser.cjs`): no-circular, DB-access-only-in-repositories, controller→service→repository, no-cross-feature-internals. **Secrets** gitleaks (`.gitleaks.toml`). **Dead-code** knip (report). **Coverage** repos/services ≥90 / overall ≥80.
+- **CI** (`.github/workflows/ci.yml`) 9-gate order + secret-scan + boundaries + no-suppressions + migration-idempotency; any failure blocks merge. Local: `pnpm verify`. Pre-commit: husky + lint-staged.
+- **Pending-activation gates** (wired, fire when the module lands): OpenAPI/SDK drift (21), Playwright E2E + axe a11y (19/29), N+1 query tests (23), per-domain audit/transaction/soft-delete/feature-flag tests (32–35).
+- Verdict: **"CRM2 Engineering Enforcement Freeze Applied and Machine-Enforced."** Whole toolchain green on the existing slice (typecheck 8/8 · lint · format · boundaries · 26 tests · build).
+
+---
+
+## 7.6 — LONG-TERM GOVERNANCE & STABILITY FREEZE (2026-06-04)
+
+Governance/operations docs so the system stays maintainable, secure, scalable, recoverable for 5–10 years. **No architecture/UI/data-model change — governance only.** Future sessions load architecture+data-model+tech+security+governance+operations+standards+build-order from these without re-auditing.
+
+- **Decisions:** `docs/adr/` — ADR standard + ADR-0001..0019 (VU model · Case→Task→Unit · PG17 · No-Prisma · Repository pattern · Workspace · Naming · Design system · Feature flags · Reporting · API versioning · Mobile · Governance · Auth · Case Workspace · Rate Mgmt [0016 superseded] · Effective-From · Rate Mgmt flat [0018]). Any change to a frozen decision = a NEW superseding ADR + CTO + domain-owner sign-off.
+- **Business rules:** `BUSINESS_RULES.md` (BR-001…, 12 domains) — no business rule may live only in code.
+- **API:** `API_VERSIONING_POLICY.md` (/api/v2, no silent breaking change) · `DOCUMENTATION_AS_CODE.md` (OpenAPI=API SoT, migrations=DB SoT, SDK=FE-contract SoT).
+- **DB:** `DATABASE_CHANGE_PROCESS.md` (DDL only via migrations; DDL/impact/migration/perf review; no direct schema edits).
+- **Pagination/loading/long-running ops (FROZEN 2026-06-05):** `docs/PAGINATION_AND_LOADING_STANDARDS.md` (SoT) · `UI_STANDARDS.md` · `PERFORMANCE_STANDARDS.md` · CI gates 40–44 in `docs/CI_CD_STANDARDS.md`. Server-side pagination + search-first on every list; loading time-bands + Hexagon loader + real progress; `>8s`/exports = background jobs. Change only via superseding ADR + CTO + owner.
+- **Universal DataGrid (FROZEN 2026-06-05):** `docs/DATAGRID_STANDARD.md` (SoT) · `UI_STANDARDS.md` · CI gates 45–48. ONE in-app TanStack-Table DataGrid is the only data table (20 features: search/filter/sort/paginate server-side + saved views + export-current-view + URL state + a11y); no custom/raw tables, no `@crm2/ui` package. Change only via superseding ADR + CTO + owner.
+- **Architecture governance / drift-prevention (FROZEN 2026-06-05):** build-phase risk = drift (multi-agent parallel). SoT = **`docs/FROZEN_DECISIONS_REGISTRY.md`** (32 LOCKED decisions, 33 rows incl. #29 superseded→0018: decision·status·ADR·enforced-by·owner·date) + **`docs/ARCHITECTURE_GOVERNANCE.md`** (no-new-architecture rule + 5-step change process) + **`FREEZE_LOCK_REPORT.md`** (per-decision enforcement) + **`ARCHITECTURE_CHANGE_REQUEST.md`** (ACR template). **No agent introduces a new pattern/framework/ORM/grid/design-system/component-lib/auth/API/logging/test/package/folder architecture without ADR+Impact+Alternatives+Migration+CTO. Default = REUSE, never reinvent. Quality gates ratchet up only.** Registry rows are append-only (supersede, never edit/delete). **Institutional-memory ledger = `docs/COMPLIANCE_GAPS_REGISTRY.md`** — every audit finding ends FIXED/DEFERRED/RATCHET/WONTFIX with evidence (never silently removed): A=fixed (coverage gate `642c362`), B=deferred (DataGrid/pagination/filters/saved-views/skeletons/Hexagon/Playwright/OpenAPI/SDK-drift), C=retrofit (6 bespoke tables→DataGrid), D=blockers NONE, E=ratchet (api cov 85.7→90, branch 59→85), F=audit history.
+- **Resilience:** `DISASTER_RECOVERY.md` (backup/restore/failover; **quarterly restore drill mandatory — backup ≠ recoverable**) · `DATA_RETENTION_POLICY.md` (per-entity retention; legal-hold).
+- **Security:** `SECURITY_STANDARDS.md` (dep review · vuln scan · secret rotation · RBAC review · permission audit — cadence table) · `SECURITY_GUIDE.md` (practitioner).
+- **Ownership/protection:** `DOMAIN_OWNERSHIP.md` (every domain owned; unowned blocks release) · `LONG_TERM_PROTECTION.md` (15 load-bearing elements that need architectural review to change).
+- **Quality/ops:** `TEST_DATASET_STRATEGY.md` (permanent golden dataset; every release validated) · `UPGRADE_POLICY.md` (Node/React/PG; no unmanaged drift) · `PERFORMANCE_STANDARDS.md` (<2s budgets) · `OBSERVABILITY_STANDARDS.md` + `MONITORING_STRATEGY.md` (logs/traces/metrics/alerts + synthetic flows) · `OPERATIONS_GUIDE.md` + `runbooks/` (api/db/redis/report-worker/storage/queue/deploy) · `RELEASE_GUIDE.md` + `RELEASE_CHECKLIST.md` · `TECH_DEBT_POLICY.md` (maintenance budget per cycle).
+- **API versioning + mobile (2026-06-04, FROZEN):** format `/api/v1,/v2,/v3`; current **`/api/v2`**; no unversioned paths; additive-only; no silent breaking change (`API_VERSIONING_POLICY.md` + ADR-0011). **ONE internal contract `/api/v2/*` serves BOTH web AND the existing mobile app** (`crm-mobile-native`, separate repo, first-class consumer — never break it). **NO separate `/api/mobile` or `/api/external/v1` surface** (premature complexity; external portals get `/api/external/v1` only when a real bank/client party exists). SDK (OpenAPI-generated, major matches API version) = the only integration layer for web+mobile; **DB version ≠ API version**. `MOBILE_API_COMPATIBILITY_MATRIX.md` = the **connection plan** mapping the existing mobile `/api/mobile/*` calls → `/api/v2/*` (do BEFORE building Cases/Tasks/Workspace). **CI gate: web + mobile contract tests both must pass** (activate w/ SDK phase). ADRs **0001–0019**. **`PROJECT_INDEX.md` = single entry point.**
+- All docs are policy/process; infra not yet built (Valkey/MinIO/workers/synthetics) is marked PLANNED. Verdict: **"CRM2 Long-Term Governance & Stability Freeze Applied."**
+
+---
+
+## 8 — IMPLEMENTATION STATUS
+
+| Item | Status |
+|---|---|
+| db/v2 migration 0001 — verification_units + CPV (CHECK invariants) | ✅ Built (source; not applied to a DB) |
+| db/v2 migration 0002 — clients/products/client_products + CPV FK | ✅ Built (source) |
+| db/v2 seed — 9 field + 59 KYC units | ✅ Built |
+| `@crm2/ui-theme` (tokens + tailwind preset) | ✅ Built |
+| `@crm2/access` · `@crm2/config` · `@crm2/sdk` · `@crm2/test-utils` | ✅ Built |
+| Verification Units API (repository/service/controller/routes/RBAC guard) | ✅ **Verified** — 9/9 integration tests green vs ephemeral PG; 7 latent bugs fixed |
+| Verification Units tests (contract + integration) | ✅ **Run green** — sdk contract 13/13 + api 9/9 (ephemeral PG18 harness; Docker down, freeze PG17 prod-only) |
+| Verification Units UI (list/dialog/layout) | ✅ **Token-migrated + browser-verified** (light+dark, zero hardcoded colors) |
+| **Color system / design tokens** | ✅ **PERMANENT FREEZE** — blue primary/slate secondary, Inter+JetBrains, status[8]+chart[6]+surface/table/focus, shadcn map, self-hosted fonts (`docs/COLOR_SYSTEM_FREEZE.md`) |
+| App scaffold (api bootstrap, web vite, workspace, turbo) | ✅ Built (typecheck 8/8, build) |
+| `@crm2/logger` (centralized 6-level structured logger) | ✅ Built + tested (4/4) |
+| **Engineering enforcement toolchain** (TS strict · ESLint · Prettier · husky/lint-staged · dependency-cruiser · knip · gitleaks · CI 9-gate) | ✅ **Applied + machine-enforced** (`pnpm verify` green) — see §7.5 |
+| worker / report-worker | 🟥 Not Started (stubs only) |
+| Clients / Products / CPV API+UI | ✅ **Built + verified** — modules `clients`/`products`/`cpv` (repo/service/controller/routes/RBAC), `@crm2/sdk` contracts + client methods, `masterdata.manage` perm (SUPER_ADMIN), web Clients/Products (shared `MasterDataCrud`) + CPV two-pane mapping page, nav+routes. 34 api integration tests + sdk contract specs green vs ephemeral PG; `pnpm verify` green. |
+| Rate Management (admin) API+UI — **FLAT model (ADR-0018, supersedes ADR-0016)** | ✅ **Built + verified** — `rates` + `rateTypes` modules. Migrations `0003` (initial flat) → `0012` (added the 4-table ADR-0016 model) → **`0013` flatten** (DROPPED `rate_type_eligibility`+`service_zone_rules`+eligibility trigger+`rate_type_id` FK; merged geography `location_id` + free-text `rate_type` onto `rates`) → **`0014`** read-only `rate_types` lookup (18 codes). A rate = ONE effective-dated row `(client,product,VU,location,rate_type)→amount`; KYC nulls location/rate_type. ONE searchable table UI (pincode→area cascade, Kind-gating). Owner reversed the 4-table design mid-build. ₹ UI; api tests; browser-verified (commits `0bda469`/`6615f1c`). |
+| Location Management (admin) API+UI + **official all-India pincode import** | ✅ **Built + verified** — `locations` (pincode·area·city·state·**country**), migration 0004+0006; seed = official Dept-of-Posts All-India Pincode Directory 157,072 rows / 19,300 pincodes / 36 states (commit `46e63b5`). **RULE: a pincode maps to MANY areas** (uq on pincode+area). |
+| User Management (admin) API+UI | ✅ **Built + verified** — `users` module + migration `0007_users.sql` (uuid id, unique immutable `username`, name, email, role∈6 CHECK, `reports_to` self-FK + not-self CHECK, is_active; seeds the dev SUPER_ADMIN so the dev auth seam resolves). New RBAC `page.users`/`user.manage` (SUPER_ADMIN only, default-deny). `@crm2/sdk` `users.ts` (USER_ROLES mirrors `@crm2/access` ROLES **by contract** — sdk stays a zero-internal-dep leaf) + client methods. Dedicated `features/users/UsersPage.tsx` (table username·name·role·reports-to·created·updated·status + dialog w/ manager picker). 11 api + 9 sdk contract tests green; `pnpm verify` green; **live browser create + manager hierarchy verified persisted** (priya_mgr MANAGER, arjun_fa→Priya, zero console errors). **CREDENTIALS/AUTH DEFERRED** — identity-only; passwords/login/JWT are a separate architecture phase. |
+| Access Control (admin) — read-only RBAC matrix | ✅ **Built + verified** — `access` module (NO DB): `@crm2/access` gains `PERMISSION_META` (label+group) + `buildAccessMatrix()` + new `page.access` perm (SUPER_ADMIN only); read-only `GET /api/v2/access/matrix`; `@crm2/sdk` `AccessMatrix` contract + `access.matrix()`; grouped role×permission grid (✓/—). **Read-only by design** — RBAC is code-defined/default-deny/frozen; editing it is a code change + ADR, not an API. 3 api tests; live browser verified the grid matches `ROLE_PERMISSIONS`. |
+| Report Templates (admin) API+UI | ✅ **Built + verified** — `reportTemplates` module + migration `0008_report_templates.sql` (code UPPER_SNAKE immutable, name, `template_type` CHECK, `content` text body, is_active). Authoring CRUD keyed by the SAME `FIELD_NARRATIVE`/`KYC_DOCUMENT` set the VU registry carries (`REPORT_TEMPLATE_TYPES` reused from `verificationUnit.ts` — single source). New RBAC `page.templates`/`report_template.manage` (SUPER_ADMIN only) + PERMISSION_META (shows in Access Control matrix). 9 api + 5 sdk tests; live browser create+edit verified. **Report rendering engine (Handlebars→PDF) + CPV-scoped template overrides DEFERRED to the reports/operations phase.** |
+| System Health (admin) API+UI | ✅ **Built + verified** — `system` module (NO DB migration, read-only): `GET /api/v2/system/health` returns status (ok/degraded) · environment · DB connectivity + round-trip latency · DB-authoritative server time · master-data record counts. Degrades gracefully on a DB outage (never 500). RBAC `page.system` (SUPER_ADMIN only) + PERMISSION_META. `@crm2/sdk` `SystemHealth` + `system.health()`; web auto-refreshing diagnostics cards + counts grid. 4 api tests; live browser verified (CONNECTED · ~30ms, counts incl. locations 157,072). Key-value settings store DEFERRED (not concretely specified). |
+| **✅ ADMINISTRATION COMPLETE** (10/10: VU·Clients·Products·CPV·Rates·Locations·Users·Access Control·Templates·System) | ✅ All built + browser-verified. **NEXT = Authentication (B-15, gates GA), then OPERATIONS** (Cases→Tasks→Assignment→Workspace→Reports→MIS→Billing). |
+| **Authentication — backend** (login / JWT-pair + refresh / logout / me / set-password) | ✅ **Built + verified** (ADR-0014) — migration `0009` (users.password_hash + `auth_refresh_tokens` rotation/denylist; seeds dev admin `admin123`); scrypt passwords (built-in, no dep) + `jose` HS256 JWT (access 15m stateless, refresh 30d rotating single-use); `POST /api/v2/auth/{login,refresh,logout}` + `GET /me`; `authenticate` middleware (Bearer→req.auth, wins over dev seam); admin `POST /users/:id/password`. Mobile contract honored. 8 auth + 4 password tests; **live HTTP E2E** (login/me/refresh-rotate/logout-revoke/Bearer-drives-RBAC) all pass. |
+| **Authentication — web login UI + dev-seam cutover** | ✅ **Built + verified** — `lib/auth.ts` (localStorage token store), `lib/sdk.ts` rewritten (Bearer + single-flight 401→refresh→retry→else-logout), `lib/AuthContext.tsx` (AuthProvider bootstraps via `/me`, login/logout; App gates to LoginPage), `features/auth/LoginPage.tsx`, Layout user+role+Sign Out footer. **Web `x-test-auth` dev seam REMOVED** (real JWT now). Browser E2E: login/Bearer-data/bad-creds-error/Sign-Out/reload-persist, zero console errors. (Backend `testAuth` seam kept non-prod for integration tests.) Refresh-revoke-on-password-change still deferred (short access TTL mitigates). |
+| **Case Creation (operations)** — Zion single-page + mandatory dedupe | ✅ **Built + verified** — migration `0010` (cases · case_applicants [primary+co-applicants] · case_tasks · case_number seq · mandatory-dedupe columns). Modelled on Zion/RTRONS `NewDataEntry`: search-first dedupe gate (exact name/mobile/PAN OR-match across ALL applicants, v1 logic, advisory inline — no popup), **Create blocked until search**; duplicates → operator records CREATE_NEW + rationale (else NO_DUPLICATES_FOUND), persisted on case. Documents = CPV-enabled units × quantity (Zion "Document Type × NO OF"), un-enabled → 400; adding tasks NEW→IN_PROGRESS. `/api/v2/cases` (dedupe·available-units·create·:id/tasks·list·:id). Web single-page New Case + list + detail; Cases nav on. 7 api + 6 sdk tests; live browser E2E (CASE-000001 no-dup, CASE-000002 CREATE_NEW+rationale). commit `7977da7`. |
+| **Case Workspace & Reporting design FREEZE** (ADR-0015) | ✅ **Frozen (design; build DEFERRED)** — single-page work surface (per-task data-entry/MIS · assignment · FE-mobile images+data · report entry · auto-gen · per-task PDF/Word/Excel · Final Status+Case Report) + config-driven **per-client+product** template engine (two kinds **MIS_EXCEL** + **CASE_REPORT**; PDF/WORD/EXCEL; field/column mapping incl FE-mobile data+images+seal; admin Template Designer; 200+ formats = config). SoT `docs/CASE_WORKSPACE_AND_REPORTING_FREEZE.md`; supersedes type-only Report Templates (0008). Gaps B-17/18/19. |
+| **Task Assignment (operations)** — ADR-0015 step 1 | ✅ **Built + verified** — migration `0011` (case_tasks gains `visit_type` SITE/NO_VISIT · `distance_band` LOCAL/OGL · `bill_count` · `assigned_by` · `assigned_at`, CHECK-constrained). API: `GET /cases/:id/assignable-users` (**hierarchy-scoped**: SA=all · MANAGER=recursive `reports_to` subtree · TEAM_LEADER=direct reports; pool = active FIELD_AGENT/KYC_VERIFIER), `POST /:id/tasks/:taskId/assign` + `/unassign` (perm `case.assign`; scope-guards the assignee → 400 INVALID_ASSIGNEE; terminal task → 409 TASK_NOT_ASSIGNABLE; PENDING↔ASSIGNED). @crm2/sdk VISIT_TYPES/DISTANCE_BANDS/AssignTaskSchema/AssignableUser; CaseTaskView gains assignee/visit/distance/bill. Web CaseDetailPage inline assign panel (role-gated). 6 api + sdk tests; live browser E2E (assign RAVI FIELD/SITE/LOCAL → reassign → unassign, persisted). commit `22a56c0`. **Territory (pincode/area) matching DEFERRED** — v2 cases/users carry no location yet (gap B-20). |
+| **Effective-From temporal usability gating** (master data) — ADR-0017 | ✅ **Built + verified** — migration `0015` adds user-settable `effective_from timestamptz NOT NULL DEFAULT now()` to the 7 master-data tables (backfill `= created_at`; index on locations/users) **+ migration `0016` extends it to the 2 CPV join tables** (`client_products`, `client_product_verification_units`). Rule **USABLE ⇔ `is_active AND effective_from <= now()`**: `?active=true` on every master-data list = USABLE; hard-coded operational reads gated (auth login · cases availableUnits/allUnitsEnabled gating vu+cp+cpvu · assignableUsers · rateTypes lookup · locations pincode cascade). `effectiveFrom` settable on create/update across all modules + SDK; admin lists show an Effective From column + ACTIVE/SCHEDULED/INACTIVE status (`StatusChip`/`effectiveStatus`/`toDateInput`/`toIsoDate`). **CPV UX fix (Finding A):** verification-unit mapping was hidden behind a bare accordion chevron → added an active unit-count column + explicit "Manage units" action. SoT `docs/EFFECTIVE_FROM_STANDARD.md`; FROZEN #30. **No `effective_to`** on master data (is_active ends a row). api 113 tests (gating in clients/auth/cases/cpv) + `pnpm verify` green; live dev-API + browser verified (SCHEDULED chip; hidden from `active=true`). |
+| **Pipeline (operations)** — task lists & assignment workbench | ✅ **Built + verified (2026-06-11, commits `12ba6b5`+`66d97db`+`fcce76e`)** — design `docs/specs/2026-06-11-pipeline-design.md`. `/api/v2/tasks` (Paginated TaskView, scoped at TASK level — `DimensionDef.taskPredicate`, VT task-grain leg) + `/stats` + `/export` + `/assignable-users?taskIds=` (intersection) + `/bulk-assign` (per-row OCC). Migration `0036`: `case_tasks.version` + append-only `task_assignment_history` + indexes. Assignment writes OCC- AND scope-guarded (out-of-scope = 404; closed the unguarded-assignment IDOR); eligibility = unit.worker_role ∩ hierarchy ∩ territory (located cases, fail-closed). Web `/pipeline` (nav ON): Universal DataGrid + status bucket bar + bulk-assign dialog + export; CaseDetail panel versioned + ConflictDialog. Closes the B-20 residuals + activates the AC2.0 VT/task-level deferrals. api 489 · sdk 81 · Playwright 81. |
+| Verification Workspace / Reports / MIS / Billing (operations) | 🟥 Not Started (next: **Verification Workspace** [keystone, single page] per ADR-0015) |
+| **Pagination + DataGrid retrofit** (pre-freeze lists/tables) | ✅ **COMPLETE 2026-06-06** (LOCAL/unpushed `4e7a8fd`→`6b2bf77`). All list endpoints on the `{items,totalCount,page,pageSize,totalPages,sort,filters}` envelope + the Universal DataGrid: clients/products (reference C-1 `4e7a8fd`) · users/verification_units/report_templates (C-6/C-2/C-7 `9c5fb5c`) · locations[157k]+migration 0020 trgm/sort indexes (C-5 `29ca2b0`) · cases + additive DataGrid `onRowClick` (C-8 `36a633b`) · rates incl. effective-dated/history/KYC-null + global search + Revise/History dialogs (C-4 `6b2bf77`). **Only C-3 CPV stays bespoke** (master-detail accordion; DataGrid core has no row-expansion — out of scope). Array-by-design endpoints kept as arrays: `/locations/pincodes`, `/cases/dedupe|available-units|assignable-users`, `/rates/:id/history`. Each slice: green `pnpm verify` (api 165→192·sdk 62) + Playwright 61/0 + Audit Panel (ledgers `docs/agents/*.md`). Skeleton loaders in the grid; Hexagon loader + advanced features (B-3..B-6/B-13/bulk/keyboard-nav) still DEFERRED. No NEW list ships without pagination + DataGrid. |
+| **Advanced DataGrid features** (B-22/B-6/B-3/B-4/B-13…) | 🟡 **IN PROGRESS** (LOCAL/unpushed). ✅ DONE: B-22 options · B-6 column visibility · B-3 column filters (all 8 lists) · B-4 Excel header multi-select · CPV effective-from edit · ADR-0020 correctable keys. **✅ B-13 EXPORT — engine + current-view/all-matching (XLSX/CSV, `<10k` sync) on ALL 7 ADMIN LISTS (clients·products·VU·users·templates·locations·rates) (2026-06-07; reference 7-dim Audit ALL PASS + rollout CTO-discharged consistency audit; api 223→277·sdk 63→70·Playwright 64→65).** Backend-owned builders at `apps/api/src/platform/export/` (RFC-4180+CWE-1236 CSV · exceljs XLSX lazy-import · `selectColumns` visible-cols · Date→ISO); `assertExportable` 413 at `≥EXPORT_JOB_THRESHOLD=10000`; `exportData` REUSES each module's list query; `GET /:resource/export` (perm `data.export`, before `/:id`); SDK `.export()` per resource (additive, mobile-safe); web `apiBlob`+DataGrid Export menu (`exportFn` on every admin page). All 7 endpoints live-verified 200 + browser-verified (clients + rates). **REMAINING: ops **cases** export · `selected` mode (needs row-select) · PDF · ≥10k report-worker job tier (streaming builders).** Still DEFERRED: B-5 saved views · B-8/B-9 Hexagon loader · row-select/bulk · keyboard-nav/focus-traps. See `docs/COMPLIANCE_GAPS_REGISTRY.md` (B-13 PARTIAL + Slice-6 progress log). |
+| **Responsive-first retrofit (C-9, partial)** — owner directive "works on any device" | ✅ **Built + live-verified** (commit `a33252c`) — `Layout.tsx` reworked to **ONE hamburger-driven sidebar at every breakpoint** (Claude-style): top bar with hamburger on all screens; sidebar **pushes** content at `lg+` (in-flow `lg:static`, starts open) and **overlays** w/ backdrop below `lg` (starts closed, closes on nav); brand moved to top bar. 10 table wrappers→`overflow-x-auto`, 5 dialog panels→`max-h-[90vh] overflow-y-auto`, Locations+CPV toolbars full-width-on-mobile. Live-verified 320/768/1024/1440: page h-overflow=0 everywhere, 13-col Rate table scrolls in-card, dialog scrolls in 560px viewport, desktop toggle pushes (left 240↔0), phone toggle overlays. CEO audit APPROVE; web gates green. **STILL OPEN (C-9 stays open):** true table→card mobile views, residual non-responsive stat grids (pre-existing `TemplatesPage grid-cols-2`), per-page **Playwright** viewport specs (harness not stood up; CI gates 49–50 stubbed). |
+| **OCC / editing retrofit (C-10) — ✅ ADMINISTRATION COMPLETE** (ADR-0019 "edit option") | ✅ **All 8 editable ADMIN surfaces OCC-guarded + audited + FE ConflictDialog** (owner: "focus on admin only"): users + clients + products + verification_units + CPV + rates + locations + report_templates (commits `21cf2d6`, `115b2f9`, `64c460a`, `abe8f31`, `2306749`, `96d065f`; every slice CEO-APPROVE + live-verified + pushed, origin/main `f82c06f`). Read-only admin (access/system/rate_types) = OCC N/A. **DEFERRED (operations, out of scope): cases/case_tasks OCC. Also deferred: audit_log §1 hardening (hash-chain/partition/off-DB).** Migration `0017`: immutable `audit_log` (trigger blocks UPDATE/DELETE) + `version` on clients/products/locations/users/report_templates. `platform/occ.requireVersion`→400 VERSION_REQUIRED; `platform/audit.appendAudit` (no db.ts import). **Users reference vertical:** guarded `… version=version+1 WHERE id=$id AND version=$expected RETURNING`; 0 rows→404 vs 409 STALE_UPDATE(current); activate/deactivate guarded; one audit row per write in-tx. SDK `User.version` + versioned mutators (version OUT of zod→missing=VERSION_REQUIRED). FE reusable `ConflictDialog` (reload&re-apply/discard, no silent overwrite). `pnpm verify` green (117 tests incl. OCC contract); live conflict+recovery verified. **Slice 2 (`115b2f9`):** clients+products mirror Users + shared `MasterDataCrud` FE. **Slice 3 (`64c460a`):** verification_units — enforce the pre-existing (unenforced) version guard + audit + FE; `requireVersion` before merge-revalidate; param numbering $20/$21/$22 verified. **Slice 4 (`abe8f31`):** CPV (toggle-only) migration 0018 version-only; guarded setActive both sub-repos; fixed hand-written list SELECTs. **Slice 5 (`2306749`):** rates (effective-dated, ADR-0018; had NO version — 0013 dropped it) — migration 0019; updateAmount+setActive guarded; **revise** version-checks→`stale(cur)` BEFORE mutation (rollback-safe) then end-date current(version+1)+insert new dated row (end-date-first preserves no-overlap GiST); keeps `rate_history` domain audit, **audit_log untouched** (§2); FE rate toggle+ReviseForm→ConflictDialog. **Slice 6 (`96d065f`):** locations + report_templates mirror clients (version cols exist from 0017, no migration; both lists use SELECT_COLS — no trap); FE EditLocationDialog + TemplateDialog + toggles → ConflictDialog. **✅ ADMIN OCC COMPLETE — all 8 editable admin surfaces done.** DEFERRED (operations, out of scope): cases/case_tasks OCC. DEFERRED: audit_log §1 hardening. **Per-slice recipe (for cases/case_tasks later):** repo guarded update/setActive + appendAudit in withTransaction → service requireVersion + pass expectedVersion+before → controller requireVersion(req.body) on mutations → SDK DTO.version + versioned methods (version OUT of zod) → FE send version + ConflictDialog on 409 → tests (VERSION_REQUIRED/404-vs-409/concurrent-STALE+current/audit; truncate audit_log for int-PK) → `LC_ALL=C DATABASE_URL=…:5433 pnpm verify` → CEO audit → commit → push. DON'T-REGRESS: hand-written list SELECTs must add `version` explicitly (bit users+CPV+rates). |
+| **End-to-end verification** (`pnpm install` + tests run) | ✅ **Done** — install clean, full typecheck/build/test/seed green (2026-06-04) |
+| ⚠️ React version | **DEVIATION** — `acs-web-v2` scaffold pins React **18.3.1** (freeze = React 19). Flagged for the Platform phase; non-blocking for Phase 1. |
+
+---
+
+## 9 — BUILD ORDER (greenfield)
+
+1. **Verification Units** ✅ 2. **Clients** ✅ 3. **Products** ✅ 4. **CPV Mapping** ✅
+   **Administration 10/10** ✅ (VU·Clients·Products·CPV·Rates[flat,ADR-0018]·Locations·Users·Access·Templates·System)
+   **Authentication** ✅ (ADR-0014). **Effective-From temporal standard** ✅ (ADR-0017; master data + CPV).
+5. **Case Creation** ✅ 6. **Task Creation** ✅ 7. **Assignment** ✅ (hierarchy scope; territory deferred B-20)
+8. **Pipeline (task lists & assignment workbench)** ✅ (2026-06-11; OPERATIONS phase opener)
+9. **Verification Workspace** (keystone) ← **NEXT** (ADR-0015; reuse `/cases/:id` behind a flag — needs `useFeatureFlag` infra first) 10. **Reports** 11. **MIS** 12. **Billing & Commission**
+Then: Dashboard · Field Monitoring · workers.
+
+**v1-only concerns NOT in v2 build order:** result-coherence (v2 is coherent by design) · `useFeatureFlag` for v1↔v2 swap (v2 is a new app) · v1→v2 data migration (when cutover is decided).
+**Infra hardening (parallel, before production):** Redis split+HA · DB backup/PITR/DR · scope-cache · object-store HA + CDN · partition automation.
+
+---
+
+## 10 — CONTRADICTION REPORT
+
+| Item | Verdict | Note |
+|---|---|---|
+| Task model B vs earlier C/hybrid | **UPDATE** | B for v2 (greenfield); C was v1-retrofit. Recorded; no live conflict. |
+| "Case → Documents" (early user-model label) | **UPDATE** | superseded by **Case → Task → Verification Unit** (Task vocabulary kept). |
+| KYC Queue (standalone nav) | **UPDATE** | merged into Pipeline (kind filter + role-default view). |
+| MIS & Reports + Billing nav split | **UPDATE** | merged → one "MIS & Billing". |
+| Packages = 4 (build gate) vs 5 | **UPDATE** | 5 (ui-theme added). |
+| Redis (infra blueprint) vs Valkey (stack freeze) | **UPDATE** | Valkey 8 (Redis-compatible) is the impl. |
+| v2 "inside same monorepo" vs separate repo | **UPDATE** | separate private repo `acs-crm-2`. |
+| Prisma | **KEEP** | rejected consistently (3×). |
+| PostgreSQL 17 | **KEEP** | consistent. |
+| Naming conventions | **KEEP** | consistent. |
+| **Live contradictions** | **NONE** | all deltas are reconciled supersessions, captured above. |
+
+**No REMOVE actions** (nothing to delete); all are KEEP or UPDATE-recorded-here.
+
+---
+
+## 11 — FINAL READINESS
+
+**Can implementation continue without any additional architecture work? → YES.**
+
+> ## "CRM2 Architecture Freeze Verified. Proceed to Development."
+
+No open architecture choices. The only non-architecture gaps are *build* tasks (finish Verification Units verification + token migration, then continue the build order) and *parallel infra hardening* before production — none requires a design decision.
+
+---
+*Single source of truth. Update THIS file when an implementation fact changes; do not reopen frozen architecture. Audit rationale: v1 repo `docs/acs-simplification-audit-2026-06-04/` (33 docs).*
