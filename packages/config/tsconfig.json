@@ -1,1 +1,6 @@
-{ "extends": "../../tsconfig.base.json", "include": ["src"] }
+{
+  "extends": "../../tsconfig.base.json",
+  "_comment": "Node-only package. TS6 no longer auto-loads @types/node global augmentations (process, NodeJS) unless a node builtin module is imported; this package references them ambiently, so pin types to node.",
+  "compilerOptions": { "types": ["node"] },
+  "include": ["src"]
+}
