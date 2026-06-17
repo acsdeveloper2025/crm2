@@ -72,6 +72,10 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '${{ env.NODE_VERSION }}', cache: 'pnpm' }
       - run: pnpm install --frozen-lockfile
+      # pdf.test.ts + caseReports render a real PDF via Puppeteer; pnpm blocks the
+      # puppeteer postinstall Chrome download, so fetch the expected build explicitly.
+      - name: Install Chrome for Puppeteer
+        run: pnpm --filter @crm2/api exec puppeteer browsers install chrome
       - name: 4+5. Unit + Integration tests (coverage-gated)
         run: pnpm test
       # Part 22: migrations must re-apply idempotently on an existing DB.
