@@ -72,7 +72,7 @@ Numbers are never reused. Filenames follow `ADR-NNNN-kebab-slug.md`. Use
 | [ADR-0021](./ADR-0021-object-storage-and-transactional-email.md) | Object storage (S3) and transactional email (SMTP) | Accepted | 2026-06-10 |
 | [ADR-0022](./ADR-0022-access-control-2.0-configurable-roles-and-scope.md) | Access Control 2.0 — configurable roles, permissions & scope dimensions | Accepted | 2026-06-10 |
 | [ADR-0023](./ADR-0023-case-task-dispatch-fields-and-applicant-targeting.md) | Case/Task dispatch fields + per-task applicant targeting | Proposed | 2026-06-11 |
-| ADR-0024 | Field/office assignment pool (assign-at-create) — _decision shipped; no ADR document, recorded in ADR-0023 + code_ | Accepted | — |
+| [ADR-0024](./ADR-0024-field-office-assignment-pool.md) | Field/Office assignment pool + assign-at-create (retrospective) | Accepted | 2026-06-17 |
 | [ADR-0025](./ADR-0025-kyc-desk-verification-and-task-finalize.md) | KYC / desk verification — read-only verifier + generic task-finalize | Accepted | 2026-06-12 |
 | [ADR-0026](./ADR-0026-field-monitoring-and-location-ingest.md) | Field Monitoring console + device location ingest | Accepted | 2026-06-12 |
 | [ADR-0027](./ADR-0027-realtime-notifications-and-push.md) | Real-time transport, in-app notifications & FCM push | Accepted | 2026-06-12 |
