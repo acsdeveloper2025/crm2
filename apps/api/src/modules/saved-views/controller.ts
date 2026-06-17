@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
+import { paramStr } from '../../http/params.js';
 import { savedViewService as svc } from './service.js';
 import { AppError } from '../../platform/errors.js';
 import { HTTP_STATUS } from '../../platform/http.js';
@@ -13,7 +14,7 @@ const requireUserId = (req: Request): string => {
 // pg 22P02 → 500 (the same uuid-:id guard the notifications/jobs trays use).
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const requireUuid = (req: Request): string => {
-  const id = req.params['id'] ?? '';
+  const id = paramStr(req, 'id');
   if (!UUID_RE.test(id)) throw AppError.notFound();
   return id;
 };

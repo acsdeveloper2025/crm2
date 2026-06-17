@@ -18,13 +18,16 @@ export interface ApiRoute {
   path: string;
 }
 
-// Express 4 router layer internals (not in @types/express). Structurally typed + reached via an
-// `unknown` cast — no `any` (banned). `_router` on v4, `router` on newer express.
+// Express router layer internals (not in @types/express). Structurally typed + reached via an
+// `unknown` cast — no `any` (banned). The root router stack is `_router` on Express 4, `router` on
+// Express 5. A mounted sub-router's prefix is read from `__mountPrefix`, which `createApp`'s
+// `mount()` helper stamps onto the router at registration: Express 5 (router v2 / path-to-regexp
+// v8) compiles the mount path to an opaque matcher and no longer exposes a `regexp` to reconstruct
+// it from, so the prefix is recorded explicitly rather than reverse-engineered.
 interface RouteLayer {
   route?: { path: string; methods: Record<string, boolean> };
   name?: string;
-  regexp?: RegExp;
-  handle?: { stack?: RouteLayer[] };
+  handle?: { stack?: RouteLayer[]; __mountPrefix?: string };
 }
 interface RouterLike {
   stack: RouteLayer[];
@@ -40,17 +43,6 @@ const PUBLIC_PATHS = new Set([
   '/api/v2/auth/refresh',
 ]);
 
-/**
- * Reconstruct a mounted router's path prefix from its layer regexp. Express 4 compiles a string mount
- * `/api/v2/clients` to `/^\/api\/v2\/clients\/?(?=\/|$)/i` — strip the `^`, the trailing
- * `\/?(?=\/|$)`, and unescape `\/`. Deterministic for the string mounts this app uses.
- */
-function mountPrefix(re: RegExp | undefined): string {
-  if (!re) return '';
-  const body = re.source.replace(/^\^\\\//, '').replace(/\\\/\?\(\?=.*$/, '');
-  return '/' + body.replace(/\\\//g, '/');
-}
-
 /** Walk the router tree → every `{method, path}` under `/api/v2`. */
 export function listApiRoutes(app: Express): ApiRoute[] {
   const root =
@@ -64,7 +56,7 @@ export function listApiRoutes(app: Express): ApiRoute[] {
         if (!path.startsWith('/api/v2')) continue;
         for (const m of HTTP_METHODS) if (layer.route.methods[m]) out.push({ method: m.toUpperCase(), path });
       } else if (layer.name === 'router' && layer.handle?.stack) {
-        walk(layer.handle.stack, mountPrefix(layer.regexp));
+        walk(layer.handle.stack, prefix + (layer.handle.__mountPrefix ?? ''));
       }
     }
   };

@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
+import { paramStr } from '../../http/params.js';
 import { CASE_REPORT_FORMATS, type CaseReportFormat } from '@crm2/sdk';
 import type { Actor } from '../../platform/scope/index.js';
 import { AppError } from '../../platform/errors.js';
@@ -24,7 +25,7 @@ export const caseReportController = {
    *  and admin Designer (ADR-0041 S5 slice 1). case.view at the route; scope-guarded → 404. */
   async preview(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const caseId = req.params['id'] ?? '';
+      const caseId = paramStr(req, 'id');
       res.json(await caseReportService.assemblePreview(caseId, actor(req)));
     } catch (e) {
       next(e);
@@ -35,7 +36,7 @@ export const caseReportController = {
    *  HTML Puppeteer prints to PDF in slice 2b. case.view; scope-guarded → 404. Auto-escaped. */
   async html(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const caseId = req.params['id'] ?? '';
+      const caseId = paramStr(req, 'id');
       const html = await caseReportService.renderHtml(caseId, actor(req));
       // Defence-in-depth: the body is already escaped, but tell the browser not to MIME-sniff.
       res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -50,7 +51,7 @@ export const caseReportController = {
    *  /jobs/:id/result-url (the shared job-tray pattern). */
   async enqueue(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const caseId = req.params['id'] ?? '';
+      const caseId = paramStr(req, 'id');
       const job = await caseReportService.enqueueReport(caseId, reportFormat(req), actor(req));
       res.status(HTTP_STATUS.ACCEPTED).json(job);
     } catch (e) {

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import express, { type Express, type Request, type Response, type NextFunction } from 'express';
+import express, { type Express, type Request, type Response, type NextFunction, type Router } from 'express';
 import { ZodError } from 'zod';
 import { logger } from '@crm2/logger';
 import { AppError } from '../platform/errors.js';
@@ -77,39 +77,48 @@ export function createApp(opts: { enableTestAuth?: boolean } = {}): Express {
   app.use(enrichAuth()); // ADR-0022: resolve role attributes (grants_all + permission codes, cached)
   app.use(requestObservability());
 
+  // Mount an API router and record its literal prefix on the router itself, so the OpenAPI
+  // introspector (platform/openapi/document.ts) can rebuild full paths. Express 5 (router v2 /
+  // path-to-regexp v8) no longer exposes the compiled mount regexp on the layer, so the prefix
+  // can't be reverse-engineered from internals — we tag it here at registration instead.
+  const mount = (prefix: string, router: Router): void => {
+    (router as Router & { __mountPrefix?: string }).__mountPrefix = prefix;
+    app.use(prefix, router);
+  };
+
   app.get('/api/v2/health', (_req, res) => res.json({ status: 'ok' }));
-  app.use('/api/v2/time', timeRoutes); // ADR-0028: server-authoritative clock (unauthenticated)
-  app.use('/api/v2/auth', authRoutes);
-  app.use('/api/v2/verification-units', verificationUnitRoutes);
-  app.use('/api/v2/clients', clientRoutes);
-  app.use('/api/v2/products', productRoutes);
-  app.use('/api/v2/client-products', clientProductRoutes);
-  app.use('/api/v2/cpv-units', cpvUnitRoutes);
-  app.use('/api/v2/rates', rateRoutes);
-  app.use('/api/v2/rate-types', rateTypeRoutes);
-  app.use('/api/v2/commission-rates', commissionRateRoutes);
-  app.use('/api/v2/billing', billingRoutes);
-  app.use('/api/v2/locations', locationRoutes);
-  app.use('/api/v2/users', userRoutes);
-  app.use('/api/v2/access', accessRoutes);
-  app.use('/api/v2/roles', roleRoutes);
-  app.use('/api/v2/report-templates', reportTemplateRoutes);
-  app.use('/api/v2/report-layouts', reportLayoutRoutes);
-  app.use('/api/v2/data-entry', caseDataEntryRoutes);
-  app.use('/api/v2/departments', departmentRoutes);
-  app.use('/api/v2/designations', designationRoutes);
-  app.use('/api/v2/system', systemRoutes);
-  app.use('/api/v2/cases', caseRoutes);
-  app.use('/api/v2/sync', syncRoutes);
-  app.use('/api/v2/tasks', taskRoutes);
-  app.use('/api/v2/verification-tasks', verificationTaskRoutes); // field-execution (ADR-0032 slice 2c)
-  app.use('/api/v2/field-monitoring', fieldMonitoringRoutes);
-  app.use('/api/v2/dashboard', dashboardRoutes);
-  app.use('/api/v2/notifications', notificationRoutes);
-  app.use('/api/v2/jobs', jobRoutes);
-  app.use('/api/v2/saved-views', savedViewRoutes);
-  app.use('/api/v2/location', locationCaptureRoutes);
-  app.use('/api/v2/geocode', geocodeRoutes);
+  mount('/api/v2/time', timeRoutes); // ADR-0028: server-authoritative clock (unauthenticated)
+  mount('/api/v2/auth', authRoutes);
+  mount('/api/v2/verification-units', verificationUnitRoutes);
+  mount('/api/v2/clients', clientRoutes);
+  mount('/api/v2/products', productRoutes);
+  mount('/api/v2/client-products', clientProductRoutes);
+  mount('/api/v2/cpv-units', cpvUnitRoutes);
+  mount('/api/v2/rates', rateRoutes);
+  mount('/api/v2/rate-types', rateTypeRoutes);
+  mount('/api/v2/commission-rates', commissionRateRoutes);
+  mount('/api/v2/billing', billingRoutes);
+  mount('/api/v2/locations', locationRoutes);
+  mount('/api/v2/users', userRoutes);
+  mount('/api/v2/access', accessRoutes);
+  mount('/api/v2/roles', roleRoutes);
+  mount('/api/v2/report-templates', reportTemplateRoutes);
+  mount('/api/v2/report-layouts', reportLayoutRoutes);
+  mount('/api/v2/data-entry', caseDataEntryRoutes);
+  mount('/api/v2/departments', departmentRoutes);
+  mount('/api/v2/designations', designationRoutes);
+  mount('/api/v2/system', systemRoutes);
+  mount('/api/v2/cases', caseRoutes);
+  mount('/api/v2/sync', syncRoutes);
+  mount('/api/v2/tasks', taskRoutes);
+  mount('/api/v2/verification-tasks', verificationTaskRoutes); // field-execution (ADR-0032 slice 2c)
+  mount('/api/v2/field-monitoring', fieldMonitoringRoutes);
+  mount('/api/v2/dashboard', dashboardRoutes);
+  mount('/api/v2/notifications', notificationRoutes);
+  mount('/api/v2/jobs', jobRoutes);
+  mount('/api/v2/saved-views', savedViewRoutes);
+  mount('/api/v2/location', locationCaptureRoutes);
+  mount('/api/v2/geocode', geocodeRoutes);
 
   // Centralized error → HTTP mapping (last middleware).
   app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {

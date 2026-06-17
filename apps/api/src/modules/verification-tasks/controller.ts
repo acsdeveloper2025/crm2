@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
+import { paramStr } from '../../http/params.js';
 import { verificationTaskService as svc } from './service.js';
 import { AppError } from '../../platform/errors.js';
 import type { Actor } from '../../platform/scope/index.js';
@@ -46,7 +47,7 @@ export const verificationTaskController = {
   },
   async submitForm(req: Request, res: Response, next: NextFunction) {
     try {
-      const formType = req.params['formType'] ?? '';
+      const formType = paramStr(req, 'formType');
       res.json(await svc.submitForm(parseId(req), formType, req.body, actor(req)));
     } catch (e) {
       next(e);

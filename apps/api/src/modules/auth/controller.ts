@@ -13,7 +13,7 @@ const requireUserId = (req: Request): string => {
 // users.id). Validate the shape BEFORE the query so a malformed value is a clean 400, never a pg
 // 22P02 → 500 (the "uuid-:id 500 class" the user-management epic set out to avoid).
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const requireUuidParam = (value: string | undefined, param: string): string => {
+const requireUuidParam = (value: string | string[] | undefined, param: string): string => {
   if (typeof value !== 'string' || !UUID_RE.test(value)) throw AppError.badRequest('BAD_REQUEST', { param });
   return value;
 };

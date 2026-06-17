@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
+import { paramStr } from '../../http/params.js';
 import { fieldMonitoringService as svc } from './service.js';
 import { AppError } from '../../platform/errors.js';
 import { resolveExport, writeExport } from '../../platform/export/index.js';
@@ -47,7 +48,7 @@ export const fieldMonitoringController = {
   /** POST /agents/:id/request-location — wake a field agent for a fresh GPS fix (ADR-0027). */
   async requestLocation(req: Request, res: Response, next: NextFunction) {
     try {
-      res.json(await svc.requestLocation(actor(req), req.params['id'] ?? ''));
+      res.json(await svc.requestLocation(actor(req), paramStr(req, 'id')));
     } catch (e) {
       next(e);
     }

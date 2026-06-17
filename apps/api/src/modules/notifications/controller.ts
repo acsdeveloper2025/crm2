@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
+import { paramStr } from '../../http/params.js';
 import { notificationService as svc } from './service.js';
 import { AppError } from '../../platform/errors.js';
 
@@ -32,7 +33,7 @@ export const notificationController = {
   async read(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = requireUserId(req);
-      const id = req.params['id'] ?? '';
+      const id = paramStr(req, 'id');
       if (!UUID_RE.test(id)) throw AppError.notFound();
       res.json(await svc.markRead(userId, id));
     } catch (e) {
