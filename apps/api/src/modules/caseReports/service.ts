@@ -16,7 +16,7 @@ import { fieldReportService } from '../fieldReports/service.js';
 import { reportLayoutRepository } from '../reportLayouts/repository.js';
 import { caseReportRepository } from './repository.js';
 import { renderCaseReportHtml } from './render.js';
-import type { CaseReportJobPayload } from './job.js';
+import type { CaseReportJobPayload } from './types.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MS_PER_DAY = 86_400_000;

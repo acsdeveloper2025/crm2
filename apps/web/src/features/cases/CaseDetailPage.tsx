@@ -29,7 +29,7 @@ import {
 } from '@crm2/sdk';
 import { toast } from 'sonner';
 import { api, apiUpload, apiBlob, ApiError } from '../../lib/sdk.js';
-import { JOBS_KEY } from '../jobs/api.js';
+import { JOBS_KEY } from '../jobs/index.js';
 import { formatDateTime } from '../../lib/format.js';
 import { useAuth } from '../../lib/AuthContext.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';

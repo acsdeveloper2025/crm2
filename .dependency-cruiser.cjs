@@ -43,7 +43,17 @@ module.exports = {
       severity: 'warn',
       from: {
         orphan: true,
-        pathNot: ['\\.d\\.ts$', '\\.test\\.ts$', '(^|/)index\\.(ts|tsx)$', 'main\\.ts$', 'main\\.tsx$'],
+        // Tooling entry points are orphans by design (run by a tool, never imported):
+        // type decls, tests, feature/package index barrels, app mains, *.config.*, and e2e specs/setup.
+        pathNot: [
+          '\\.d\\.ts$',
+          '\\.test\\.ts$',
+          '(^|/)index\\.(ts|tsx)$',
+          'main\\.ts$',
+          'main\\.tsx$',
+          '\\.config\\.(ts|js|cjs|mjs)$',
+          '(^|/)e2e/',
+        ],
       },
       to: {},
     },

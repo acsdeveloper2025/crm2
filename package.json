@@ -2,7 +2,7 @@
   "name": "crm2",
   "private": true,
   "version": "0.1.0",
-  "description": "CRM2 — separate v2 workspace (modular monolith). v1 is untouched.",
+  "description": "CRM2 — field-verification & KYC case-management platform (modular-monolith monorepo).",
   "type": "module",
   "engines": {
     "node": ">=20"

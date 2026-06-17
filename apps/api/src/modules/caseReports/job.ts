@@ -2,7 +2,7 @@ import type { CaseReportFormat } from '@crm2/sdk';
 import type { JobProcessor } from '../../platform/jobs/index.js';
 import { getStorage } from '../../platform/storage/index.js';
 import { htmlToPdf } from '../../platform/pdf/index.js';
-import type { Actor } from '../../platform/scope/index.js';
+import type { CaseReportJobPayload } from './types.js';
 import { caseReportService } from './service.js';
 import { renderCaseReportHtml, DEFAULT_PDF_PAGE_SIZE, DEFAULT_PDF_ORIENTATION } from './render.js';
 import { renderCaseReportDocx } from './docx.js';
@@ -19,12 +19,6 @@ import { renderCaseReportXlsx } from './xlsx.js';
  * The actor (role + userId) rides in the payload — it is server-created at enqueue from req.auth, so
  * the worker re-resolves the SAME scope and the report contains only what that user may see.
  */
-export interface CaseReportJobPayload {
-  caseId: string;
-  format: CaseReportFormat;
-  actor: Actor;
-}
-
 const stamp = (): string => new Date().toISOString().slice(0, 10).replace(/-/g, '');
 
 const MIME: Record<CaseReportFormat, string> = {
