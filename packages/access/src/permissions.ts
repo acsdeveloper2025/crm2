@@ -25,6 +25,8 @@ export const PERMISSIONS = {
   TEMPLATE_VIEW: 'page.templates',
   TEMPLATE_MANAGE: 'report_template.manage',
   SYSTEM_VIEW: 'page.system',
+  POLICY_VIEW: 'page.policies',
+  POLICY_MANAGE: 'policy.manage',
   // cases / tasks
   CASE_VIEW: 'case.view',
   CASE_CREATE: 'case.create',
@@ -136,6 +138,8 @@ export const PERMISSION_META: Record<Permission, { label: string; group: string 
   'page.templates': { label: 'Report Templates — View', group: 'Administration' },
   'report_template.manage': { label: 'Report Templates — Manage', group: 'Administration' },
   'page.system': { label: 'System Health — View', group: 'Administration' },
+  'page.policies': { label: 'Policies — View', group: 'Administration' },
+  'policy.manage': { label: 'Policies — Manage', group: 'Administration' },
   'case.view': { label: 'Cases — View', group: 'Operations' },
   'case.create': { label: 'Cases — Create', group: 'Operations' },
   'case.assign': { label: 'Cases — Assign', group: 'Operations' },
