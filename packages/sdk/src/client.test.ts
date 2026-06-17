@@ -437,4 +437,25 @@ describe('createSdk — transport', () => {
     expect(calls[0]?.url).toBe('http://x/api/v2/geocode/dlq/replay');
     expect(calls[0]?.init.method).toBe('POST');
   });
+
+  it('wires auth/me, notifications, billing and sync read endpoints', async () => {
+    const { impl, calls } = fakeFetch(200, {});
+    const s = createSdk({ baseUrl: 'http://x', fetchImpl: impl, getAuthToken: () => 'Bearer t' });
+    await s.auth.me();
+    await s.notifications.unreadCount();
+    await s.notifications.list();
+    await s.billing.cases();
+    await s.billing.caseTasks('c1');
+    await s.sync.download();
+    expect(calls).toHaveLength(6);
+    expect(calls.every((c) => c.init.method === 'GET')).toBe(true);
+    // exact-path (no query) endpoints:
+    expect(calls.map((c) => c.url)).toEqual(
+      expect.arrayContaining([
+        'http://x/api/v2/auth/me',
+        'http://x/api/v2/notifications/unread-count',
+        'http://x/api/v2/billing/cases/c1/tasks',
+      ]),
+    );
+  });
 });

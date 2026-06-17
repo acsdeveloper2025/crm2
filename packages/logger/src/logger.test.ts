@@ -63,6 +63,14 @@ describe('@crm2/logger', () => {
     expect(LOG_LEVELS).toEqual(['trace', 'debug', 'info', 'warn', 'error', 'fatal']);
   });
 
+  it('emits via the trace and fatal level methods', () => {
+    const c = capture();
+    const log = createLogger({ level: 'trace', write: c.write, now: c.now });
+    log.trace('lowest');
+    log.fatal('highest');
+    expect(c.lines.map((l) => JSON.parse(l).level)).toEqual(['trace', 'fatal']);
+  });
+
   it('resolves level from LOG_LEVEL env and uses the default stdout sink + clock', () => {
     const stdout = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
     try {
