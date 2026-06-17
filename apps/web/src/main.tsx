@@ -13,7 +13,16 @@ const queryClient = new QueryClient();
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      {/*
+       * useTransitions={false}: react-router v7 wraps location updates in
+       * React.startTransition by default (v6 did not). That defers URL/searchParam
+       * updates, so inputs controlled by the URL (the DataGrid filter/column
+       * checkboxes, rows-per-page select) briefly revert to their pre-click value
+       * before the deferred render settles — enough for the controlled checkbox to
+       * read as "unchecked" right after a click. Opting out restores v6's synchronous
+       * navigation so URL-controlled inputs stay in lockstep with the interaction.
+       */}
+      <BrowserRouter useTransitions={false}>
         <AuthProvider>
           <App />
         </AuthProvider>
