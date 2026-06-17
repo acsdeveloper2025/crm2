@@ -42,7 +42,7 @@
 - [BUSINESS_RULES.md](./docs/governance/BUSINESS_RULES.md) · [DOMAIN_OWNERSHIP.md](./docs/governance/DOMAIN_OWNERSHIP.md) · [LONG_TERM_PROTECTION.md](./docs/governance/LONG_TERM_PROTECTION.md) (never change without architectural review) · [UPGRADE_POLICY.md](./docs/engineering/UPGRADE_POLICY.md) · [TECH_DEBT_POLICY.md](./docs/engineering/TECH_DEBT_POLICY.md) · [TEST_DATASET_STRATEGY.md](./docs/engineering/TEST_DATASET_STRATEGY.md) (golden dataset).
 
 ## 9. Build order & status
-**VU (done) → Clients → Products → CPV → Cases → Tasks → Assignment → Verification Workspace → Reports → MIS → Billing**; then Dashboard, Field Monitoring, Admin, workers. Live status: MASTER_MEMORY §8. Reference module: `apps/api/src/modules/verificationUnits/` + `apps/web/src/features/verificationUnits/`.
+**VU (done) → Clients → Products → CPV → Cases → Tasks → Assignment → Verification Workspace → Reports → MIS → Billing**; then Dashboard, Field Monitoring, Admin, workers. Live status: MASTER_MEMORY §8. **Open items (pending · deferred · decisions):** [docs/operations/OPEN_ITEMS_2026-06-17.md](./docs/operations/OPEN_ITEMS_2026-06-17.md) (dated snapshot; living SoT = COMPLIANCE_GAPS_REGISTRY). Reference module: `apps/api/src/modules/verificationUnits/` + `apps/web/src/features/verificationUnits/`.
 
 ## 10. Repo layout
 `apps/` (acs-api-v2 · acs-web-v2 · worker · report-worker) · `packages/` (ui-theme · sdk · access · config · test-utils · logger) · `db/v2/` · `docs/` · `runbooks/` · `scripts/`. Repo overview: [README.md](./README.md). Separate repos: **mobile** = `crm-mobile-native` (independent). v1 = `CRM-APP-MONOREPO-PROD` (untouched).
