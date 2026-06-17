@@ -29,7 +29,9 @@ const FOCUSABLE_SELECTOR = [
 export function useFocusTrap<T extends HTMLElement>(
   active: boolean,
   onEscape: () => void,
-): React.RefObject<T> {
+): React.RefObject<T | null> {
+  // React 19's `useRef<T>(null)` yields `RefObject<T | null>`; the ref attribute
+  // accepts that, so the return type is widened to match (was `RefObject<T>`).
   const containerRef = useRef<T>(null);
   const onEscapeRef = useRef(onEscape);
   onEscapeRef.current = onEscape;
