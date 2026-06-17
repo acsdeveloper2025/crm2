@@ -154,3 +154,31 @@ A module-specific export button/endpoint or a bespoke import is **incorrect** �
 Export goes through the DataGrid (3 modes; `≥10k`=job); import goes through the one `@crm2/import-engine`
 (domains provide only Template/Validator/Mapper/Processor). Never direct-insert or silent import;
 always template→validate→preview→confirm→background→report+audit.
+
+---
+
+## File & document placement (follow our structure — never invent a location)
+Before creating ANY file or document, put it where its kind already lives. **Changing the folder
+architecture itself is a LOCKED decision** (see *Architecture governance* above) — it needs an
+ADR + CTO. When unsure, match the nearest existing example; do **not** create a new top-level folder
+or drop files at the repo root.
+
+| Kind | Goes in |
+|---|---|
+| API feature code | `apps/api/src/modules/<domain>/` (controller · service · repositories · schema) |
+| API platform-wide concern | `apps/api/src/platform/<concern>/` |
+| Web feature / shared UI / helpers | `apps/web/src/features/<feature>/` · `apps/web/src/components/` · `apps/web/src/lib/` |
+| Shared library | `packages/<name>/src/` — the **6** canonical packages only (`access · config · logger · sdk · test-utils · ui-theme`); a new package needs an ADR |
+| DB migration / seed | `db/v2/migrations/` · `db/v2/seed/` (DDL only via reviewed migrations) |
+| Architecture decision | `docs/adr/ADR-NNNN-*.md` (next number; copy `_template.md`) |
+| Cross-cutting standard / freeze | `docs/` (top level) |
+| Governance · engineering · security · operations doc | `docs/governance/` · `docs/engineering/` · `docs/security/` · `docs/operations/` |
+| Runbook · build/ops script · infra/deploy | `runbooks/` · `scripts/` · `infra/` |
+| Secret / credential | `secrets/` or `.env` — **both gitignored; never commit one, never place one elsewhere** |
+| Personal / scratch prompt | `docs/prompts/` (gitignored) |
+
+**The repo root is reserved** — only: `README.md` · `CONTRIBUTING.md` · `SECURITY.md` · `CLAUDE.md` ·
+`AGENTS.md` · the three entry-point docs (`PROJECT_INDEX.md` · `CRM2_MASTER_MEMORY.md` ·
+`SESSION_KICKOFF.md`) · workspace & tooling config (`package.json`, `pnpm-workspace.yaml`,
+`turbo.json`, `tsconfig.base.json`, lint/format/hook config). **Do not add new files to the root** —
+new docs go under `docs/`. After adding a doc, **link it from `PROJECT_INDEX.md`** so it stays discoverable.

@@ -1,6 +1,7 @@
 {
   "name": "crm2",
   "private": true,
+  "license": "UNLICENSED",
   "version": "0.1.0",
   "description": "CRM2 — field-verification & KYC case-management platform (modular-monolith monorepo).",
   "type": "module",

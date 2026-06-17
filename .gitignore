@@ -35,7 +35,19 @@ blob-report/
 *.p8
 *.p12
 *.pfx
+*.crt
+*.cer
+*.der
 secrets/
+# Cloud / service-account credentials (Firebase Admin SDK · GCP · GitHub Actions).
+# The app loads these from secrets/ (gitignored); the patterns below are defense-in-depth
+# in case a credentials file is ever dropped elsewhere in the tree.
+*serviceAccount*.json
+*-firebase-adminsdk-*.json
+*google-credentials*.json
+*gcp-*key*.json
+gha-creds-*.json
+admin-credentials*.txt
 
 # ===== Logs =====
 logs/

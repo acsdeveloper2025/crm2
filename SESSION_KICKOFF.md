@@ -2,16 +2,18 @@
 
 Use this to start every CRM2 (v2) session so it continues the project consistently. The agent must READ the listed files (not skim) before doing anything.
 
+> **Note:** `CLAUDE.md` / `AGENTS.md` at the repo root now auto-load each session and already point here. Pasting this kickoff is a good explicit refresher but is no longer strictly required.
+
 ---
 
 ## 0. Operating rules — read these Claude memory files FIRST (they override defaults)
-Memory dir: `~/.claude/projects/-Users-mayurkulkarni-Downloads-CRM-APP-MONOREPO-PROD/memory/`
+Memory dir: `~/.claude/projects/-Users-mayurkulkarni-Downloads-crm2/memory/`
 - `MEMORY.md` (index — read fully; the long **CRM2 BUILD PHASE** line is the live status)
 - `feedback_cave_mode.md` — minimal-token output
-- `feedback_crm2_autonomous_cto.md` — during v2 build: act as CTO, decide + execute, don't ask per-step; **design/UX is yours to fix too** (only pushes/deploys/architecture-reopens pause)
+- `feedback_acs_v2_autonomous_cto.md` — during v2 build: act as CTO, decide + execute, don't ask per-step; **design/UX is yours to fix too** (only pushes/deploys/architecture-reopens pause)
 - `feedback_ask_before_acting.md` — still applies to push/deploy/tag
 - `feedback_browser_verify_perform_actions.md` — for UI work, don't stop at tests: **perform the action in the browser preview & confirm persisted**
-- `project_crm2_multiagent_build_method.md` — HOW we build (CTO orchestrates + spawns specialist agents)
+- `project_acs_v2_multiagent_build_method.md` — HOW we build (CTO orchestrates + spawns specialist agents)
 - `project_acs_crm_v2_build.md` (`crm2-build`) — what's frozen + full current status (read in full)
 - `feedback_commit_and_repo_hygiene.md` — author = Mayur Kulkarni, conventional commits, NO AI trailer, secret-sweep before push
 - `feedback_never_delete_memory_files.md`, `feedback_update_memory_each_phase.md`, `feedback_use_karpathy_guidelines.md`, `feedback_no_guessing.md`, `feedback_naming_conventions.md`, `feedback_code_quality_standards.md`, `feedback_sql_live_db_apply.md`
@@ -19,16 +21,17 @@ Memory dir: `~/.claude/projects/-Users-mayurkulkarni-Downloads-CRM-APP-MONOREPO-
 ## 1. Project source of truth — read in this order (in `crm2/`)
 1. `PROJECT_INDEX.md` — the single entry point (links everything)
 2. `CRM2_MASTER_MEMORY.md` — frozen architecture/data-model/UI/stack/security + §7.5 enforcement + §7.6 governance + §8 status
-3. `docs/ENGINEERING_STANDARDS.md`, `docs/DESIGN_AND_STACK_FREEZE.md`, `docs/CI_CD_STANDARDS.md`, `UI_STANDARDS.md`
-4. `AGENT_RULES.md`, `CTO_RULES.md`, `BUILD_GUIDE.md`, `BUILD_METHOD.md`
+3. `docs/ENGINEERING_STANDARDS.md`, `docs/DESIGN_AND_STACK_FREEZE.md`, `docs/CI_CD_STANDARDS.md`, `docs/UI_STANDARDS.md`
+4. `docs/governance/AGENT_RULES.md`, `docs/governance/CTO_RULES.md`, `docs/engineering/BUILD_GUIDE.md`, `docs/governance/BUILD_METHOD.md`
 5. `docs/adr/README.md` + ADR-0001..0019
 6. **UI/UX & scalability freezes:** `docs/MANAGEMENT_LIST_STANDARD.md` (Created/Updated cols · accordion master-detail) · `docs/PAGINATION_AND_LOADING_STANDARDS.md` · `docs/DATAGRID_STANDARD.md` · `docs/IMPORT_EXPORT_STANDARD.md`
 7. **Architecture governance (drift-prevention):** `docs/FROZEN_DECISIONS_REGISTRY.md` (33 rows, 32 LOCKED + #29 superseded; decisions — the SoT) · `docs/ARCHITECTURE_GOVERNANCE.md` · `FREEZE_LOCK_REPORT.md` · `docs/COMPLIANCE_GAPS_REGISTRY.md` (fixed/deferred/ratchet/audit) · `docs/PLATFORM_CAPABILITIES_OWNERSHIP.md` · `ARCHITECTURE_CHANGE_REQUEST.md`
 8. Governance/ops: `BUSINESS_RULES.md`, `API_VERSIONING_POLICY.md`, `MOBILE_API_COMPATIBILITY_MATRIX.md`, `SECURITY_STANDARDS.md`, `LONG_TERM_PROTECTION.md`, `DATABASE_CHANGE_PROCESS.md`, `ALLOWED_DEPENDENCIES.md`, `TECH_DEBT_POLICY.md`, `OPERATIONS_GUIDE.md` (+ rest via PROJECT_INDEX)
 
-## 2. Project progress — establish current state (as of 2026-06-05, HEAD `2746645`, LOCAL only)
+## 2. Project progress — establish current state (repo is LIVE on `crm.allcheckservices.com`; push→`main` auto-deploys — **verify HEAD before trusting any status here**)
 - Read `CRM2_MASTER_MEMORY.md` §8 (Implementation Status) + `docs/COMPLIANCE_GAPS_REGISTRY.md`.
-- Run `git -C crm2 log --oneline -20` and `git -C crm2 status`.
+- Run `git log --oneline -20` and `git status` (repo root = this folder).
+- ⚠️ The DONE/NEXT snapshot below is from **2026-06-05** and has been superseded — Admin + Operations (Cases · Tasks · Assignment · Field Monitoring · Dashboard · Profile · real-time/FCM) have since shipped. Confirm the real state against MASTER_MEMORY §8 + the memory `MEMORY.md` index + `git log`.
 - **Resequenced build order (user directive): ALL ADMINISTRATION first, THEN OPERATIONS.**
   - **DONE:** Verification Units · Clients · Products · CPV Mapping · **Rate Management** · **Location Management** (incl. full official all-India pincode import — 157k areas / 19.3k pincodes / 36 states, `country` added).
   - **NEXT admin:** **User Management** → Access Control → Templates → System.
