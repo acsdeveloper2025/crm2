@@ -69,3 +69,4 @@ Numbers are never reused. Filenames follow `ADR-NNNN-kebab-slug.md`. Use
 | [ADR-0018](./ADR-0018-rate-management-flat-one-table-model.md) | Rate Management — flat one-table model (supersedes 0016) | Accepted | 2026-06-05 |
 | [ADR-0019](./ADR-0019-concurrency-and-editing-standard.md) | Concurrency & editing standard (optimistic concurrency control) | Accepted | 2026-06-05 |
 | [ADR-0020](./ADR-0020-correctable-identity-keys-while-unreferenced.md) | Correctable identity keys while unreferenced (amends ADR-0001) | Accepted | 2026-06-06 |
+| [ADR-0042](./ADR-0042-dependency-stack-freeze.md) | Dependency stack freeze — latest majors, lockfile-enforced | Accepted | 2026-06-17 |
