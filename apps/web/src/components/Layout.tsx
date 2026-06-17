@@ -130,7 +130,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [wide, setWide] = useState(isWide);
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 1024px)');
-    const onChange = () => setWide(mq.matches);
+    // Crossing the lg boundary re-syncs both flags: the sidebar is in-flow (open) on desktop and
+    // collapsed behind the hamburger on phones. Driving `open` off the breakpoint here also makes
+    // the state deterministic regardless of whether Layout mounts before or after a viewport change.
+    const onChange = () => {
+      setWide(mq.matches);
+      setOpen(mq.matches);
+    };
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
   }, []);
@@ -190,20 +196,20 @@ export function Layout({ children }: { children: React.ReactNode }) {
         {/* Top bar — the open affordance + brand show only while the sidebar is closed (two-button
             split, like v1); the live IST clock + bell sit on the right. */}
         <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-card px-4">
-          {!open && (
-            <>
-              <button
-                type="button"
-                aria-label="Open menu"
-                aria-expanded={open}
-                className="rounded-md p-1 text-secondary-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-                onClick={() => setOpen(true)}
-              >
-                <PanelLeftIcon />
-              </button>
-              <span className="text-base font-bold tracking-tight text-foreground">{BRAND}</span>
-            </>
-          )}
+          {/* The open affordance stays mounted (hidden while open) so the focus trap can restore
+              focus to it on close — a conditionally-rendered trigger would be a detached node. */}
+          <button
+            type="button"
+            aria-label="Open menu"
+            aria-expanded={open}
+            className={`rounded-md p-1 text-secondary-foreground transition-colors hover:bg-accent hover:text-accent-foreground${
+              open ? ' hidden' : ''
+            }`}
+            onClick={() => setOpen(true)}
+          >
+            <PanelLeftIcon />
+          </button>
+          {!open && <span className="text-base font-bold tracking-tight text-foreground">{BRAND}</span>}
           <div className="ml-auto flex items-center gap-4">
             <HeaderClock />
             <JobsTray />

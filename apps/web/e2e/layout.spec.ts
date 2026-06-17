@@ -22,9 +22,8 @@ test('mobile nav drawer: traps focus on open, Escape closes it and restores focu
   const hamburger = page.getByRole('button', { name: 'Open menu' });
   await hamburger.click();
 
-  // Focus moves into the drawer (first focusable nav link — Operations items above are aria-disabled).
-  const firstLink = page.getByRole('link', { name: 'Pipeline' });
-  await expect(firstLink).toBeFocused();
+  // Focus moves into the drawer — the trap lands on its first focusable, the in-drawer close button.
+  await expect(page.getByRole('button', { name: 'Collapse menu' })).toBeFocused();
 
   // Escape (onEscape = close) dismisses the drawer and returns focus to the opener.
   await page.keyboard.press('Escape');

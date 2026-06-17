@@ -276,15 +276,15 @@ export function CommissionRatesPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
           <h1 className="text-xl font-bold tracking-tight">Commission Rates</h1>
           <p className="text-sm text-muted-foreground">
             Per-user agent commission by rate type &amp; client. The amount source for the Billing &amp;
             Commission view.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <ImportButton
             config={{
               basePath: '/api/v2/commission-rates',
