@@ -4,7 +4,7 @@
 > data-model change. This is the **single source of truth** for *all* tabular data in CRM2.
 > It is the front-end realization of the server contract in
 > **`docs/PAGINATION_AND_LOADING_STANDARDS.md`** (pagination envelope, page sizes, loading bands,
-> background jobs) — read both together. Cross-linked from: `ACS_CRM_2.0_MASTER_MEMORY.md`
+> background jobs) — read both together. Cross-linked from: `CRM2_MASTER_MEMORY.md`
 > (§3 + §4 + §7.6 + §8), `docs/ENGINEERING_STANDARDS.md`, `UI_STANDARDS.md`,
 > `PERFORMANCE_STANDARDS.md`, `BUILD_GUIDE.md`, `AGENT_RULES.md`,
 > `docs/MANAGEMENT_LIST_STANDARD.md`, `docs/CI_CD_STANDARDS.md`, `PROJECT_INDEX.md`.
@@ -172,7 +172,7 @@ for a data list **fails review**. See `docs/CI_CD_STANDARDS.md` gates 45–48.
 - **Retrofit obligation:** the pre-freeze bespoke tables — Verification Units page, the shared
   `MasterDataCrud` (Clients/Products), `CpvPage`, `RatesPage`, `LocationsPage` — predate this freeze
   and are **non-compliant** (custom tables). They MUST migrate to DataGrid before GA. Tracked in
-  `ACS_CRM_2.0_MASTER_MEMORY.md` §8. **No new list ships without DataGrid.**
+  `CRM2_MASTER_MEMORY.md` §8. **No new list ships without DataGrid.**
 
 ## 20 — Master-detail row expansion (opt-in)
 

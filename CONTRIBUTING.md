@@ -88,4 +88,4 @@ explicit human approval.
 
 ## Architecture is frozen
 
-The data model and architecture are frozen — see `ACS_CRM_2.0_MASTER_MEMORY.md`, `AGENT_RULES.md`, and `docs/DESIGN_AND_STACK_FREEZE.md`. **Build only.** If a change appears to require an architecture, data-model, or design change, **open a discussion first — do not redesign.**
+The data model and architecture are frozen — see `CRM2_MASTER_MEMORY.md`, `AGENT_RULES.md`, and `docs/DESIGN_AND_STACK_FREEZE.md`. **Build only.** If a change appears to require an architecture, data-model, or design change, **open a discussion first — do not redesign.**

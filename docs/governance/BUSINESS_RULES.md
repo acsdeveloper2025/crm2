@@ -4,7 +4,7 @@
 
 **Scope:** Banking field-verification + KYC CRM. Architecture is FROZEN. Model: `Case → Task → Verification Unit` (KYC = a Verification Unit subtype). Catalog = 9 `FIELD_VISIT` ∪ 59 `KYC_DOCUMENT` = 68 units, CPV-gated.
 
-**Enforcement & process:** see [`docs/CI_CD_STANDARDS.md`](docs/CI_CD_STANDARDS.md) (CI gates that block merges violating these rules). **Decisions:** each rule cites an `ADR-NNN` in [`docs/adr/`](docs/adr/) (placeholders until ADRs are authored).
+**Enforcement & process:** see [`docs/CI_CD_STANDARDS.md`](../CI_CD_STANDARDS.md) (CI gates that block merges violating these rules). **Decisions:** each rule cites an `ADR-NNN` in [`docs/adr/`](docs/adr/) (placeholders until ADRs are authored).
 
 Conventions: unit `code` = UPPER_SNAKE; time stored UTC; display uppercase only. Roles: `SUPER_ADMIN`, `MANAGER`, `TEAM_LEADER`, `BACKEND_USER`, `FIELD_AGENT`, `KYC_VERIFIER`. Access is **default-deny**.
 

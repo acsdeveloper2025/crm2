@@ -2,7 +2,7 @@
 
 CRM2 · PostgreSQL 17 (PG18 deferred) · raw `pg`, **no Prisma/ORM** · architecture FROZEN.
 
-Cross-ref: [`docs/ENGINEERING_STANDARDS.md`](../docs/ENGINEERING_STANDARDS.md) (data-access) · [`db/v2/BUILD_GATE_REGISTRY_LOCK.md`](../db/v2/BUILD_GATE_REGISTRY_LOCK.md) · [`docs/CI_CD_STANDARDS.md`](../docs/CI_CD_STANDARDS.md).
+Cross-ref: [`docs/ENGINEERING_STANDARDS.md`](../ENGINEERING_STANDARDS.md) (data-access) · [`db/v2/BUILD_GATE_REGISTRY_LOCK.md`](../../db/v2/BUILD_GATE_REGISTRY_LOCK.md) · [`docs/CI_CD_STANDARDS.md`](../CI_CD_STANDARDS.md).
 
 ## Hard rule
 

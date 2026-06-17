@@ -1,7 +1,7 @@
 # DISASTER_RECOVERY.md (Part 6)
 
 CRM2 disaster-recovery policy. Architecture is **FROZEN** (see
-`ACS_CRM_2.0_MASTER_MEMORY.md`). Process/policy level. Items dependent on
+`CRM2_MASTER_MEMORY.md`). Process/policy level. Items dependent on
 infrastructure not yet provisioned are marked **PLANNED**.
 
 ## Ground truth (stack)

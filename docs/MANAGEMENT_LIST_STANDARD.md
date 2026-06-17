@@ -34,7 +34,7 @@ Every master-data list **also** shows an **Effective From** column (`effectiveFr
 `formatDateTime`) and a three-state **Status** chip — **ACTIVE** / **SCHEDULED**
 (effective in the future) / **INACTIVE** — instead of a binary active chip. This is the
 user-settable temporal usability standard; SoT = `docs/EFFECTIVE_FROM_STANDARD.md` /
-[ADR-0017](adr/ADR-0017-effective-from-temporal-usability-gating.md). Use the shared
+[ADR-0017](./adr/ADR-0017-effective-from-temporal-usability-gating.md). Use the shared
 `StatusChip` + `effectiveStatus` helpers; create/edit dialogs carry an Effective From
 date input. A row is USABLE only when `isActive AND effectiveFrom <= now()`.
 

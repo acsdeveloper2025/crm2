@@ -18,7 +18,7 @@ Memory dir: `~/.claude/projects/-Users-mayurkulkarni-Downloads-CRM-APP-MONOREPO-
 
 ## 1. Project source of truth — read in this order (in `crm2/`)
 1. `PROJECT_INDEX.md` — the single entry point (links everything)
-2. `ACS_CRM_2.0_MASTER_MEMORY.md` — frozen architecture/data-model/UI/stack/security + §7.5 enforcement + §7.6 governance + §8 status
+2. `CRM2_MASTER_MEMORY.md` — frozen architecture/data-model/UI/stack/security + §7.5 enforcement + §7.6 governance + §8 status
 3. `docs/ENGINEERING_STANDARDS.md`, `docs/DESIGN_AND_STACK_FREEZE.md`, `docs/CI_CD_STANDARDS.md`, `UI_STANDARDS.md`
 4. `AGENT_RULES.md`, `CTO_RULES.md`, `BUILD_GUIDE.md`, `BUILD_METHOD.md`
 5. `docs/adr/README.md` + ADR-0001..0019
@@ -27,7 +27,7 @@ Memory dir: `~/.claude/projects/-Users-mayurkulkarni-Downloads-CRM-APP-MONOREPO-
 8. Governance/ops: `BUSINESS_RULES.md`, `API_VERSIONING_POLICY.md`, `MOBILE_API_COMPATIBILITY_MATRIX.md`, `SECURITY_STANDARDS.md`, `LONG_TERM_PROTECTION.md`, `DATABASE_CHANGE_PROCESS.md`, `ALLOWED_DEPENDENCIES.md`, `TECH_DEBT_POLICY.md`, `OPERATIONS_GUIDE.md` (+ rest via PROJECT_INDEX)
 
 ## 2. Project progress — establish current state (as of 2026-06-05, HEAD `2746645`, LOCAL only)
-- Read `ACS_CRM_2.0_MASTER_MEMORY.md` §8 (Implementation Status) + `docs/COMPLIANCE_GAPS_REGISTRY.md`.
+- Read `CRM2_MASTER_MEMORY.md` §8 (Implementation Status) + `docs/COMPLIANCE_GAPS_REGISTRY.md`.
 - Run `git -C crm2 log --oneline -20` and `git -C crm2 status`.
 - **Resequenced build order (user directive): ALL ADMINISTRATION first, THEN OPERATIONS.**
   - **DONE:** Verification Units · Clients · Products · CPV Mapping · **Rate Management** · **Location Management** (incl. full official all-India pincode import — 157k areas / 19.3k pincodes / 36 states, `country` added).
@@ -48,4 +48,4 @@ Memory dir: `~/.claude/projects/-Users-mayurkulkarni-Downloads-CRM-APP-MONOREPO-
 State the current phase (from §8 + git log) and the next concrete step, then proceed. If nothing else is specified, resume the build order.
 
 ---
-*Keep this file current: when a phase completes or a freeze changes, update `ACS_CRM_2.0_MASTER_MEMORY.md` §8, the relevant doc, and the Claude memory files — so the next session stays consistent.*
+*Keep this file current: when a phase completes or a freeze changes, update `CRM2_MASTER_MEMORY.md` §8, the relevant doc, and the Claude memory files — so the next session stays consistent.*

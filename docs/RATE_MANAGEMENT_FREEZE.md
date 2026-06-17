@@ -3,7 +3,7 @@
 > ⚠️ **SUPERSEDED — describes the abandoned 4-table model.** The owner reshaped Rate Management
 > to a FLAT one-table model mid-build; `rate_type_eligibility` + `service_zone_rules` + the
 > eligibility trigger described below were **dropped** (migration 0013). The shipped design is
-> [ADR-0018](adr/ADR-0018-rate-management-flat-one-table-model.md). This freeze is retained for
+> [ADR-0018](./adr/ADR-0018-rate-management-flat-one-table-model.md). This freeze is retained for
 > history only — do not implement against the DDL/resolution/workspace sections below.
 
 **Status:** SUPERSEDED → ADR-0018 (was: FROZEN design binding ADR-0016). Derived from the

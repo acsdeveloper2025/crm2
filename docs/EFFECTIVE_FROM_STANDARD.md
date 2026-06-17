@@ -1,6 +1,6 @@
 # EFFECTIVE_FROM_STANDARD.md — temporal usability gating for master data
 
-**Status:** FROZEN 2026-06-05 · **ADR:** [ADR-0017](adr/ADR-0017-effective-from-temporal-usability-gating.md)
+**Status:** FROZEN 2026-06-05 · **ADR:** [ADR-0017](./adr/ADR-0017-effective-from-temporal-usability-gating.md)
 
 Master data carries a user-settable **`effective_from`**. A row is **USABLE** only
 when it is both active and in effect. This standard is mandatory for every
@@ -70,7 +70,7 @@ Create/edit dialogs include an Effective From date input (blank ⇒ now on creat
 
 ## Related
 
-- [ADR-0017](adr/ADR-0017-effective-from-temporal-usability-gating.md) ·
-  [ADR-0016](adr/ADR-0016-rate-management-resolution-versioning-workspace.md) (rates effective-dating) ·
+- [ADR-0017](./adr/ADR-0017-effective-from-temporal-usability-gating.md) ·
+  [ADR-0016](./adr/ADR-0016-rate-management-resolution-versioning-workspace.md) (rates effective-dating) ·
   `MANAGEMENT_LIST_STANDARD.md` (Created/Updated columns) ·
   `docs/FROZEN_DECISIONS_REGISTRY.md`.

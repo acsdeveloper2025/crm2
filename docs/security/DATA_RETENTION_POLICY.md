@@ -1,7 +1,7 @@
 # DATA_RETENTION_POLICY.md (Part 7)
 
 CRM2 data-retention & disposal policy. Architecture is **FROZEN** (see
-`ACS_CRM_2.0_MASTER_MEMORY.md`). Process/policy level. Enforcement automation is
+`CRM2_MASTER_MEMORY.md`). Process/policy level. Enforcement automation is
 marked **PLANNED**.
 
 ## Ground truth

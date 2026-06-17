@@ -159,8 +159,8 @@ The audit-mapped v1 gaps drive the v2 calls below:
 
 ## Related ADRs
 
-- [ADR-0019](ADR-0019-concurrency-and-editing-standard.md) — OCC for layout rows.
-- [ADR-0037](ADR-0037-mis-layout-engine.md) — `report_layouts` schema.
-- [ADR-0038](ADR-0038-template-report-engine.md) — config-driven template-report engine direction.
-- [ADR-0039](ADR-0039-field-report-engine.md) — FIELD_REPORT engine (per-task narrative; reused per-task in CASE_REPORT).
-- [ADR-0040](ADR-0040-field-photo-reverse-geocode.md) — frozen `reverse_geocoded_address` on `case_attachments` (Slice C surfaces it in CASE_REPORT photo context).
+- [ADR-0019](./ADR-0019-concurrency-and-editing-standard.md) — OCC for layout rows.
+- [ADR-0037](./ADR-0037-mis-layout-engine.md) — `report_layouts` schema.
+- [ADR-0038](./ADR-0038-template-report-engine.md) — config-driven template-report engine direction.
+- [ADR-0039](./ADR-0039-field-report-engine.md) — FIELD_REPORT engine (per-task narrative; reused per-task in CASE_REPORT).
+- [ADR-0040](./ADR-0040-field-photo-reverse-geocode.md) — frozen `reverse_geocoded_address` on `case_attachments` (Slice C surfaces it in CASE_REPORT photo context).

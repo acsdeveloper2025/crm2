@@ -38,7 +38,7 @@ Every list is **search-first** (search + filters + sorting) and **server-side pa
 on every data view.
 
 ---
-*Cross-links: `ACS_CRM_2.0_MASTER_MEMORY.md` · `docs/DESIGN_AND_STACK_FREEZE.md` ·
+*Cross-links: `CRM2_MASTER_MEMORY.md` · `docs/DESIGN_AND_STACK_FREEZE.md` ·
 `PERFORMANCE_STANDARDS.md` · `BUILD_GUIDE.md` · `AGENT_RULES.md` · `PROJECT_INDEX.md`.*
 
 ## Universal DataGrid (FROZEN 2026-06-05) — SoT `docs/DATAGRID_STANDARD.md`

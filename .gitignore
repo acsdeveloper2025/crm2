@@ -65,3 +65,6 @@ Desktop.ini
 .cache/
 tmp/
 .temp/
+
+# Local-only session/working scratch prompts (not tracked)
+docs/prompts/

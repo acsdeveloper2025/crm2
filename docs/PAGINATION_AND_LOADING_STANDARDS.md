@@ -3,7 +3,7 @@
 > **Permanent UX & scalability freeze (2026-06-05).** No redesign · no architecture change · no
 > data-model change. This document is the **single source of truth** for pagination, loading
 > perception, user feedback, and long-running operations. All list pages, APIs, loaders, and
-> exports MUST comply. Cross-linked from: `ACS_CRM_2.0_MASTER_MEMORY.md` (§7.6 + status),
+> exports MUST comply. Cross-linked from: `CRM2_MASTER_MEMORY.md` (§7.6 + status),
 > `docs/ENGINEERING_STANDARDS.md`, `docs/DESIGN_AND_STACK_FREEZE.md`, `PERFORMANCE_STANDARDS.md`,
 > `UI_STANDARDS.md`, `BUILD_GUIDE.md`, `AGENT_RULES.md`, `docs/MANAGEMENT_LIST_STANDARD.md`,
 > `docs/CI_CD_STANDARDS.md`, `PROJECT_INDEX.md`.
@@ -170,7 +170,7 @@ pending-activation matrix). CI fails on any violation once active.
 The standard is **frozen now**; implementation follows it going forward. Existing list endpoints
 built before this freeze (Verification Units, Clients, Products, CPV, Rates, Locations) currently
 return capped/unpaginated results and are **non-compliant** — they MUST be retrofitted to §1/§4
-before GA. Tracked as a standing obligation in `ACS_CRM_2.0_MASTER_MEMORY.md` §8. No new list
+before GA. Tracked as a standing obligation in `CRM2_MASTER_MEMORY.md` §8. No new list
 endpoint may ship non-compliant.
 
 ---

@@ -7,7 +7,7 @@
 > A frozen element is **load-bearing**: large parts of the system assume it holds. Changing one
 > silently breaks correctness, money, audit, or security. The supersede-ADR is the only legal path.
 >
-> Cross-ref: `docs/adr/`, `CTO_RULES.md`, `ACS_CRM_2.0_MASTER_MEMORY.md`.
+> Cross-ref: `docs/adr/`, `CTO_RULES.md`, `CRM2_MASTER_MEMORY.md`.
 
 ## Protected elements
 

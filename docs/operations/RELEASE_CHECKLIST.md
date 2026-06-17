@@ -8,25 +8,25 @@ CRM2 · architecture FROZEN. Every box must be checked (or explicitly N/A with r
 - [ ] CI all green: typecheck, eslint, prettier, unit, integration, build, openapi, sdk, e2e.
 - [ ] secret-scan, boundaries, no-suppressions, migration-idempotency all pass.
 - [ ] Coverage met: repositories/services **≥90%**, overall **≥80%**.
-- [ ] Golden-dataset regression pass ([`TEST_DATASET_STRATEGY.md`](./TEST_DATASET_STRATEGY.md)).
+- [ ] Golden-dataset regression pass ([`TEST_DATASET_STRATEGY.md`](../engineering/TEST_DATASET_STRATEGY.md)).
 
 ## API contract
 
 - [ ] OpenAPI regenerated, **no drift** committed.
 - [ ] SDK regenerated, **no drift** committed.
-- [ ] Breaking API changes follow [`API_VERSIONING_POLICY.md`](./API_VERSIONING_POLICY.md).
+- [ ] Breaking API changes follow [`API_VERSIONING_POLICY.md`](../engineering/API_VERSIONING_POLICY.md).
 
 ## Database & migrations
 
 - [ ] Migrations forward-only + **idempotent** (apply-twice clean).
-- [ ] Reviewed per [`DATABASE_CHANGE_PROCESS.md`](./DATABASE_CHANGE_PROCESS.md) (DDL, impact, perf, backfill, matview re-create).
+- [ ] Reviewed per [`DATABASE_CHANGE_PROCESS.md`](../engineering/DATABASE_CHANGE_PROCESS.md) (DDL, impact, perf, backfill, matview re-create).
 - [ ] expand→migrate→contract staging confirmed for high-risk schema changes.
 - [ ] Gated migrate step verified (api depends on migrate success — atomic).
 
 ## Security
 
-- [ ] Security review complete ([`SECURITY_STANDARDS.md`](./SECURITY_STANDARDS.md) / [`SECURITY_GUIDE.md`](./SECURITY_GUIDE.md)): authz/scope, input validation, secrets, RBAC default-deny.
-- [ ] Dependency review — new/updated deps in [`ALLOWED_DEPENDENCIES.md`](./ALLOWED_DEPENDENCIES.md); no unvetted additions.
+- [ ] Security review complete ([`SECURITY_STANDARDS.md`](../security/SECURITY_STANDARDS.md) / [`SECURITY_GUIDE.md`](../security/SECURITY_GUIDE.md)): authz/scope, input validation, secrets, RBAC default-deny.
+- [ ] Dependency review — new/updated deps in [`ALLOWED_DEPENDENCIES.md`](../engineering/ALLOWED_DEPENDENCIES.md); no unvetted additions.
 
 ## Backup & rollback
 
@@ -59,7 +59,7 @@ CRM2 · architecture FROZEN. Every box must be checked (or explicitly N/A with r
 - [ ] Release notes written (changes, migrations, flag state, rollback note).
 - [ ] ADRs added/updated for architectural decisions.
 - [ ] Conventional-commit history; author `Mayur Kulkarni <mayurkulkarni786@gmail.com>`; no AI trailer.
-- [ ] Human approval to deploy obtained (domain owner co-approval for money/assignment/review/reporting — [`DOMAIN_OWNERSHIP.md`](./DOMAIN_OWNERSHIP.md)).
+- [ ] Human approval to deploy obtained (domain owner co-approval for money/assignment/review/reporting — [`DOMAIN_OWNERSHIP.md`](../governance/DOMAIN_OWNERSHIP.md)).
 
 ## Monitoring
 

@@ -99,7 +99,7 @@ MASTER_MEMORY §9.
 | C-9 | **Responsive-First retrofit — ALL pre-freeze screens** (app shell/sidebar, every feature page, dialogs, filters) | desktop-layout: persistent fixed sidebar (no mobile drawer), wide tables with no mobile card view, some non-responsive grids/dialogs → breaks `<768px` | responsive-first per `docs/RESPONSIVE_DESIGN_STANDARD.md`: sidebar→hamburger/Sheet `<lg`, table→card on mobile, mobile-up grids/dialogs, no horizontal overflow at 320/768/1024/1440 + Playwright viewport specs | Responsive retrofit (app shell first; table→card folds into the DataGrid build). See FROZEN #32. |
 
 **Rule:** no NEW list ships without pagination + DataGrid; these pre-freeze pages migrate before GA
-(also tracked in `ACS_CRM_2.0_MASTER_MEMORY.md` §8).
+(also tracked in `CRM2_MASTER_MEMORY.md` §8).
 
 **PROGRESS 2026-06-06 (`4e7a8fd`) — DataGrid epic started (vertical reference):** the Universal DataGrid
 core + the server-pagination envelope shipped on the clients/products reference (C-1 ✅). DataGrid lives
@@ -511,5 +511,5 @@ Each finding is marked OPEN · FIXED · DEFERRED · WONTFIX.
 
 ---
 *Governance ledger. Update — never overwrite — as findings change state. Linked from
-`ACS_CRM_2.0_MASTER_MEMORY.md`, `PROJECT_INDEX.md`, `docs/ARCHITECTURE_GOVERNANCE.md`,
+`CRM2_MASTER_MEMORY.md`, `PROJECT_INDEX.md`, `docs/ARCHITECTURE_GOVERNANCE.md`,
 `FREEZE_LOCK_REPORT.md`.*

@@ -1,7 +1,7 @@
 # runbooks/
 
 Incident runbooks for **CRM2**. Architecture **FROZEN**
-(`ACS_CRM_2.0_MASTER_MEMORY.md`). Unbuilt infra is marked **PLANNED**.
+(`CRM2_MASTER_MEMORY.md`). Unbuilt infra is marked **PLANNED**.
 Hostnames/credentials are placeholders — real values in the secret store.
 
 Start here during an incident, then open the matching runbook. Entry-point
@@ -10,13 +10,13 @@ diagnosis: `curl -fsS https://<host>/api/v2/health`.
 ## Index
 | Runbook | When |
 |---|---|
-| [api-outage.md](api-outage.md) | `/api/v2/health` failing, 5xx, api process down |
-| [db-outage.md](db-outage.md) | PostgreSQL 17 unreachable / failing / replica lag |
-| [redis-outage.md](redis-outage.md) | Valkey 8 queue or cache down |
-| [report-worker-outage.md](report-worker-outage.md) | worker/report jobs not running (**PLANNED**) |
-| [storage-outage.md](storage-outage.md) | object store (MinIO→S3) / evidence unreachable |
-| [queue-backlog.md](queue-backlog.md) | BullMQ queue depth growing (**PLANNED**) |
-| [failed-deployment.md](failed-deployment.md) | deploy failed / bad release / migrate step failed |
+| [api-outage.md](./api-outage.md) | `/api/v2/health` failing, 5xx, api process down |
+| [db-outage.md](./db-outage.md) | PostgreSQL 17 unreachable / failing / replica lag |
+| [redis-outage.md](./redis-outage.md) | Valkey 8 queue or cache down |
+| [report-worker-outage.md](./report-worker-outage.md) | worker/report jobs not running (**PLANNED**) |
+| [storage-outage.md](./storage-outage.md) | object store (MinIO→S3) / evidence unreachable |
+| [queue-backlog.md](./queue-backlog.md) | BullMQ queue depth growing (**PLANNED**) |
+| [failed-deployment.md](./failed-deployment.md) | deploy failed / bad release / migrate step failed |
 
 ## Standard runbook format
 Every runbook follows the same sections:

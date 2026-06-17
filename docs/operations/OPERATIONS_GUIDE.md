@@ -1,7 +1,7 @@
 # OPERATIONS_GUIDE.md
 
 Operational runbook for **CRM2** (banking RCU/KYC CRM). Architecture is
-**FROZEN** (see `ACS_CRM_2.0_MASTER_MEMORY.md`). Infra not yet provisioned is
+**FROZEN** (see `CRM2_MASTER_MEMORY.md`). Infra not yet provisioned is
 marked **PLANNED**. Hostnames/credentials are placeholders — real values live in
 the secret store, never in git.
 

@@ -6,7 +6,7 @@
 > **Release gate:** An **unowned domain blocks release.** Ownership must be documented here
 > and kept current. Owners are **role placeholders** (small team) — fill in real names.
 >
-> Cross-ref: `CTO_RULES.md`, `LONG_TERM_PROTECTION.md`, `ACS_CRM_2.0_MASTER_MEMORY.md`, `docs/adr/`.
+> Cross-ref: `CTO_RULES.md`, `LONG_TERM_PROTECTION.md`, `CRM2_MASTER_MEMORY.md`, `docs/adr/`.
 
 ## Ownership table
 

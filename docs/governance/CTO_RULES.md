@@ -1,7 +1,7 @@
 # CTO_RULES.md
 
 CRM2 (v2) greenfield monorepo. Architecture, data model, design, and stack are **FROZEN**
-(see `ACS_CRM_2.0_MASTER_MEMORY.md`, `docs/DESIGN_AND_STACK_FREEZE.md`,
+(see `CRM2_MASTER_MEMORY.md`, `docs/DESIGN_AND_STACK_FREEZE.md`,
 `docs/COLOR_SYSTEM_FREEZE.md`, `docs/UPPERCASE_DISPLAY_STANDARD.md`).
 This file defines the CTO review role and the approval gate every module must pass before the
 next build-order phase starts.
@@ -48,7 +48,7 @@ A module is **NOT complete** until ALL boxes pass:
 ## 3. Phase Progression
 
 Only after the gate passes for a module may the **next build-order phase begin**
-(order per `ACS_CRM_2.0_MASTER_MEMORY.md`). No exceptions.
+(order per `CRM2_MASTER_MEMORY.md`). No exceptions.
 
 ## 4. Escalation
 
@@ -62,7 +62,7 @@ work** — the change does not proceed until the human owner resolves it.
 
 ## Long-Term Governance & Operations (2026-06-04 freeze)
 
-Full map: `ACS_CRM_2.0_MASTER_MEMORY.md` §7.6. **Decisions** → `docs/adr/` (ADR-0001..0019; change a frozen decision only via a superseding ADR + CTO + domain-owner sign-off — `LONG_TERM_PROTECTION.md`). **Business rules** → `BUSINESS_RULES.md` (no rule lives only in code). **API/contract** → `API_VERSIONING_POLICY.md`, `DOCUMENTATION_AS_CODE.md`. **DB change** → `DATABASE_CHANGE_PROCESS.md`. **Security** → `SECURITY_STANDARDS.md`, `SECURITY_GUIDE.md`. **Resilience** → `DISASTER_RECOVERY.md` (quarterly restore drill), `DATA_RETENTION_POLICY.md`. **Ownership** → `DOMAIN_OWNERSHIP.md`. **Quality/ops** → `TEST_DATASET_STRATEGY.md`, `PERFORMANCE_STANDARDS.md`, `OBSERVABILITY_STANDARDS.md`, `MONITORING_STRATEGY.md`, `OPERATIONS_GUIDE.md` + `runbooks/`, `RELEASE_GUIDE.md` + `RELEASE_CHECKLIST.md`, `UPGRADE_POLICY.md`, `TECH_DEBT_POLICY.md`.
+Full map: `CRM2_MASTER_MEMORY.md` §7.6. **Decisions** → `docs/adr/` (ADR-0001..0019; change a frozen decision only via a superseding ADR + CTO + domain-owner sign-off — `LONG_TERM_PROTECTION.md`). **Business rules** → `BUSINESS_RULES.md` (no rule lives only in code). **API/contract** → `API_VERSIONING_POLICY.md`, `DOCUMENTATION_AS_CODE.md`. **DB change** → `DATABASE_CHANGE_PROCESS.md`. **Security** → `SECURITY_STANDARDS.md`, `SECURITY_GUIDE.md`. **Resilience** → `DISASTER_RECOVERY.md` (quarterly restore drill), `DATA_RETENTION_POLICY.md`. **Ownership** → `DOMAIN_OWNERSHIP.md`. **Quality/ops** → `TEST_DATASET_STRATEGY.md`, `PERFORMANCE_STANDARDS.md`, `OBSERVABILITY_STANDARDS.md`, `MONITORING_STRATEGY.md`, `OPERATIONS_GUIDE.md` + `runbooks/`, `RELEASE_GUIDE.md` + `RELEASE_CHECKLIST.md`, `UPGRADE_POLICY.md`, `TECH_DEBT_POLICY.md`.
 
 ---
 

@@ -1,6 +1,6 @@
 # CONCURRENCY_AND_EDITING_STANDARD.md — how editing works everywhere (FROZEN)
 
-**Status:** FROZEN 2026-06-05 · **ADR:** [ADR-0019](adr/ADR-0019-concurrency-and-editing-standard.md) ·
+**Status:** FROZEN 2026-06-05 · **ADR:** [ADR-0019](./adr/ADR-0019-concurrency-and-editing-standard.md) ·
 **Scope:** ALL administration modules (and every read-then-edit CRUD in the app) — current and future.
 
 > The one rule: **every record edit is an Optimistic-Concurrency update guarded by an integer
@@ -123,6 +123,6 @@ keep only `updated_by`/`updated_at`. Tables WITH a `version` column today: `veri
 
 ## Related
 
-- [ADR-0019](adr/ADR-0019-concurrency-and-editing-standard.md) · ADR-0005 (repository pattern) ·
+- [ADR-0019](./adr/ADR-0019-concurrency-and-editing-standard.md) · ADR-0005 (repository pattern) ·
   ADR-0018 (`rates` effective-dated revise) · `BUSINESS_RULES.md` · `docs/MANAGEMENT_LIST_STANDARD.md` ·
   `docs/DATAGRID_STANDARD.md` (bulk actions) · `DATA_RETENTION_POLICY.md` · `docs/FROZEN_DECISIONS_REGISTRY.md`.
