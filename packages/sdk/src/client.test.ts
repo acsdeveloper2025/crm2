@@ -323,6 +323,9 @@ describe('createSdk — transport', () => {
         '00000000-0000-0000-0000-000000000001',
         '00000000-0000-0000-0000-000000000004',
       ),
+      s.cases.reportPreview('00000000-0000-0000-0000-000000000001'),
+      s.cases.generateReport('00000000-0000-0000-0000-000000000001'),
+      s.time.now(),
       s.tasks.list({ filters: { status: 'PENDING' } }),
       s.tasks.stats({ search: 'CASE-000001' }),
       s.tasks.assignableUsers(['00000000-0000-0000-0000-000000000002']),
@@ -363,7 +366,7 @@ describe('createSdk — transport', () => {
       s.savedViews.remove('00000000-0000-0000-0000-0000000000aa'),
       s.savedViews.setDefault('00000000-0000-0000-0000-0000000000aa', true),
     ]);
-    expect(calls.length).toBe(153);
+    expect(calls.length).toBe(156);
     expect(calls.some((c) => c.url === 'http://x/api/v2/commission-rates')).toBe(true);
     expect(calls.some((c) => c.url === 'http://x/api/v2/report-layouts')).toBe(true);
     expect(

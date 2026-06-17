@@ -1,1 +1,6 @@
-{ "extends": "../../tsconfig.base.json", "include": ["src"] }
+{
+  "extends": "../../tsconfig.base.json",
+  "_comment": "Node-only package referencing `process` ambiently. vitest 2 transitively loaded @types/node globals; vitest 4 no longer does, so pin types to node explicitly (the test imports vitest names directly, so no globals are lost). See packages/config/tsconfig.json.",
+  "compilerOptions": { "types": ["node"] },
+  "include": ["src"]
+}
