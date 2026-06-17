@@ -1,5 +1,23 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createLogger, LOG_LEVELS } from './index.js';
+
+/** Run `fn` with env vars temporarily set, then restore (no leakage between tests). */
+function withEnv(vars: Record<string, string | undefined>, fn: () => void): void {
+  const prev: Record<string, string | undefined> = {};
+  for (const k of Object.keys(vars)) prev[k] = process.env[k];
+  try {
+    for (const [k, v] of Object.entries(vars)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    fn();
+  } finally {
+    for (const [k, v] of Object.entries(prev)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+}
 
 const capture = () => {
   const lines: string[] = [];
@@ -43,5 +61,36 @@ describe('@crm2/logger', () => {
 
   it('exposes all six mandated levels in order', () => {
     expect(LOG_LEVELS).toEqual(['trace', 'debug', 'info', 'warn', 'error', 'fatal']);
+  });
+
+  it('resolves level from LOG_LEVEL env and uses the default stdout sink + clock', () => {
+    const stdout = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
+    try {
+      withEnv({ LOG_LEVEL: 'warn', NODE_ENV: undefined }, () => {
+        const log = createLogger(); // no level/write/now → env level + default sink + default clock
+        log.info('dropped'); // below warn → filtered
+        log.warn('kept'); // emitted via the default process.stdout sink
+      });
+      expect(stdout).toHaveBeenCalledTimes(1);
+      const rec = JSON.parse(String(stdout.mock.calls[0]![0]).trim());
+      expect(rec).toMatchObject({ level: 'warn', msg: 'kept' });
+      expect(typeof rec.time).toBe('string'); // default now() produced a real ISO timestamp
+    } finally {
+      stdout.mockRestore();
+    }
+  });
+
+  it('falls back to info in production and debug otherwise when no level is given', () => {
+    const c = capture();
+    withEnv({ LOG_LEVEL: undefined, NODE_ENV: 'production' }, () => {
+      createLogger({ write: c.write, now: c.now }).info('prod');
+    });
+    expect(c.lines).toHaveLength(1); // info is the floor in production
+
+    c.lines.length = 0;
+    withEnv({ LOG_LEVEL: undefined, NODE_ENV: 'development' }, () => {
+      createLogger({ write: c.write, now: c.now }).debug('dev');
+    });
+    expect(c.lines).toHaveLength(1); // debug is the floor outside production
   });
 });

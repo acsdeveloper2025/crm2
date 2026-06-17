@@ -407,4 +407,34 @@ describe('createSdk — transport', () => {
     ]);
     expect(calls.every((c) => c.init.method === 'GET' && c.init.body === undefined)).toBe(true);
   });
+
+  it('wires the diagnostic + reference read endpoints (system, rate-types, roles, access, geocode)', async () => {
+    const { impl, calls } = fakeFetch(200, {});
+    const s = createSdk({ baseUrl: 'http://x', fetchImpl: impl });
+    await s.system.health();
+    await s.rateTypes.list();
+    await s.roles.options();
+    await s.roles.dimensions();
+    await s.access.matrix();
+    await s.geocode.reverse(12.97, 77.59);
+    await s.geocode.dlq();
+    expect(calls.map((c) => c.url)).toEqual([
+      'http://x/api/v2/system/health',
+      'http://x/api/v2/rate-types?active=true',
+      'http://x/api/v2/roles/options',
+      'http://x/api/v2/roles/dimensions',
+      'http://x/api/v2/access/matrix',
+      'http://x/api/v2/geocode/reverse?lat=12.97&lng=77.59',
+      'http://x/api/v2/geocode/dlq',
+    ]);
+    expect(calls.every((c) => c.init.method === 'GET')).toBe(true);
+  });
+
+  it('posts the geocode DLQ replay', async () => {
+    const { impl, calls } = fakeFetch(200, { replayed: 3 });
+    const s = createSdk({ baseUrl: 'http://x', fetchImpl: impl });
+    expect(await s.geocode.replayDlq()).toEqual({ replayed: 3 });
+    expect(calls[0]?.url).toBe('http://x/api/v2/geocode/dlq/replay');
+    expect(calls[0]?.init.method).toBe('POST');
+  });
 });
