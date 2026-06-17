@@ -29,7 +29,8 @@ export async function processFieldPhoto(bytes: Buffer): Promise<ProcessedFieldPh
   // `limitInputPixels` bounds the decode (decompression-bomb defense).
   const pipeline = sharp(bytes, { limitInputPixels: MAX_INPUT_PIXELS }).rotate();
   const stripped = await pipeline.clone().toBuffer();
-  let thumbnail: Buffer | null = null;
+  // assigned in both the try and the catch below — no dead initializer (eslint no-useless-assignment).
+  let thumbnail: Buffer | null;
   try {
     thumbnail = await pipeline
       .clone()
