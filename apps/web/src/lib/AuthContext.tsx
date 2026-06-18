@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import type { AuthUser, LoginResponse } from '@crm2/sdk';
+import type { AuthUser, LoginResponse, PendingPolicy } from '@crm2/sdk';
 import { api, setUnauthorizedHandler } from './sdk.js';
 import { tokenStore } from './auth.js';
 import { disconnectSocket } from './socket.js';
@@ -11,8 +11,15 @@ interface AuthState {
   /** login returned mustChangePassword (an admin-issued one-time password, or an over-age password per
    *  the role's rotation policy) → the app blocks into the forced change-password screen until cleared. */
   mustChangePassword: boolean;
+  /** login returned mustAcceptPolicies → the app blocks into the policy-acceptance screen until the
+   *  user accepts every pending active policy (ADR-0042). */
+  mustAcceptPolicies: boolean;
+  /** the active policies this user still owes acceptance for (empty once accepted/cleared). */
+  pendingPolicies: PendingPolicy[];
   login: (username: string, password: string, mfaCode?: string) => Promise<void>;
   logout: () => Promise<void>;
+  /** records the user's acceptance of all pending policies, then clears the gate. */
+  acceptPolicies: () => Promise<void>;
 }
 
 const AuthCtx = createContext<AuthState | null>(null);
@@ -21,6 +28,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [ready, setReady] = useState(false);
   const [mustChangePassword, setMustChangePassword] = useState(false);
+  const [mustAcceptPolicies, setMustAcceptPolicies] = useState(false);
+  const [pendingPolicies, setPendingPolicies] = useState<PendingPolicy[]>([]);
 
   useEffect(() => {
     setUnauthorizedHandler(() => setUser(null));
@@ -44,7 +53,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     tokenStore.set(res.tokens.accessToken, res.tokens.refreshToken);
     setMustChangePassword(res.mustChangePassword);
+    setMustAcceptPolicies(res.mustAcceptPolicies);
+    setPendingPolicies(res.pendingPolicies);
     setUser(res.user);
+  };
+
+  const acceptPolicies = async (): Promise<void> => {
+    await api('POST', '/api/v2/auth/accept-policies', { policyIds: pendingPolicies.map((p) => p.id) });
+    setPendingPolicies([]);
+    setMustAcceptPolicies(false);
   };
 
   const logout = async (): Promise<void> => {
@@ -56,11 +73,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     tokenStore.clear();
     disconnectSocket(); // drop the realtime channel so the next login re-handshakes (ADR-0027)
     setMustChangePassword(false);
+    setMustAcceptPolicies(false);
+    setPendingPolicies([]);
     setUser(null);
   };
 
   return (
-    <AuthCtx.Provider value={{ user, ready, mustChangePassword, login, logout }}>{children}</AuthCtx.Provider>
+    <AuthCtx.Provider
+      value={{
+        user,
+        ready,
+        mustChangePassword,
+        mustAcceptPolicies,
+        pendingPolicies,
+        login,
+        logout,
+        acceptPolicies,
+      }}
+    >
+      {children}
+    </AuthCtx.Provider>
   );
 }
 

@@ -5,6 +5,7 @@ import { useAuth } from './lib/AuthContext.js';
 import { syncServerClock } from './lib/serverClock.js';
 import { LoginPage } from './features/auth/LoginPage.js';
 import { MustChangePasswordPage } from './features/auth/MustChangePasswordPage.js';
+import { MustAcceptPoliciesPage } from './features/auth/MustAcceptPoliciesPage.js';
 import { Layout } from './components/Layout.js';
 import { VerificationUnitsPage } from './features/verificationUnits/VerificationUnitsPage.js';
 import { ClientsPage } from './features/clients/ClientsPage.js';
@@ -32,7 +33,7 @@ import { CommissionRatesPage } from './features/commissionRates/CommissionRatesP
 import { ReportLayoutsPage } from './features/reportLayouts/ReportLayoutsPage.js';
 
 export function App() {
-  const { user, ready, mustChangePassword } = useAuth();
+  const { user, ready, mustChangePassword, mustAcceptPolicies } = useAuth();
 
   // ADR-0028: sync the server clock offset once at boot (unauthenticated `/api/v2/time`), so any
   // client-originated time decision uses server-corrected time.
@@ -50,6 +51,8 @@ export function App() {
   if (!user) return <LoginPage />;
   // Per-role rotation or an admin-issued one-time password: block the app until it's changed.
   if (mustChangePassword) return <MustChangePasswordPage />;
+  // ADR-0042: block the app until the user accepts every active policy returned by login.
+  if (mustAcceptPolicies) return <MustAcceptPoliciesPage />;
 
   return (
     <Layout>
