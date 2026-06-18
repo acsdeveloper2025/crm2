@@ -21,6 +21,7 @@ import { locationCaptureRoutes } from '../modules/location/routes.js';
 import { geocodeRoutes } from '../modules/geocode/routes.js';
 import { syncRoutes } from '../modules/sync/routes.js';
 import { verificationUnitRoutes } from '../modules/verificationUnits/routes.js';
+import { policyRoutes } from '../modules/policies/routes.js';
 import { clientRoutes } from '../modules/clients/routes.js';
 import { productRoutes } from '../modules/products/routes.js';
 import { clientProductRoutes, cpvUnitRoutes } from '../modules/cpv/routes.js';
@@ -90,6 +91,7 @@ export function createApp(opts: { enableTestAuth?: boolean } = {}): Express {
   mount('/api/v2/time', timeRoutes); // ADR-0028: server-authoritative clock (unauthenticated)
   mount('/api/v2/auth', authRoutes);
   mount('/api/v2/verification-units', verificationUnitRoutes);
+  mount('/api/v2/policies', policyRoutes);
   mount('/api/v2/clients', clientRoutes);
   mount('/api/v2/products', productRoutes);
   mount('/api/v2/client-products', clientProductRoutes);
