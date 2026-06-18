@@ -1,8 +1,18 @@
 # Login Policy Acceptance — Design Spec (2026-06-17)
 
-**Status:** Approved (design) — pending implementation plan.
+**Status:** Approved (design) — reconciled with mobile-parity at implementation (see note).
 **Owner sign-off needed for:** new ADR-0043 + FROZEN_DECISIONS_REGISTRY row 35 (new entity + new login gate).
 **Replicates:** v1 "Field Executive Acknowledgement" consent feature (`user_consents`), rebuilt the v2 way.
+
+> **Reconciliation note (post-merge):** the dedicated `policy_acceptances` table and the
+> `POST /api/v2/auth/accept-policies` endpoint described below were **dropped** in favour of the shared
+> mobile-parity **`consents`** store (`0070_mobile_consents.sql`). Acceptances are now keyed by
+> `(user_id, policy_version = policies.content_version)` and recorded via **`POST /api/v2/consents/accept`**
+> (`{ policyVersion }`, idempotent UPSERT). The `policies` table (migration `0072_policy_acceptance.sql`)
+> stays the admin-managed content/version master; the per-policy `/acceptances` audit view was removed.
+> The gate rule is unchanged (clear when a `consents` row exists at each active policy's current
+> `content_version`). Note: `consents` is keyed by version only, so the gate assumes a single active
+> policy at a time. Sections below retain the pre-reconciliation design for context.
 
 ---
 

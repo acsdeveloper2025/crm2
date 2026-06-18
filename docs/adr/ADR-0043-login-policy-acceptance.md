@@ -1,9 +1,23 @@
 # ADR-0043: Login policy acceptance — admin-managed, versioned, all-users server-driven gate
 
-- **Status:** Accepted
+- **Status:** Accepted (reconciled — see note below)
 - **Date:** 2026-06-17
 - **Reference spec:** [docs/specs/2026-06-17-login-policy-acceptance-design.md](../specs/2026-06-17-login-policy-acceptance-design.md) (design) · [docs/plans/2026-06-17-login-policy-acceptance-plan.md](../plans/2026-06-17-login-policy-acceptance-plan.md) (implementation plan).
 - **Replicates (v1):** the "Field Executive Acknowledgement" consent feature (`user_consents`), rebuilt the v2 way.
+
+> **Reconciliation (post-merge with mobile-parity):** acceptances are **not** stored in a dedicated
+> `policy_acceptances` table. They live in the **shared `consents` store** (the mobile-parity DPDP
+> table, `0070_mobile_consents.sql`), keyed by `(user_id, policy_version = policies.content_version)`.
+> The `policies` table (this ADR's migration, now `0072_policy_acceptance.sql`) remains the
+> **admin-managed content/version master**. Web records acceptance via the shared
+> **`POST /api/v2/consents/accept`** endpoint (`{ policyVersion }`, idempotent UPSERT) — the original
+> `POST /api/v2/auth/accept-policies` endpoint, the `policy_acceptances` table, and the per-policy
+> `/acceptances` audit view were removed. The gate rule is otherwise unchanged: a user is clear when,
+> for every active+effective policy, a `consents` row exists at the policy's current `content_version`.
+> (Sections below describing `policy_acceptances` / `accept-policies` reflect the pre-reconciliation
+> design.) Because `consents` is keyed by version only (not policy id), the gate assumes a single
+> active policy at a time — distinct active policies that share a `content_version` would be cleared by
+> one acceptance.
 
 ## Context
 

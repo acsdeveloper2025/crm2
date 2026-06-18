@@ -1,7 +1,6 @@
 import { randomUUID, randomBytes } from 'node:crypto';
 import { loadEnv } from '@crm2/config';
 import {
-  AcceptPoliciesSchema,
   ChangePasswordSchema,
   LoginSchema,
   RefreshSchema,
@@ -216,17 +215,6 @@ export const authService = {
     if (!hash || !(await verifyPassword(v.currentPassword, hash))) throw invalidCreds();
     await repo.changePassword(userId, await hashPassword(v.newPassword));
     emitSessionRevoked(userId, await repo.revokeAllForUser(userId));
-  },
-
-  /** Self-service: record the user's acceptance of the given pending policy ids (ADR-0043). */
-  async acceptPolicies(
-    userId: string,
-    input: unknown,
-    ip: string | null,
-    userAgent: string | null,
-  ): Promise<void> {
-    const v = AcceptPoliciesSchema.parse(input);
-    await repo.acceptPolicies(userId, v.policyIds, ip, userAgent, v.source);
   },
 
   async refresh(input: unknown, ip: string | null): Promise<AuthTokens> {

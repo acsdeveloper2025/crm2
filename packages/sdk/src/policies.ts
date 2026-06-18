@@ -1,7 +1,8 @@
 import { z } from 'zod';
 
-/** @crm2/sdk — Policy acceptance (ADR-0043). Admin-managed, versioned policies a user must accept
- *  at login. `contentVersion` drives re-acceptance; `version` is the OCC token (ADR-0019). */
+/** @crm2/sdk — Login policies (ADR-0043). Admin-managed, versioned policies a user must accept at
+ *  login; `contentVersion` drives re-acceptance, `version` is the OCC token (ADR-0019). Acceptances
+ *  are recorded in the shared `consents` store via POST /api/v2/consents/accept (see consents.ts). */
 export interface Policy {
   id: number;
   code: string;
@@ -27,15 +28,6 @@ export interface PendingPolicy {
   contentVersion: number;
 }
 
-export interface PolicyAcceptance {
-  id: number;
-  userId: string;
-  policyId: number;
-  contentVersion: number;
-  source: 'WEB' | 'MOBILE';
-  acceptedAt: string;
-}
-
 const codeField = z.string().regex(/^[A-Z][A-Z0-9_]*$/, 'code must be UPPER_SNAKE');
 
 export const CreatePolicySchema = z.object({
@@ -58,10 +50,3 @@ export const UpdatePolicySchema = z
 export type UpdatePolicyInput = z.infer<typeof UpdatePolicySchema>;
 
 export const PolicyEffectiveFromSchema = z.object({ effectiveFrom: z.string().datetime().optional() });
-
-/** Self-service acceptance: the user accepts a set of pending policy ids. Source defaults to WEB. */
-export const AcceptPoliciesSchema = z.object({
-  policyIds: z.array(z.number().int().positive()).min(1),
-  source: z.enum(['WEB', 'MOBILE']).default('WEB'),
-});
-export type AcceptPoliciesInput = z.input<typeof AcceptPoliciesSchema>;

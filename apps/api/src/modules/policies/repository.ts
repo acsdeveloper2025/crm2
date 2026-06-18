@@ -1,4 +1,4 @@
-import type { Policy, PolicyAcceptance, SortOrder } from '@crm2/sdk';
+import type { Policy, SortOrder } from '@crm2/sdk';
 import { filterClauses, likeContains, type AppliedFilter } from '../../platform/pagination.js';
 import { query, withTransaction } from '../../platform/db.js';
 import { appendAudit } from '../../platform/audit.js';
@@ -165,14 +165,5 @@ export const policyRepository = {
       );
       return row;
     });
-  },
-
-  /** Read-only acceptance audit list for a policy (ADR-0043) — who accepted what content_version, when. */
-  async acceptances(policyId: number): Promise<PolicyAcceptance[]> {
-    return query<PolicyAcceptance>(
-      `SELECT id, user_id, policy_id, content_version, source, accepted_at
-         FROM policy_acceptances WHERE policy_id = $1 ORDER BY accepted_at DESC`,
-      [policyId],
-    );
   },
 };

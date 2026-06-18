@@ -59,7 +59,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const acceptPolicies = async (): Promise<void> => {
-    await api('POST', '/api/v2/auth/accept-policies', { policyIds: pendingPolicies.map((p) => p.id) });
+    // Acceptances are recorded in the shared `consents` store, keyed by policy version (usually one
+    // pending policy; loop to cover the rare multi-policy case).
+    for (const p of pendingPolicies) {
+      await api('POST', '/api/v2/consents/accept', { policyVersion: p.contentVersion });
+    }
     setPendingPolicies([]);
     setMustAcceptPolicies(false);
   };

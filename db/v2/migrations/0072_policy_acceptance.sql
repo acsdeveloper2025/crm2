@@ -1,7 +1,10 @@
--- 0068_policy_acceptance.sql — Login policy acceptance (ADR-0043).
+-- 0072_policy_acceptance.sql — Login policy content/version master (ADR-0043).
 -- Admin-managed, versioned policies; every user must accept all active+effective policies before
 -- the app loads (server-driven gate: login returns mustAcceptPolicies, refresh re-checks). Mirrors
 -- the mustChangePassword gate. Forward-only, idempotent.
+-- Acceptances are NOT stored here: they live in the shared `consents` table (0070_mobile_consents.sql),
+-- keyed by (user_id, policy_version = policies.content_version). This table is the content/version
+-- master only; web + mobile both record acceptance via POST /api/v2/consents/accept.
 
 BEGIN;
 
@@ -22,21 +25,6 @@ CREATE TABLE IF NOT EXISTS policies (
     CONSTRAINT chk_policies_code CHECK (code ~ '^[A-Z][A-Z0-9_]*$')
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uq_policies_code_active ON policies (code) WHERE is_active;
-
-CREATE TABLE IF NOT EXISTS policy_acceptances (
-    id              integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    user_id         uuid    NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-    policy_id       integer NOT NULL REFERENCES policies (id) ON DELETE RESTRICT,
-    content_version integer NOT NULL,
-    ip              inet,
-    user_agent      text,
-    source          varchar(10) NOT NULL DEFAULT 'WEB' CHECK (source IN ('WEB','MOBILE')),
-    accepted_at     timestamptz NOT NULL DEFAULT now(),
-    created_at      timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS idx_policy_acceptances_user ON policy_acceptances (user_id);
-CREATE UNIQUE INDEX IF NOT EXISTS uq_policy_acceptances_user_policy_ver
-    ON policy_acceptances (user_id, policy_id, content_version);
 
 -- Policy administration is SUPER_ADMIN-only (grants_all covers page.policies + policy.manage),
 -- so there is NO explicit role_permissions seed — this keeps DB↔code role/permission parity (ADR-0022).

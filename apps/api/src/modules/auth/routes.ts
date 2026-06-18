@@ -19,8 +19,6 @@ authRoutes.post('/logout', c.logout);
 authRoutes.get('/me', c.me);
 // Self-service change-password — authenticated (req.auth); prove current password, set a strong new one.
 authRoutes.post('/change-password', c.changePassword);
-// Self-service policy acceptance (ADR-0043) — authenticated (req.auth); records the user's consent.
-authRoutes.post('/accept-policies', c.acceptPolicies);
 
 // FCM device-token registration (ADR-0027) — the device registers its push token (own user, no perm).
 authRoutes.post('/notifications/register', notificationController.registerToken);

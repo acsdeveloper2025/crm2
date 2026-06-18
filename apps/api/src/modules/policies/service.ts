@@ -1,10 +1,4 @@
-import {
-  CreatePolicySchema,
-  PolicyEffectiveFromSchema,
-  type Policy,
-  type PolicyAcceptance,
-  type Paginated,
-} from '@crm2/sdk';
+import { CreatePolicySchema, PolicyEffectiveFromSchema, type Policy, type Paginated } from '@crm2/sdk';
 import { policyRepository as repo } from './repository.js';
 import { AppError } from '../../platform/errors.js';
 import { requireVersion } from '../../platform/occ.js';
@@ -91,9 +85,4 @@ export const policyService = {
 
   activate: (id: number, version: number, userId: string) => repo.setActive(id, true, userId, version),
   deactivate: (id: number, version: number, userId: string) => repo.setActive(id, false, userId, version),
-
-  /** Read-only acceptance audit for a policy (ADR-0043). */
-  acceptances(id: number): Promise<PolicyAcceptance[]> {
-    return repo.acceptances(id);
-  },
 };

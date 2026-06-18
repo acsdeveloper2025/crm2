@@ -1,10 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  AcceptPoliciesSchema,
-  CreatePolicySchema,
-  PolicyEffectiveFromSchema,
-  UpdatePolicySchema,
-} from './policies.js';
+import { CreatePolicySchema, PolicyEffectiveFromSchema, UpdatePolicySchema } from './policies.js';
 
 const base = { code: 'TERMS_OF_USE', name: 'Terms of Use', content: 'Body' };
 
@@ -52,26 +47,5 @@ describe('Policy contract — effectiveFrom', () => {
   });
   it('rejects a non-datetime string', () => {
     expect(PolicyEffectiveFromSchema.safeParse({ effectiveFrom: 'soon' }).success).toBe(false);
-  });
-});
-
-describe('Policy contract — accept', () => {
-  it('accepts policy ids and defaults source to WEB', () => {
-    const parsed = AcceptPoliciesSchema.safeParse({ policyIds: [1, 2] });
-    expect(parsed.success).toBe(true);
-    expect(parsed.success && parsed.data.source).toBe('WEB');
-  });
-  it('accepts an explicit MOBILE source', () => {
-    const parsed = AcceptPoliciesSchema.safeParse({ policyIds: [3], source: 'MOBILE' });
-    expect(parsed.success && parsed.data.source).toBe('MOBILE');
-  });
-  it('rejects an empty id list', () => {
-    expect(AcceptPoliciesSchema.safeParse({ policyIds: [] }).success).toBe(false);
-  });
-  it('rejects a non-positive id', () => {
-    expect(AcceptPoliciesSchema.safeParse({ policyIds: [0] }).success).toBe(false);
-  });
-  it('rejects an unknown source', () => {
-    expect(AcceptPoliciesSchema.safeParse({ policyIds: [1], source: 'API' }).success).toBe(false);
   });
 });

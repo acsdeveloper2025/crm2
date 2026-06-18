@@ -59,12 +59,4 @@ export const policyController = {
       next(e);
     }
   },
-
-  async acceptances(req: Request, res: Response, next: NextFunction) {
-    try {
-      res.json(await svc.acceptances(parseId(req)));
-    } catch (e) {
-      next(e);
-    }
-  },
 };

@@ -39,25 +39,6 @@
         ]
       }
     },
-    "/api/v2/auth/accept-policies": {
-      "post": {
-        "tags": [
-          "auth"
-        ],
-        "operationId": "post_api_v2_auth_accept_policies",
-        "summary": "POST /api/v2/auth/accept-policies",
-        "responses": {
-          "default": {
-            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      }
-    },
     "/api/v2/auth/change-password": {
       "post": {
         "tags": [
@@ -2905,25 +2886,6 @@
         ],
         "operationId": "put_api_v2_policies_id",
         "summary": "PUT /api/v2/policies/{id}",
-        "responses": {
-          "default": {
-            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      }
-    },
-    "/api/v2/policies/{id}/acceptances": {
-      "get": {
-        "tags": [
-          "policies"
-        ],
-        "operationId": "get_api_v2_policies_id_acceptances",
-        "summary": "GET /api/v2/policies/{id}/acceptances",
         "responses": {
           "default": {
             "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."

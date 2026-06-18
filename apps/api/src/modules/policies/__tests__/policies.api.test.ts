@@ -24,8 +24,9 @@ describe.skipIf(!RUN)('policies admin API', () => {
     await db!.end();
   });
   beforeEach(async () => {
-    // truncate the migration's seeded starter policy + its acceptances + audit_log (int PKs reuse).
-    await db!.truncate('policy_acceptances', 'policies', 'audit_log');
+    // truncate the migration's seeded starter policy + audit_log (int PKs reuse). Acceptances live
+    // in the shared `consents` store and aren't part of the admin policy CRUD surface.
+    await db!.truncate('policies', 'audit_log');
   });
 
   it('SUPER_ADMIN creates (201), version=1, content_version=1', async () => {
@@ -123,21 +124,6 @@ describe.skipIf(!RUN)('policies admin API', () => {
       .send({ version: on.body.version });
     expect(off.body.isActive).toBe(false);
     expect(off.body.version).toBe(3);
-  });
-
-  it('GET /:id/acceptances returns the immutable acceptance audit (most-recent first)', async () => {
-    const c = await request(app).post('/api/v2/policies').set(SA).send(newPolicy('POLACC'));
-    const id = c.body.id as number;
-    const userId = '00000000-0000-0000-0000-000000000001';
-    await db!.pool.query(
-      `INSERT INTO policy_acceptances (user_id, policy_id, content_version, source) VALUES ($1,$2,1,'WEB')`,
-      [userId, id],
-    );
-    const res = await request(app).get(`/api/v2/policies/${id}/acceptances`).set(SA);
-    expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
-    expect(res.body).toHaveLength(1);
-    expect(res.body[0]).toMatchObject({ policyId: id, contentVersion: 1, source: 'WEB' });
   });
 
   it('404 for unknown id', async () => {
