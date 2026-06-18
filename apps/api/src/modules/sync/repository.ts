@@ -31,7 +31,12 @@ export interface SyncTaskRow {
   productName: string;
   createdByName: string | null;
   assignedToName: string | null;
+  revisedByName: string | null;
   attachmentCount: number;
+  verificationOutcome: string | null;
+  formData: Record<string, unknown> | null;
+  remark: string | null;
+  addressPincode: string | null;
 }
 
 /**
@@ -49,7 +54,7 @@ export interface SyncTaskRow {
 const SYNC_SELECT = `
   SELECT ct.id, cs.case_number AS case_id, ct.task_number,
          ct.address, ct.trigger, ct.priority, ct.status, ct.assigned_at, ct.updated_at,
-         ct.started_at, ct.completed_at,
+         ct.started_at, ct.completed_at, ct.verification_outcome, ct.form_data, ct.remark,
          cs.backend_contact_number,
          ap.name AS customer_name, ap.mobile AS customer_phone,
          ap.calling_code AS customer_calling_code, ap.company_name, ap.applicant_type,
@@ -57,6 +62,7 @@ const SYNC_SELECT = `
          cl.id AS client_id, cl.code AS client_code, cl.name AS client_name,
          p.id AS product_id, p.code AS product_code, p.name AS product_name,
          creator.name AS created_by_name, assignee.name AS assigned_to_name,
+         reviser.name AS revised_by_name, loc.pincode AS address_pincode,
          (SELECT count(*)::int FROM case_attachments ca
             WHERE ca.case_id = cs.id AND ca.deleted_at IS NULL
               AND (ca.task_id IS NULL OR ca.task_id = ct.id)) AS attachment_count`;
@@ -69,7 +75,9 @@ const SYNC_FROM = `
   JOIN clients cl ON cl.id = cs.client_id
   JOIN products p ON p.id = cs.product_id
   LEFT JOIN users creator ON creator.id = cs.created_by
-  LEFT JOIN users assignee ON assignee.id = ct.assigned_to`;
+  LEFT JOIN users assignee ON assignee.id = ct.assigned_to
+  LEFT JOIN users reviser ON reviser.id = ct.updated_by
+  LEFT JOIN locations loc ON loc.id = ct.pincode_id`;
 
 export const syncRepository = {
   /** Returns the assigned-task page + the total matching (for hasMore). */

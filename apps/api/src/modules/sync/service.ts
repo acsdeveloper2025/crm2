@@ -22,10 +22,11 @@ function toMobileTask(r: SyncTaskRow): MobileSyncTask {
     ...(r.customerPhone ? { customerPhone: r.customerPhone } : {}),
     ...(r.companyName ? { companyName: r.companyName } : {}),
     addressStreet: r.address,
-    // Phantom fields — v1 sends these empty (no source columns); kept for byte-compat.
+    // City/State have no source column → empty (v1 wire). Pincode is resolved from the task's location
+    // (ct.pincode_id → locations.pincode) when set; '' for office tasks without a location.
     addressCity: '',
     addressState: '',
-    addressPincode: '',
+    addressPincode: r.addressPincode ?? '',
     status: r.status,
     priority: r.priority,
     assignedAt: iso(r.assignedAt ?? r.updatedAt),
@@ -37,6 +38,8 @@ function toMobileTask(r: SyncTaskRow): MobileSyncTask {
     ...(r.completedAt ? { completedAt: iso(r.completedAt) } : {}),
     notes: r.trigger,
     verificationType: r.unitName,
+    // The office's recorded result on a completed task (v1 parity) — null until the office finalizes.
+    ...(r.verificationOutcome ? { verificationOutcome: r.verificationOutcome } : {}),
     applicantType: r.applicantType,
     backendContactNumber: r.backendContactNumber,
     createdByBackendUser: r.createdByName ?? '',
@@ -44,6 +47,18 @@ function toMobileTask(r: SyncTaskRow): MobileSyncTask {
     verificationTaskId: r.id,
     verificationTaskNumber: r.taskNumber,
     isRevoked: r.status === 'REVOKED',
+    // Revoke detail (v1 parity) — only on a revoked task. reason ← case_tasks.remark; revokedAt ← the
+    // revoke write's updated_at; revokedByName ← who revoked (ct.updated_by).
+    ...(r.status === 'REVOKED'
+      ? {
+          revokedAt: iso(r.updatedAt),
+          ...(r.remark ? { revokeReason: r.remark } : {}),
+          ...(r.revisedByName ? { revokedByName: r.revisedByName } : {}),
+        }
+      : {}),
+    // Pre-filled / office-side form data (v1 parity). The jsonb passes through the shallow camelize
+    // unchanged, so the inner form keys are preserved.
+    ...(r.formData ? { formData: r.formData } : {}),
     isSaved: false,
     attachmentCount: r.attachmentCount,
     client: { id: r.clientId, name: r.clientName, code: r.clientCode },

@@ -319,8 +319,13 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
     const res = await request(app).get('/api/v2/sync/download').set(hdr('FIELD_AGENT', fa));
     expect(res.body.data.revokedAssignmentIds).toEqual([]); // NOT a purge — assignee unchanged
     expect(res.body.data.cases).toHaveLength(1);
-    expect(res.body.data.cases[0].status).toBe('REVOKED');
-    expect(res.body.data.cases[0].isRevoked).toBe(true); // device's keep-the-row cleanup path
+    const rv = res.body.data.cases[0];
+    expect(rv.status).toBe('REVOKED');
+    expect(rv.isRevoked).toBe(true); // device's keep-the-row cleanup path
+    // revoke detail restored (v1 parity) — only on a revoked task
+    expect(rv.revokeReason).toBe('gate locked'); // ← case_tasks.remark
+    expect(typeof rv.revokedAt).toBe('string'); // ← the revoke write's updated_at
+    expect(rv.revokedByName).toBe('FA RV'); // ← who revoked (ct.updated_by)
   });
 
   it('does NOT leak a reassign-after-revoke replacement task into the revoked agent’s purge list', async () => {
@@ -383,7 +388,31 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
     expect(new Date(task.completedAt).getTime()).toBeGreaterThanOrEqual(
       new Date(task.inProgressAt).getTime(),
     );
-    expect(task.formData).toBeUndefined(); // device evidence is NOT echoed back (ADR-0035)
+    expect(task.formData).toBeUndefined(); // no form submitted on this task → no form_data to echo
+  });
+
+  it('echoes the submitted formData (inner keys preserved) + the office verificationOutcome (v1 parity)', async () => {
+    const ctx = await seedCpvUnit('FD');
+    const fa = await createUser({ username: 'fa_fd', name: 'FA FD', role: 'FIELD_AGENT' });
+    const t = await seedTask(ctx, { name: 'FD APP', trigger: 'x' });
+    expect((await assign(t.caseId, t.taskId, fa)).status).toBe(200);
+    // device submits the residence form → stores form_data[residence] (and completes the task)
+    expect(
+      (
+        await request(app)
+          .post(`/api/v2/verification-tasks/${t.taskId}/verification/residence`)
+          .set(hdr('FIELD_AGENT', fa))
+          .send({ formData: { address_confirmed: true } })
+      ).status,
+    ).toBe(200);
+    // office later records the official result (the device complete leaves it null)
+    await db!.pool.query(`UPDATE case_tasks SET verification_outcome = 'POSITIVE' WHERE id = $1`, [t.taskId]);
+
+    const res = await request(app).get('/api/v2/sync/download').set(hdr('FIELD_AGENT', fa));
+    const task = res.body.data.cases[0];
+    expect(task.verificationOutcome).toBe('POSITIVE');
+    // the jsonb blob round-trips with inner keys INTACT (shallow camelize) — address_confirmed not mangled
+    expect(task.formData.residence.formData.address_confirmed).toBe(true);
   });
 
   it('keeps the locked envelope shape — NOT normalized to the v2 Paginated list shape', async () => {

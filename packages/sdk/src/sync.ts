@@ -50,6 +50,10 @@ export interface MobileSyncTask {
   verificationTaskId?: string;
   verificationTaskNumber?: string;
   isRevoked?: boolean;
+  /** Revoke detail (v1 parity) — present only on a revoked task. */
+  revokedAt?: string;
+  revokedByName?: string;
+  revokeReason?: string;
   inProgressAt?: string;
   savedAt?: string;
   isSaved?: boolean;
