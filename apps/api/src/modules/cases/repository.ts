@@ -155,6 +155,11 @@ const TASK_VIEW_COLS = `ct.id, ct.case_id, cs.case_number, ct.verification_unit_
               AND tp.tat_hours >= CEIL(ct.completed_elapsed_minutes / 60.0)
             ORDER BY tp.tat_hours ASC LIMIT 1),
             CASE WHEN ct.completed_elapsed_minutes IS NULL THEN NULL ELSE -1 END) AS completed_tat_band,
+         ct.tat_hours AS tat_hours,
+         (ct.assigned_at + (ct.tat_hours * interval '1 hour')) AS due_at,
+         (ct.status IN ('PENDING','ASSIGNED','IN_PROGRESS')
+            AND ct.tat_hours IS NOT NULL AND ct.assigned_at IS NOT NULL
+            AND now() > ct.assigned_at + (ct.tat_hours * interval '1 hour')) AS overdue,
          ct.version, ct.created_at, ct.updated_at`;
 
 const TASK_VIEW_FROM = `FROM case_tasks ct

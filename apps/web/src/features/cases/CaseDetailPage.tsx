@@ -300,6 +300,8 @@ function TasksSection({
 }) {
   const qc = useQueryClient();
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+  // Status/TAT tab filter over this case's tasks (ad-hoc tablist pattern, mirrors the pipeline buckets).
+  const [tab, setTab] = useState<'all' | 'tat' | 'inprogress' | 'complete'>('all');
   // "+ Add Tasks" lives in this card's header (Zion keeps document-add in the case work surface).
   const [addingTasks, setAddingTasks] = useState(false);
   // The task whose inline finalize form is open (ADR-0025) — separate from the assign accordion.
@@ -386,7 +388,23 @@ function TasksSection({
   });
 
   const canAct = canAssign || canComplete || canRevoke || canRework;
-  const colCount = canAct ? 10 : 9;
+  // 9 base cols + 3 completion cols (Assigned · Completed · Completed In) + Action when actionable.
+  const colCount = (canAct ? 10 : 9) + 3;
+
+  // Tab filter (mirrors the pipeline buckets): All · TAT (overdue) · In Progress · Complete.
+  const shownTasks = tasks.filter((t) =>
+    tab === 'all'
+      ? true
+      : tab === 'inprogress'
+        ? t.status === 'IN_PROGRESS'
+        : tab === 'complete'
+          ? t.status === 'COMPLETED'
+          : /* tat */ t.overdue === true,
+  );
+
+  // Completed-in band → display string (ADR-0044): null → '—', -1 → '>48h', else '{band}h'.
+  const formatBand = (band: number | null): string =>
+    band == null ? '—' : band === -1 ? '>48h' : `${band}h`;
 
   return (
     <div className="overflow-x-auto rounded-lg border border-border bg-card shadow-sm">
@@ -417,6 +435,30 @@ function TasksSection({
           />
         </div>
       )}
+      <div className="flex gap-1 border-b border-border px-3" role="tablist">
+        {(
+          [
+            ['all', 'All'],
+            ['tat', 'TAT'],
+            ['inprogress', 'In Progress'],
+            ['complete', 'Complete'],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            role="tab"
+            aria-selected={tab === key}
+            className={`px-3 py-1.5 text-sm font-medium ${
+              tab === key
+                ? 'border-b-2 border-primary text-primary'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+            onClick={() => setTab(key)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       <table className="w-full text-sm rtable">
         <thead className="text-left text-xs uppercase tracking-wide text-muted-foreground">
           <tr>
@@ -427,13 +469,16 @@ function TasksSection({
             <th className="px-3 py-2 font-semibold">Visit</th>
             <th className="px-3 py-2 font-semibold">Rate Type</th>
             <th className="px-3 py-2 font-semibold">Bill</th>
+            <th className="px-3 py-2 font-semibold">Assigned</th>
+            <th className="px-3 py-2 font-semibold">Completed</th>
+            <th className="px-3 py-2 font-semibold">Completed In</th>
             <th className="px-3 py-2 font-semibold">Created</th>
             <th className="px-3 py-2 font-semibold">Updated</th>
             {canAct && <th className="px-3 py-2 font-semibold">Action</th>}
           </tr>
         </thead>
         <tbody>
-          {tasks.map((t) => {
+          {shownTasks.map((t) => {
             const assigned = t.status !== 'PENDING' && t.assignedTo;
             return (
               <Fragment key={t.id}>
@@ -451,6 +496,15 @@ function TasksSection({
                   </td>
                   <td className="px-3 py-2" data-label="Status">
                     {t.status.replace(/_/g, ' ')}
+                    {t.overdue && (
+                      <span
+                        className="ml-2 rounded bg-st-rejected-bg px-1.5 py-0.5 text-xs font-medium text-st-rejected"
+                        title="Out of TAT (target turnaround exceeded)"
+                      >
+                        ⚠ TAT
+                        {t.tatHours ? ` / ${t.tatHours}h` : ''}
+                      </span>
+                    )}
                     {t.verificationOutcome && (
                       <span className="text-muted-foreground">
                         {' '}
@@ -472,6 +526,15 @@ function TasksSection({
                   </td>
                   <td className="px-3 py-2 tabular-nums" data-label="Bill">
                     {t.billCount}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-muted-foreground" data-label="Assigned">
+                    {t.assignedAt ? formatDateTime(t.assignedAt) : '—'}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-muted-foreground" data-label="Completed">
+                    {t.completedAt ? formatDateTime(t.completedAt) : '—'}
+                  </td>
+                  <td className="px-3 py-2 tabular-nums" data-label="Completed In">
+                    {formatBand(t.completedTatBand)}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap text-muted-foreground" data-label="Created">
                     {formatDateTime(t.createdAt)}
@@ -654,10 +717,10 @@ function TasksSection({
               </Fragment>
             );
           })}
-          {tasks.length === 0 && (
+          {shownTasks.length === 0 && (
             <tr>
               <td colSpan={colCount} className="px-3 py-6 text-center text-muted-foreground">
-                No documents added yet.
+                {tasks.length === 0 ? 'No documents added yet.' : 'No tasks in this view.'}
               </td>
             </tr>
           )}

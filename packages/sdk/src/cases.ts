@@ -221,6 +221,12 @@ export interface CaseTaskView {
   /** The TAT band the task was completed within (ADR-0044): the smallest active `tat_policies` band ≥
    *  the completed-in hours; -1 when elapsed overflows every band; null until completed. Derived at read. */
   completedTatBand: number | null;
+  /** Per-task target TAT in hours (ADR-0044); null when no target is set. */
+  tatHours: number | null;
+  /** When the task is due — `assigned_at + tat_hours`; null until assigned or with no target. Derived at read. */
+  dueAt: string | null;
+  /** Target-TAT overdue (ADR-0044): an OPEN task whose `tat_hours` has elapsed since `assigned_at`. Derived at read. */
+  overdue: boolean;
   /** OCC token (CONCURRENCY standard) — assignment + finalize writes require it; 409 STALE_UPDATE on mismatch. */
   version: number;
   createdAt: string;
