@@ -23,7 +23,9 @@ export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 export const NOTIFICATION_ACTION_TYPES = ['OPEN_CASE', 'OPEN_TASK', 'NAVIGATE', 'DOWNLOAD'] as const;
 export type NotificationActionType = (typeof NOTIFICATION_ACTION_TYPES)[number];
 
-/** A feed row. `payload` carries the navigation target ids (e.g. { caseId, taskId }); never PII. */
+/** A feed row. `payload` carries the navigation target ids (e.g. { caseId, taskId }); never PII.
+ *  The `message`/`isRead`/`taskId`/… fields are MOBILE-COMPAT projections the field app reads
+ *  (v1 names): `message`=body, `isRead`=readAt!=null, the rest surfaced from `payload`. Web ignores them. */
 export interface Notification {
   id: string;
   type: NotificationType;
@@ -33,6 +35,14 @@ export interface Notification {
   actionType: NotificationActionType | null;
   readAt: string | null;
   createdAt: string;
+  // ── mobile-compat projections (v1 field names) ──
+  message?: string | null;
+  isRead?: boolean;
+  taskId?: string | null;
+  caseId?: string | null;
+  taskNumber?: string | null;
+  caseNumber?: string | null;
+  actionUrl?: string | null;
 }
 
 /** Bell badge source. */
@@ -78,10 +88,14 @@ export interface NotificationMuteList {
 
 // ── Per-user delivery preferences (mobile parity) ──
 
-/** PUT /notifications/preferences — opaque per-user toggle map (channel/type → bool). */
-export const UpdateNotificationPreferencesSchema = z.object({
-  preferences: z.record(z.unknown()),
-});
+/** PUT /notifications/preferences — opaque per-user toggle map (channel/type → bool). Accepts
+ *  `{ preferences: {...} }` OR a FLAT toggle object (the field app sends flat); flat is wrapped.
+ *  Mobile compat (ADR-0011). */
+export const UpdateNotificationPreferencesSchema = z.preprocess(
+  (v) =>
+    v && typeof v === 'object' && !Array.isArray(v) && 'preferences' in v ? v : { preferences: v ?? {} },
+  z.object({ preferences: z.record(z.unknown()) }),
+);
 export type UpdateNotificationPreferencesInput = z.infer<typeof UpdateNotificationPreferencesSchema>;
 
 export interface NotificationPreferences {

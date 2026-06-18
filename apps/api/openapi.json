@@ -2786,6 +2786,23 @@
             "bearerAuth": []
           }
         ]
+      },
+      "put": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "put_api_v2_notifications_restore",
+        "summary": "PUT /api/v2/notifications/restore",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/api/v2/notifications/trash": {

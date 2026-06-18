@@ -24,8 +24,9 @@ export interface MobileVersionCheckResponse {
   updateRequired: boolean;
   latestVersion: string;
   minSupportedVersion: string;
-  downloadUrl: string | null;
-  releaseNotes: string | null;
-  releaseDate: string | null;
+  // Omitted (not null) when unset — the device schema validates these as string-or-absent.
+  downloadUrl?: string;
+  releaseNotes?: string;
+  releaseDate?: string;
   urgent: boolean;
 }

@@ -16,6 +16,7 @@ notificationRoutes.delete('/', c.clearAll); // clear-all (soft-delete every visi
 notificationRoutes.get('/unread-count', c.unreadCount);
 notificationRoutes.get('/trash', c.listTrash);
 notificationRoutes.post('/restore', c.restoreAll); // bulk restore (static — before /:id)
+notificationRoutes.put('/restore', c.restoreAll); // device verb (compat)
 notificationRoutes.get('/mutes', c.listMutes);
 notificationRoutes.post('/mute', c.mute);
 notificationRoutes.delete('/mute/task/:taskId', c.unmuteTask);

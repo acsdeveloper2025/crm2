@@ -1,8 +1,16 @@
 import { query } from '../../platform/db.js';
 import type { Notification, NotifyInput } from '@crm2/sdk';
 
-/** camelize() bridges snake→camel, so action_type/read_at/created_at land as actionType/readAt/createdAt. */
-const SELECT_COLS = 'id, type, title, body, payload, action_type, read_at, created_at';
+/**
+ * camelize() bridges snake→camel (action_type→actionType, read_at→readAt, …). The trailing columns are
+ * MOBILE-COMPAT projections the field app reads under v1 names: message=body, is_read=readAt!=null, and
+ * task_id/case_id/task_number/case_number/action_url surfaced from the `payload` jsonb. Additive — web ignores them.
+ */
+const SELECT_COLS = `id, type, title, body, payload, action_type, read_at, created_at,
+  body AS message, (read_at IS NOT NULL) AS is_read,
+  payload->>'taskId' AS task_id, payload->>'caseId' AS case_id,
+  payload->>'taskNumber' AS task_number, payload->>'caseNumber' AS case_number,
+  payload->>'actionUrl' AS action_url`;
 
 export interface ListParams {
   userId: string;
