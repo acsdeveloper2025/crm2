@@ -87,6 +87,63 @@ describe.skipIf(!RUN)('auth API', () => {
     expect(res.body.user.maxSessionMinutes).toBeNull();
   });
 
+  it('DESK login stamps a 12h absolute deadline on the refresh token', async () => {
+    await makeUser({ username: 'capdesk', role: 'MANAGER' });
+    await login('capdesk');
+    const r = await db!.pool.query(
+      `SELECT absolute_expires_at FROM auth_refresh_tokens
+       WHERE user_id = (SELECT id FROM users WHERE username = 'capdesk')`,
+    );
+    const abs = new Date(r.rows[0].absolute_expires_at as string).getTime();
+    expect(abs).toBeGreaterThan(Date.now() + 718 * 60_000);
+    expect(abs).toBeLessThan(Date.now() + 722 * 60_000);
+  });
+
+  it('FIELD_AGENT login leaves absolute_expires_at NULL (no cap)', async () => {
+    await makeUser({ username: 'capfield', role: 'FIELD_AGENT' });
+    await login('capfield');
+    const r = await db!.pool.query(
+      `SELECT absolute_expires_at FROM auth_refresh_tokens
+       WHERE user_id = (SELECT id FROM users WHERE username = 'capfield')`,
+    );
+    expect(r.rows[0].absolute_expires_at).toBeNull();
+  });
+
+  it('refresh carries the absolute deadline forward unchanged (never extends it)', async () => {
+    await makeUser({ username: 'capfwd', role: 'MANAGER' });
+    const res = await login('capfwd');
+    const before = await db!.pool.query(
+      `SELECT absolute_expires_at FROM auth_refresh_tokens
+       WHERE user_id = (SELECT id FROM users WHERE username = 'capfwd') AND revoked_at IS NULL`,
+    );
+    const r2 = await request(app)
+      .post('/api/v2/auth/refresh')
+      .send({ refreshToken: res.body.tokens.refreshToken });
+    expect(r2.status).toBe(200);
+    const after = await db!.pool.query(
+      `SELECT absolute_expires_at FROM auth_refresh_tokens
+       WHERE user_id = (SELECT id FROM users WHERE username = 'capfwd') AND revoked_at IS NULL`,
+    );
+    expect(new Date(after.rows[0].absolute_expires_at as string).getTime()).toBe(
+      new Date(before.rows[0].absolute_expires_at as string).getTime(),
+    );
+  });
+
+  it('refresh is rejected once the absolute deadline has passed', async () => {
+    await makeUser({ username: 'capexp', role: 'MANAGER' });
+    const res = await login('capexp');
+    // simulate the 12h cap elapsing: the cap sets expires_at = deadline, so push it into the past.
+    await db!.pool.query(
+      `UPDATE auth_refresh_tokens SET expires_at = now() - interval '1 second'
+       WHERE user_id = (SELECT id FROM users WHERE username = 'capexp') AND revoked_at IS NULL`,
+    );
+    const r2 = await request(app)
+      .post('/api/v2/auth/refresh')
+      .send({ refreshToken: res.body.tokens.refreshToken });
+    expect(r2.status).toBe(401);
+    expect(r2.body.error).toBe('INVALID_REFRESH');
+  });
+
   it('accepts deviceInfo as the field app device OBJECT (mobile compat, not just a string)', async () => {
     await makeUser({ username: 'devobj', role: 'FIELD_AGENT' });
     const res = await request(app)

@@ -33,6 +33,8 @@ interface RefreshRow {
   /** carried forward on rotation so a session keeps its device label across refreshes. */
   deviceId: string | null;
   deviceInfo: string | null;
+  /** hard session deadline (ADR-0045); carried forward unchanged on rotation. null = no cap. */
+  absoluteExpiresAt: string | null;
 }
 
 export const authRepository = {
@@ -171,18 +173,27 @@ export const authRepository = {
     deviceId: string | null;
     deviceInfo: string | null;
     ip: string | null;
+    absoluteExpiresAt: Date | null;
   }): Promise<void> {
     // last_used_at defaults to now() (DDL) — each freshly issued/rotated token stamps "last active now".
     await query(
-      `INSERT INTO auth_refresh_tokens (jti, user_id, expires_at, device_id, device_info, ip)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [input.jti, input.userId, input.expiresAt, input.deviceId, input.deviceInfo, input.ip],
+      `INSERT INTO auth_refresh_tokens (jti, user_id, expires_at, device_id, device_info, ip, absolute_expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        input.jti,
+        input.userId,
+        input.expiresAt,
+        input.deviceId,
+        input.deviceInfo,
+        input.ip,
+        input.absoluteExpiresAt,
+      ],
     );
   },
 
   async findRefresh(jti: string): Promise<RefreshRow | null> {
     const rows = await query<RefreshRow>(
-      `SELECT user_id, expires_at, revoked_at, device_id, device_info
+      `SELECT user_id, expires_at, revoked_at, device_id, device_info, absolute_expires_at
        FROM auth_refresh_tokens WHERE jti = $1`,
       [jti],
     );

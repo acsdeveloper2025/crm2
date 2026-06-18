@@ -24,6 +24,7 @@ import { HTTP_STATUS } from '../../platform/http.js';
 import { getRealtime } from '../../platform/realtime/index.js';
 
 const MS_PER_S = 1000;
+const MS_PER_MIN = 60_000;
 
 /**
  * Push a real-time forced-logout to the affected device(s) (ADR-0014/0027). The field app listens for
@@ -101,6 +102,7 @@ async function issueTokens(
   role: string,
   device: Device,
   ip: string | null,
+  absoluteExpiresAt: Date | null,
 ): Promise<AuthTokens> {
   const env = loadEnv();
   const accessTtl = env.AUTH_ACCESS_TTL_S;
@@ -110,13 +112,21 @@ async function issueTokens(
     signAccessToken({ userId, role }, accessTtl),
     signRefreshToken({ userId, jti }, refreshTtl),
   ]);
+  // The absolute cap (if any) never moves out on rotation → the token's expiry is the earlier of the
+  // normal refresh TTL and the hard deadline, so the existing `expires_at > now()` check enforces it.
+  const refreshExpiresAt = new Date(Date.now() + refreshTtl * MS_PER_S);
+  const expiresAt =
+    absoluteExpiresAt && absoluteExpiresAt.getTime() < refreshExpiresAt.getTime()
+      ? absoluteExpiresAt
+      : refreshExpiresAt;
   await repo.insertRefresh({
     jti,
     userId,
-    expiresAt: new Date(Date.now() + refreshTtl * MS_PER_S),
+    expiresAt,
     deviceId: device.deviceId,
     deviceInfo: device.deviceInfo,
     ip,
+    absoluteExpiresAt,
   });
   return { accessToken, refreshToken, expiresIn: accessTtl };
 }
@@ -158,17 +168,22 @@ export const authService = {
     // A missing/invalid code returns 401 MFA_REQUIRED so the client can re-login with `mfaCode`.
     if (creds.mfaEnrolled && !(v.mfaCode && (await verifyMfaCode(creds.id, v.mfaCode)))) throw mfaRequired();
     await repo.resetLoginState(creds.id); // success clears the failed-attempt counter
+    // Per-role policy (ADR-0022/0045): rotation expiry + the absolute session cap. Resolved once,
+    // before issuing tokens, so the new refresh token can carry its hard deadline (null = no cap).
+    const attrs = await getRoleAttributes(creds.role);
+    const absoluteExpiresAt =
+      attrs?.maxSessionMinutes != null ? new Date(Date.now() + attrs.maxSessionMinutes * MS_PER_MIN) : null;
     const tokens = await issueTokens(
       creds.id,
       creds.role,
       { deviceId: v.deviceId ?? null, deviceInfo: v.deviceInfo ?? null },
       ip,
+      absoluteExpiresAt,
     );
     const user = await repo.authUserById(creds.id);
     if (!user) throw AppError.internal('user vanished mid-login');
-    // Per-role rotation policy: an over-age password forces a change before the user can proceed
-    // (the FE blocks into the change-password screen). Exempt roles carry passwordExpiryDays = null.
-    const attrs = await getRoleAttributes(creds.role);
+    // An over-age password forces a change before the user can proceed (the FE blocks into the
+    // change-password screen). Exempt roles carry passwordExpiryDays = null.
     const expired = passwordExpired(creds.passwordSetAt, attrs?.passwordExpiryDays ?? null);
     // Policy-acceptance gate (ADR-0043): a user owing acceptance is blocked into the accept screen.
     const pendingPolicies = await repo.pendingPoliciesForUser(creds.id);
@@ -247,13 +262,16 @@ export const authService = {
     // where login returns mustAcceptPolicies and blocks the user into the accept screen.
     if ((await repo.pendingPoliciesForUser(claims.userId)).length > 0) throw invalidRefresh();
     // Rotate: the presented refresh token is single-use. The new token carries the SAME device label
-    // (so the session keeps its identity across refreshes) and the current request IP.
+    // (so the session keeps its identity across refreshes) and the current request IP. The absolute
+    // session deadline (ADR-0045) is carried forward UNCHANGED — rotation never extends it, so the
+    // session still hard-expires at its original cap.
     await repo.revokeRefresh(claims.jti);
     return issueTokens(
       claims.userId,
       status.role,
       { deviceId: row.deviceId, deviceInfo: row.deviceInfo },
       ip,
+      row.absoluteExpiresAt ? new Date(row.absoluteExpiresAt) : null,
     );
   },
 
