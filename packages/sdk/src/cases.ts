@@ -330,6 +330,10 @@ export const AddTasksSchema = z.object({
           verificationUnitId: positiveInt,
           applicantId: z.string().uuid(),
           address: z.string().trim().min(1).max(MAX_ADDRESS),
+          // Optional dispatch coordinates for the task's address (v1 parity) — provided by the case
+          // feed/create when known, emitted to the field app; null otherwise.
+          latitude: z.number().gte(-90).lte(90).optional(),
+          longitude: z.number().gte(-180).lte(180).optional(),
           trigger: z.string().trim().max(MAX_TRIGGER).default(''),
           priority: z.enum(PRIORITIES).default('MEDIUM'),
           // ADR-0024: optional assign-at-create. visitType picks the pool (FIELD/OFFICE); a FIELD

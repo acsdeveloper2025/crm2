@@ -68,7 +68,14 @@ async function createUser(o: { username: string; name: string; role: string }): 
 /** Create an unlocated case with one task (custom trigger/priority), return ids + caseNumber. */
 async function seedTask(
   ctx: { clientId: number; productId: number; unitId: number },
-  o: { name: string; trigger: string; priority?: string; company?: string },
+  o: {
+    name: string;
+    trigger: string;
+    priority?: string;
+    company?: string;
+    latitude?: number;
+    longitude?: number;
+  },
 ): Promise<{ caseId: string; caseNumber: string; taskId: string }> {
   const created = seeded<{ id: string; caseNumber: string }>(
     await request(app)
@@ -97,6 +104,8 @@ async function seedTask(
             verificationUnitId: ctx.unitId,
             applicantId,
             address: '12 MG ROAD',
+            ...(o.latitude !== undefined ? { latitude: o.latitude } : {}),
+            ...(o.longitude !== undefined ? { longitude: o.longitude } : {}),
             trigger: o.trigger,
             ...(o.priority ? { priority: o.priority } : {}),
           },
@@ -194,6 +203,26 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
 
     const res = await request(app).get('/api/v2/sync/download').set(hdr('FIELD_AGENT', fa));
     expect(res.body.data.cases[0].companyName).toBe('ACME INDUSTRIES');
+  });
+
+  it('emits the task dispatch coordinates (latitude/longitude) as numbers when set, omitted otherwise', async () => {
+    const ctx = await seedCpvUnit('GEO');
+    const fa = await createUser({ username: 'fa_geo', name: 'FA GEO', role: 'FIELD_AGENT' });
+    const t = await seedTask(ctx, { name: 'GEO APP', trigger: 'x', latitude: 19.076, longitude: 72.8777 });
+    expect((await assign(t.caseId, t.taskId, fa)).status).toBe(200);
+
+    const res = await request(app).get('/api/v2/sync/download').set(hdr('FIELD_AGENT', fa));
+    const task = res.body.data.cases[0];
+    expect(typeof task.latitude).toBe('number'); // pg numeric → string → coerced to number
+    expect(task.latitude).toBe(19.076);
+    expect(task.longitude).toBe(72.8777);
+
+    // a task without coordinates omits them (not null)
+    const t2 = await seedTask(ctx, { name: 'NO GEO', trigger: 'x' });
+    expect((await assign(t2.caseId, t2.taskId, fa)).status).toBe(200);
+    const res2 = await request(app).get('/api/v2/sync/download').set(hdr('FIELD_AGENT', fa));
+    const noGeo = res2.body.data.cases.find((c: { id: string }) => c.id === t2.taskId);
+    expect(noGeo.latitude).toBeUndefined();
   });
 
   it('reports attachmentCount = the task’s reference docs (case-level + this task), excluding deleted', async () => {

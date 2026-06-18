@@ -33,6 +33,9 @@ export interface MobileSyncTask {
   addressCity: string;
   addressState: string;
   addressPincode: string;
+  /** Dispatch coordinates for the task's address (v1 parity) — present only when known. */
+  latitude?: number;
+  longitude?: number;
   status: string;
   priority: string;
   assignedAt: string;

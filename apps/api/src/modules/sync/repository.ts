@@ -37,6 +37,8 @@ export interface SyncTaskRow {
   formData: Record<string, unknown> | null;
   remark: string | null;
   addressPincode: string | null;
+  latitude: string | null;
+  longitude: string | null;
 }
 
 /**
@@ -55,6 +57,7 @@ const SYNC_SELECT = `
   SELECT ct.id, cs.case_number AS case_id, ct.task_number,
          ct.address, ct.trigger, ct.priority, ct.status, ct.assigned_at, ct.updated_at,
          ct.started_at, ct.completed_at, ct.verification_outcome, ct.form_data, ct.remark,
+         ct.latitude, ct.longitude,
          cs.backend_contact_number,
          ap.name AS customer_name, ap.mobile AS customer_phone,
          ap.calling_code AS customer_calling_code, ap.company_name, ap.applicant_type,

@@ -376,6 +376,8 @@ export const caseRepository = {
       verificationUnitId: number;
       applicantId: string;
       address: string;
+      latitude?: number | undefined;
+      longitude?: number | undefined;
       trigger: string;
       priority: string;
       // ADR-0024 assign-at-create (service has re-checked eligibility): when assigneeId is set the
@@ -403,13 +405,13 @@ export const caseRepository = {
                (case_id, verification_unit_id, applicant_id, address, trigger, priority,
                 visit_type, pincode_id, area_id, assigned_to,
                 assigned_by, assigned_at, status,
-                task_number, created_by, updated_by)
+                task_number, created_by, updated_by, latitude, longitude)
              VALUES ($1, $2, $3, $4, $5, $6,
                      $7, $8, $9, $10,
                      CASE WHEN $10::uuid IS NULL THEN NULL ELSE $11::uuid END,
                      CASE WHEN $10::uuid IS NULL THEN NULL ELSE now() END,
                      CASE WHEN $10::uuid IS NULL THEN 'PENDING' ELSE 'ASSIGNED' END,
-                     (SELECT case_number FROM cases WHERE id = $1) || '-' || $12::text, $11, $11)
+                     (SELECT case_number FROM cases WHERE id = $1) || '-' || $12::text, $11, $11, $13, $14)
              RETURNING id`,
             [
               caseId,
@@ -424,6 +426,8 @@ export const caseRepository = {
               assignee,
               userId,
               seq,
+              t.latitude ?? null,
+              t.longitude ?? null,
             ],
           );
           // Append-only assignment history for a task assigned at creation (first event = ASSIGNED).

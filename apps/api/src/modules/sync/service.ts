@@ -27,6 +27,10 @@ function toMobileTask(r: SyncTaskRow): MobileSyncTask {
     addressCity: '',
     addressState: '',
     addressPincode: r.addressPincode ?? '',
+    // Dispatch coordinates for the task's address (v1 parity). pg returns numeric as a string →
+    // coerce to a number for the device; omitted when null.
+    ...(r.latitude != null ? { latitude: Number(r.latitude) } : {}),
+    ...(r.longitude != null ? { longitude: Number(r.longitude) } : {}),
     status: r.status,
     priority: r.priority,
     assignedAt: iso(r.assignedAt ?? r.updatedAt),
