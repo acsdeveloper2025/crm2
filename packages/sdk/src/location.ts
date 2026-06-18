@@ -6,7 +6,10 @@ import { z } from 'zod';
  * crm-mobile-native rebases onto /api/v2. Two live device sources (ADMIN_PING, TRACKING)
  * + the dormant TASK branch. Mobile (ADR-0012) is unaffected — this matches its wire shape.
  */
-export const LOCATION_SOURCES = ['ADMIN_PING', 'TRACKING', 'TASK'] as const;
+// GPS/NETWORK/PASSIVE are the device's task-tethered capture sources (RN LocationService sends
+// `source:'GPS'` on every verification capture); only TRACKING is shift-gated, so these pass through
+// as ordinary captures (clock-skew checked, not shift-gated). Mobile compat — additive (ADR-0011).
+export const LOCATION_SOURCES = ['ADMIN_PING', 'TRACKING', 'TASK', 'GPS', 'NETWORK', 'PASSIVE'] as const;
 export type LocationSource = (typeof LOCATION_SOURCES)[number];
 
 const LAT = z.number().gte(-90).lte(90);

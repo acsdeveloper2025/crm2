@@ -12,7 +12,12 @@ export const LoginSchema = z.object({
   /** TOTP or recovery code — required (in this same request) when the account has MFA enrolled. */
   mfaCode: z.string().trim().min(1).max(20).optional(),
   deviceId: z.string().max(128).optional(),
-  deviceInfo: z.string().max(2000).optional(),
+  // Accept a string OR the field app's device-info object (RN sends an object: brand/model/os/…);
+  // stringified for storage (device_info is a text label). Mobile compat — additive (ADR-0011).
+  deviceInfo: z
+    .union([z.string().max(2000), z.record(z.string(), z.unknown())])
+    .transform((v) => (typeof v === 'string' ? v : JSON.stringify(v).slice(0, 2000)))
+    .optional(),
 });
 export type LoginInput = z.infer<typeof LoginSchema>;
 

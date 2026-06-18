@@ -4,9 +4,10 @@
  */
 import { z } from 'zod';
 
-/** POST /api/v2/consents/accept body — the accepted privacy-policy version. */
+/** POST /api/v2/consents/accept body — the accepted privacy-policy version. `coerce` accepts the
+ *  device's number OR a numeric string (v1 coerced with Number()). Mobile compat. */
 export const AcceptConsentSchema = z.object({
-  policyVersion: z.number().int().positive(),
+  policyVersion: z.coerce.number().int().positive(),
 });
 export type AcceptConsentInput = z.infer<typeof AcceptConsentSchema>;
 

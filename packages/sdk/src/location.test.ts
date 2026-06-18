@@ -28,7 +28,7 @@ describe('device location capture contract (ADR-0026)', () => {
     expect(LocationCaptureSchema.safeParse({ ...base, source: 'GHOST' }).success).toBe(false);
     expect(LocationCaptureSchema.safeParse({ ...base, timestamp: 'yesterday' }).success).toBe(false);
   });
-  it('exposes the three contract sources', () => {
-    expect([...LOCATION_SOURCES]).toEqual(['ADMIN_PING', 'TRACKING', 'TASK']);
+  it('exposes the contract sources incl. the device task-capture sources (GPS/NETWORK/PASSIVE)', () => {
+    expect([...LOCATION_SOURCES]).toEqual(['ADMIN_PING', 'TRACKING', 'TASK', 'GPS', 'NETWORK', 'PASSIVE']);
   });
 });

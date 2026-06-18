@@ -59,6 +59,20 @@ describe.skipIf(!RUN)('auth API', () => {
     expect(res.body.tokens.expiresIn).toBeGreaterThan(0);
   });
 
+  it('accepts deviceInfo as the field app device OBJECT (mobile compat, not just a string)', async () => {
+    await makeUser({ username: 'devobj', role: 'FIELD_AGENT' });
+    const res = await request(app)
+      .post('/api/v2/auth/login')
+      .send({
+        username: 'devobj',
+        password: PASSWORD,
+        deviceId: 'dev-1',
+        deviceInfo: { brand: 'Samsung', model: 'SM-G991B', os: 'Android 14' }, // RN sends an object
+      });
+    expect(res.status).toBe(200);
+    expect(typeof res.body.tokens.accessToken).toBe('string');
+  });
+
   it('rejects a wrong password (401 INVALID_CREDENTIALS)', async () => {
     await makeUser({ username: 'bob' });
     const res = await login('bob', 'nope');

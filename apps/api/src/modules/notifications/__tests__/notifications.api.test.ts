@@ -60,6 +60,10 @@ describe.skipIf(!RUN)('notifications feed (ADR-0027)', () => {
       actionType: 'OPEN_TASK',
       readAt: null,
       payload: { caseId: 'CASE-000001' },
+      // mobile-compat projections (v1 field names) the field app reads:
+      message: 'CASE-000001 / RESIDENCE', // = body
+      isRead: false, // = readAt != null
+      caseId: 'CASE-000001', // surfaced from payload
     });
   });
 

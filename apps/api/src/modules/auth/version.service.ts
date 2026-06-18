@@ -32,24 +32,23 @@ export const versionService = {
         updateRequired: false,
         latestVersion: b.currentVersion,
         minSupportedVersion: b.currentVersion,
-        downloadUrl: null,
-        releaseNotes: null,
-        releaseDate: null,
         urgent: false,
       };
     }
     const belowMin = compareVersions(b.currentVersion, release.minSupportedVersion) < 0;
     const belowLatest = compareVersions(b.currentVersion, release.latestVersion) < 0;
+    // Omit downloadUrl/releaseNotes/releaseDate when null — the device schema validates them as
+    // string-or-absent (an explicit null trips its non-strict validation with a warning).
     return {
       success: true,
       forceUpdate: belowMin,
       updateRequired: belowMin || belowLatest,
       latestVersion: release.latestVersion,
       minSupportedVersion: release.minSupportedVersion,
-      downloadUrl: release.downloadUrl,
-      releaseNotes: release.releaseNotes,
-      releaseDate: release.releaseDate,
       urgent: release.urgent,
+      ...(release.downloadUrl ? { downloadUrl: release.downloadUrl } : {}),
+      ...(release.releaseNotes ? { releaseNotes: release.releaseNotes } : {}),
+      ...(release.releaseDate ? { releaseDate: release.releaseDate } : {}),
     };
   },
 };
