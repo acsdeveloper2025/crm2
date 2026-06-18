@@ -62,6 +62,17 @@ describe.skipIf(!RUN)('auth API', () => {
     expect(res.body.tokens.expiresIn).toBeGreaterThan(0);
   });
 
+  it('migration 0074 seeds idle + session-cap policy (DESK set, FIELD_AGENT exempt)', async () => {
+    const desk = await db!.pool.query(
+      `SELECT idle_logout_minutes, max_session_minutes FROM roles WHERE code = 'MANAGER'`,
+    );
+    expect(desk.rows[0]).toEqual({ idle_logout_minutes: 10, max_session_minutes: 720 });
+    const field = await db!.pool.query(
+      `SELECT idle_logout_minutes, max_session_minutes FROM roles WHERE code = 'FIELD_AGENT'`,
+    );
+    expect(field.rows[0]).toEqual({ idle_logout_minutes: null, max_session_minutes: null });
+  });
+
   it('accepts deviceInfo as the field app device OBJECT (mobile compat, not just a string)', async () => {
     await makeUser({ username: 'devobj', role: 'FIELD_AGENT' });
     const res = await request(app)
