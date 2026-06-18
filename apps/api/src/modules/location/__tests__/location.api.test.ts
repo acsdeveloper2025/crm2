@@ -93,6 +93,20 @@ describe.skipIf(!RUN)('device location capture (ADR-0026, locked contract)', () 
     expect(res.status).toBe(200);
   });
 
+  it('captures a GPS verification fix — the widened source domain (0072), not a CHECK 500', async () => {
+    const res = await request(app)
+      .post('/api/v2/location/capture')
+      .set(agentHdr())
+      .send({ latitude: 19.05, longitude: 72.85, accuracy: 6, timestamp: TS_INSIDE, source: 'GPS' });
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    const { rows } = await db!.pool.query(
+      `SELECT count(*)::int AS n FROM device_locations WHERE user_id = $1 AND source = 'GPS'`,
+      [agentId],
+    );
+    expect(rows[0].n).toBeGreaterThanOrEqual(1); // GPS row persisted (the 0043 CHECK would have 500'd it)
+  });
+
   it('is idempotent on the Idempotency-Key (FCM+socket double-delivery → one row)', async () => {
     const body = { latitude: 19.2, longitude: 72.8, timestamp: TS_INSIDE, source: 'ADMIN_PING' };
     const first = await request(app)

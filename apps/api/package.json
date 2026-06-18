@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
     "test": "vitest run",
+    "test:contract-mobile": "vitest run --coverage.enabled=false src/modules/verification-tasks src/modules/location src/modules/users src/modules/notifications src/modules/sync src/modules/auth src/modules/consents src/modules/reference",
     "openapi": "tsx src/platform/openapi/cli.ts"
   },
   "dependencies": {

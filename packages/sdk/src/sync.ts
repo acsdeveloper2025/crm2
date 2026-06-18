@@ -137,6 +137,9 @@ export interface DeviceTaskAttachment {
   originalName: string;
   mimeType: string;
   size: number;
+  /** Absolute, time-limited presigned URL to fetch the document bytes — the device fetches it directly
+   *  (its URL normalizer passes http(s) through unchanged; a relative path would be mis-prefixed). */
+  url: string;
   uploadedAt: string;
 }
 

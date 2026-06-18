@@ -191,6 +191,29 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
     expect(after.status).toBe(409); // priority is NOT idempotent-as-success on a terminal task
   });
 
+  it('device numeric drag-reorder priority is ack-only (200) and never overwrites the office priority', async () => {
+    const { taskId, agent } = await seedAssignedTask('PN');
+    const h = hdr('FIELD_AGENT', agent);
+    const started = await request(app).post(`/api/v2/verification-tasks/${taskId}/start`).set(h);
+    expect(started.body.priority).toBe('MEDIUM'); // office default
+    // The device sends a NUMERIC reorder position (its local queue ordering) — accepted, no DLQ, and
+    // the office priority is left untouched (owner decision: the reorder is device-local).
+    const num = await request(app)
+      .put(`/api/v2/verification-tasks/${taskId}/priority`)
+      .set(h)
+      .send({ priority: 2 });
+    expect(num.status).toBe(200);
+    expect(num.body.priority).toBe('MEDIUM'); // unchanged
+    // numeric ack is allowed even on a terminal task → never 409 → never DLQs the device sync queue
+    await request(app).post(`/api/v2/verification-tasks/${taskId}/complete`).set(h);
+    const afterTerminal = await request(app)
+      .put(`/api/v2/verification-tasks/${taskId}/priority`)
+      .set(h)
+      .send({ priority: 1 });
+    expect(afterTerminal.status).toBe(200);
+    expect(afterTerminal.body.priority).toBe('MEDIUM');
+  });
+
   it('ownership + RBAC: a non-assignee field agent → 404; a role without task.execute → 403', async () => {
     const { taskId, agent } = await seedAssignedTask('OW');
     const other = await createUser({ username: 'fa_other', name: 'OTHER FA', role: 'FIELD_AGENT' });
@@ -212,8 +235,8 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
     ).toBe(200);
   });
 
-  it('submit form → evidence stored under form_data[slug]; the official result stays null (single-layer); unknown slug 400; idempotent', async () => {
-    const { taskId, agent } = await seedAssignedTask('FRM');
+  it('submit form → evidence stored under form_data[slug] AND task COMPLETED (submit==complete); result stays null; case rolls up; unknown slug 400; idempotent', async () => {
+    const { caseId, taskId, agent } = await seedAssignedTask('FRM');
     const h = hdr('FIELD_AGENT', agent);
     await request(app).post(`/api/v2/verification-tasks/${taskId}/start`).set(h);
 
@@ -222,8 +245,9 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
       .set(h)
       .send({ formData: { addressConfirmed: true }, verificationOutcome: 'POSITIVE' });
     expect(sub.status).toBe(200);
-    expect(sub.body.status).toBe('IN_PROGRESS'); // submit ≠ complete
+    expect(sub.body.status).toBe('COMPLETED'); // ADR-0032 submit==complete (the device posts only the form)
     expect(sub.body.verificationOutcome).toBeNull(); // the blob's outcome is NOT the official result (D1)
+    expect(await caseStatus(caseId)).toBe('AWAITING_COMPLETION'); // the only task is done → case rolls up
 
     const fd = (
       await db!.pool.query<{
@@ -233,12 +257,12 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
     expect(fd['residence']!.formData.addressConfirmed).toBe(true);
     expect(fd['residence']!.verificationOutcome).toBe('POSITIVE'); // stored as EVIDENCE in the blob only
 
-    // unknown slug → 400 (the 9 are pinned)
+    // unknown slug → 400 (the 9 are pinned), checked before any write
     expect(
       (await request(app).post(`/api/v2/verification-tasks/${taskId}/verification/bogus`).set(h).send({}))
         .status,
     ).toBe(400);
-    // idempotent resubmit (overwrites the slug key) → 200
+    // idempotent resubmit on the now-COMPLETED task (overwrites the slug key, re-completes) → 200
     expect(
       (
         await request(app)
@@ -247,6 +271,18 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
           .send({ formData: { addressConfirmed: false } })
       ).status,
     ).toBe(200);
+  });
+
+  it('submit form directly from ASSIGNED (no explicit start) also completes the task + rolls the case up', async () => {
+    const { caseId, taskId, agent } = await seedAssignedTask('FRA');
+    const h = hdr('FIELD_AGENT', agent);
+    const sub = await request(app)
+      .post(`/api/v2/verification-tasks/${taskId}/verification/office`)
+      .set(h)
+      .send({ formData: { officeConfirmed: true } });
+    expect(sub.status).toBe(200);
+    expect(sub.body.status).toBe('COMPLETED');
+    expect(await caseStatus(caseId)).toBe('AWAITING_COMPLETION');
   });
 
   describe('field-photo upload (ADR-0034)', () => {
@@ -381,7 +417,23 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
 
   // ── reads: office-reference attachments list + form-template stub (mobile parity, Phase 1C) ──
   describe('reads (mobile parity)', () => {
-    it('lists office reference docs for an owned task; 404 for a non-owner', async () => {
+    const refStored = new Map<string, Buffer>();
+    const refStorage: StorageProvider = {
+      put: (key, body) => {
+        refStored.set(key, body);
+        return Promise.resolve({ key });
+      },
+      get: (key) => Promise.resolve(refStored.get(key) ?? Buffer.alloc(0)),
+      signedUrl: (key) => Promise.resolve(`https://fake/${key}`),
+      remove: (key) => {
+        refStored.delete(key);
+        return Promise.resolve();
+      },
+    };
+    beforeAll(() => setStorage(refStorage));
+    afterAll(() => setStorage(null));
+
+    it('lists office reference docs for an owned task (with presigned url); 404 for a non-owner', async () => {
       const { caseId, taskId, agent } = await seedAssignedTask('ATT');
       await db!.pool.query(
         `INSERT INTO case_attachments
@@ -397,10 +449,11 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.data).toHaveLength(2);
-      expect((res.body.data as { originalName: string }[]).map((a) => a.originalName).sort()).toEqual([
-        'policy.pdf',
-        'task-ref.pdf',
-      ]);
+      const rows = res.body.data as { originalName: string; url: string }[];
+      expect(rows.map((a) => a.originalName).sort()).toEqual(['policy.pdf', 'task-ref.pdf']);
+      const url = Object.fromEntries(rows.map((a) => [a.originalName, a.url]));
+      expect(url['policy.pdf']).toBe('https://fake/attachments/x/p.pdf'); // absolute presigned URL
+      expect(url['task-ref.pdf']).toBe('https://fake/attachments/x/t.pdf');
       expect(res.body.data[0]).toMatchObject({ mimeType: 'application/pdf' });
       expect(typeof res.body.data[0].size).toBe('number');
       expect(res.body.data[0].uploadedAt).toBeTruthy();
