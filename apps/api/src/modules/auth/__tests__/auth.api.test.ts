@@ -31,7 +31,9 @@ describe.skipIf(!RUN)('auth API', () => {
     await db!.end();
   });
   beforeEach(async () => {
-    await db!.truncate('auth_refresh_tokens', 'users');
+    // Truncate the seeded active policy too: it would otherwise gate every test user's refresh
+    // (the ADR-0042 login-policy gate). These tests predate policies and don't accept them.
+    await db!.truncate('auth_refresh_tokens', 'policy_acceptances', 'policies', 'users');
   });
 
   it('logs in with a valid password → user + JWT pair', async () => {

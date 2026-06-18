@@ -38,9 +38,8 @@ CREATE INDEX IF NOT EXISTS idx_policy_acceptances_user ON policy_acceptances (us
 CREATE UNIQUE INDEX IF NOT EXISTS uq_policy_acceptances_user_policy_ver
     ON policy_acceptances (user_id, policy_id, content_version);
 
-INSERT INTO role_permissions (role_code, permission_code) VALUES
-  ('MANAGER', 'page.policies')
-ON CONFLICT (role_code, permission_code) DO NOTHING;
+-- Policy administration is SUPER_ADMIN-only (grants_all covers page.policies + policy.manage),
+-- so there is NO explicit role_permissions seed — this keeps DB↔code role/permission parity (ADR-0022).
 
 INSERT INTO policies (code, name, description, content, content_version, is_active)
 SELECT 'FIELD_EXEC_ACKNOWLEDGEMENT',
