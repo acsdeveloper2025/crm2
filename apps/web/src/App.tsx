@@ -8,6 +8,7 @@ import { MustChangePasswordPage } from './features/auth/MustChangePasswordPage.j
 import { MustAcceptPoliciesPage } from './features/auth/MustAcceptPoliciesPage.js';
 import { Layout } from './components/Layout.js';
 import { VerificationUnitsPage } from './features/verificationUnits/VerificationUnitsPage.js';
+import { PoliciesPage } from './features/policies/PoliciesPage.js';
 import { ClientsPage } from './features/clients/ClientsPage.js';
 import { ProductsPage } from './features/products/ProductsPage.js';
 import { CpvPage } from './features/cpv/CpvPage.js';
@@ -74,6 +75,7 @@ export function App() {
         <Route path="/admin/rbac" element={<RolesPage />} />
         <Route path="/admin/templates" element={<TemplatesPage />} />
         <Route path="/admin/system" element={<SystemPage />} />
+        <Route path="/admin/policies" element={<PoliciesPage />} />
         <Route path="/security" element={<SecurityPage />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/pipeline" element={<PipelinePage />} />
