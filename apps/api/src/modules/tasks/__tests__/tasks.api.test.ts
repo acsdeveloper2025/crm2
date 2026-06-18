@@ -385,6 +385,79 @@ describe.skipIf(!RUN)('tasks API (Pipeline)', () => {
     expect((await request(app).get('/api/v2/tasks/stats').set(SA)).body.outOfTat).toBe(0);
   });
 
+  it('target-TAT (ADR-0044): an OPEN task past its tat_hours since assigned_at is overdue, filtered by tat=1, with due_at/tatHours on the row', async () => {
+    const ctx = await seedCpv('TTAT');
+    const c = await seedCaseTasks(ctx, { name: 'TTAT APP', unitIds: [ctx.unitAId, ctx.unitBId] });
+    // task A: assigned ~5h ago with a 4h target → OVERDUE (clock starts at assigned_at, not created_at)
+    await db!.pool.query(
+      `UPDATE case_tasks SET status = 'ASSIGNED', assigned_at = now() - interval '5 hours', tat_hours = 4 WHERE id = $1`,
+      [c.taskIds[0]],
+    );
+    // task B: assigned just now with a 48h target → WELL within target
+    await db!.pool.query(
+      `UPDATE case_tasks SET status = 'ASSIGNED', assigned_at = now(), tat_hours = 48 WHERE id = $1`,
+      [c.taskIds[1]],
+    );
+
+    const list = await request(app).get('/api/v2/tasks?tat=1').set(SA);
+    expect(list.status).toBe(200);
+    const ids = (list.body.items as TaskView[]).map((t) => t.id);
+    expect(ids).toContain(c.taskIds[0]); // the overdue task
+    expect(ids).not.toContain(c.taskIds[1]); // the within-target task is excluded
+    expect(list.body.filters.tat).toBe('1');
+
+    const overdueRow = (list.body.items as TaskView[]).find((t) => t.id === c.taskIds[0])!;
+    expect(overdueRow.overdue).toBe(true);
+    expect(overdueRow.tatHours).toBe(4);
+    expect(typeof overdueRow.dueAt).toBe('string'); // assigned_at + 4h, computed
+
+    // the non-overdue task carries its read-model fields too (overdue false), even off the tat filter
+    const allRow = ((await request(app).get('/api/v2/tasks?limit=25').set(SA)).body.items as TaskView[]).find(
+      (t) => t.id === c.taskIds[1],
+    )!;
+    expect(allRow.overdue).toBe(false);
+    expect(allRow.tatHours).toBe(48);
+  });
+
+  it('task-create accepts tatHours (override) and otherwise defaults from priority (ADR-0044 mapping)', async () => {
+    const ctx = await seedCpv('CRTAT');
+    const caseId = seeded<{ id: string }>(
+      await request(app)
+        .post('/api/v2/cases')
+        .set(SA)
+        .send({
+          clientId: ctx.clientId,
+          productId: ctx.productId,
+          backendContactNumber: '9876543210',
+          applicants: [{ name: 'CRTAT APP' }],
+          dedupeDecision: 'NO_DUPLICATES_FOUND',
+        }),
+    ).id;
+    const applicantId = seeded<{ applicants: { id: string }[] }>(
+      await request(app).get(`/api/v2/cases/${caseId}`).set(SA),
+    ).applicants[0]!.id;
+    const created = seeded<{ id: string; verificationUnitId: number }[]>(
+      await request(app)
+        .post(`/api/v2/cases/${caseId}/tasks`)
+        .set(SA)
+        .send({
+          tasks: [
+            { verificationUnitId: ctx.unitAId, applicantId, address: '12 MG ROAD', tatHours: 6 }, // explicit override
+            { verificationUnitId: ctx.unitBId, applicantId, address: '12 MG ROAD', priority: 'URGENT' }, // default URGENT→4
+          ],
+        }),
+    );
+    const tA = created.find((t) => t.verificationUnitId === ctx.unitAId)!.id;
+    const tB = created.find((t) => t.verificationUnitId === ctx.unitBId)!.id;
+    const rows = await db!.pool.query<{ id: string; tat_hours: number }>(
+      `SELECT id, tat_hours FROM case_tasks WHERE id = ANY($1::uuid[])`,
+      [[tA, tB]],
+    );
+    const byId = new Map(rows.rows.map((r) => [r.id, r.tat_hours]));
+    expect(byId.get(tA)).toBe(6); // explicit tatHours wins
+    expect(byId.get(tB)).toBe(4); // URGENT → 4h default (ADR-0044 mapping)
+  });
+
   // ── Assignment workbench (slice 2): intersection pool + bulk assign ──
   describe('assignable-users + bulk-assign', () => {
     it('pool follows the visit type + FIELD territory intersection across tasks (ADR-0024)', async () => {

@@ -351,6 +351,9 @@ export const AddTasksSchema = z.object({
           longitude: z.number().gte(-180).lte(180).optional(),
           trigger: z.string().trim().max(MAX_TRIGGER).default(''),
           priority: z.enum(PRIORITIES).default('MEDIUM'),
+          // Target TAT in hours (ADR-0044). Optional override; omitted → derived from priority server-side
+          // (URGENT 4 · HIGH 8 · MEDIUM 24 · LOW 48). Additive — mobile (ADR-0012) is unaffected.
+          tatHours: z.number().int().positive().optional(),
           // ADR-0024: optional assign-at-create. visitType picks the pool (FIELD/OFFICE); a FIELD
           // task carries its location (areaId/pincodeId) for territory match + rate resolution;
           // assigneeId assigns it immediately (server re-checks eligibility) — omit all to add it PENDING.

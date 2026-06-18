@@ -32,6 +32,9 @@ const TASK_PAGE_SPEC: PageSpec = {
     assignedAt: 'ct.assigned_at',
     createdAt: 'ct.created_at',
     updatedAt: 'ct.updated_at',
+    // Target-TAT due time (ADR-0044) — a fixed, param-free expression (refs only `ct`), so it's the
+    // same injection-safe whitelist token any other sortMap value is. NULL when unassigned/no target.
+    dueAt: `(ct.assigned_at + (ct.tat_hours * interval '1 hour'))`,
   },
   filterMap: {
     caseNumber: { column: 'cs.case_number', kind: 'text' },
@@ -98,8 +101,9 @@ function domainParams(rawQuery: Record<string, unknown>) {
   const assignedTo =
     typeof assignedToRaw === 'string' && UUID_RE.test(assignedToRaw) ? assignedToRaw : undefined;
   const outOfTat = rawQuery['outOfTat'] === '1' || rawQuery['outOfTat'] === 'true';
+  const tat = rawQuery['tat'] === '1' || rawQuery['tat'] === 'true';
   const commissionable = rawQuery['commissionable'] === '1' || rawQuery['commissionable'] === 'true';
-  return { status, clientId, unitId, assignedTo, outOfTat, commissionable };
+  return { status, clientId, unitId, assignedTo, outOfTat, tat, commissionable };
 }
 
 /**
@@ -118,12 +122,19 @@ export const taskService = {
     const d = domainParams(rawQuery);
     const columnFilters = resolveFilters(rawQuery, TASK_PAGE_SPEC);
     const scope = await resolveScope(actor);
+    // No EXPLICIT sort = the caller didn't pass a whitelisted `sortBy` (the page default is in effect).
+    // Lets the tat filter apply its urgency ordering without ever overriding a user-chosen sort.
+    const rawSortBy = rawQuery['sortBy'];
+    const defaultSort = !(
+      typeof rawSortBy === 'string' && Object.prototype.hasOwnProperty.call(TASK_PAGE_SPEC.sortMap, rawSortBy)
+    );
     const { items, totalCount } = await repo.list({
       ...(d.status !== undefined ? { status: d.status } : {}),
       ...(d.clientId !== undefined ? { clientId: d.clientId } : {}),
       ...(d.unitId !== undefined ? { unitId: d.unitId } : {}),
       ...(d.assignedTo !== undefined ? { assignedTo: d.assignedTo } : {}),
       ...(d.outOfTat ? { outOfTat: true } : {}),
+      ...(d.tat ? { tat: true, defaultSort } : {}),
       // commissionable is a billing.view-only filter; ignore it for actors who can't see amounts.
       ...(canViewBilling && d.commissionable ? { commissionable: true } : {}),
       ...(canViewBilling ? { billing: true } : {}),
@@ -141,6 +152,7 @@ export const taskService = {
     if (d.unitId !== undefined) filters['unitId'] = d.unitId;
     if (d.assignedTo !== undefined) filters['assignedTo'] = d.assignedTo;
     if (d.outOfTat) filters['outOfTat'] = '1';
+    if (d.tat) filters['tat'] = '1';
     if (canViewBilling && d.commissionable) filters['commissionable'] = '1';
     if (r.search !== undefined) filters['search'] = r.search;
     for (const f of columnFilters) filters[`f_${f.field}`] = f.values.join(',');

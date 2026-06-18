@@ -19,6 +19,16 @@ const SLA_BREACH_SQL = `(ct.status IN ('PENDING','ASSIGNED','IN_PROGRESS')
     ELSE interval '48 hours' END))`;
 
 /**
+ * Target-TAT overdue predicate (ADR-0044): an OPEN task whose explicit per-task target (`tat_hours`)
+ * has elapsed since its CLOCK START — `assigned_at` (NOT created_at). A task with no target or not yet
+ * assigned can't be overdue (fail-open: NULL → not overdue). Pure SQL, no params (references only
+ * `ct`) → safe to inline as both a list filter and the computed `overdue` column / ORDER BY key.
+ */
+const OVERDUE_SQL = `(ct.status IN ('PENDING','ASSIGNED','IN_PROGRESS')
+  AND ct.tat_hours IS NOT NULL AND ct.assigned_at IS NOT NULL
+  AND now() > ct.assigned_at + (ct.tat_hours * interval '1 hour'))`;
+
+/**
  * Pipeline repository — the operational task queue: every `case_task` across all cases, with its
  * case context denormalised. Every join from `ct` is 1:1 (cases/units/clients/products/assignee by
  * PK; primary applicant by partial-unique index) → the COUNT/stats share the full FROM with zero
@@ -38,6 +48,9 @@ export interface TaskListOptions {
   ids?: string[];
   /** SLA bucket — restrict to OPEN tasks past their priority TAT (the "Out of TAT" bucket). */
   outOfTat?: boolean;
+  /** Target-TAT bucket (ADR-0044) — restrict to OPEN tasks past their explicit `tat_hours` target
+   *  since `assigned_at`. When set (and no explicit sort requested) the list orders by urgency. */
+  tat?: boolean;
   /** Commissionable bucket (ADR-0036 slice 5d) — COMPLETED tasks with a resolved commission. */
   commissionable?: boolean;
   /** Expose the derived bill/commission amounts? Only when the actor holds `billing.view` —
@@ -46,6 +59,9 @@ export interface TaskListOptions {
   billing?: boolean;
   sortColumn: string;
   sortOrder: SortOrder;
+  /** True when the caller did NOT request an explicit sort (the page default is in effect). Lets the
+   *  `tat` filter substitute an urgency ordering without ever overriding a user-chosen sort. */
+  defaultSort?: boolean;
   limit: number;
   offset: number;
 }
@@ -75,6 +91,10 @@ const TASK_SELECT_BASE = `
          ct.status, ct.assigned_to, au.name AS assigned_to_name,
          ct.visit_type, ct.distance_band, ct.bill_count, ct.assigned_at,
          ct.version, ${SLA_BREACH_SQL} AS out_of_tat, ct.created_at, ct.updated_at,
+         ct.tat_hours AS tat_hours,
+         (ct.assigned_at + (ct.tat_hours * interval '1 hour')) AS due_at,
+         ${OVERDUE_SQL} AS overdue,
+         ct.completed_elapsed_minutes AS completed_elapsed_minutes,
          (ct.status = 'COMPLETED') AS billable`;
 
 /** Amount columns — resolved via the laterals when billing-visible, else nulled (laterals skipped). */
@@ -94,6 +114,7 @@ function buildWhere(
     | 'scope'
     | 'ids'
     | 'outOfTat'
+    | 'tat'
     | 'commissionable'
   >,
   params: unknown[],
@@ -126,6 +147,7 @@ function buildWhere(
     where.push(`ct.id = ANY($${params.length}::uuid[])`);
   }
   if (o.outOfTat) where.push(SLA_BREACH_SQL); // param-free predicate
+  if (o.tat) where.push(OVERDUE_SQL); // param-free target-TAT overdue predicate
   // Commissionable: a COMPLETED task whose assignee has a resolved commission (references the
   // COMMISSION_LATERAL `com` → the caller's FROM must be TASK_FROM_BILLING). Param-free.
   if (o.commissionable) where.push(`ct.status = 'COMPLETED' AND com.commission_amount IS NOT NULL`);
@@ -155,9 +177,16 @@ export const taskRepository = {
     // columns are NOT sortable (they live only in the billing FROM), so the sort never needs it.
     const selectFrom = billing ? TASK_FROM_BILLING : TASK_FROM;
     const amountCols = billing ? BILLING_AMOUNT_COLS : NULL_AMOUNT_COLS;
+    // The tat filter defaults to an urgency ordering (overdue first, then soonest-due) — but ONLY when
+    // the caller hasn't picked an explicit sort, so a user-chosen column always wins. Both keys are
+    // param-free SQL (OVERDUE_SQL references only `ct`; due_at = assigned_at + tat_hours).
+    const orderBy =
+      o.tat && o.defaultSort
+        ? `ORDER BY ${OVERDUE_SQL} DESC, (ct.assigned_at + (ct.tat_hours * interval '1 hour')) ASC NULLS LAST, ct.id ${o.sortOrder}`
+        : `ORDER BY ${o.sortColumn} ${o.sortOrder}, ct.id ${o.sortOrder}`;
     const items = await query<TaskView>(
       `${TASK_SELECT_BASE}${amountCols} ${selectFrom} ${clause}
-       ORDER BY ${o.sortColumn} ${o.sortOrder}, ct.id ${o.sortOrder}
+       ${orderBy}
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, o.limit, o.offset],
     );
