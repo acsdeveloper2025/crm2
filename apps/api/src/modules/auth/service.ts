@@ -125,9 +125,22 @@ async function issueTokens(
  *  never on role names. Cached resolution; unknown/inactive role → zero permissions. */
 async function withResolvedPermissions<T extends { role: string }>(
   user: T,
-): Promise<T & { grantsAll: boolean; permissions: string[] }> {
+): Promise<
+  T & {
+    grantsAll: boolean;
+    permissions: string[];
+    idleLogoutMinutes: number | null;
+    maxSessionMinutes: number | null;
+  }
+> {
   const attrs = await getRoleAttributes(user.role);
-  return { ...user, grantsAll: attrs?.grantsAll ?? false, permissions: attrs?.permissions ?? [] };
+  return {
+    ...user,
+    grantsAll: attrs?.grantsAll ?? false,
+    permissions: attrs?.permissions ?? [],
+    idleLogoutMinutes: attrs?.idleLogoutMinutes ?? null,
+    maxSessionMinutes: attrs?.maxSessionMinutes ?? null,
+  };
 }
 
 export const authService = {

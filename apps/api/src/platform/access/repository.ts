@@ -14,6 +14,10 @@ export interface RoleAttributes {
   hierarchyMode: HierarchyMode;
   /** force a password change every N days for users of this role; null = never (exempt). */
   passwordExpiryDays: number | null;
+  /** web idle auto-logout window in minutes (ADR-0045); null = exempt (FIELD_AGENT). */
+  idleLogoutMinutes: number | null;
+  /** absolute session lifetime in minutes (ADR-0045); null = no cap. */
+  maxSessionMinutes: number | null;
 }
 
 /** `null` when the role code is unknown or inactive — callers treat that as zero permissions. */
@@ -22,15 +26,24 @@ export async function loadRoleAttributes(roleCode: string): Promise<RoleAttribut
     grantsAll: boolean;
     hierarchyMode: HierarchyMode;
     passwordExpiryDays: number | null;
+    idleLogoutMinutes: number | null;
+    maxSessionMinutes: number | null;
   }>(
     `SELECT grants_all AS "grantsAll", hierarchy_mode AS "hierarchyMode",
-            password_expiry_days AS "passwordExpiryDays"
+            password_expiry_days AS "passwordExpiryDays",
+            idle_logout_minutes AS "idleLogoutMinutes",
+            max_session_minutes AS "maxSessionMinutes"
      FROM roles WHERE code = $1 AND is_active`,
     [roleCode],
   );
   const role = roles[0];
   if (!role) return null;
-  const base = { hierarchyMode: role.hierarchyMode, passwordExpiryDays: role.passwordExpiryDays };
+  const base = {
+    hierarchyMode: role.hierarchyMode,
+    passwordExpiryDays: role.passwordExpiryDays,
+    idleLogoutMinutes: role.idleLogoutMinutes,
+    maxSessionMinutes: role.maxSessionMinutes,
+  };
   if (role.grantsAll) return { grantsAll: true, permissions: [], ...base };
   const rows = await query<{ code: string }>(
     `SELECT permission_code AS code FROM role_permissions WHERE role_code = $1`,

@@ -36,6 +36,10 @@ export interface AuthUser {
   /** resolved role attributes (ADR-0022) — the FE gates UI on PERMISSIONS, never role names. */
   grantsAll?: boolean;
   permissions?: string[];
+  /** web idle auto-logout window in minutes (ADR-0045); null ⇒ this role is exempt (no FE timer). */
+  idleLogoutMinutes?: number | null;
+  /** absolute session lifetime in minutes (ADR-0045); null ⇒ no cap. */
+  maxSessionMinutes?: number | null;
 }
 
 export interface AuthTokens {

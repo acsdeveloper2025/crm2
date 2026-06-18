@@ -73,6 +73,20 @@ describe.skipIf(!RUN)('auth API', () => {
     expect(field.rows[0]).toEqual({ idle_logout_minutes: null, max_session_minutes: null });
   });
 
+  it('login response carries the role idle + session-cap policy (DESK)', async () => {
+    await makeUser({ username: 'mgr', role: 'MANAGER' });
+    const res = await login('mgr');
+    expect(res.body.user.idleLogoutMinutes).toBe(10);
+    expect(res.body.user.maxSessionMinutes).toBe(720);
+  });
+
+  it('login response marks FIELD_AGENT exempt (null idle policy)', async () => {
+    await makeUser({ username: 'fieldex', role: 'FIELD_AGENT' });
+    const res = await login('fieldex');
+    expect(res.body.user.idleLogoutMinutes).toBeNull();
+    expect(res.body.user.maxSessionMinutes).toBeNull();
+  });
+
   it('accepts deviceInfo as the field app device OBJECT (mobile compat, not just a string)', async () => {
     await makeUser({ username: 'devobj', role: 'FIELD_AGENT' });
     const res = await request(app)
