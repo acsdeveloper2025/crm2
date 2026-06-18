@@ -41,7 +41,14 @@ const STATUS_TONE: Record<string, string> = {
 /** The Zion-style work buckets. Status buckets set the `status` domain filter; the SLA bucket sets
  *  `outOfTat` and the Commissionable bucket sets `commissionable` (cross-status derived filters,
  *  ADR-0032/0036). All buckets are mutually exclusive. Revoked replaces the old Cancelled chip. */
-const BUCKETS: { label: string; status?: string; sla?: boolean; comm?: boolean; stat: keyof TaskStats }[] = [
+const BUCKETS: {
+  label: string;
+  status?: string;
+  sla?: boolean;
+  tat?: boolean;
+  comm?: boolean;
+  stat: keyof TaskStats;
+}[] = [
   { label: 'All', status: '', stat: 'total' },
   { label: 'Unassigned', status: 'PENDING', stat: 'pending' },
   { label: 'Assigned', status: 'ASSIGNED', stat: 'assigned' },
@@ -49,6 +56,9 @@ const BUCKETS: { label: string; status?: string; sla?: boolean; comm?: boolean; 
   { label: 'Completed', status: 'COMPLETED', stat: 'completed' },
   { label: 'Revoked', status: 'REVOKED', stat: 'revoked' },
   { label: 'Out of TAT', sla: true, stat: 'outOfTat' },
+  // TAT = the precise overdue set (server-side `tat=1`, urgency-ordered). Pill count reuses the
+  // `outOfTat` stat as an acceptable approximation; the `tat` FILTER below is the exact overdue set.
+  { label: 'TAT', tat: true, stat: 'outOfTat' },
   { label: 'Commissionable', comm: true, stat: 'commissionable' },
 ];
 
@@ -68,14 +78,17 @@ export function PipelinePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const status = searchParams.get('status') ?? '';
   const outOfTat = searchParams.get('outOfTat') === '1';
+  const tat = searchParams.get('tat') === '1';
   const commissionable = searchParams.get('commissionable') === '1';
   // All buckets are mutually exclusive — selecting one clears the others.
-  const selectBucket = (b: { status?: string; sla?: boolean; comm?: boolean }) => {
+  const selectBucket = (b: { status?: string; sla?: boolean; tat?: boolean; comm?: boolean }) => {
     const next = new URLSearchParams(searchParams);
     next.delete('status');
     next.delete('outOfTat');
+    next.delete('tat');
     next.delete('commissionable');
     if (b.sla) next.set('outOfTat', '1');
+    else if (b.tat) next.set('tat', '1');
     else if (b.comm) next.set('commissionable', '1');
     else if (b.status) next.set('status', b.status);
     next.delete('page'); // a bucket change re-anchors to page 1
@@ -252,9 +265,11 @@ export function PipelinePage() {
         {BUCKETS.filter((b) => canViewBilling || !b.comm).map((b) => {
           const active = b.sla
             ? outOfTat
-            : b.comm
-              ? commissionable
-              : !outOfTat && !commissionable && status === (b.status ?? '');
+            : b.tat
+              ? tat
+              : b.comm
+                ? commissionable
+                : !outOfTat && !tat && !commissionable && status === (b.status ?? '');
           const count = stats.data?.[b.stat];
           return (
             <button
@@ -287,6 +302,7 @@ export function PipelinePage() {
         filters={{
           status: status || undefined,
           outOfTat: outOfTat ? '1' : undefined,
+          tat: tat ? '1' : undefined,
           commissionable: commissionable ? '1' : undefined,
         }}
         fetchPage={(query: PageQuery) =>
