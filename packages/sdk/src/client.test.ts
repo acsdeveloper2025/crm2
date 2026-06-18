@@ -180,6 +180,11 @@ describe('createSdk — transport', () => {
       s.commissionRates.revise(1, { amount: 75, version: 1 }),
       s.commissionRates.activate(1, 1),
       s.commissionRates.deactivate(1, 1),
+      s.tatPolicies.list(),
+      s.tatPolicies.create({ tatHours: 4, label: '4 hours' }),
+      s.tatPolicies.revise(1, { label: '4 hrs', version: 1 }),
+      s.tatPolicies.activate(1, 1),
+      s.tatPolicies.deactivate(1, 1),
       s.reportLayouts.list(),
       s.reportLayouts.get(1),
       s.reportLayouts.byConfig(1, 2, 'MIS'),
@@ -366,8 +371,9 @@ describe('createSdk — transport', () => {
       s.savedViews.remove('00000000-0000-0000-0000-0000000000aa'),
       s.savedViews.setDefault('00000000-0000-0000-0000-0000000000aa', true),
     ]);
-    expect(calls.length).toBe(156);
+    expect(calls.length).toBe(161);
     expect(calls.some((c) => c.url === 'http://x/api/v2/commission-rates')).toBe(true);
+    expect(calls.some((c) => c.url === 'http://x/api/v2/tat-policies')).toBe(true);
     expect(calls.some((c) => c.url === 'http://x/api/v2/report-layouts')).toBe(true);
     expect(
       calls.some(
