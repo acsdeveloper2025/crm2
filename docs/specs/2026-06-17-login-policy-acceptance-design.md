@@ -8,7 +8,7 @@
 > `POST /api/v2/auth/accept-policies` endpoint described below were **dropped** in favour of the shared
 > mobile-parity **`consents`** store (`0070_mobile_consents.sql`). Acceptances are now keyed by
 > `(user_id, policy_version = policies.content_version)` and recorded via **`POST /api/v2/consents/accept`**
-> (`{ policyVersion }`, idempotent UPSERT). The `policies` table (migration `0072_policy_acceptance.sql`)
+> (`{ policyVersion }`, idempotent UPSERT). The `policies` table (migration `0073_policy_acceptance.sql`)
 > stays the admin-managed content/version master; the per-policy `/acceptances` audit view was removed.
 > The gate rule is unchanged (clear when a `consents` row exists at each active policy's current
 > `content_version`). Note: `consents` is keyed by version only, so the gate assumes a single active

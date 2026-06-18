@@ -8,7 +8,7 @@
 > **Reconciliation (post-merge with mobile-parity):** acceptances are **not** stored in a dedicated
 > `policy_acceptances` table. They live in the **shared `consents` store** (the mobile-parity DPDP
 > table, `0070_mobile_consents.sql`), keyed by `(user_id, policy_version = policies.content_version)`.
-> The `policies` table (this ADR's migration, now `0072_policy_acceptance.sql`) remains the
+> The `policies` table (this ADR's migration, now `0073_policy_acceptance.sql`) remains the
 > **admin-managed content/version master**. Web records acceptance via the shared
 > **`POST /api/v2/consents/accept`** endpoint (`{ policyVersion }`, idempotent UPSERT) — the original
 > `POST /api/v2/auth/accept-policies` endpoint, the `policy_acceptances` table, and the per-policy
