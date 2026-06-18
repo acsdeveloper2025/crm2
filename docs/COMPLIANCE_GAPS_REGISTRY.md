@@ -510,6 +510,90 @@ Each finding is marked OPEN · FIXED · DEFERRED · WONTFIX.
   DEFERRED/WONTFIX) · evidence. Never delete prior findings.
 
 ---
+
+## Section G — Commission ↔ Rate cross-audit (2026-06-18)
+
+Source: [`docs/engineering/COMMISSION_RATE_CROSS_AUDIT_2026-06-18.md`](engineering/COMMISSION_RATE_CROSS_AUDIT_2026-06-18.md)
+(5 parallel read-only auditors, areas A–E). Governed by ADR-0036 (commission model) + ADR-0018 (flat
+rates). **No code changed — audit only.** All findings below carry a disposition; none are blockers to
+the *audit*, but G-1 gates the *rebuild* on an owner decision (+ superseding ADR if amount-varies).
+
+**OWNER DECISIONS LOCKED 2026-06-18:** commission model = **(i) amount-varies, fully decoupled from
+the client rate_type** (executive's own pincode/area mapping; OGL-for-client can be LOCAL-for-executive)
+→ supersedes ADR-0036, needs **ADR-0046**. Dimensions = executive + location + client + product/VU +
+**TAT band**. `bill_count` = multiplier → **FIX** (G-2). Pipeline tab = **REMOVE entirely** (G-3).
+**SEQUENCE:** build the **TAT band system first** (G-7), then the full commission rebuild. See the
+audit doc's "Decisions LOCKED" section.
+
+### G-1 · Commission has no pincode/area dimension — 🟡 DEFERRED (owner decision + ADR-0046 if model i/iii)
+- **Severity:** HIGH (the requested capability). **Finding:** `commission_rates` is keyed
+  `(user_id, rate_type, client_id, time)` with no location term; `COMMISSION_LATERAL`
+  (`laterals.ts:35-42`) has no location operand. Commission varies by location only *transitively*
+  via the location-resolved `rt.rate_type` — so two completed tasks with the **same** `rate_type` in
+  **different** pincodes/areas earn the **same** commission (proven §E: ₹50 vs ₹50).
+- **Disposition:** DEFERRED pending owner decision §1 (amount-varies → model (i)/(iii) → **supersedes
+  ADR-0036, needs ADR-0046**; reporting-only → model (ii) → no supersession). Not a defect against
+  ADR-0036 (which deliberately excludes location); it is a scope/requirement change.
+
+### G-2 · Billing rollup ignores `case_tasks.bill_count` — 🟠 OPEN → DEFERRED (owner intent)
+- **Severity:** HIGH (location-independent amount/count correctness). **Finding:** `bill_count`
+  (`0011_task_assignment.sql:11`, default 1, per-task editable in the SDK) is never read by the
+  rollup or laterals — a `bill_count=3` task contributes `bill_amount×1` and counts as 1. If it is a
+  billable-units multiplier (name + editability imply so), `bill_total` should be
+  `SUM(rt.bill_amount * ct.bill_count)` and the count may need weighting.
+- **Disposition:** DEFERRED pending owner confirmation of intent (Decisions §2). If confirmed a bug →
+  FIXED in the rebuild; if vestigial/always-1 → WONTFIX with rationale. **Must not be silently dropped.**
+
+### G-3 · "Commissionable" tab surfaces ₹ in the pipeline (operational view) — 🟡 DEFERRED (owner decision §5)
+- **Severity:** LOW (UX/scope; **not** a security hole). **Finding:** `PipelinePage.tsx` shows
+  bill/commission columns + a Commissionable bucket (gated `billing.view` on the FE). The **server is
+  already safe** — it nulls amounts and ignores `commissionable=1` for non-`billing.view` actors
+  (proven by `tasks.api.test.ts:734-767`). Pure FE-surface concern.
+- **Disposition:** DEFERRED pending owner decision §5 (remove from pipeline; confine money to the
+  `billing.view` Billing page). Clean ~6-edit FE-only removal; no backend/security change.
+
+### G-4 · MIS Layout `RATE_AMOUNT`/`COMMISSION_AMOUNT` column types ungated at generation — 🟡 DEFERRED (future slice)
+- **Severity:** LOW (no live leak today). **Finding:** these are bindable column *types* in the
+  report-layout catalog (`packages/sdk/src/reportLayouts.ts:36-37`); **no generation endpoint exists**
+  that turns them into money. No runtime exposure now.
+- **Disposition:** DEFERRED — the future BILLING_MIS generation slice MUST enforce `billing.view` on
+  any output carrying these. Flagged so it is not forgotten.
+
+### G-5 · Billing SUMs do not normalize currency — 🟢 RATCHET (latent; all-INR today)
+- **Severity:** LOW. **Finding:** `SUM(bill_amount)`/`SUM(commission_amount)` add `amount` across
+  whatever `currency` the rows carry; `rates.currency`/`commission_rates.currency` exist but are never
+  filtered/grouped. Harmless while every row is INR.
+- **Disposition:** RATCHET — add a currency guard/group if a non-INR rate is ever introduced.
+
+### G-6 · `float8` cast on `numeric` money before `SUM` — 🟢 WONTFIX (minor; revisit if it bites)
+- **Severity:** TRIVIAL. **Finding:** `r.amount::float8` / `cmr.amount::float8` (`laterals.ts:21,36`)
+  sum in IEEE-754; sub-cent drift possible on large fractional sums. Negligible for current INR integers.
+- **Disposition:** WONTFIX for now (cast is intentional for JS number transport); revisit if money
+  precision is ever reported wrong.
+
+### G-7 · TAT band system (4/6/8/12/24/48h) is unbuilt — prerequisite for commission-by-TAT — 🟡 DEFERRED → BUILD FIRST
+- **Severity:** MEDIUM (newly prioritized prerequisite). **Finding:** the owner recalled TAT bands as
+  "built earlier" — they are **not**. ADR-0044 (task-tat-priority) is **Status: Proposed**, nothing in
+  the schema (`tat_hours`/`tat_policies`/`due_at` all absent). What exists: the priority enum
+  (`0037_case_task_dispatch_fields.sql:43-46`) + an open-task "out of TAT" breach flag from hard-coded
+  12/24/48/72h thresholds off `created_at` (`apps/api/src/modules/tasks/repository.ts:13-19`, ADR-0032).
+  No "completed-in band" exists anywhere; ADR-0044 explicitly states "Commission unaffected — priority
+  is not a commission input" (must be amended). Raw timestamps for elapsed (`assigned_at`,
+  `started_at`, `completed_at`) DO exist (server-side `timestamptz`).
+- **Disposition:** DEFERRED but **sequenced FIRST** (owner choice 2026-06-18): build/accept the TAT
+  band system (elapsed `completed_at − assigned_at`, bucket 4/6/8/12/24/48h, an assign/complete/band
+  read-model) + amend ADR-0044 to allow commission as a consumer, **before** the commission rebuild.
+  TAT design decisions (clock start, wall-clock vs business-hours, completion-time source,
+  target-vs-actual band, full-ADR-0044 vs minimal) pending owner lock in the TAT design phase.
+
+### Verified PASS (no finding)
+- RBAC: commission config = `masterdata.manage` = SUPER_ADMIN-only; `billing.view` = MANAGER +
+  BACKEND_USER + SA; no role accidentally sees amounts (server-nulled fail-safe). A location dimension
+  needs **no new permission** (scope-dimension registry). Matches ADR-0036 §3 + the 6-role model.
+- The geography substrate (locations, `case_tasks`/`cases` area/pincode, `RATE_LATERAL` cascade) is
+  fully live for rates and reusable as the reference model for commission.
+
+---
 *Governance ledger. Update — never overwrite — as findings change state. Linked from
 `CRM2_MASTER_MEMORY.md`, `PROJECT_INDEX.md`, `docs/ARCHITECTURE_GOVERNANCE.md`,
 `FREEZE_LOCK_REPORT.md`.*

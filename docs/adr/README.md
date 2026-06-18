@@ -84,7 +84,7 @@ Numbers are never reused. Filenames follow `ADR-NNNN-kebab-slug.md`. Use
 | [ADR-0033](./ADR-0033-task-lineage-revisit-and-reassign-after-revoke.md) | Task lineage — REVISIT and REASSIGN-AFTER-REVOKE | Accepted | 2026-06-15 |
 | [ADR-0034](./ADR-0034-device-field-photo-upload.md) | Device field-photo upload (multipart + sharp) | Accepted | 2026-06-16 |
 | [ADR-0035](./ADR-0035-sync-delta-arrays-and-execution-fields.md) | Sync down-sync delta arrays + per-task execution fields | Accepted | 2026-06-16 |
-| [ADR-0036](./ADR-0036-billing-commission-model.md) | Billing & Commission model (per-case, unified) | Accepted | 2026-06-16 |
+| [ADR-0036](./ADR-0036-billing-commission-model.md) | Billing & Commission model (per-case, unified) | Accepted (billing) · Superseded → ADR-0046 (commission §1–3) | 2026-06-16 |
 | [ADR-0037](./ADR-0037-mis-layout-engine.md) | MIS Layout Engine — per-(client,product) config | Accepted | 2026-06-16 |
 | [ADR-0038](./ADR-0038-template-report-engine.md) | Auto Template-Report Engine (FIELD_REPORT + CASE_REPORT) | Proposed | 2026-06-16 |
 | [ADR-0039](./ADR-0039-field-report-engine.md) | FIELD_REPORT Engine (template-report slice 1) | Accepted | 2026-06-16 |
@@ -92,5 +92,6 @@ Numbers are never reused. Filenames follow `ADR-NNNN-kebab-slug.md`. Use
 | [ADR-0041](./ADR-0041-case-report-engine.md) | CASE_REPORT Engine — multi-format client report (PDF / Word / Excel) | Proposed | 2026-06-17 |
 | [ADR-0042](./ADR-0042-dependency-stack-freeze.md) | Dependency stack freeze — latest majors, lockfile-enforced | Accepted | 2026-06-17 |
 | [ADR-0043](./ADR-0043-login-policy-acceptance.md) | Login policy acceptance — admin-managed, versioned, server-driven gate | Accepted | 2026-06-17 |
-| [ADR-0044](./ADR-0044-task-tat-priority.md) | Task priority as a TAT (turnaround-time) SLA instead of an abstract enum | Proposed | 2026-06-18 |
+| [ADR-0044](./ADR-0044-task-tat-priority.md) | Task TAT (turnaround-time) SLA — target TAT + completed-in band | Accepted | 2026-06-18 |
 | [ADR-0045](./ADR-0045-web-session-lifecycle.md) | Web session lifecycle — idle auto-logout + 12h absolute cap + FIELD_AGENT carve-out | Accepted | 2026-06-18 |
+| [ADR-0046](./ADR-0046-commission-location-and-tat-dimensions.md) | Field-executive commission — location + client/product/VU + TAT-band dimensions (decoupled from client rate) | Accepted | 2026-06-18 |

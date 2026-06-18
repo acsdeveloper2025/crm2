@@ -1,6 +1,14 @@
 # ADR-0036: Billing & Commission model (per-case, unified)
 
-- **Status:** Accepted
+> **⚠️ SUPERSEDED (commission model) → [ADR-0046](./ADR-0046-commission-location-and-tat-dimensions.md)
+> (2026-06-18).** §1–§3 (commission resolution: per-user `(user, rate_type, client)`, no location)
+> are **replaced** by ADR-0046: field-executive commission gains **location + client + product/VU +
+> completed-in-TAT-band** dimensions, **decoupled from the client's `rate_type`**. The *billing* side
+> (client bill from `rates`, eligibility = any COMPLETED task, derived-amounts, outcome-independence —
+> §4/§5) **still stands**, plus the `bill_count` multiplier fix (ADR-0046 §5). Read ADR-0046 for the
+> current commission model.
+
+- **Status:** **Superseded (commission §1–§3) → ADR-0046** · billing §4–§5 still Accepted
 - **Date:** 2026-06-16
 - **Slice:** Billing 5 (this ADR lands with 5a — the `commission_rates` config foundation)
 
