@@ -62,7 +62,7 @@ describe.skipIf(!RUN)('auth API', () => {
     expect(res.body.tokens.expiresIn).toBeGreaterThan(0);
   });
 
-  it('migration 0074 seeds idle + session-cap policy (DESK set, FIELD_AGENT exempt)', async () => {
+  it('migration 0075 seeds idle + session-cap policy (DESK set, FIELD_AGENT exempt)', async () => {
     const desk = await db!.pool.query(
       `SELECT idle_logout_minutes, max_session_minutes FROM roles WHERE code = 'MANAGER'`,
     );
