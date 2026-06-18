@@ -7,7 +7,7 @@ const ERROR_LABELS: Record<string, string> = {
 };
 
 export function LoginPage() {
-  const { login } = useAuth();
+  const { login, logoutReason } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [mfaCode, setMfaCode] = useState('');
@@ -43,6 +43,12 @@ export function LoginPage() {
       >
         <div className="mb-1 text-lg font-bold tracking-tight">CRM2</div>
         <p className="mb-5 text-sm text-muted-foreground">Sign in to continue.</p>
+
+        {logoutReason && (
+          <p className="mb-4 rounded-md border border-border bg-surface-muted px-3 py-2 text-sm text-muted-foreground">
+            {logoutReason}
+          </p>
+        )}
 
         <label className="mb-3 block">
           <span className="mb-1 block text-xs font-medium text-foreground">Username</span>

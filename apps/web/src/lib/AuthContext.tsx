@@ -16,8 +16,12 @@ interface AuthState {
   mustAcceptPolicies: boolean;
   /** the active policies this user still owes acceptance for (empty once accepted/cleared). */
   pendingPolicies: PendingPolicy[];
+  /** reason shown on the login screen after an idle/absolute timeout (null when none) (ADR-0045). */
+  logoutReason: string | null;
   login: (username: string, password: string, mfaCode?: string) => Promise<void>;
   logout: () => Promise<void>;
+  /** idle/absolute timeout: revoke THIS browser session only (not logout-everywhere), then drop. */
+  idleLogout: (reason: string) => Promise<void>;
   /** records the user's acceptance of all pending policies, then clears the gate. */
   acceptPolicies: () => Promise<void>;
 }
@@ -30,6 +34,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const [mustAcceptPolicies, setMustAcceptPolicies] = useState(false);
   const [pendingPolicies, setPendingPolicies] = useState<PendingPolicy[]>([]);
+  const [logoutReason, setLogoutReason] = useState<string | null>(null);
 
   useEffect(() => {
     setUnauthorizedHandler(() => setUser(null));
@@ -50,8 +55,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       username,
       password,
       ...(mfaCode ? { mfaCode } : {}),
+      deviceId: tokenStore.deviceId(),
     });
     tokenStore.set(res.tokens.accessToken, res.tokens.refreshToken);
+    tokenStore.markSessionStart();
+    setLogoutReason(null);
     setMustChangePassword(res.mustChangePassword);
     setMustAcceptPolicies(res.mustAcceptPolicies);
     setPendingPolicies(res.pendingPolicies);
@@ -75,7 +83,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // logout is best-effort; clear the local session regardless
     }
     tokenStore.clear();
+    tokenStore.clearSessionStart();
     disconnectSocket(); // drop the realtime channel so the next login re-handshakes (ADR-0027)
+    setMustChangePassword(false);
+    setMustAcceptPolicies(false);
+    setPendingPolicies([]);
+    setUser(null);
+  };
+
+  const idleLogout = async (reason: string): Promise<void> => {
+    // Idle/absolute timeout (ADR-0045) revokes ONLY this browser session — a walked-away web tab must
+    // not kill the user's mobile/other-device sessions (that's what manual logout-everywhere is for).
+    const jti = tokenStore.jti();
+    if (jti) {
+      try {
+        await api('POST', `/api/v2/auth/sessions/${jti}/revoke`);
+      } catch {
+        // best-effort — clear locally regardless
+      }
+    }
+    tokenStore.clear();
+    tokenStore.clearSessionStart();
+    disconnectSocket();
+    setLogoutReason(reason);
     setMustChangePassword(false);
     setMustAcceptPolicies(false);
     setPendingPolicies([]);
@@ -90,8 +120,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         mustChangePassword,
         mustAcceptPolicies,
         pendingPolicies,
+        logoutReason,
         login,
         logout,
+        idleLogout,
         acceptPolicies,
       }}
     >
