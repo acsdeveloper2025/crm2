@@ -90,7 +90,9 @@ export function createApp(opts: { enableTestAuth?: boolean } = {}): Express {
     app.use(prefix, router);
   };
 
-  app.get('/api/v2/health', (_req, res) => res.json({ status: 'ok' }));
+  // `success` lets the mobile response adapter pass this through untouched (the field app's
+  // reachability check reads `status` top-level; the adapter would otherwise wrap a bare body). Additive.
+  app.get('/api/v2/health', (_req, res) => res.json({ status: 'ok', success: true }));
   mount('/api/v2/time', timeRoutes); // ADR-0028: server-authoritative clock (unauthenticated)
   mount('/api/v2/auth', authRoutes);
   mount('/api/v2/verification-units', verificationUnitRoutes);
