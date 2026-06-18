@@ -20,8 +20,22 @@ import { generateTotpSecret, verifyTotp, otpauthUri, base32Encode } from '../../
 import { encryptSecret, decryptSecret } from '../../platform/encryption.js';
 import { AppError } from '../../platform/errors.js';
 import { HTTP_STATUS } from '../../platform/http.js';
+import { getRealtime } from '../../platform/realtime/index.js';
 
 const MS_PER_S = 1000;
+
+/**
+ * Push a real-time forced-logout to the affected device(s) (ADR-0014/0027). The field app listens for
+ * `auth:session_revoked` and wipes its keychain when `payload.deviceId` matches its own device — so a
+ * remotely-revoked session (admin/self session revoke, logout-everywhere, password change) signs the
+ * device out immediately instead of only on its next token refresh/401. Best-effort over the socket.
+ */
+function emitSessionRevoked(userId: string, deviceIds: ReadonlyArray<string | null>): void {
+  const rt = getRealtime();
+  for (const deviceId of deviceIds) {
+    if (deviceId) rt.emitToUser(userId, 'auth:session_revoked', { deviceId });
+  }
+}
 /** Lock an account after this many consecutive failed logins; auto-unlock after the cooldown. */
 const MAX_FAILED_LOGINS = 5;
 const LOCKOUT_COOLDOWN_S = 900; // 15 minutes
@@ -196,7 +210,7 @@ export const authService = {
     const hash = await repo.passwordHashById(userId);
     if (!hash || !(await verifyPassword(v.currentPassword, hash))) throw invalidCreds();
     await repo.changePassword(userId, await hashPassword(v.newPassword));
-    await repo.revokeAllForUser(userId);
+    emitSessionRevoked(userId, await repo.revokeAllForUser(userId));
   },
 
   async refresh(input: unknown, ip: string | null): Promise<AuthTokens> {
@@ -231,12 +245,13 @@ export const authService = {
   /** Revoke ONE session, scoped to its owner — 404 when it isn't an active session of `userId`
    *  (IDOR-safe: a user can't probe/revoke another user's jti). */
   async revokeSession(userId: string, jti: string): Promise<void> {
-    if (!(await repo.revokeRefreshForUser(jti, userId)))
-      throw new AppError(HTTP_STATUS.NOT_FOUND, 'SESSION_NOT_FOUND');
+    const revoked = await repo.revokeRefreshForUser(jti, userId);
+    if (!revoked) throw new AppError(HTTP_STATUS.NOT_FOUND, 'SESSION_NOT_FOUND');
+    emitSessionRevoked(userId, [revoked.deviceId]);
   },
 
   async logout(userId: string): Promise<void> {
-    await repo.revokeAllForUser(userId);
+    emitSessionRevoked(userId, await repo.revokeAllForUser(userId));
   },
 
   async me(userId: string): Promise<LoginResponse['user']> {

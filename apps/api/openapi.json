@@ -278,6 +278,25 @@
         ]
       }
     },
+    "/api/v2/auth/version-check": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "post_api_v2_auth_version_check",
+        "summary": "POST /api/v2/auth/version-check",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v2/billing/cases": {
       "get": {
         "tags": [
@@ -1406,6 +1425,25 @@
         ]
       }
     },
+    "/api/v2/consents/accept": {
+      "post": {
+        "tags": [
+          "consents"
+        ],
+        "operationId": "post_api_v2_consents_accept",
+        "summary": "POST /api/v2/consents/accept",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v2/cpv-units": {
       "get": {
         "tags": [
@@ -2099,6 +2137,25 @@
         ]
       }
     },
+    "/api/v2/forms/{formType}/template": {
+      "get": {
+        "tags": [
+          "forms"
+        ],
+        "operationId": "get_api_v2_forms_formType_template",
+        "summary": "GET /api/v2/forms/{formType}/template",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v2/geocode/dlq": {
       "get": {
         "tags": [
@@ -2474,12 +2531,48 @@
       }
     },
     "/api/v2/notifications": {
+      "delete": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "delete_api_v2_notifications",
+        "summary": "DELETE /api/v2/notifications",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
       "get": {
         "tags": [
           "notifications"
         ],
         "operationId": "get_api_v2_notifications",
         "summary": "GET /api/v2/notifications",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/notifications/{id}": {
+      "delete": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "delete_api_v2_notifications_id",
+        "summary": "DELETE /api/v2/notifications/{id}",
         "responses": {
           "default": {
             "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
@@ -2509,6 +2602,42 @@
             "bearerAuth": []
           }
         ]
+      },
+      "put": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "put_api_v2_notifications_id_read",
+        "summary": "PUT /api/v2/notifications/{id}/read",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/notifications/{id}/restore": {
+      "post": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "post_api_v2_notifications_id_restore",
+        "summary": "POST /api/v2/notifications/{id}/restore",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/api/v2/notifications/mark-all-read": {
@@ -2518,6 +2647,154 @@
         ],
         "operationId": "post_api_v2_notifications_mark_all_read",
         "summary": "POST /api/v2/notifications/mark-all-read",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "put_api_v2_notifications_mark_all_read",
+        "summary": "PUT /api/v2/notifications/mark-all-read",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/notifications/mute": {
+      "post": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "post_api_v2_notifications_mute",
+        "summary": "POST /api/v2/notifications/mute",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/notifications/mute/task/{taskId}": {
+      "delete": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "delete_api_v2_notifications_mute_task_taskId",
+        "summary": "DELETE /api/v2/notifications/mute/task/{taskId}",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/notifications/mutes": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "get_api_v2_notifications_mutes",
+        "summary": "GET /api/v2/notifications/mutes",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/notifications/preferences": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "get_api_v2_notifications_preferences",
+        "summary": "GET /api/v2/notifications/preferences",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "put_api_v2_notifications_preferences",
+        "summary": "PUT /api/v2/notifications/preferences",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/notifications/restore": {
+      "post": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "post_api_v2_notifications_restore",
+        "summary": "POST /api/v2/notifications/restore",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/notifications/trash": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "get_api_v2_notifications_trash",
+        "summary": "GET /api/v2/notifications/trash",
         "responses": {
           "default": {
             "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
@@ -3006,6 +3283,44 @@
         ],
         "operationId": "get_api_v2_rates_import_template",
         "summary": "GET /api/v2/rates/import-template",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/reference/revoke-reasons": {
+      "get": {
+        "tags": [
+          "reference"
+        ],
+        "operationId": "get_api_v2_reference_revoke_reasons",
+        "summary": "GET /api/v2/reference/revoke-reasons",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/reference/verification-type-outcomes": {
+      "get": {
+        "tags": [
+          "reference"
+        ],
+        "operationId": "get_api_v2_reference_verification_type_outcomes",
+        "summary": "GET /api/v2/reference/verification-type-outcomes",
         "responses": {
           "default": {
             "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
@@ -3690,6 +4005,25 @@
         ]
       }
     },
+    "/api/v2/telemetry/mobile/ingest": {
+      "post": {
+        "tags": [
+          "telemetry"
+        ],
+        "operationId": "post_api_v2_telemetry_mobile_ingest",
+        "summary": "POST /api/v2/telemetry/mobile/ingest",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v2/time": {
       "get": {
         "tags": [
@@ -4232,6 +4566,23 @@
       }
     },
     "/api/v2/verification-tasks/{id}/attachments": {
+      "get": {
+        "tags": [
+          "verification-tasks"
+        ],
+        "operationId": "get_api_v2_verification_tasks_id_attachments",
+        "summary": "GET /api/v2/verification-tasks/{id}/attachments",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
       "post": {
         "tags": [
           "verification-tasks"

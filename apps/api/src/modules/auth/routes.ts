@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authorize, PERMISSIONS } from '@crm2/access';
 import { authController as c } from './controller.js';
+import { versionController } from './version.controller.js';
 import { notificationController } from '../notifications/controller.js';
 
 /**
@@ -12,6 +13,8 @@ export const authRoutes: Router = Router();
 
 authRoutes.post('/login', c.login);
 authRoutes.post('/refresh', c.refresh);
+// Mobile force-update gate (mobile parity) — PUBLIC: a too-old app must learn it before it can auth.
+authRoutes.post('/version-check', versionController.check);
 authRoutes.post('/logout', c.logout);
 authRoutes.get('/me', c.me);
 // Self-service change-password — authenticated (req.auth); prove current password, set a strong new one.

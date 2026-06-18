@@ -49,6 +49,99 @@ export const notificationController = {
     }
   },
 
+  // ── Feed management: trash + restore (mobile parity) ──
+
+  async listTrash(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json(await svc.listTrash(requireUserId(req), req.query as Record<string, unknown>));
+    } catch (e) {
+      next(e);
+    }
+  },
+
+  async clearAll(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json(await svc.clearAll(requireUserId(req)));
+    } catch (e) {
+      next(e);
+    }
+  },
+
+  async deleteOne(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = requireUserId(req);
+      const id = paramStr(req, 'id');
+      if (!UUID_RE.test(id)) throw AppError.notFound();
+      res.json(await svc.deleteOne(userId, id));
+    } catch (e) {
+      next(e);
+    }
+  },
+
+  async restoreOne(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = requireUserId(req);
+      const id = paramStr(req, 'id');
+      if (!UUID_RE.test(id)) throw AppError.notFound();
+      res.json(await svc.restoreOne(userId, id));
+    } catch (e) {
+      next(e);
+    }
+  },
+
+  async restoreAll(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json(await svc.restoreAll(requireUserId(req)));
+    } catch (e) {
+      next(e);
+    }
+  },
+
+  // ── Per-task mute + delivery preferences (mobile parity) ──
+
+  async mute(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json(await svc.muteTask(requireUserId(req), req.body));
+    } catch (e) {
+      next(e);
+    }
+  },
+
+  async unmuteTask(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = requireUserId(req);
+      const taskId = paramStr(req, 'taskId');
+      if (!UUID_RE.test(taskId)) throw AppError.notFound();
+      res.json(await svc.unmuteTask(userId, taskId));
+    } catch (e) {
+      next(e);
+    }
+  },
+
+  async listMutes(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json(await svc.listMutes(requireUserId(req)));
+    } catch (e) {
+      next(e);
+    }
+  },
+
+  async getPreferences(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json(await svc.getPreferences(requireUserId(req)));
+    } catch (e) {
+      next(e);
+    }
+  },
+
+  async setPreferences(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json(await svc.setPreferences(requireUserId(req), req.body));
+    } catch (e) {
+      next(e);
+    }
+  },
+
   /** POST /api/v2/auth/notifications/register — the device registers its FCM token (own user). */
   async registerToken(req: Request, res: Response, next: NextFunction) {
     try {

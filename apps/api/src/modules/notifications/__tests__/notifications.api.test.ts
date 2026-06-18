@@ -116,4 +116,109 @@ describe.skipIf(!RUN)('notifications feed (ADR-0027)', () => {
     const res = await request(app).get('/api/v2/notifications');
     expect(res.status).toBe(401);
   });
+
+  // ── mobile CRUD parity: trash/restore, mute, preferences, PUT verb aliases ──
+  describe('CRUD parity (mobile compat)', () => {
+    let user: string;
+    const h = (): Record<string, string> => hdr('FIELD_AGENT', user);
+    const TASK = '11111111-1111-4111-8111-111111111111';
+
+    beforeAll(async () => {
+      user = await createUser('notif_crud');
+      await notificationService.notify({ userId: user, type: 'SYSTEM', title: 'one' });
+      await notificationService.notify({ userId: user, type: 'SYSTEM', title: 'two' });
+    });
+
+    it('accepts the device PUT verb for read + mark-all-read', async () => {
+      const list = await request(app).get('/api/v2/notifications').set(h());
+      const id = list.body.items[0].id as string;
+      const read = await request(app).put(`/api/v2/notifications/${id}/read`).set(h());
+      expect(read.status).toBe(200);
+      expect(read.body.readAt).not.toBeNull();
+
+      const all = await request(app).put('/api/v2/notifications/mark-all-read').set(h());
+      expect(all.status).toBe(200);
+      const count = await request(app).get('/api/v2/notifications/unread-count').set(h());
+      expect(count.body.count).toBe(0);
+    });
+
+    it('soft-deletes one → drops from feed, shows in trash, restores back', async () => {
+      const list = await request(app).get('/api/v2/notifications').set(h());
+      const before = list.body.totalCount as number;
+      const id = list.body.items[0].id as string;
+
+      const del = await request(app).delete(`/api/v2/notifications/${id}`).set(h());
+      expect(del.status).toBe(200);
+      const after = await request(app).get('/api/v2/notifications').set(h());
+      expect(after.body.totalCount).toBe(before - 1);
+
+      const trash = await request(app).get('/api/v2/notifications/trash').set(h());
+      expect(trash.body.totalCount).toBe(1);
+      expect(trash.body.items[0].id).toBe(id);
+
+      const restore = await request(app).post(`/api/v2/notifications/${id}/restore`).set(h());
+      expect(restore.status).toBe(200);
+      const back = await request(app).get('/api/v2/notifications').set(h());
+      expect(back.body.totalCount).toBe(before);
+    });
+
+    it('clear-all trashes everything; bulk restore brings it back', async () => {
+      const cleared = await request(app).delete('/api/v2/notifications').set(h());
+      expect(cleared.status).toBe(200);
+      expect(cleared.body.count).toBeGreaterThanOrEqual(1);
+      const empty = await request(app).get('/api/v2/notifications').set(h());
+      expect(empty.body.totalCount).toBe(0);
+
+      const restored = await request(app).post('/api/v2/notifications/restore').set(h());
+      expect(restored.body.count).toBeGreaterThanOrEqual(1);
+      const back = await request(app).get('/api/v2/notifications').set(h());
+      expect(back.body.totalCount).toBeGreaterThanOrEqual(1);
+    });
+
+    it('mutes a task (UPSERT idempotent), lists it in the v1 envelope, unmutes', async () => {
+      const m1 = await request(app).post('/api/v2/notifications/mute').set(h()).send({ taskId: TASK });
+      expect(m1.status).toBe(200);
+      expect(m1.body.taskId).toBe(TASK);
+
+      const m2 = await request(app)
+        .post('/api/v2/notifications/mute')
+        .set(h())
+        .send({ taskId: TASK, expiresAt: '2099-01-01T00:00:00.000Z' });
+      expect(m2.body.id).toBe(m1.body.id); // same row (UPSERT)
+
+      const mutes = await request(app).get('/api/v2/notifications/mutes').set(h());
+      expect(mutes.body).toMatchObject({ success: true });
+      expect(mutes.body.data).toHaveLength(1);
+      expect(mutes.body.data[0].taskId).toBe(TASK);
+
+      const un = await request(app).delete(`/api/v2/notifications/mute/task/${TASK}`).set(h());
+      expect(un.status).toBe(200);
+      const after = await request(app).get('/api/v2/notifications/mutes').set(h());
+      expect(after.body.data).toHaveLength(0);
+
+      const un2 = await request(app).delete(`/api/v2/notifications/mute/task/${TASK}`).set(h());
+      expect(un2.status).toBe(404); // no active mute
+    });
+
+    it('rejects a mute with a non-uuid taskId (400)', async () => {
+      const res = await request(app).post('/api/v2/notifications/mute').set(h()).send({ taskId: 'nope' });
+      expect(res.status).toBe(400);
+    });
+
+    it('gets default preferences then updates them (own-user)', async () => {
+      const get1 = await request(app).get('/api/v2/notifications/preferences').set(h());
+      expect(get1.status).toBe(200);
+      expect(get1.body.preferences).toEqual({});
+
+      const put = await request(app)
+        .put('/api/v2/notifications/preferences')
+        .set(h())
+        .send({ preferences: { push: false, taskAssigned: true } });
+      expect(put.status).toBe(200);
+      expect(put.body.preferences).toMatchObject({ push: false, taskAssigned: true });
+
+      const get2 = await request(app).get('/api/v2/notifications/preferences').set(h());
+      expect(get2.body.preferences).toMatchObject({ push: false, taskAssigned: true });
+    });
+  });
 });

@@ -1,5 +1,6 @@
 # CRM2 — Mobile API Compatibility Matrix & Connection Plan (FROZEN)
 **Status:** PERMANENT governance + the controlled connection plan. Produce/consult this **before building Cases, Tasks, Workspace** so compatibility is designed in, not discovered late. ADRs: `docs/adr/ADR-0011` (versioning), `docs/adr/ADR-0012` (mobile). Policy: `API_VERSIONING_POLICY.md`.
+> **Active connection work (2026-06-17):** the definitive, live-verified parity gap + TLS-pin facts + build plan are in [`MOBILE_V2_CONNECTION_AUDIT_2026-06-17.md`](./MOBILE_V2_CONNECTION_AUDIT_2026-06-17.md). 20 actively-used endpoints absent in v2 + 2 method drifts + 1 socket event are being built to parity (additive-only) before the app is repointed.
 
 ## Governing rule (frozen)
 > The existing mobile application is a **first-class API consumer**.

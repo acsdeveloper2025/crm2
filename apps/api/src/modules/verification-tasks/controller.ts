@@ -54,6 +54,15 @@ export const verificationTaskController = {
     }
   },
 
+  /** GET /:id/attachments — office reference docs for an owned task (mobile parity). */
+  async listAttachments(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json(await svc.listAttachments(parseId(req), actor(req)));
+    } catch (e) {
+      next(e);
+    }
+  },
+
   /** Device FIELD-PHOTO upload (ADR-0034): multer has parsed `files[]` into req.files and the text
    *  fields into req.body; the idempotency key rides the header (or `operationId` field). 200 on a new
    *  upload AND on a replay (the locked contract), never 201. */

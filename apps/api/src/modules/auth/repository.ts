@@ -204,13 +204,15 @@ export const authRepository = {
 
   /** Revoke ONE session, scoped to its owner (IDOR-safe). Returns false when the jti isn't an active
    *  session of `userId` (unknown / already revoked / belongs to someone else → caller maps to 404). */
-  async revokeRefreshForUser(jti: string, userId: string): Promise<boolean> {
-    const rows = await query<{ jti: string }>(
+  /** Revoke ONE owned active session; returns the revoked session's deviceId (for the realtime
+   *  forced-logout push), or null when nothing matched (not active / not owned). */
+  async revokeRefreshForUser(jti: string, userId: string): Promise<{ deviceId: string | null } | null> {
+    const rows = await query<{ deviceId: string | null }>(
       `UPDATE auth_refresh_tokens SET revoked_at = now()
-       WHERE jti = $1 AND user_id = $2 AND revoked_at IS NULL RETURNING jti`,
+       WHERE jti = $1 AND user_id = $2 AND revoked_at IS NULL RETURNING device_id`,
       [jti, userId],
     );
-    return rows.length > 0;
+    return rows[0] ?? null;
   },
 
   async revokeRefresh(jti: string): Promise<void> {
@@ -219,10 +221,14 @@ export const authRepository = {
     ]);
   },
 
-  async revokeAllForUser(userId: string): Promise<void> {
-    await query(
-      `UPDATE auth_refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`,
+  /** Revoke ALL active sessions for a user; returns the distinct deviceIds affected (for the
+   *  realtime forced-logout push to every signed-in device). */
+  async revokeAllForUser(userId: string): Promise<string[]> {
+    const rows = await query<{ deviceId: string | null }>(
+      `UPDATE auth_refresh_tokens SET revoked_at = now()
+       WHERE user_id = $1 AND revoked_at IS NULL RETURNING device_id`,
       [userId],
     );
+    return [...new Set(rows.map((r) => r.deviceId).filter((d): d is string => d !== null))];
   },
 };

@@ -21,6 +21,7 @@
 - [API_VERSIONING_POLICY.md](./docs/engineering/API_VERSIONING_POLICY.md) — `/api/v2`, additive-only, no silent breaking change (ADR-0011).
 - [DOCUMENTATION_AS_CODE.md](./docs/governance/DOCUMENTATION_AS_CODE.md) — OpenAPI = API SoT, migrations = DB SoT, **SDK = the only integration layer for web AND mobile**.
 - [MOBILE_API_COMPATIBILITY_MATRIX.md](./docs/engineering/MOBILE_API_COMPATIBILITY_MATRIX.md) — mobile is a first-class consumer; current `/api/mobile` contract → v2 obligations; never break it (ADR-0012).
+- [MOBILE_V2_CONNECTION_AUDIT_2026-06-17.md](./docs/engineering/MOBILE_V2_CONNECTION_AUDIT_2026-06-17.md) — live-verified connection audit + the definitive 20-endpoint parity gap, TLS-pin facts, and the parity build plan (full parity first; submit==complete kept).
 
 ## 4. Engineering standards & enforcement
 - [docs/CI_CD_STANDARDS.md](./docs/CI_CD_STANDARDS.md) (matrix) · [docs/ENGINEERING_STANDARDS.md](./docs/ENGINEERING_STANDARDS.md) · [DEVELOPMENT_WORKFLOW.md](./docs/engineering/DEVELOPMENT_WORKFLOW.md) · [BUILD_GUIDE.md](./docs/engineering/BUILD_GUIDE.md) · [BUILD_METHOD.md](./docs/governance/BUILD_METHOD.md) (multi-agent + CTO) · **[docs/AGENT_ORG.md](./docs/AGENT_ORG.md)** (the 9-role Audit Panel — CEO · Principal Engineer · DB · Security · Performance · Design-Quality · API/Contract · Caching & Scalability · Reliability/SRE — + per-role persistent ledgers in [docs/agents/](./docs/agents/)) · [CONTRIBUTING.md](./CONTRIBUTING.md) · [ALLOWED_DEPENDENCIES.md](./docs/engineering/ALLOWED_DEPENDENCIES.md).

@@ -44,6 +44,51 @@ export interface MarkAllReadResult {
   updated: number;
 }
 
+// ── Feed management: trash + restore (mobile parity) ──
+
+/** Result of a bulk soft-delete (clear-all) or bulk restore. */
+export interface NotificationBulkResult {
+  /** rows affected (cleared, or restored). */
+  count: number;
+}
+
+// ── Per-task mute (mobile parity) ──
+
+/** Mute a task's notifications. Mobile sets only `taskId`; `expiresAt` null = until unmuted. */
+export const MuteNotificationSchema = z.object({
+  taskId: z.string().uuid(),
+  expiresAt: z.string().datetime({ offset: true }).nullable().optional(),
+});
+export type MuteNotificationInput = z.infer<typeof MuteNotificationSchema>;
+
+/** An active mute row (own-user). `caseId` is reserved for the web case-level mute. */
+export interface NotificationMute {
+  id: string;
+  caseId: string | null;
+  taskId: string | null;
+  createdAt: string;
+  expiresAt: string | null;
+}
+
+/** GET /notifications/mutes — v1-envelope shape the device reads (`res.data`). */
+export interface NotificationMuteList {
+  success: boolean;
+  data: NotificationMute[];
+}
+
+// ── Per-user delivery preferences (mobile parity) ──
+
+/** PUT /notifications/preferences — opaque per-user toggle map (channel/type → bool). */
+export const UpdateNotificationPreferencesSchema = z.object({
+  preferences: z.record(z.unknown()),
+});
+export type UpdateNotificationPreferencesInput = z.infer<typeof UpdateNotificationPreferencesSchema>;
+
+export interface NotificationPreferences {
+  preferences: Record<string, unknown>;
+  updatedAt: string | null;
+}
+
 /** List query: the standard page contract + an `unreadOnly` toggle (bell dropdown shows unread). */
 export interface NotificationListQuery extends PageQuery {
   unreadOnly?: boolean;
@@ -68,10 +113,14 @@ export interface NotifyInput {
 export const PUSH_PLATFORMS = ['IOS', 'ANDROID', 'WEB'] as const;
 export type PushPlatform = (typeof PUSH_PLATFORMS)[number];
 
-/** Token registration body (POST /api/v2/auth/notifications/register) — the device's FCM token. */
+/**
+ * Token registration body (POST /api/v2/auth/notifications/register) — the device's FCM token.
+ * `platform` is normalized to UPPERCASE before the enum check so the device's `Platform.OS`
+ * (lowercase `android`/`ios`) is accepted (mobile compat). Extra keys (e.g. v1 `enabled`) are stripped.
+ */
 export const RegisterPushTokenSchema = z.object({
   pushToken: z.string().min(1),
-  platform: z.enum(PUSH_PLATFORMS),
+  platform: z.preprocess((v) => (typeof v === 'string' ? v.toUpperCase() : v), z.enum(PUSH_PLATFORMS)),
   deviceId: z.string().optional(),
 });
 export type RegisterPushTokenInput = z.infer<typeof RegisterPushTokenSchema>;
