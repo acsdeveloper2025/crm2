@@ -4170,6 +4170,99 @@
         ]
       }
     },
+    "/api/v2/tat-policies": {
+      "get": {
+        "tags": [
+          "tat-policies"
+        ],
+        "operationId": "get_api_v2_tat_policies",
+        "summary": "GET /api/v2/tat-policies",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "tat-policies"
+        ],
+        "operationId": "post_api_v2_tat_policies",
+        "summary": "POST /api/v2/tat-policies",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/tat-policies/{id}/activate": {
+      "post": {
+        "tags": [
+          "tat-policies"
+        ],
+        "operationId": "post_api_v2_tat_policies_id_activate",
+        "summary": "POST /api/v2/tat-policies/{id}/activate",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/tat-policies/{id}/deactivate": {
+      "post": {
+        "tags": [
+          "tat-policies"
+        ],
+        "operationId": "post_api_v2_tat_policies_id_deactivate",
+        "summary": "POST /api/v2/tat-policies/{id}/deactivate",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/tat-policies/{id}/revise": {
+      "post": {
+        "tags": [
+          "tat-policies"
+        ],
+        "operationId": "post_api_v2_tat_policies_id_revise",
+        "summary": "POST /api/v2/tat-policies/{id}/revise",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v2/telemetry/mobile/ingest": {
       "post": {
         "tags": [
