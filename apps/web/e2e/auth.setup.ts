@@ -15,8 +15,16 @@ setup('authenticate', async ({ page }) => {
   await page.getByLabel('Password').fill(PASSWORD);
   await page.getByRole('button', { name: 'Sign In' }).click();
 
+  // ADR-0043 login gate: an active policy gates every user (incl. admin) on login into a
+  // full-screen acceptance page (no app shell). Accept it so the authenticated shell renders.
+  // Wait for whichever lands first (gate or shell), then accept if gated.
+  const acceptBtn = page.getByRole('button', { name: 'I Accept' });
+  const clientsLink = page.getByRole('link', { name: 'Clients' });
+  await expect(acceptBtn.or(clientsLink).first()).toBeVisible();
+  if (await acceptBtn.isVisible()) await acceptBtn.click();
+
   // The sidebar (with its Administration links) only renders once authenticated.
-  await expect(page.getByRole('link', { name: 'Clients' })).toBeVisible();
+  await expect(clientsLink).toBeVisible();
 
   await page.context().storageState({ path: STATE_PATH });
 });
