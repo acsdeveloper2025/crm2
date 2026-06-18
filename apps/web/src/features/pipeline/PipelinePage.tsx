@@ -38,14 +38,13 @@ const STATUS_TONE: Record<string, string> = {
   CANCELLED: 'bg-st-rejected-bg text-st-rejected',
 };
 
-/** The Zion-style work buckets. Status buckets set the `status` domain filter; the SLA bucket sets
- *  `outOfTat` and the Commissionable bucket sets `commissionable` (cross-status derived filters,
- *  ADR-0032/0036). All buckets are mutually exclusive. Revoked replaces the old Cancelled chip. */
+/** The Zion-style work buckets. Status buckets set the `status` domain filter; the Out-of-TAT bucket
+ *  sets `overdue` and the Commissionable bucket sets `commissionable` (cross-status derived filters,
+ *  ADR-0044/0036). All buckets are mutually exclusive. Revoked replaces the old Cancelled chip. */
 const BUCKETS: {
   label: string;
   status?: string;
-  sla?: boolean;
-  tat?: boolean;
+  overdue?: boolean;
   comm?: boolean;
   stat: keyof TaskStats;
 }[] = [
@@ -55,10 +54,9 @@ const BUCKETS: {
   { label: 'In Progress', status: 'IN_PROGRESS', stat: 'inProgress' },
   { label: 'Completed', status: 'COMPLETED', stat: 'completed' },
   { label: 'Revoked', status: 'REVOKED', stat: 'revoked' },
-  { label: 'Out of TAT', sla: true, stat: 'outOfTat' },
-  // TAT = the precise overdue set (server-side `tat=1`, urgency-ordered). Pill count reuses the
-  // `outOfTat` stat as an acceptable approximation; the `tat` FILTER below is the exact overdue set.
-  { label: 'TAT', tat: true, stat: 'outOfTat' },
+  // Out of TAT (ADR-0044): the exact overdue set (server-side `overdue=1`, urgency-ordered) — an OPEN
+  // task past its `tat_hours` target since `assigned_at`.
+  { label: 'Out of TAT', overdue: true, stat: 'overdue' },
   { label: 'Commissionable', comm: true, stat: 'commissionable' },
 ];
 
@@ -77,18 +75,15 @@ export function PipelinePage() {
     !!user && (user.grantsAll === true || (user.permissions ?? []).includes('billing.view'));
   const [searchParams, setSearchParams] = useSearchParams();
   const status = searchParams.get('status') ?? '';
-  const outOfTat = searchParams.get('outOfTat') === '1';
-  const tat = searchParams.get('tat') === '1';
+  const overdue = searchParams.get('overdue') === '1';
   const commissionable = searchParams.get('commissionable') === '1';
   // All buckets are mutually exclusive — selecting one clears the others.
-  const selectBucket = (b: { status?: string; sla?: boolean; tat?: boolean; comm?: boolean }) => {
+  const selectBucket = (b: { status?: string; overdue?: boolean; comm?: boolean }) => {
     const next = new URLSearchParams(searchParams);
     next.delete('status');
-    next.delete('outOfTat');
-    next.delete('tat');
+    next.delete('overdue');
     next.delete('commissionable');
-    if (b.sla) next.set('outOfTat', '1');
-    else if (b.tat) next.set('tat', '1');
+    if (b.overdue) next.set('overdue', '1');
     else if (b.comm) next.set('commissionable', '1');
     else if (b.status) next.set('status', b.status);
     next.delete('page'); // a bucket change re-anchors to page 1
@@ -166,7 +161,7 @@ export function PipelinePage() {
             >
               {t.status.replace(/_/g, ' ')}
             </span>
-            {(t.overdue || t.outOfTat) && (
+            {t.overdue && (
               <span
                 className="rounded bg-st-rejected-bg px-1.5 py-0.5 text-xs font-medium text-st-rejected"
                 title="Out of TAT (target turnaround exceeded)"
@@ -263,13 +258,11 @@ export function PipelinePage() {
       {/* Status bucket bar (counts are scope+filter aware; `status` itself excluded server-side). */}
       <div className="flex flex-wrap gap-2" role="group" aria-label="Status buckets">
         {BUCKETS.filter((b) => canViewBilling || !b.comm).map((b) => {
-          const active = b.sla
-            ? outOfTat
-            : b.tat
-              ? tat
-              : b.comm
-                ? commissionable
-                : !outOfTat && !tat && !commissionable && status === (b.status ?? '');
+          const active = b.overdue
+            ? overdue
+            : b.comm
+              ? commissionable
+              : !overdue && !commissionable && status === (b.status ?? '');
           const count = stats.data?.[b.stat];
           return (
             <button
@@ -301,8 +294,7 @@ export function PipelinePage() {
         searchPlaceholder="Search case number, applicant or unit…"
         filters={{
           status: status || undefined,
-          outOfTat: outOfTat ? '1' : undefined,
-          tat: tat ? '1' : undefined,
+          overdue: overdue ? '1' : undefined,
           commissionable: commissionable ? '1' : undefined,
         }}
         fetchPage={(query: PageQuery) =>

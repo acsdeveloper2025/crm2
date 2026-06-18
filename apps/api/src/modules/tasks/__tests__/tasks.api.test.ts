@@ -356,7 +356,7 @@ describe.skipIf(!RUN)('tasks API (Pipeline)', () => {
       inProgress: 0,
       completed: 0,
       revoked: 0,
-      outOfTat: 0, // both tasks just created → within TAT
+      overdue: 0, // both tasks just created → within TAT
       commissionable: 0, // nothing completed yet
       total: 2,
     });
@@ -366,26 +366,7 @@ describe.skipIf(!RUN)('tasks API (Pipeline)', () => {
     expect(mine.body.total).toBe(1);
   });
 
-  it('out-of-TAT (SLA) bucket: an open task aged past its priority TAT is counted, filtered, and flagged (ADR-0032)', async () => {
-    const ctx = await seedCpv('TAT');
-    const c = await seedCaseTasks(ctx, { name: 'TAT APP', unitIds: [ctx.unitAId] });
-    // backdate 3 days (> MEDIUM 48h default SLA) → out of TAT while still PENDING
-    await db!.pool.query(`UPDATE case_tasks SET created_at = now() - interval '3 days' WHERE id = $1`, [
-      c.taskIds[0],
-    ]);
-    const stats = await request(app).get('/api/v2/tasks/stats').set(SA);
-    expect(stats.body.outOfTat).toBe(1);
-    // the SLA bucket filter returns only the breached task, flagged outOfTat
-    const list = await request(app).get('/api/v2/tasks?outOfTat=1').set(SA);
-    expect(list.body.items).toHaveLength(1);
-    expect(list.body.items[0].id).toBe(c.taskIds[0]);
-    expect(list.body.items[0].outOfTat).toBe(true);
-    // completing it clears the breach (terminal tasks are never out of TAT)
-    await db!.pool.query(`UPDATE case_tasks SET status = 'COMPLETED' WHERE id = $1`, [c.taskIds[0]]);
-    expect((await request(app).get('/api/v2/tasks/stats').set(SA)).body.outOfTat).toBe(0);
-  });
-
-  it('target-TAT (ADR-0044): an OPEN task past its tat_hours since assigned_at is overdue, filtered by tat=1, with due_at/tatHours on the row', async () => {
+  it('Out of TAT (ADR-0044): an OPEN task past its tat_hours since assigned_at is counted, filtered by overdue=1, flagged + with due_at/tatHours on the row', async () => {
     const ctx = await seedCpv('TTAT');
     const c = await seedCaseTasks(ctx, { name: 'TTAT APP', unitIds: [ctx.unitAId, ctx.unitBId] });
     // task A: assigned ~5h ago with a 4h target → OVERDUE (clock starts at assigned_at, not created_at)
@@ -399,24 +380,32 @@ describe.skipIf(!RUN)('tasks API (Pipeline)', () => {
       [c.taskIds[1]],
     );
 
-    const list = await request(app).get('/api/v2/tasks?tat=1').set(SA);
+    // stats: exactly one task is out of TAT
+    const stats = await request(app).get('/api/v2/tasks/stats').set(SA);
+    expect(stats.body.overdue).toBe(1);
+
+    const list = await request(app).get('/api/v2/tasks?overdue=1').set(SA);
     expect(list.status).toBe(200);
     const ids = (list.body.items as TaskView[]).map((t) => t.id);
     expect(ids).toContain(c.taskIds[0]); // the overdue task
     expect(ids).not.toContain(c.taskIds[1]); // the within-target task is excluded
-    expect(list.body.filters.tat).toBe('1');
+    expect(list.body.filters.overdue).toBe('1');
 
     const overdueRow = (list.body.items as TaskView[]).find((t) => t.id === c.taskIds[0])!;
     expect(overdueRow.overdue).toBe(true);
     expect(overdueRow.tatHours).toBe(4);
     expect(typeof overdueRow.dueAt).toBe('string'); // assigned_at + 4h, computed
 
-    // the non-overdue task carries its read-model fields too (overdue false), even off the tat filter
+    // the non-overdue task carries its read-model fields too (overdue false), even off the overdue filter
     const allRow = ((await request(app).get('/api/v2/tasks?limit=25').set(SA)).body.items as TaskView[]).find(
       (t) => t.id === c.taskIds[1],
     )!;
     expect(allRow.overdue).toBe(false);
     expect(allRow.tatHours).toBe(48);
+
+    // completing the overdue task clears it (terminal tasks are never out of TAT)
+    await db!.pool.query(`UPDATE case_tasks SET status = 'COMPLETED' WHERE id = $1`, [c.taskIds[0]]);
+    expect((await request(app).get('/api/v2/tasks/stats').set(SA)).body.overdue).toBe(0);
   });
 
   it('task-create accepts tatHours (override) and otherwise defaults from priority (ADR-0044 mapping)', async () => {

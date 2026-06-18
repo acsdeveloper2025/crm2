@@ -5,21 +5,7 @@ import { taskScopePredicate, type Scope } from '../../platform/scope/index.js';
 import { RATE_LATERAL, COMMISSION_LATERAL } from '../../platform/billing/laterals.js';
 
 /**
- * SLA breach predicate (ADR-0032 "Out of TAT"): an OPEN task (PENDING/ASSIGNED/IN_PROGRESS) whose
- * age since creation exceeds its priority's TAT. Default thresholds (constant, pending an SLA-config
- * feature): URGENT 12h · HIGH 24h · MEDIUM 48h · LOW 72h (unknown → 48h). Pure SQL, no params — safe
- * to inline; references only `ct`. Used as both a list filter and a computed `out_of_tat` column.
- */
-const SLA_BREACH_SQL = `(ct.status IN ('PENDING','ASSIGNED','IN_PROGRESS')
-  AND now() > ct.created_at + (CASE ct.priority
-    WHEN 'URGENT' THEN interval '12 hours'
-    WHEN 'HIGH'   THEN interval '24 hours'
-    WHEN 'MEDIUM' THEN interval '48 hours'
-    WHEN 'LOW'    THEN interval '72 hours'
-    ELSE interval '48 hours' END))`;
-
-/**
- * Target-TAT overdue predicate (ADR-0044): an OPEN task whose explicit per-task target (`tat_hours`)
+ * Out-of-TAT (overdue) predicate (ADR-0044): an OPEN task whose explicit per-task target (`tat_hours`)
  * has elapsed since its CLOCK START — `assigned_at` (NOT created_at). A task with no target or not yet
  * assigned can't be overdue (fail-open: NULL → not overdue). Pure SQL, no params (references only
  * `ct`) → safe to inline as both a list filter and the computed `overdue` column / ORDER BY key.
@@ -46,11 +32,10 @@ export interface TaskListOptions {
   scope?: Scope;
   /** export `selected` mode — restrict to these task ids (already uuid-validated). */
   ids?: string[];
-  /** SLA bucket — restrict to OPEN tasks past their priority TAT (the "Out of TAT" bucket). */
-  outOfTat?: boolean;
-  /** Target-TAT bucket (ADR-0044) — restrict to OPEN tasks past their explicit `tat_hours` target
-   *  since `assigned_at`. When set (and no explicit sort requested) the list orders by urgency. */
-  tat?: boolean;
+  /** Out-of-TAT bucket (ADR-0044, the "Out of TAT" bucket) — restrict to OPEN tasks past their
+   *  explicit `tat_hours` target since `assigned_at`. When set (and no explicit sort requested) the
+   *  list orders by urgency. */
+  overdue?: boolean;
   /** Commissionable bucket (ADR-0036 slice 5d) — COMPLETED tasks with a resolved commission. */
   commissionable?: boolean;
   /** Expose the derived bill/commission amounts? Only when the actor holds `billing.view` —
@@ -60,7 +45,7 @@ export interface TaskListOptions {
   sortColumn: string;
   sortOrder: SortOrder;
   /** True when the caller did NOT request an explicit sort (the page default is in effect). Lets the
-   *  `tat` filter substitute an urgency ordering without ever overriding a user-chosen sort. */
+   *  `overdue` filter substitute an urgency ordering without ever overriding a user-chosen sort. */
   defaultSort?: boolean;
   limit: number;
   offset: number;
@@ -90,7 +75,7 @@ const TASK_SELECT_BASE = `
          ct.verification_unit_id, vu.code AS unit_code, vu.name AS unit_name, vu.kind AS unit_kind,
          ct.status, ct.assigned_to, au.name AS assigned_to_name,
          ct.visit_type, ct.distance_band, ct.bill_count, ct.assigned_at,
-         ct.version, ${SLA_BREACH_SQL} AS out_of_tat, ct.created_at, ct.updated_at,
+         ct.version, ct.created_at, ct.updated_at,
          ct.tat_hours AS tat_hours,
          (ct.assigned_at + (ct.tat_hours * interval '1 hour')) AS due_at,
          ${OVERDUE_SQL} AS overdue,
@@ -118,8 +103,7 @@ function buildWhere(
     | 'columnFilters'
     | 'scope'
     | 'ids'
-    | 'outOfTat'
-    | 'tat'
+    | 'overdue'
     | 'commissionable'
   >,
   params: unknown[],
@@ -151,8 +135,7 @@ function buildWhere(
     params.push(o.ids);
     where.push(`ct.id = ANY($${params.length}::uuid[])`);
   }
-  if (o.outOfTat) where.push(SLA_BREACH_SQL); // param-free predicate
-  if (o.tat) where.push(OVERDUE_SQL); // param-free target-TAT overdue predicate
+  if (o.overdue) where.push(OVERDUE_SQL); // param-free out-of-TAT (overdue) predicate
   // Commissionable: a COMPLETED task whose assignee has a resolved commission (references the
   // COMMISSION_LATERAL `com` → the caller's FROM must be TASK_FROM_BILLING). Param-free.
   if (o.commissionable) where.push(`ct.status = 'COMPLETED' AND com.commission_amount IS NOT NULL`);
@@ -182,11 +165,11 @@ export const taskRepository = {
     // columns are NOT sortable (they live only in the billing FROM), so the sort never needs it.
     const selectFrom = billing ? TASK_FROM_BILLING : TASK_FROM;
     const amountCols = billing ? BILLING_AMOUNT_COLS : NULL_AMOUNT_COLS;
-    // The tat filter defaults to an urgency ordering (overdue first, then soonest-due) — but ONLY when
-    // the caller hasn't picked an explicit sort, so a user-chosen column always wins. Both keys are
+    // The overdue filter defaults to an urgency ordering (overdue first, then soonest-due) — but ONLY
+    // when the caller hasn't picked an explicit sort, so a user-chosen column always wins. Both keys are
     // param-free SQL (OVERDUE_SQL references only `ct`; due_at = assigned_at + tat_hours).
     const orderBy =
-      o.tat && o.defaultSort
+      o.overdue && o.defaultSort
         ? `ORDER BY ${OVERDUE_SQL} DESC, (ct.assigned_at + (ct.tat_hours * interval '1 hour')) ASC NULLS LAST, ct.id ${o.sortOrder}`
         : `ORDER BY ${o.sortColumn} ${o.sortOrder}, ct.id ${o.sortOrder}`;
     const items = await query<TaskView>(
@@ -198,15 +181,15 @@ export const taskRepository = {
     return { items, totalCount };
   },
 
-  /** Bucket counts over the SAME conditions (minus the `status`/`outOfTat` bucket params themselves).
-   *  One row of conditional aggregates → REVOKED + the cross-status SLA "Out of TAT" count + total. */
+  /** Bucket counts over the SAME conditions (minus the `status`/`overdue` bucket params themselves).
+   *  One row of conditional aggregates → REVOKED + the cross-status "Out of TAT" count + total. */
   async stats(
     o: Pick<
       TaskListOptions,
       'clientId' | 'assignedTo' | 'unitId' | 'search' | 'columnFilters' | 'scope' | 'billing'
     >,
   ): Promise<TaskStats> {
-    // The status/SLA buckets are cheap, param-free predicates → ONE lateral-free aggregate over
+    // The status/overdue buckets are cheap, param-free predicates → ONE lateral-free aggregate over
     // TASK_FROM (no perf regression to existing buckets).
     const params: unknown[] = [];
     const clause = buildWhere(o, params);
@@ -216,7 +199,7 @@ export const taskRepository = {
               count(*) FILTER (WHERE ct.status = 'IN_PROGRESS')::int AS in_progress,
               count(*) FILTER (WHERE ct.status = 'COMPLETED')::int AS completed,
               count(*) FILTER (WHERE ct.status = 'REVOKED')::int AS revoked,
-              count(*) FILTER (WHERE ${SLA_BREACH_SQL})::int AS out_of_tat,
+              count(*) FILTER (WHERE ${OVERDUE_SQL})::int AS overdue,
               count(*)::int AS total
        ${TASK_FROM} ${clause}`,
       params,
@@ -242,7 +225,7 @@ export const taskRepository = {
       inProgress: 0,
       completed: 0,
       revoked: 0,
-      outOfTat: 0,
+      overdue: 0,
       total: 0,
     };
     return { ...base, commissionable };

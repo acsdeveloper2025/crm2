@@ -49,7 +49,7 @@ export function DashboardPage() {
           <CounterBar stats={s} />
 
           {/* Today's throughput + the queues that need attention. */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <KpiCard
               label="Completed Today"
               value={s?.completedToday}
@@ -58,8 +58,7 @@ export function DashboardPage() {
             />
             <KpiCard label="Assigned Today" value={s?.assignedToday} />
             <KpiCard label="Completed (7d)" value={s?.completed7d} />
-            <KpiCard label="Out of TAT" value={s?.outOfTat} to="/pipeline?outOfTat=1" tone="alert" />
-            <KpiCard label="Overdue" value={s?.overdue} tone="alert" />
+            <KpiCard label="Out of TAT" value={s?.overdue} to="/pipeline?overdue=1" tone="alert" />
           </div>
 
           {/* Aging viz + the oldest-unassigned read, side by side. */}

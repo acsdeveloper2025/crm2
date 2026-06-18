@@ -100,10 +100,9 @@ function domainParams(rawQuery: Record<string, unknown>) {
   const assignedToRaw = rawQuery['assignedTo'];
   const assignedTo =
     typeof assignedToRaw === 'string' && UUID_RE.test(assignedToRaw) ? assignedToRaw : undefined;
-  const outOfTat = rawQuery['outOfTat'] === '1' || rawQuery['outOfTat'] === 'true';
-  const tat = rawQuery['tat'] === '1' || rawQuery['tat'] === 'true';
+  const overdue = rawQuery['overdue'] === '1' || rawQuery['overdue'] === 'true';
   const commissionable = rawQuery['commissionable'] === '1' || rawQuery['commissionable'] === 'true';
-  return { status, clientId, unitId, assignedTo, outOfTat, tat, commissionable };
+  return { status, clientId, unitId, assignedTo, overdue, commissionable };
 }
 
 /**
@@ -123,7 +122,7 @@ export const taskService = {
     const columnFilters = resolveFilters(rawQuery, TASK_PAGE_SPEC);
     const scope = await resolveScope(actor);
     // No EXPLICIT sort = the caller didn't pass a whitelisted `sortBy` (the page default is in effect).
-    // Lets the tat filter apply its urgency ordering without ever overriding a user-chosen sort.
+    // Lets the overdue filter apply its urgency ordering without ever overriding a user-chosen sort.
     const rawSortBy = rawQuery['sortBy'];
     const defaultSort = !(
       typeof rawSortBy === 'string' && Object.prototype.hasOwnProperty.call(TASK_PAGE_SPEC.sortMap, rawSortBy)
@@ -133,8 +132,7 @@ export const taskService = {
       ...(d.clientId !== undefined ? { clientId: d.clientId } : {}),
       ...(d.unitId !== undefined ? { unitId: d.unitId } : {}),
       ...(d.assignedTo !== undefined ? { assignedTo: d.assignedTo } : {}),
-      ...(d.outOfTat ? { outOfTat: true } : {}),
-      ...(d.tat ? { tat: true, defaultSort } : {}),
+      ...(d.overdue ? { overdue: true, defaultSort } : {}),
       // commissionable is a billing.view-only filter; ignore it for actors who can't see amounts.
       ...(canViewBilling && d.commissionable ? { commissionable: true } : {}),
       ...(canViewBilling ? { billing: true } : {}),
@@ -151,8 +149,7 @@ export const taskService = {
     if (d.clientId !== undefined) filters['clientId'] = d.clientId;
     if (d.unitId !== undefined) filters['unitId'] = d.unitId;
     if (d.assignedTo !== undefined) filters['assignedTo'] = d.assignedTo;
-    if (d.outOfTat) filters['outOfTat'] = '1';
-    if (d.tat) filters['tat'] = '1';
+    if (d.overdue) filters['overdue'] = '1';
     if (canViewBilling && d.commissionable) filters['commissionable'] = '1';
     if (r.search !== undefined) filters['search'] = r.search;
     for (const f of columnFilters) filters[`f_${f.field}`] = f.values.join(',');
@@ -165,8 +162,8 @@ export const taskService = {
     const d = domainParams(rawQuery);
     const columnFilters = resolveFilters(rawQuery, TASK_PAGE_SPEC);
     const scope = await resolveScope(actor);
-    // The bucket counts (incl. REVOKED + the cross-status SLA "Out of TAT") are computed server-side
-    // over the same scope+search+column-filters, excluding the status/outOfTat bucket params. The
+    // The bucket counts (incl. REVOKED + the cross-status "Out of TAT") are computed server-side
+    // over the same scope+search+column-filters, excluding the status/overdue bucket params. The
     // Commissionable bucket count is billing.view-gated (0 otherwise — comp data).
     return repo.stats({
       ...(d.clientId !== undefined ? { clientId: d.clientId } : {}),

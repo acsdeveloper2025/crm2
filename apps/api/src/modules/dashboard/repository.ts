@@ -23,15 +23,14 @@ import {
 const OPEN_HELD = "('ASSIGNED','IN_PROGRESS','SUBMITTED_FOR_REVIEW')";
 
 /**
- * Out-of-TAT (SLA breach) predicate (ADR-0032) — kept local to respect module boundaries (mirrors
- * the Pipeline's SLA_BREACH_SQL). An OPEN task past its priority TAT: URGENT 12h/HIGH 24h/MEDIUM
- * 48h/LOW 72h (unknown → 48h). Pure SQL over `ct`.
+ * Out-of-TAT (overdue) predicate (ADR-0044) — kept local to respect module boundaries (mirrors the
+ * Pipeline's OVERDUE_SQL). An OPEN task (PENDING/ASSIGNED/IN_PROGRESS) past its explicit per-task
+ * target (`tat_hours`) since its clock start `assigned_at` (NOT created_at). No target / not yet
+ * assigned ⇒ never overdue (fail-open). Pure SQL over `ct`.
  */
-const SLA_BREACH = `(ct.status IN ('PENDING','ASSIGNED','IN_PROGRESS')
-  AND now() > ct.created_at + (CASE ct.priority
-    WHEN 'URGENT' THEN interval '12 hours' WHEN 'HIGH' THEN interval '24 hours'
-    WHEN 'MEDIUM' THEN interval '48 hours' WHEN 'LOW' THEN interval '72 hours'
-    ELSE interval '48 hours' END))`;
+const OVERDUE_SQL = `(ct.status IN ('PENDING','ASSIGNED','IN_PROGRESS')
+  AND ct.tat_hours IS NOT NULL AND ct.assigned_at IS NOT NULL
+  AND now() > ct.assigned_at + (ct.tat_hours * interval '1 hour'))`;
 
 /**
  * CASE-grain visibility predicate (mirrors the cases module's leg, kept local to respect module
@@ -62,7 +61,6 @@ const ZERO: DashboardStats = {
   awaitingCompletion: 0,
   completed: 0,
   revoked: 0,
-  outOfTat: 0,
   assignedToday: 0,
   completedToday: 0,
   completedYesterday: 0,
@@ -105,14 +103,13 @@ export const dashboardRepository = {
          count(*) FILTER (WHERE ct.status = 'PENDING')::int               AS bucket,
          count(*) FILTER (WHERE ct.status = 'ASSIGNED')::int              AS assigned,
          count(*) FILTER (WHERE ct.status = 'IN_PROGRESS')::int           AS in_progress,
-         count(*) FILTER (WHERE ${SLA_BREACH})::int                       AS out_of_tat,
          count(*) FILTER (WHERE ct.status = 'COMPLETED')::int             AS completed,
          count(*) FILTER (WHERE ct.status = 'REVOKED')::int               AS revoked,
          count(*) FILTER (WHERE ct.assigned_at >= $2)::int                AS assigned_today,
          count(*) FILTER (WHERE ct.status = 'COMPLETED' AND ct.completed_at >= $2)::int AS completed_today,
          count(*) FILTER (WHERE ct.status = 'COMPLETED' AND ct.completed_at >= $3 AND ct.completed_at < $2)::int AS completed_yesterday,
          count(*) FILTER (WHERE ct.status = 'COMPLETED' AND ct.completed_at >= $4)::int AS completed7d,
-         count(*) FILTER (WHERE ct.status IN ${OPEN_HELD} AND ct.assigned_at < $1::timestamptz - interval '24 hours')::int AS overdue,
+         count(*) FILTER (WHERE ${OVERDUE_SQL})::int AS overdue,
          count(*) FILTER (WHERE ct.status IN ${OPEN_HELD} AND ct.assigned_at >= $1::timestamptz - interval '24 hours')::int AS aging_fresh,
          count(*) FILTER (WHERE ct.status IN ${OPEN_HELD} AND ct.assigned_at < $1::timestamptz - interval '24 hours' AND ct.assigned_at >= $1::timestamptz - interval '48 hours')::int AS aging1d,
          count(*) FILTER (WHERE ct.status IN ${OPEN_HELD} AND ct.assigned_at < $1::timestamptz - interval '48 hours' AND ct.assigned_at >= $1::timestamptz - interval '72 hours')::int AS aging2d,

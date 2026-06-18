@@ -18,8 +18,6 @@ export interface DashboardStats {
   /** COMPLETED — all-time within scope. */
   completed: number;
   revoked: number;
-  /** Out of TAT (ADR-0032): OPEN tasks past their priority SLA (URGENT 12h/HIGH 24h/MEDIUM 48h/LOW 72h). */
-  outOfTat: number;
 
   // ── Today's throughput + trend ──
   /** tasks assigned since IST start-of-day. */
@@ -32,7 +30,8 @@ export interface DashboardStats {
   completed7d: number;
 
   // ── Aging of open work (held tasks by time-since-assignment) ──
-  /** open & assigned more than 24h ago — the headline overdue count (= aging1d+aging2d+aging3dPlus). */
+  /** Out of TAT (ADR-0044): OPEN tasks past their per-task `tat_hours` target since `assigned_at` —
+   *  the headline late-work count. Derived; not the same as the time-since-assignment aging buckets. */
   overdue: number;
   /** open, assigned within the last 24h (fresh, not yet overdue). */
   agingFresh: number;

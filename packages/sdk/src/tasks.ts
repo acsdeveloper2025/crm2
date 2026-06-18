@@ -39,14 +39,11 @@ export interface TaskView {
   billable: boolean;
   billAmount: number | null;
   commissionAmount: number | null;
-  /** SLA breach (ADR-0032): an OPEN task (PENDING/ASSIGNED/IN_PROGRESS) whose age since creation
-   *  exceeds its priority's TAT (URGENT 12h · HIGH 24h · MEDIUM 48h · LOW 72h). Derived, not stored. */
-  outOfTat: boolean;
   /** Target TAT in hours (ADR-0044) — the per-task target band; null when unset. */
   tatHours: number | null;
   /** Target due time = `assigned_at + tat_hours` (DERIVED at read time); null when unassigned/no target. */
   dueAt: string | null;
-  /** Target-TAT overdue (ADR-0044): an OPEN task past its `tat_hours` since `assigned_at`. Derived. */
+  /** Out of TAT (ADR-0044): an OPEN task past its `tat_hours` target since `assigned_at`. Derived. */
   overdue: boolean;
   /** Measured elapsed minutes assigned→completed (ADR-0044), immutable once set; null until completed. */
   completedElapsedMinutes: number | null;
@@ -58,16 +55,17 @@ export interface TaskView {
 }
 
 /** Scoped bucket counts for the Pipeline bucket bar (honors search + non-status filters). `revoked`
- *  replaces the old `cancelled` bucket; `outOfTat` is the SLA-breach bucket (derived, cross-status). */
+ *  replaces the old `cancelled` bucket; `overdue` is the "Out of TAT" bucket (ADR-0044, derived,
+ *  cross-status — an OPEN task past its `tat_hours` target since `assigned_at`). */
 export interface TaskStats {
   pending: number;
   assigned: number;
   inProgress: number;
   completed: number;
   revoked: number;
-  outOfTat: number;
+  overdue: number;
   /** Commissionable bucket (ADR-0036 slice 5d): COMPLETED tasks whose assignee has a resolved
-   *  commission for the task's rate type. Mutually exclusive with the status/SLA buckets. */
+   *  commission for the task's rate type. Mutually exclusive with the status/overdue buckets. */
   commissionable: number;
   total: number;
 }

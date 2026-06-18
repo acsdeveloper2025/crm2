@@ -125,7 +125,7 @@ describe.skipIf(!RUN)('Dashboard overview (ADR-0029)', () => {
     const s = res.body as DashboardStats;
     expect(s.assigned).toBeGreaterThanOrEqual(1);
     expect(s.assignedToday).toBeGreaterThanOrEqual(1);
-    // freshly assigned → "fresh" aging bucket, not overdue
+    // freshly assigned → "fresh" aging bucket, and within its TAT target (not Out of TAT)
     expect(s.agingFresh).toBeGreaterThanOrEqual(1);
     expect(s.overdue).toBe(0);
     expect(s.completed).toBe(0);
@@ -141,7 +141,6 @@ describe.skipIf(!RUN)('Dashboard overview (ADR-0029)', () => {
       'awaitingCompletion',
       'completed',
       'revoked',
-      'outOfTat',
       'assignedToday',
       'completedToday',
       'completedYesterday',
