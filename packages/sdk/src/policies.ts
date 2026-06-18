@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-/** @crm2/sdk — Policy acceptance (ADR-0042). Admin-managed, versioned policies a user must accept
+/** @crm2/sdk — Policy acceptance (ADR-0043). Admin-managed, versioned policies a user must accept
  *  at login. `contentVersion` drives re-acceptance; `version` is the OCC token (ADR-0019). */
 export interface Policy {
   id: number;

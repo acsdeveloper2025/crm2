@@ -3,7 +3,7 @@ import { authorize, PERMISSIONS } from '@crm2/access';
 import { policyController as c } from './controller.js';
 
 /**
- * /api/v2/policies — admin CRUD for acceptance policies (ADR-0042).
+ * /api/v2/policies — admin CRUD for acceptance policies (ADR-0043).
  * Reads: page.policies. Writes + acceptances audit: policy.manage (SUPER_ADMIN per the seed).
  */
 export const policyRoutes: Router = Router();

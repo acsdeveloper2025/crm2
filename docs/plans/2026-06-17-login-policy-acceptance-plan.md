@@ -23,7 +23,7 @@
 - `apps/api/src/modules/policies/__tests__/policies.api.test.ts`
 - `apps/web/src/features/auth/MustAcceptPoliciesPage.tsx` — the gate screen
 - `apps/web/src/features/policies/PoliciesPage.tsx` + `PolicyDialog.tsx` — admin screen
-- `docs/adr/ADR-0042-login-policy-acceptance.md`
+- `docs/adr/ADR-0043-login-policy-acceptance.md`
 
 **Modify:**
 - `packages/access/src/permissions.ts` — add `POLICY_MANAGE`, `POLICY_VIEW` + meta
@@ -51,7 +51,7 @@
 Port the policy text verbatim from `/Users/mayurkulkarni/Downloads/CRM-APP-MONOREPO-PROD/CRM-FRONTEND/src/constants/fieldExecutiveAcknowledgement.ts` (the `FIELD_EXECUTIVE_ACKNOWLEDGEMENT` constant, 10 sections). Use dollar-quoting `$policy$ … $policy$` so apostrophes need no escaping.
 
 ```sql
--- 0068_policy_acceptance.sql — Login policy acceptance (ADR-0042).
+-- 0068_policy_acceptance.sql — Login policy acceptance (ADR-0043).
 -- Admin-managed, versioned policies; every user must accept all active+effective policies before
 -- the app loads (server-driven gate: login returns mustAcceptPolicies, refresh re-checks). Mirrors
 -- the mustChangePassword gate. Forward-only, idempotent.
@@ -184,7 +184,7 @@ git commit -m "feat(access): add policy.manage + page.policies permissions"
 ```typescript
 import { z } from 'zod';
 
-/** @crm2/sdk — Policy acceptance (ADR-0042). Admin-managed, versioned policies a user must accept
+/** @crm2/sdk — Policy acceptance (ADR-0043). Admin-managed, versioned policies a user must accept
  *  at login. `contentVersion` drives re-acceptance; `version` is the OCC token (ADR-0019). */
 export interface Policy {
   id: number;
@@ -296,7 +296,7 @@ git commit -m "feat(sdk): policy contracts + mustAcceptPolicies on LoginResponse
 
 Append inside the `authRepository` object:
 ```typescript
-  /** Active+effective policies this user has NOT accepted at the current content_version (ADR-0042). */
+  /** Active+effective policies this user has NOT accepted at the current content_version (ADR-0043). */
   async pendingPoliciesForUser(userId: string): Promise<
     { id: number; code: string; name: string; content: string; contentVersion: number }[]
   > {
@@ -383,7 +383,7 @@ In `refresh()`, immediately after the `passwordExpired(...) throw invalidRefresh
 
 Add to the `authService` object:
 ```typescript
-  /** Self-service: record the user's acceptance of the given pending policy ids (ADR-0042). */
+  /** Self-service: record the user's acceptance of the given pending policy ids (ADR-0043). */
   async acceptPolicies(userId: string, input: unknown, ip: string | null, userAgent: string | null): Promise<void> {
     const v = AcceptPoliciesSchema.parse(input);
     await repo.acceptPolicies(userId, v.policyIds, ip, userAgent, v.source);
@@ -408,7 +408,7 @@ In `controller.ts`, add to `authController`:
 
 In `routes.ts`, after the change-password line (`:18`):
 ```typescript
-// Self-service policy acceptance (ADR-0042) — authenticated (req.auth); records the user's consent.
+// Self-service policy acceptance (ADR-0043) — authenticated (req.auth); records the user's consent.
 authRoutes.post('/accept-policies', c.acceptPolicies);
 ```
 
@@ -793,7 +793,7 @@ Add all three to the provider `value={{ … }}`.
 ```typescript
 /**
  * Blocking policy-acceptance screen (no app shell). Shown when login returns mustAcceptPolicies.
- * The user reads each active policy and accepts all to continue; declining logs out (ADR-0042).
+ * The user reads each active policy and accepts all to continue; declining logs out (ADR-0043).
  */
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -917,25 +917,25 @@ git commit -m "feat(web): policies admin screen (DataGrid list + markdown editor
 
 ---
 
-## Task 11: Governance docs (ADR-0042, registry, matrix, index)
+## Task 11: Governance docs (ADR-0043, registry, matrix, index)
 
 **Files:**
-- Create: `docs/adr/ADR-0042-login-policy-acceptance.md` (use `docs/adr/_template.md`; Status: Accepted)
+- Create: `docs/adr/ADR-0043-login-policy-acceptance.md` (use `docs/adr/_template.md`; Status: Accepted)
 - Modify: `docs/FROZEN_DECISIONS_REGISTRY.md` (add row 35), `docs/engineering/MOBILE_API_COMPATIBILITY_MATRIX.md`, `PROJECT_INDEX.md`
 
-- [ ] **Step 1: Write ADR-0042** — context (v1 parity, server-driven > FE-only), decision (admin-managed versioned policies, all-users gate, login+refresh enforcement, two-version model), consequences, alternatives (static-in-code rejected). Link the spec.
+- [ ] **Step 1: Write ADR-0043** — context (v1 parity, server-driven > FE-only), decision (admin-managed versioned policies, all-users gate, login+refresh enforcement, two-version model), consequences, alternatives (static-in-code rejected). Link the spec.
 
-- [ ] **Step 2: Add FROZEN_DECISIONS_REGISTRY row 35** — "Login policy acceptance — admin-managed, versioned, all-users server-driven gate (ADR-0042)", Status LOCKED.
+- [ ] **Step 2: Add FROZEN_DECISIONS_REGISTRY row 35** — "Login policy acceptance — admin-managed, versioned, all-users server-driven gate (ADR-0043)", Status LOCKED.
 
 - [ ] **Step 3: Add the mobile-compat entry** — `POST /api/v2/auth/accept-policies` + `pendingPolicies`/`mustAcceptPolicies` on login are a locked mobile contract; `source='MOBILE'` reserved; the mobile client lands with the deferred `/api/mobile`→`/api/v2` rebase.
 
-- [ ] **Step 4: Link from PROJECT_INDEX** — under §6 Security/compliance, add ADR-0042 + the spec.
+- [ ] **Step 4: Link from PROJECT_INDEX** — under §6 Security/compliance, add ADR-0043 + the spec.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add docs/adr/ADR-0042-login-policy-acceptance.md docs/FROZEN_DECISIONS_REGISTRY.md docs/engineering/MOBILE_API_COMPATIBILITY_MATRIX.md PROJECT_INDEX.md
-git commit -m "docs(adr): ADR-0042 login policy acceptance + registry row 35 + mobile-compat entry"
+git add docs/adr/ADR-0043-login-policy-acceptance.md docs/FROZEN_DECISIONS_REGISTRY.md docs/engineering/MOBILE_API_COMPATIBILITY_MATRIX.md PROJECT_INDEX.md
+git commit -m "docs(adr): ADR-0043 login policy acceptance + registry row 35 + mobile-compat entry"
 ```
 
 ---

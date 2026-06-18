@@ -1,4 +1,4 @@
--- 0068_policy_acceptance.sql — Login policy acceptance (ADR-0042).
+-- 0068_policy_acceptance.sql — Login policy acceptance (ADR-0043).
 -- Admin-managed, versioned policies; every user must accept all active+effective policies before
 -- the app loads (server-driven gate: login returns mustAcceptPolicies, refresh re-checks). Mirrors
 -- the mustChangePassword gate. Forward-only, idempotent.

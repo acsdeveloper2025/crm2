@@ -32,7 +32,7 @@ const POLICY_PAGE_SPEC: PageSpec = {
 };
 
 /**
- * Policy service — admin CRUD for versioned, admin-managed acceptance policies (ADR-0042):
+ * Policy service — admin CRUD for versioned, admin-managed acceptance policies (ADR-0043):
  *  - create/update validated against the shared zod schema (mirrors DB CHECKs)
  *  - `version` (OCC) bumps every edit; `content_version` bumps only when `content` changes
  *  - audit (created_by/updated_by) set from the caller
@@ -92,7 +92,7 @@ export const policyService = {
   activate: (id: number, version: number, userId: string) => repo.setActive(id, true, userId, version),
   deactivate: (id: number, version: number, userId: string) => repo.setActive(id, false, userId, version),
 
-  /** Read-only acceptance audit for a policy (ADR-0042). */
+  /** Read-only acceptance audit for a policy (ADR-0043). */
   acceptances(id: number): Promise<PolicyAcceptance[]> {
     return repo.acceptances(id);
   },

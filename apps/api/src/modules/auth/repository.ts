@@ -226,8 +226,8 @@ export const authRepository = {
     );
   },
 
-  // ── Policy acceptance gate (ADR-0042) ──
-  /** Active+effective policies this user has NOT accepted at the current content_version (ADR-0042). */
+  // ── Policy acceptance gate (ADR-0043) ──
+  /** Active+effective policies this user has NOT accepted at the current content_version (ADR-0043). */
   async pendingPoliciesForUser(userId: string): Promise<PendingPolicy[]> {
     return query<PendingPolicy>(
       `SELECT p.id, p.code, p.name, p.content, p.content_version

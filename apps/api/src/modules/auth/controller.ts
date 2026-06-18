@@ -61,7 +61,7 @@ export const authController = {
     }
   },
 
-  /** Self-service policy acceptance (ADR-0042) — records the user's consent for the pending policy ids. */
+  /** Self-service policy acceptance (ADR-0043) — records the user's consent for the pending policy ids. */
   async acceptPolicies(req: Request, res: Response, next: NextFunction) {
     try {
       await svc.acceptPolicies(requireUserId(req), req.body, req.ip ?? null, req.get('user-agent') ?? null);

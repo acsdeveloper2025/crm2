@@ -167,7 +167,7 @@ export const policyRepository = {
     });
   },
 
-  /** Read-only acceptance audit list for a policy (ADR-0042) — who accepted what content_version, when. */
+  /** Read-only acceptance audit list for a policy (ADR-0043) — who accepted what content_version, when. */
   async acceptances(policyId: number): Promise<PolicyAcceptance[]> {
     return query<PolicyAcceptance>(
       `SELECT id, user_id, policy_id, content_version, source, accepted_at

@@ -32,7 +32,7 @@
 
 ## 6. Security & compliance
 - [SECURITY_STANDARDS.md](./docs/security/SECURITY_STANDARDS.md) (governance + cadence) · [SECURITY_GUIDE.md](./docs/security/SECURITY_GUIDE.md) (practitioner) · [DATA_RETENTION_POLICY.md](./docs/security/DATA_RETENTION_POLICY.md) · [BUSINESS_RULES.md](./docs/governance/BUSINESS_RULES.md) (audit/RBAC rules).
-- **Login policy acceptance** (admin-managed · versioned · all-users server-driven gate): [docs/adr/ADR-0042-login-policy-acceptance.md](./docs/adr/ADR-0042-login-policy-acceptance.md) · [docs/specs/2026-06-17-login-policy-acceptance-design.md](./docs/specs/2026-06-17-login-policy-acceptance-design.md) (design spec).
+- **Login policy acceptance** (admin-managed · versioned · all-users server-driven gate): [docs/adr/ADR-0043-login-policy-acceptance.md](./docs/adr/ADR-0043-login-policy-acceptance.md) · [docs/specs/2026-06-17-login-policy-acceptance-design.md](./docs/specs/2026-06-17-login-policy-acceptance-design.md) (design spec).
 
 ## 7. Operations & resilience
 - [OPERATIONS_GUIDE.md](./docs/operations/OPERATIONS_GUIDE.md) · [DISASTER_RECOVERY.md](./docs/operations/DISASTER_RECOVERY.md) (quarterly restore drill) · [OBSERVABILITY_STANDARDS.md](./docs/operations/OBSERVABILITY_STANDARDS.md) · [MONITORING_STRATEGY.md](./docs/operations/MONITORING_STRATEGY.md) · [PERFORMANCE_STANDARDS.md](./docs/operations/PERFORMANCE_STANDARDS.md) (<2s) · [RELEASE_GUIDE.md](./docs/operations/RELEASE_GUIDE.md) + [RELEASE_CHECKLIST.md](./docs/operations/RELEASE_CHECKLIST.md).

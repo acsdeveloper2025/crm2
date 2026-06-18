@@ -1,7 +1,7 @@
 # Login Policy Acceptance — Design Spec (2026-06-17)
 
 **Status:** Approved (design) — pending implementation plan.
-**Owner sign-off needed for:** new ADR-0042 + FROZEN_DECISIONS_REGISTRY row 35 (new entity + new login gate).
+**Owner sign-off needed for:** new ADR-0043 + FROZEN_DECISIONS_REGISTRY row 35 (new entity + new login gate).
 **Replicates:** v1 "Field Executive Acknowledgement" consent feature (`user_consents`), rebuilt the v2 way.
 
 ---
@@ -113,7 +113,7 @@ All writes append an audit-log row and use `withTransaction` where multi-stateme
 ---
 
 ## 7. Governance & standards compliance
-- **ADR-0042** — "Login policy acceptance (admin-managed, versioned, all-users gate)"; **FROZEN_DECISIONS_REGISTRY row 35**.
+- **ADR-0043** — "Login policy acceptance (admin-managed, versioned, all-users gate)"; **FROZEN_DECISIONS_REGISTRY row 35**.
 - **OCC** ADR-0019 (`version` guard on `policies`), **effective-from** ADR-0017, **frozen DataGrid** + **PAGINATION_AND_LOADING** + **RESPONSIVE_DESIGN** standards (admin list), **audit logging** (BUSINESS_RULES: policy CRUD + acceptance), **RBAC** default-deny, **naming** (snake SQL / camel TS / kebab routes), **repository pattern** (raw SQL only in repo), **OpenAPI** emit (zod), **MOBILE_API_COMPATIBILITY_MATRIX** entry (`/auth/accept-policies` + pending-policies are a locked mobile contract; `source='MOBILE'`).
 - **Design:** reuse the design system / tokens / shadcn; gate mirrors `MustChangePasswordPage`; admin mirrors existing master-data screens. No bespoke tables or palettes.
 - **Definition of done:** unit + integration tests (gate clears/blocks, idempotent accept, OCC conflict, content-bump re-accept, RBAC, scope); `pnpm verify` green; browser-verified accept flow persists across reload; coverage floors respected.
@@ -129,7 +129,7 @@ All writes append an audit-log row and use `withTransaction` where multi-stateme
 6. Non-admin cannot reach `/api/v2/policies` writes (403); the accept endpoint is self-only (IDOR-safe).
 
 ## 9. Scope
-- **In:** migration 0068, policies admin module + UI, auth gate (login + refresh + accept), FE gate page, perms + seed, SDK, tests, ADR-0042 + registry row 35, compat-matrix entry.
+- **In:** migration 0068, policies admin module + UI, auth gate (login + refresh + accept), FE gate page, perms + seed, SDK, tests, ADR-0043 + registry row 35, compat-matrix entry.
 - **Out (now):** mobile *client* (separate repo; deferred rebase — API built mobile-compatible); notifying users of new/changed policies; rich WYSIWYG editor; per-role targeting (all-users for now).
 
 ## 10. Resolved decisions

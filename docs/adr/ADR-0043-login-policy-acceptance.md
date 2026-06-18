@@ -1,4 +1,4 @@
-# ADR-0042: Login policy acceptance — admin-managed, versioned, all-users server-driven gate
+# ADR-0043: Login policy acceptance — admin-managed, versioned, all-users server-driven gate
 
 - **Status:** Accepted
 - **Date:** 2026-06-17
