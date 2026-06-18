@@ -285,10 +285,13 @@ export const caseService = {
     if (task.assignedTo) {
       notifySafely({
         userId: task.assignedTo,
-        type: 'CASE_TASK_ASSIGNED',
+        // The field app auto-pulls a freshly-assigned task only on CASE_ASSIGNED/CASE_REASSIGNED
+        // (NotificationService); v1 emitted CASE_ASSIGNED. Use it (already a valid enum member) so the
+        // newly assigned task downloads immediately instead of waiting for the next full sync.
+        type: 'CASE_ASSIGNED',
         title: 'New task assigned',
         body: `${task.taskNumber} · ${task.unitName}`,
-        payload: { caseId, taskId, taskNumber: task.taskNumber },
+        payload: { caseId, caseNumber: task.caseNumber, taskId, taskNumber: task.taskNumber },
         actionType: 'OPEN_TASK',
       });
     }
@@ -322,7 +325,7 @@ export const caseService = {
         type: 'TASK_COMPLETED',
         title: 'Task completed',
         body: `${task.taskNumber} · ${task.unitName} — ${task.verificationOutcome ?? ''}`.trim(),
-        payload: { caseId, taskId, taskNumber: task.taskNumber },
+        payload: { caseId, caseNumber: task.caseNumber, taskId, taskNumber: task.taskNumber },
         actionType: 'OPEN_TASK',
       });
     }

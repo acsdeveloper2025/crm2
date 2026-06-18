@@ -60,3 +60,28 @@ Bump `package.json` version → tag `v1.0.x` → Android Release CI builds unive
 
 ## Guardrails
 v2 stays submit==complete (no SFR) · all v2 additions additive-only (ADR-0011) · both web + mobile contract tests must stay green · no push/deploy/tag/release/live-cert change without explicit owner OK.
+
+## Write-path contract audit + fixes (2026-06-18) — Phase 2 COMPLETE, gate green
+A 9-agent fan-out audit of the device **write-path** (accept→start→GPS→form→photo→complete + profile/notifications/envelope), diffing the app's real payloads against v1 ground truth, the live v2 Zod schemas, AND the v2 DB constraints. 18 mismatches found. **Headline: the real blocker was form-submit, not location** — v2's `submitForm` only stored the form JSON and left the task status unchanged (no rollup), but the app's "Submit Verification" flow posts ONLY the form (never `/complete`). So on a real device the agent saw "Completed" while the task stayed IN_PROGRESS server-side forever (no rollup, no commission). Silent (v2 returned 200). The location GPS-500 first suspected was **latent** (the live tracking path overrides `GPS→TRACKING`, which was already in the CHECK).
+
+Fixes shipped (all additive, ADR-0011; `pnpm verify` green, 57/57 test files):
+| # | Sev | Fix | Where |
+|---|-----|-----|-------|
+| 1 | blocker | `submitForm` now calls `completeTaskByDevice` after storing evidence — submit==complete (ADR-0032), idempotent | `verification-tasks/service.ts` |
+| 2 | blocker | `parseGeo` returns null unless BOTH lat/lng are numbers (v1 parity) — no-GPS photo no longer 23514s the geo CHECK | `verification-tasks/service.ts` |
+| 3 | blocker | `/users/me/photo` accepts multipart `photo` (multer) + keeps raw bytes | `users/routes.ts,controller.ts` |
+| 4 | blocker | profile-photo response returns `{url, profilePhotoUrl}` (web reads `.url`, app reads `.profilePhotoUrl`) | `users/service.ts` |
+| 5 | blocker | priority accepts a numeric device drag-reorder → **ack-only, never overwrites the office enum** (owner decision); enum string still updates | `verification-tasks/service.ts` |
+| 6 | high | migration **0072** widens `device_locations.source` CHECK to add GPS/NETWORK/PASSIVE | `db/v2/migrations/0072_*.sql` |
+| 7 | high | `GET …/attachments` rows now carry an absolute presigned `url` (device fetches directly) | `verification-tasks/service.ts`, `cases/repository.ts`, `sdk/sync.ts` |
+| 8 | high | `normalizeV2Error` in the app's `apiClient.ts` maps the v2 error envelope → v1 shape (fixes shift-window-retry + login messages) | **mobile repo** |
+| 9 | high | assign producer emits `CASE_ASSIGNED` (the type the app keys on to auto-pull a new task) | `cases/service.ts` |
+| 10 | med | notif producers populate `payload.caseNumber` (CaseTaskView gained `caseNumber`) | `cases/service.ts`, `cases/repository.ts`, `sdk/cases.ts` |
+
+**CI safety net (Phase C):** the `contract:mobile` hook in `ci.yml` (was a no-op `--if-present`) is now wired to a real gate — `pnpm contract:mobile` runs the 9 device-contract test suites (204 tests). Plus `pnpm test` (all contract tests) + the ADR-0031 OpenAPI drift gate already run on every CI.
+
+**Deferred (not blocking):** `payload.actionUrl` (LOW — in-app tap navigates off `taskId`, only FCM push deep-links would use it); profile-photo object-storage 503 (verify `STORAGE_BACKEND=minio` + `S3_*` set on the prod box — likely already configured). Low parity items (missing START_TASK audit row, 404-vs-409 on non-owned start, 409-idempotency semantics) confirmed non-breaking.
+
+**Separate (frozen-architecture, owner idea 2026-06-18):** replace the LOW/MEDIUM/HIGH/URGENT office-priority enum with a **TAT-hours** model (4/6/8/12/24/48h). Out of scope for the mobile connection — needs its own ADR + sign-off.
+
+**Remaining:** (P3) deploy the v2 fixes (push→main auto-deploys) **[owner OK]** → device E2E on the Galaxy against prod (accept→…→complete) → loop on any new mismatch; (P5) rebuild APK + bump version + `min_supported_version` + tag **[owner OK]**.

@@ -26,7 +26,12 @@ import type { Actor } from '../../platform/scope/index.js';
  */
 const MAX_REASON = 2000;
 const RevokeSchema = z.object({ reason: z.string().trim().min(1).max(MAX_REASON) });
-const PrioritySchema = z.object({ priority: z.enum(PRIORITIES) });
+/** Office priority is the 4-value enum (set by the office; read by web/MIS). The DEVICE instead sends
+ *  a NUMERIC drag-reorder position — the agent's LOCAL queue ordering. Per the owner decision that
+ *  reorder is local-only and must NEVER overwrite the office priority, so accept either: a number →
+ *  ack-without-write (handled in setPriority); an enum string → the office update. (No web caller hits
+ *  this endpoint — it is device-only — so accepting both is additive and safe.) */
+const PrioritySchema = z.object({ priority: z.union([z.enum(PRIORITIES), z.coerce.number().int()]) });
 
 /** The LOCKED verification form-type slugs (URL path segment) the device posts — verbatim from the
  *  mobile contract (crm-mobile-native FormUploader). Pinned here so an unknown slug → 400, never a
@@ -79,7 +84,13 @@ function parseGeo(raw: string | undefined): Record<string, unknown> | null {
   if (!raw) return null;
   try {
     const v: unknown = JSON.parse(raw);
-    return v !== null && typeof v === 'object' ? (v as Record<string, unknown>) : null;
+    if (v === null || typeof v !== 'object') return null;
+    const o = v as Record<string, unknown>;
+    // v1 parity (verificationAttachmentController): keep geo ONLY when BOTH coords are numbers. A
+    // no-GPS capture sends {latitude:null,longitude:null}, which violates the geo_location CHECK
+    // (0065) and would 500 the whole upload — normalize it to null. The photo itself is the evidence.
+    if (typeof o['latitude'] !== 'number' || typeof o['longitude'] !== 'number') return null;
+    return o;
   } catch {
     return null; // a malformed geoLocation never fails the upload — the photo is the evidence
   }
@@ -116,43 +127,52 @@ export const verificationTaskService = {
 
   async setPriority(taskId: string, input: unknown, actor: Actor): Promise<CaseTaskView> {
     const v = PrioritySchema.parse(input);
-    return repo.setTaskPriorityByDevice(await ownedCaseId(taskId, actor), taskId, actor.userId, v.priority);
+    const caseId = await ownedCaseId(taskId, actor); // 404 unless the task is the actor's (IDOR-safe)
+    // A numeric value is the device drag-reorder (the agent's LOCAL queue ordering) — ack with the
+    // current task view WITHOUT touching the office priority (owner decision). Only an enum string,
+    // which no device sends today, updates the office priority.
+    if (typeof v.priority === 'number') return repo.caseTaskViewById(taskId);
+    return repo.setTaskPriorityByDevice(caseId, taskId, actor.userId, v.priority);
   },
 
   /** List the office REFERENCE docs for an owned task (mobile parity). 404 if the task isn't the
-   *  actor's (ownership, IDOR-safe). Mapped to the device's { id, originalName, mimeType, size,
-   *  uploadedAt } row shape in the v1 `{ success, data }` envelope. */
+   *  actor's (ownership, IDOR-safe). Mapped to the device's { id, originalName, mimeType, size, url,
+   *  uploadedAt } row shape in the v1 `{ success, data }` envelope. `url` is an absolute presigned URL
+   *  (the device fetches it directly — a relative path would be mis-prefixed against /api/v2). */
   async listAttachments(taskId: string, actor: Actor): Promise<DeviceTaskAttachmentList> {
     await ownedCaseId(taskId, actor); // 404 unless the task is assigned to the actor
     const rows = await repo.attachmentsForDeviceTask(taskId, actor.userId);
+    const storage = getStorage();
     return {
       success: true,
-      data: rows.map((r) => ({
-        id: r.id,
-        originalName: r.originalName,
-        mimeType: r.mimeType,
-        size: r.fileSize,
-        uploadedAt: r.createdAt,
-      })),
+      data: await Promise.all(
+        rows.map(async (r) => ({
+          id: r.id,
+          originalName: r.originalName,
+          mimeType: r.mimeType,
+          size: r.fileSize,
+          url: await storage.signedUrl(r.storageKey),
+          uploadedAt: r.createdAt,
+        })),
+      ),
     };
   },
 
-  /** Submit a verification form (evidence) for the task. `formType` must be one of the LOCKED slugs
-   *  (else 400). The body is stored under `form_data[formType]` — evidence only; any inner
-   *  `verificationOutcome` is NOT the official result (D1). Idempotent (resubmit overwrites). */
+  /** Submit a verification form (evidence) AND complete the task — ADR-0032 submit==complete. The
+   *  device's "Submit Verification" flow posts ONLY the form (it never calls /complete), exactly as v1
+   *  where the form POST itself completed the case, so the completion MUST happen here. The body is
+   *  stored under `form_data[formType]` (evidence only — any inner `verificationOutcome` is NOT the
+   *  official result, D1), then the owned task → COMPLETED + case rollup. `formType` must be a LOCKED
+   *  slug (else 400). Idempotent: a resubmit re-stores the evidence and re-completes harmlessly. */
   async submitForm(taskId: string, formType: string, input: unknown, actor: Actor): Promise<CaseTaskView> {
     if (!(FORM_TYPE_SLUGS as readonly string[]).includes(formType))
       throw AppError.badRequest('UNKNOWN_FORM_TYPE', { formType });
     const body = FormSubmissionSchema.parse(input);
     const json = JSON.stringify(body);
     if (json.length > MAX_FORM_BYTES) throw AppError.badRequest('FORM_TOO_LARGE');
-    return repo.submitVerificationForm(
-      await ownedCaseId(taskId, actor),
-      taskId,
-      actor.userId,
-      formType,
-      json,
-    );
+    const caseId = await ownedCaseId(taskId, actor);
+    await repo.submitVerificationForm(caseId, taskId, actor.userId, formType, json);
+    return repo.completeTaskByDevice(caseId, taskId, actor.userId);
   },
 
   /** Upload field photos (ADR-0034): multipart `files[]` + the locked form fields. Ownership-bound

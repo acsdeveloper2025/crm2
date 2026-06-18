@@ -23,7 +23,8 @@
     "dev:api": "pnpm --filter @crm2/api dev",
     "dev:web": "pnpm --filter @crm2/web dev",
     "prepare": "husky",
-    "openapi": "pnpm --filter @crm2/api openapi"
+    "openapi": "pnpm --filter @crm2/api openapi",
+    "contract:mobile": "pnpm --filter @crm2/api test:contract-mobile"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -310,7 +310,11 @@ export const userService = {
   /** Profile photo (slice 7): validate the image by magic bytes + size, store it in object storage
    *  under a server-minted key, persist the key, and delete any previous object. Returns a signed URL.
    *  Throws STORAGE_NOT_CONFIGURED (503) when the deployment has no bucket (deferred-activation). */
-  async setPhoto(id: string, bytes: Buffer, userId: string): Promise<{ url: string }> {
+  async setPhoto(
+    id: string,
+    bytes: Buffer,
+    userId: string,
+  ): Promise<{ url: string; profilePhotoUrl: string }> {
     const existing = await repo.findById(id);
     if (!existing) throw AppError.notFound('USER_NOT_FOUND');
     if (bytes.length === 0 || bytes.length > MAX_IMAGE_BYTES)
@@ -322,7 +326,10 @@ export const userService = {
     await storage.put(key, bytes, image.type); // throws 503 here when unconfigured — before any DB write
     const prev = await repo.setPhotoKey(id, key, userId);
     if (prev?.previousKey) await storage.remove(prev.previousKey); // best-effort orphan cleanup
-    return { url: await storage.signedUrl(key) };
+    // `url` is the web/admin key (unchanged); `profilePhotoUrl` is the mobile app's key (ADR-0011
+    // additive) — same signed URL under both names so neither consumer breaks.
+    const url = await storage.signedUrl(key);
+    return { url, profilePhotoUrl: url };
   },
 
   /** A time-limited URL to the user's current photo. 404 when they have none. */

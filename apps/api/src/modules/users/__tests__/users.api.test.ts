@@ -664,6 +664,8 @@ describe.skipIf(!RUN)('users API', () => {
   // ── Profile photo + one-time-password email (slice 7, ADR-0021) ──
   describe('profile photo', () => {
     const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01]);
+    // A tiny valid JPEG (magic bytes FF D8 FF) — the mobile app uploads JPEGs as multipart `photo`.
+    const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
     /** A recording fake storage so tests run with no live S3. */
     function fakeStorage() {
       const puts = new Map<string, Buffer>();
@@ -693,7 +695,8 @@ describe.skipIf(!RUN)('users API', () => {
       const u = await newUser({ username: 'photo_a', role: 'FIELD_AGENT' });
       const up = await request(app).post(`/api/v2/users/${u.id}/photo`).set(SA).send(PNG);
       expect(up.status).toBe(200);
-      expect(up.body.url).toContain('https://signed.test/users/');
+      expect(up.body.url).toContain('https://signed.test/users/'); // web/admin key (unchanged)
+      expect(up.body.profilePhotoUrl).toBe(up.body.url); // mobile key (additive, same URL)
       expect(fake.puts.size).toBe(1);
 
       const url = await request(app).get(`/api/v2/users/${u.id}/photo-url`).set(SA);
@@ -704,6 +707,22 @@ describe.skipIf(!RUN)('users API', () => {
       const up2 = await request(app).post(`/api/v2/users/${u.id}/photo`).set(SA).send(PNG);
       expect(up2.status).toBe(200);
       expect(fake.removed).toContain(firstKey); // the previous object was cleaned up
+    });
+
+    it('accepts a multipart `photo` field (mobile transport) → 200 with url + profilePhotoUrl', async () => {
+      const fake = fakeStorage();
+      setStorage(fake.provider);
+      const u = await newUser({ username: 'photo_mp', role: 'FIELD_AGENT' });
+      // The RN app POSTs multipart/form-data with a single JPEG under the field name `photo`.
+      const up = await request(app)
+        .post(`/api/v2/users/${u.id}/photo`)
+        .set(SA)
+        .attach('photo', JPEG, 'avatar.jpg');
+      expect(up.status).toBe(200);
+      expect(up.body.url).toContain('https://signed.test/users/');
+      expect(up.body.profilePhotoUrl).toBe(up.body.url); // mobile reads profilePhotoUrl
+      expect(fake.puts.size).toBe(1);
+      expect([...fake.puts.keys()][0]).toMatch(/\.jpg$/); // detected as JPEG from magic bytes, not the boundary
     });
 
     it('rejects a non-image (400 INVALID_IMAGE) and never stores it', async () => {
@@ -819,6 +838,8 @@ describe.skipIf(!RUN)('users API', () => {
   // ── Self-service "my account" (/me) — a user reads/edits only their OWN profile (no USER_MANAGE) ──
   describe('self profile (/me)', () => {
     const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01]);
+    // A tiny valid JPEG (FF D8 FF) — the mobile app uploads its avatar as a multipart `photo` field.
+    const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
     // The session id IS the acting user — auth as the seeded row so /me reads their real record.
     const asSelf = (id: string) => authHeaderForRole('FIELD_AGENT', id);
     const fakeStorage = (): StorageProvider => ({
@@ -891,12 +912,27 @@ describe.skipIf(!RUN)('users API', () => {
     it('self photo upload + read needs no USER_MANAGE (a FIELD_AGENT manages their own avatar)', async () => {
       setStorage(fakeStorage());
       const me = await newUser({ username: 'me_photo', role: 'FIELD_AGENT' });
+      // Raw-bytes transport (web/admin) still works and returns both response keys.
       const up = await request(app).post('/api/v2/users/me/photo').set(asSelf(me.id)).send(PNG);
       expect(up.status).toBe(200);
       expect(up.body.url).toContain('https://signed.test/users/');
+      expect(up.body.profilePhotoUrl).toBe(up.body.url);
       const url = await request(app).get('/api/v2/users/me/photo-url').set(asSelf(me.id));
       expect(url.status).toBe(200);
       expect(url.body.url).toContain('https://signed.test/users/');
+    });
+
+    it('self photo accepts a multipart `photo` JPEG (the live mobile path) → 200 url + profilePhotoUrl', async () => {
+      setStorage(fakeStorage());
+      const me = await newUser({ username: 'me_photo_mp', role: 'FIELD_AGENT' });
+      // Exactly what crm-mobile-native sends: multipart/form-data, single `photo` field, a JPEG.
+      const up = await request(app)
+        .post('/api/v2/users/me/photo')
+        .set(asSelf(me.id))
+        .attach('photo', JPEG, 'avatar.jpg');
+      expect(up.status).toBe(200);
+      expect(up.body.profilePhotoUrl).toContain('https://signed.test/users/'); // the key the app reads
+      expect(up.body.url).toBe(up.body.profilePhotoUrl); // web's key preserved too
     });
 
     it('self photo-url is 404 when the caller has none; the routes still require a session (401)', async () => {

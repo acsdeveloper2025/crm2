@@ -131,7 +131,7 @@ async function recomputeCaseStatus(q: TxQuery, caseId: string, actorId: string):
  *  the task's unit — the BEST-available active rate for that CPV, preferring the most specific
  *  location (task area > task pincode > case area > case pincode > a location-less default > any),
  *  honouring the temporal window. Null ONLY when no active rate exists for the CPV at all. */
-const TASK_VIEW_COLS = `ct.id, ct.case_id, ct.verification_unit_id, vu.code AS unit_code, vu.name AS unit_name,
+const TASK_VIEW_COLS = `ct.id, ct.case_id, cs.case_number, ct.verification_unit_id, vu.code AS unit_code, vu.name AS unit_name,
          ct.task_number, ct.task_origin, ct.parent_task_id, ct.applicant_id, ap.name AS applicant_name,
          ct.address, ct.trigger, ct.priority,
          ct.status, ct.assigned_to, au.name AS assigned_to_name,
@@ -1042,6 +1042,14 @@ export const caseRepository = {
     return row ?? null;
   },
 
+  /** Read-only CaseTaskView by id — the caller has already established ownership/access. Used by the
+   *  device priority ack (a numeric drag-reorder returns the current view without a write). */
+  async caseTaskViewById(taskId: string): Promise<CaseTaskView> {
+    const [row] = await query<CaseTaskView>(TASK_VIEW_BY_ID, [taskId]);
+    if (!row) throw AppError.notFound('TASK_NOT_FOUND');
+    return row;
+  },
+
   /**
    * Device status writers (ADR-0032). Idempotent by state (the device retries with an
    * Idempotency-Key but sends no OCC version — it doesn't track case_tasks.version): a transition
@@ -1375,15 +1383,25 @@ export const caseRepository = {
   async attachmentsForDeviceTask(
     taskId: string,
     userId: string,
-  ): Promise<{ id: string; originalName: string; mimeType: string; fileSize: number; createdAt: string }[]> {
+  ): Promise<
+    {
+      id: string;
+      originalName: string;
+      mimeType: string;
+      fileSize: number;
+      createdAt: string;
+      storageKey: string;
+    }[]
+  > {
     return query<{
       id: string;
       originalName: string;
       mimeType: string;
       fileSize: number;
       createdAt: string;
+      storageKey: string;
     }>(
-      `SELECT ca.id, ca.original_name, ca.mime_type, ca.file_size, ca.created_at
+      `SELECT ca.id, ca.original_name, ca.mime_type, ca.file_size, ca.created_at, ca.storage_key
        FROM case_attachments ca
        JOIN case_tasks ct ON ct.case_id = ca.case_id
        WHERE ct.id = $1 AND ct.assigned_to = $2 AND ca.deleted_at IS NULL

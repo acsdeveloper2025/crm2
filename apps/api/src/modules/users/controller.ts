@@ -15,6 +15,9 @@ const parseId = (req: Request): string => {
   return id;
 };
 const userId = (req: Request): string => req.auth?.userId ?? 'unknown';
+/** Profile-photo bytes from EITHER transport (ADR-0011 additive): a multipart `photo` file
+ *  (mobile → multer's `req.file.buffer`) or the raw request body (web/admin → `raw()`'s Buffer). */
+const photoBytes = (req: Request): unknown => req.file?.buffer ?? req.body;
 /** The authenticated caller's own id — for the self-service `/me` routes (no admin perm). 401 when
  *  there is no session (these routes carry no `authorize()`, so the guard lives here). */
 const selfId = (req: Request): string => {
@@ -121,7 +124,8 @@ export const userController = {
   async meUploadPhoto(req: Request, res: Response, next: NextFunction) {
     try {
       const id = selfId(req);
-      const file = req.body as unknown;
+      // Multipart `photo` (mobile) → req.file.buffer; raw bytes (web/admin) → req.body Buffer.
+      const file = photoBytes(req);
       if (!Buffer.isBuffer(file) || file.length === 0)
         throw AppError.badRequest('INVALID_IMAGE', { reason: 'empty' });
       res.json(await svc.setPhoto(id, file, id));
@@ -165,11 +169,12 @@ export const userController = {
     }
   },
 
-  /** Upload/replace a profile photo (slice 7). The image bytes are the raw body (no multipart dep),
-   *  same transport as import; the type is validated from the bytes, not the declared header. */
+  /** Upload/replace a profile photo (slice 7). The image bytes ride as a multipart `photo` field
+   *  (mobile) OR as the raw body (web/admin); the type is validated from the bytes, not the declared
+   *  header. */
   async uploadPhoto(req: Request, res: Response, next: NextFunction) {
     try {
-      const file = req.body as unknown;
+      const file = photoBytes(req);
       if (!Buffer.isBuffer(file) || file.length === 0)
         throw AppError.badRequest('INVALID_IMAGE', { reason: 'empty' });
       res.json(await svc.setPhoto(parseId(req), file, userId(req)));

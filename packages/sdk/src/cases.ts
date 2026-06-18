@@ -162,6 +162,8 @@ export interface CaseView extends Case {
 export interface CaseTaskView {
   id: string;
   caseId: string;
+  /** Human case number `CASE-000000` (device + notifications display it; ADR-0023). */
+  caseNumber: string;
   verificationUnitId: number;
   unitCode: string;
   unitName: string;

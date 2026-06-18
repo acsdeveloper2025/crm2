@@ -1,6 +1,8 @@
 import { Router, raw } from 'express';
+import multer from 'multer';
 import { authorize, PERMISSIONS } from '@crm2/access';
 import { userController as c } from './controller.js';
+import { MAX_IMAGE_BYTES } from '../../platform/image.js';
 // Session data lives in the auth domain (auth_refresh_tokens); the admin view/revoke endpoints are
 // mounted here under /users/:id but delegate to the auth controller (slice 6).
 import { authController } from '../auth/controller.js';
@@ -12,6 +14,14 @@ import { scopeAssignmentController } from '../scopeAssignments/controller.js';
  * Reads: page.users. Writes: user.manage (SUPER_ADMIN only).
  */
 export const userRoutes: Router = Router();
+
+// Profile-photo upload accepts BOTH transports (ADR-0011 additive): the mobile app POSTs
+// multipart/form-data with a `photo` field, the web/admin caller POSTs the raw image bytes
+// (application/octet-stream). multer (memory-storage, same pattern as verification-tasks) parses a
+// multipart body into `req.file`; on a NON-multipart request it passes through without consuming the
+// stream, so `raw()` (next in the chain) still captures the raw bytes. The controller reads
+// `req.file?.buffer` first, else falls back to the raw `req.body` Buffer.
+const photoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_IMAGE_BYTES } });
 
 userRoutes.get('/', authorize(PERMISSIONS.USER_VIEW), c.list);
 // `/options` precedes the param routes — the reports-to picker reads it (B-22).
@@ -33,21 +43,28 @@ userRoutes.post('/', authorize(PERMISSIONS.USER_MANAGE), c.create);
 // Self-service "my account" — any authenticated user edits only their OWN profile (no USER_MANAGE).
 // The acting id is read from the session, so there is no IDOR surface. These static `/me/...` paths
 // MUST precede the `/:id/...` param routes below, or `id` would capture "me" (→ a 400 on a non-uuid).
-// Photo bytes are the raw body (no multipart dep; `raw()` only on this route), like the admin upload.
+// Photo bytes ride as multipart `photo` (mobile) OR the raw body (web/admin) — see `photoUpload` above.
 userRoutes.get('/me/profile', c.meProfile);
 userRoutes.patch('/me/profile', c.meUpdateProfile);
 userRoutes.get('/me/photo-url', c.mePhotoUrl);
-userRoutes.post('/me/photo', raw({ type: () => true, limit: '6mb' }), c.meUploadPhoto);
+userRoutes.post(
+  '/me/photo',
+  photoUpload.single('photo'),
+  raw({ type: () => true, limit: '6mb' }),
+  c.meUploadPhoto,
+);
 userRoutes.put('/:id', authorize(PERMISSIONS.USER_MANAGE), c.update);
 userRoutes.post('/:id/password', authorize(PERMISSIONS.USER_MANAGE), c.setPassword);
 // Admin "generate one-time password" (plaintext returned once) + "unlock" (clear a lockout).
 userRoutes.post('/:id/generate-temp-password', authorize(PERMISSIONS.USER_MANAGE), c.generateTempPassword);
 userRoutes.post('/:id/unlock', authorize(PERMISSIONS.USER_MANAGE), c.unlock);
-// Profile photo (slice 7): upload raw image bytes (no multipart dep; `raw()` only on this route) +
-// read a signed URL. USER_MANAGE — editing a user's profile is the same authority as POST /.
+// Profile photo (slice 7): upload an image as multipart `photo` (mobile) OR raw bytes (web/admin) —
+// see `photoUpload` above — + read a signed URL. USER_MANAGE — editing a user's profile is the same
+// authority as POST /.
 userRoutes.post(
   '/:id/photo',
   authorize(PERMISSIONS.USER_MANAGE),
+  photoUpload.single('photo'),
   raw({ type: () => true, limit: '6mb' }),
   c.uploadPhoto,
 );

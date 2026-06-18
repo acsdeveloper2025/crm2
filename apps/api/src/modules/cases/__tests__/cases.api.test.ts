@@ -641,15 +641,16 @@ describe.skipIf(!RUN)('cases API', () => {
     expect(detail.body.tasks[0].status).toBe('ASSIGNED');
     expect(detail.body.tasks[0].assignedToName).toBe('FIELD ONE');
 
-    // Producer (ADR-0027): the assignee receives a CASE_TASK_ASSIGNED notification.
+    // Producer (ADR-0027): the assignee receives a CASE_ASSIGNED notification (the type the field app
+    // keys on to auto-pull the new task), with the human caseNumber in the payload for the list label.
     const feed = await request(app)
       .get('/api/v2/notifications')
       .set({ 'x-test-auth': `FIELD_AGENT:${agent}` });
     expect(feed.status).toBe(200);
     expect(feed.body.items[0]).toMatchObject({
-      type: 'CASE_TASK_ASSIGNED',
+      type: 'CASE_ASSIGNED',
       actionType: 'OPEN_TASK',
-      payload: { taskId },
+      payload: { taskId, caseNumber: expect.stringMatching(/^CASE-/) },
     });
   });
 
