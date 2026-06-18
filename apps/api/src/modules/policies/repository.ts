@@ -140,6 +140,32 @@ export const policyRepository = {
     });
   },
 
+  /** Acceptances for a single user (admin view, ADR-0043). Joins `consents` → `policies` by
+   *  content_version for the policy code/name. LEFT JOIN: a consent row at a version whose policy was
+   *  later deleted/renamed still surfaces, with null policy fields. Newest first. */
+  async acceptancesForUser(userId: string): Promise<
+    {
+      id: string;
+      policyId: number | null;
+      policyCode: string | null;
+      policyName: string | null;
+      policyVersion: number;
+      acceptedAt: string;
+      ip: string | null;
+      userAgent: string | null;
+    }[]
+  > {
+    return query(
+      `SELECT c.id, p.id AS policy_id, p.code AS policy_code, p.name AS policy_name,
+              c.policy_version, c.accepted_at, c.ip::text AS ip, c.user_agent
+         FROM consents c
+         LEFT JOIN policies p ON p.content_version = c.policy_version
+        WHERE c.user_id = $1
+        ORDER BY c.accepted_at DESC`,
+      [userId],
+    );
+  },
+
   /** Activate/deactivate are version-guarded edits too (ADR-0019). */
   async setActive(id: number, isActive: boolean, userId: string, expectedVersion: number): Promise<Policy> {
     return withTransaction(async (q) => {

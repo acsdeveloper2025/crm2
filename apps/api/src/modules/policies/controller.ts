@@ -59,4 +59,14 @@ export const policyController = {
       next(e);
     }
   },
+
+  /** Admin view: GET /api/v2/policies/users/:userId/acceptances — this user's acceptance log. */
+  async acceptancesForUser(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = req.params['userId'];
+      res.json(await svc.acceptancesForUser(typeof userId === 'string' ? userId : ''));
+    } catch (e) {
+      next(e);
+    }
+  },
 };

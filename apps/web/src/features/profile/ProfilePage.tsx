@@ -9,8 +9,14 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { UpdateSelfProfileSchema, ChangePasswordSchema, type UserView } from '@crm2/sdk';
+import {
+  UpdateSelfProfileSchema,
+  ChangePasswordSchema,
+  type UserPolicyAcceptance,
+  type UserView,
+} from '@crm2/sdk';
 import { api, ApiError } from '../../lib/sdk.js';
+import { formatDateTime } from '../../lib/format.js';
 import { UserPhoto } from '../../components/UserPhoto.js';
 import { PasswordPolicyChecklist, isPasswordStrong } from '../../components/PasswordPolicyChecklist.js';
 
@@ -236,6 +242,63 @@ function ChangePasswordCard() {
   );
 }
 
+/**
+ * Self-service view of the user's own policy-acceptance log (ADR-0043). Read-only — accepting a
+ * policy happens through the login gate, not here. Mirrors the admin section in UserDialog but drops
+ * the IP column (own log; the IP adds no signal to the user themselves).
+ */
+const UA_PREVIEW_LEN = 40;
+const truncateUa = (ua: string | null): string =>
+  ua ? (ua.length > UA_PREVIEW_LEN ? `${ua.slice(0, UA_PREVIEW_LEN)}…` : ua) : '—';
+
+function PolicyAcceptancesCard() {
+  const q = useQuery({
+    queryKey: ['my-consents'],
+    queryFn: () => api<UserPolicyAcceptance[]>('GET', '/api/v2/auth/my-consents'),
+  });
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-5 shadow-sm">
+      <h2 className="mb-1 font-semibold">Policy Acceptances</h2>
+      <p className="mb-4 text-sm text-muted-foreground">
+        The policies you have accepted. Acceptance is recorded automatically when you sign in.
+      </p>
+      {q.isLoading ? (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : q.isError ? (
+        <p className="text-sm text-destructive">Could not load your acceptances.</p>
+      ) : !q.data || q.data.length === 0 ? (
+        <p className="text-sm text-muted-foreground">You haven&apos;t accepted any policies yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border text-left text-muted-foreground">
+                <th className="py-1 pr-3 font-medium">Policy</th>
+                <th className="py-1 pr-3 font-medium">Version</th>
+                <th className="py-1 pr-3 font-medium">Accepted</th>
+                <th className="py-1 pr-3 font-medium">Device</th>
+              </tr>
+            </thead>
+            <tbody>
+              {q.data.map((a) => (
+                <tr key={a.id} className="border-b border-border/50">
+                  <td className="py-1 pr-3 text-foreground">{a.policyName ?? a.policyCode ?? '—'}</td>
+                  <td className="py-1 pr-3 font-mono text-muted-foreground">{a.policyVersion}</td>
+                  <td className="py-1 pr-3 text-muted-foreground">{formatDateTime(a.acceptedAt)}</td>
+                  <td className="py-1 pr-3 text-muted-foreground" title={a.userAgent ?? undefined}>
+                    {truncateUa(a.userAgent)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ProfilePage() {
   const me = useQuery({ queryKey: ME, queryFn: () => api<UserView>('GET', '/api/v2/users/me/profile') });
 
@@ -258,6 +321,7 @@ export function ProfilePage() {
         <>
           <IdentityCard me={me.data} />
           <ChangePasswordCard />
+          <PolicyAcceptancesCard />
         </>
       ) : (
         <p className="text-sm text-destructive">Could not load your profile.</p>

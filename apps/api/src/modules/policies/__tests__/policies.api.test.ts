@@ -25,8 +25,9 @@ describe.skipIf(!RUN)('policies admin API', () => {
   });
   beforeEach(async () => {
     // truncate the migration's seeded starter policy + audit_log (int PKs reuse). Acceptances live
-    // in the shared `consents` store and aren't part of the admin policy CRUD surface.
-    await db!.truncate('policies', 'audit_log');
+    // in the shared `consents` store and aren't part of the admin policy CRUD surface — but the
+    // per-user-acceptances tests below DO write consents rows, so wipe them between tests too.
+    await db!.truncate('consents', 'policies', 'audit_log');
   });
 
   it('SUPER_ADMIN creates (201), version=1, content_version=1', async () => {
@@ -166,5 +167,87 @@ describe.skipIf(!RUN)('policies admin API', () => {
     const res = await request(app).get('/api/v2/policies?sortBy=name;DROP TABLE policies').set(SA);
     expect(res.status).toBe(200);
     expect(res.body.sort.sortBy).toBe('createdAt'); // default, not the injection string
+  });
+
+  // ── Admin: per-user acceptance log (ADR-0043) — read-only, joins consents → policies.
+  describe('GET /policies/users/:userId/acceptances', () => {
+    // The seeded admin user (migration 0007) is a stable uuid we can write consents rows against.
+    const ADMIN_ID = '00000000-0000-0000-0000-000000000001';
+
+    interface AcceptanceRow {
+      id: string;
+      policyId: number | null;
+      policyCode: string | null;
+      policyName: string | null;
+      policyVersion: number;
+      acceptedAt: string;
+      ip: string | null;
+      userAgent: string | null;
+    }
+
+    it('returns the user-joined acceptance log, with policy name + id from the join', async () => {
+      // create two policies; bump POLB to content_version=2 so the two consents rows (v=1 + v=2) don't
+      // collide with the (user, policy_version) uniqueness constraint.
+      await request(app).post('/api/v2/policies').set(SA).send(newPolicy('POLA'));
+      const b = (await request(app).post('/api/v2/policies').set(SA).send(newPolicy('POLB'))).body;
+      await request(app)
+        .put(`/api/v2/policies/${b.id}`)
+        .set(SA)
+        .send({ content: 'v2 body', version: b.version });
+      await db!.pool.query(
+        `INSERT INTO consents (user_id, policy_version, user_agent) VALUES ($1, 1, 'Mozilla/5.0 admin'), ($1, 2, 'CRM-Mobile/1.0.69')`,
+        [ADMIN_ID],
+      );
+
+      const r = await request(app).get(`/api/v2/policies/users/${ADMIN_ID}/acceptances`).set(SA);
+      expect(r.status).toBe(200);
+      const rows = r.body as AcceptanceRow[];
+      expect(Array.isArray(rows)).toBe(true);
+      expect(rows).toHaveLength(2);
+      // Each row joins policy_code/policy_name; POLA at v=1, POLB at v=2.
+      const codes = rows.map((x) => x.policyCode).sort();
+      expect(codes).toEqual(['POLA', 'POLB']);
+      const v2 = rows.find((x) => x.policyVersion === 2);
+      expect(v2).toBeDefined();
+      expect(v2!.policyName).toBe('Privacy');
+      expect(v2!.userAgent).toBe('CRM-Mobile/1.0.69');
+      expect(typeof v2!.id).toBe('string');
+      expect(typeof v2!.acceptedAt).toBe('string');
+      // policyId is the joined policies.id (number); not null for an existing policy.
+      expect(typeof v2!.policyId).toBe('number');
+    });
+
+    it('returns an empty array for a user with no acceptances', async () => {
+      const r = await request(app).get(`/api/v2/policies/users/${ADMIN_ID}/acceptances`).set(SA);
+      expect(r.status).toBe(200);
+      expect(r.body).toEqual([]);
+    });
+
+    it('a consents row at a policy_version with NO matching policy row still surfaces (null policy fields)', async () => {
+      // No policies row at content_version=99 → LEFT JOIN yields null code/name/policyId.
+      await db!.pool.query(`INSERT INTO consents (user_id, policy_version) VALUES ($1, 99)`, [ADMIN_ID]);
+      const r = await request(app).get(`/api/v2/policies/users/${ADMIN_ID}/acceptances`).set(SA);
+      expect(r.status).toBe(200);
+      const rows = r.body as AcceptanceRow[];
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.policyVersion).toBe(99);
+      expect(rows[0]!.policyCode).toBeNull();
+      expect(rows[0]!.policyName).toBeNull();
+      expect(rows[0]!.policyId).toBeNull();
+    });
+
+    it('a malformed (non-uuid) userId is a clean 400, never a 500 (uuid-param 500 class)', async () => {
+      const r = await request(app).get('/api/v2/policies/users/not-a-uuid/acceptances').set(SA);
+      expect(r.status).toBe(400);
+    });
+
+    it('requires page.users (BACKEND_USER lacks it → 403)', async () => {
+      const r = await request(app).get(`/api/v2/policies/users/${ADMIN_ID}/acceptances`).set(BE);
+      expect(r.status).toBe(403);
+    });
+
+    it('unauthenticated request is 401', async () => {
+      expect((await request(app).get(`/api/v2/policies/users/${ADMIN_ID}/acceptances`)).status).toBe(401);
+    });
   });
 });

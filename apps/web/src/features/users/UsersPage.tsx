@@ -12,6 +12,7 @@ import {
   type RoleView,
   type TempPasswordResponse,
   type UserOption,
+  type UserPolicyAcceptance,
   type UserRole,
   type UserView,
 } from '@crm2/sdk';
@@ -794,6 +795,7 @@ function UserDialog({ row, onClose }: { row: UserView | null; onClose: () => voi
               <SessionList userId={row!.id} />
             </div>
           )}
+          {isEdit && <PolicyAcceptancesSection userId={row!.id} />}
         </div>
         {/* outside the tab toggle — a save failure stays visible from the Access tab too */}
         {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
@@ -832,6 +834,62 @@ function UserDialog({ row, onClose }: { row: UserView | null; onClose: () => voi
             onClose();
           }}
         />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Admin view of a user's policy-acceptance log (ADR-0043). Read-only — acceptances are recorded by
+ * the user's own accept/login flow via the shared `consents` store and never written from here.
+ * Empty + loading states muted; UA truncated to keep the row compact (full UA on hover via title).
+ */
+const UA_PREVIEW_LEN = 40;
+const truncateUa = (ua: string | null): string =>
+  ua ? (ua.length > UA_PREVIEW_LEN ? `${ua.slice(0, UA_PREVIEW_LEN)}…` : ua) : '—';
+
+function PolicyAcceptancesSection({ userId }: { userId: string }) {
+  const q = useQuery({
+    queryKey: ['user-acceptances', userId],
+    queryFn: () => api<UserPolicyAcceptance[]>('GET', `/api/v2/policies/users/${userId}/acceptances`),
+  });
+
+  return (
+    <div className="rounded-md border border-border p-3">
+      <p className="mb-2 text-sm font-medium text-foreground">Policy Acceptances</p>
+      {q.isLoading ? (
+        <p className="text-xs text-muted-foreground">Loading…</p>
+      ) : q.isError ? (
+        <p className="text-xs text-destructive">Could not load acceptances.</p>
+      ) : !q.data || q.data.length === 0 ? (
+        <p className="text-xs text-muted-foreground">No policies accepted yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border text-left text-muted-foreground">
+                <th className="py-1 pr-3 font-medium">Policy</th>
+                <th className="py-1 pr-3 font-medium">Version</th>
+                <th className="py-1 pr-3 font-medium">Accepted</th>
+                <th className="py-1 pr-3 font-medium">IP</th>
+                <th className="py-1 pr-3 font-medium">Source</th>
+              </tr>
+            </thead>
+            <tbody>
+              {q.data.map((a) => (
+                <tr key={a.id} className="border-b border-border/50">
+                  <td className="py-1 pr-3 text-foreground">{a.policyName ?? a.policyCode ?? '—'}</td>
+                  <td className="py-1 pr-3 font-mono text-muted-foreground">{a.policyVersion}</td>
+                  <td className="py-1 pr-3 text-muted-foreground">{formatDateTime(a.acceptedAt)}</td>
+                  <td className="py-1 pr-3 font-mono text-muted-foreground">{a.ip ?? '—'}</td>
+                  <td className="py-1 pr-3 text-muted-foreground" title={a.userAgent ?? undefined}>
+                    {truncateUa(a.userAgent)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

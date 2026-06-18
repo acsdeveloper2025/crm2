@@ -586,4 +586,62 @@ describe.skipIf(!RUN)('auth API', () => {
       expect(after.body.mustChangePassword).toBe(false);
     });
   });
+
+  // ── Self-service: GET /api/v2/auth/my-consents (ADR-0043) — own acceptance log, joined.
+  describe('GET /auth/my-consents', () => {
+    interface MyAcceptance {
+      id: string;
+      policyCode: string | null;
+      policyName: string | null;
+      policyVersion: number;
+      acceptedAt: string;
+      ip: string | null;
+      userAgent: string | null;
+    }
+    const selfHeader = (userId: string) => ({ 'x-test-auth': `FIELD_AGENT:${userId}` });
+
+    it('returns this caller’s own acceptance log (joined for policy name)', async () => {
+      const id = await makeUser({ username: 'mc_self', role: 'FIELD_AGENT' });
+      // seed a policy at content_version=1 and a matching consents row for this user.
+      await db!.pool.query(
+        `INSERT INTO policies (code, name, content, content_version, is_active) VALUES ('PRIVACY','Privacy','body',1,true)`,
+      );
+      await db!.pool.query(
+        `INSERT INTO consents (user_id, policy_version, user_agent) VALUES ($1, 1, 'CRM-Mobile/1.0.69')`,
+        [id],
+      );
+      const r = await request(app).get('/api/v2/auth/my-consents').set(selfHeader(id));
+      expect(r.status).toBe(200);
+      const rows = r.body as MyAcceptance[];
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.policyCode).toBe('PRIVACY');
+      expect(rows[0]!.policyName).toBe('Privacy');
+      expect(rows[0]!.policyVersion).toBe(1);
+      expect(rows[0]!.userAgent).toBe('CRM-Mobile/1.0.69');
+      expect(typeof rows[0]!.id).toBe('string');
+      expect(typeof rows[0]!.acceptedAt).toBe('string');
+    });
+
+    it('returns an empty array for a user who has accepted no policy yet', async () => {
+      const id = await makeUser({ username: 'mc_empty', role: 'FIELD_AGENT' });
+      const r = await request(app).get('/api/v2/auth/my-consents').set(selfHeader(id));
+      expect(r.status).toBe(200);
+      expect(r.body).toEqual([]);
+    });
+
+    it('a user only ever sees their own acceptances (scoped to req.auth)', async () => {
+      const alice = await makeUser({ username: 'mc_alice', role: 'FIELD_AGENT' });
+      const bob = await makeUser({ username: 'mc_bob', role: 'FIELD_AGENT' });
+      await db!.pool.query(`INSERT INTO consents (user_id, policy_version) VALUES ($1, 1)`, [bob]);
+      // alice asks for hers and gets nothing — bob's row is NOT exposed across users.
+      const aList = await request(app).get('/api/v2/auth/my-consents').set(selfHeader(alice));
+      expect(aList.body).toEqual([]);
+      const bList = await request(app).get('/api/v2/auth/my-consents').set(selfHeader(bob));
+      expect(bList.body as MyAcceptance[]).toHaveLength(1);
+    });
+
+    it('unauthenticated request is 401', async () => {
+      expect((await request(app).get('/api/v2/auth/my-consents')).status).toBe(401);
+    });
+  });
 });

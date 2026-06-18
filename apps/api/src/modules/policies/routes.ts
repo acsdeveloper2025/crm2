@@ -10,6 +10,9 @@ import { policyController as c } from './controller.js';
 export const policyRoutes: Router = Router();
 
 policyRoutes.get('/', authorize(PERMISSIONS.POLICY_VIEW), c.list);
+// Admin: a user's policy-acceptance log. Mounted BEFORE /:id so the literal `users` segment doesn't
+// collide with the numeric :id path-param. Gated by page.users (user-management surface).
+policyRoutes.get('/users/:userId/acceptances', authorize(PERMISSIONS.USER_VIEW), c.acceptancesForUser);
 policyRoutes.get('/:id', authorize(PERMISSIONS.POLICY_VIEW), c.get);
 policyRoutes.post('/', authorize(PERMISSIONS.POLICY_MANAGE), c.create);
 policyRoutes.put('/:id', authorize(PERMISSIONS.POLICY_MANAGE), c.update);

@@ -11,6 +11,7 @@ import {
   type MfaEnrollStart,
   type MfaRecoveryCodes,
   type SessionInfo,
+  type UserPolicyAcceptance,
 } from '@crm2/sdk';
 import { authRepository as repo } from './repository.js';
 import { getRoleAttributes } from '../../platform/access/index.js';
@@ -265,5 +266,11 @@ export const authService = {
     const user = await repo.authUserById(userId);
     if (!user) throw AppError.unauthenticated();
     return withResolvedPermissions(user);
+  },
+
+  /** Self-service: this user's own policy-acceptance log (ADR-0043). userId comes from req.auth so
+   *  no validation needed (already a verified uuid from JWT). */
+  myConsents(userId: string): Promise<UserPolicyAcceptance[]> {
+    return repo.myConsents(userId);
   },
 };

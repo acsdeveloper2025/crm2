@@ -147,4 +147,14 @@ export const authController = {
       next(e);
     }
   },
+
+  /** Self-service: this user's own policy-acceptance log (ADR-0043). Authenticated; no permission
+   *  gate — like /me and /sessions, every authenticated user can read their own. */
+  async myConsents(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json(await svc.myConsents(requireUserId(req)));
+    } catch (e) {
+      next(e);
+    }
+  },
 };

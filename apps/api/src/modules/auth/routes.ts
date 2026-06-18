@@ -35,3 +35,7 @@ authRoutes.post('/mfa/admin/:userId/disable', authorize(PERMISSIONS.USER_MANAGE)
 // Revoke is owner-scoped in the service (404 on someone else's jti). Admin equivalents are under /users.
 authRoutes.get('/sessions', c.listSessions);
 authRoutes.post('/sessions/:jti/revoke', c.revokeSession);
+
+// Policy acceptances (ADR-0043) — self-service: this user's own acceptance log. Authenticated, no
+// permission gate (same pattern as /me and /sessions). The admin per-user view lives under /policies.
+authRoutes.get('/my-consents', c.myConsents);

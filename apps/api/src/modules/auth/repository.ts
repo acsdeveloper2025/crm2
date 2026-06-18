@@ -233,6 +233,31 @@ export const authRepository = {
   },
 
   // ── Policy acceptance gate (ADR-0043) ──
+  /** Self-service: this user's own acceptance log (ADR-0043). Joins `consents` → `policies` by
+   *  content_version for the policy code/name. LEFT JOIN: a consent row at a version whose policy
+   *  was later deleted/renamed still surfaces, with null policy fields. Newest first. */
+  async myConsents(userId: string): Promise<
+    {
+      id: string;
+      policyCode: string | null;
+      policyName: string | null;
+      policyVersion: number;
+      acceptedAt: string;
+      ip: string | null;
+      userAgent: string | null;
+    }[]
+  > {
+    return query(
+      `SELECT c.id, p.code AS policy_code, p.name AS policy_name,
+              c.policy_version, c.accepted_at, c.ip::text AS ip, c.user_agent
+         FROM consents c
+         LEFT JOIN policies p ON p.content_version = c.policy_version
+        WHERE c.user_id = $1
+        ORDER BY c.accepted_at DESC`,
+      [userId],
+    );
+  },
+
   /** Active+effective policies this user has NOT accepted at the current content_version. Acceptances
    *  live in the shared `consents` store (keyed by user_id + policy_version = p.content_version). */
   async pendingPoliciesForUser(userId: string): Promise<PendingPolicy[]> {

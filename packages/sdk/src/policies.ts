@@ -28,6 +28,21 @@ export interface PendingPolicy {
   contentVersion: number;
 }
 
+/** A single policy-acceptance row (joined from `consents` → `policies` by content_version). Read-only.
+ *  `policyId` is present on the admin view (GET /policies/users/:id/acceptances) and omitted from the
+ *  self view (GET /auth/my-consents). `policyCode`/`policyName` are nullable to cover acceptances at a
+ *  policy version whose policy row was later deleted/renamed (the LEFT JOIN returns null). */
+export interface UserPolicyAcceptance {
+  id: string;
+  policyId?: number | null;
+  policyCode: string | null;
+  policyName: string | null;
+  policyVersion: number;
+  acceptedAt: string;
+  ip: string | null;
+  userAgent: string | null;
+}
+
 const codeField = z.string().regex(/^[A-Z][A-Z0-9_]*$/, 'code must be UPPER_SNAKE');
 
 export const CreatePolicySchema = z.object({

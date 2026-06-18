@@ -1,8 +1,18 @@
-import { CreatePolicySchema, PolicyEffectiveFromSchema, type Policy, type Paginated } from '@crm2/sdk';
+import {
+  CreatePolicySchema,
+  PolicyEffectiveFromSchema,
+  type Policy,
+  type Paginated,
+  type UserPolicyAcceptance,
+} from '@crm2/sdk';
 import { policyRepository as repo } from './repository.js';
 import { AppError } from '../../platform/errors.js';
 import { requireVersion } from '../../platform/occ.js';
 import { resolvePage, resolveFilters, buildPage, type PageSpec } from '../../platform/pagination.js';
+
+// uuid path-param shape check (mirrors auth's UUID_RE) — a malformed value becomes a clean 400, not a
+// pg 22P02 → 500 when the bind hits the uuid column.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Sortable columns (apiField → SQL column); only these reach ORDER BY. Filterable columns below. */
 const POLICY_PAGE_SPEC: PageSpec = {
@@ -85,4 +95,11 @@ export const policyService = {
 
   activate: (id: number, version: number, userId: string) => repo.setActive(id, true, userId, version),
   deactivate: (id: number, version: number, userId: string) => repo.setActive(id, false, userId, version),
+
+  /** Admin view: a single user's policy-acceptance log (ADR-0043). Validates uuid shape so a malformed
+   *  path param is a clean 400 (never a pg 22P02 → 500 on the uuid bind). */
+  acceptancesForUser(userId: string): Promise<UserPolicyAcceptance[]> {
+    if (!UUID_RE.test(userId)) throw AppError.badRequest('BAD_REQUEST', { param: 'userId' });
+    return repo.acceptancesForUser(userId);
+  },
 };
