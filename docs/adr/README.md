@@ -93,3 +93,4 @@ Numbers are never reused. Filenames follow `ADR-NNNN-kebab-slug.md`. Use
 | [ADR-0042](./ADR-0042-dependency-stack-freeze.md) | Dependency stack freeze — latest majors, lockfile-enforced | Accepted | 2026-06-17 |
 | [ADR-0043](./ADR-0043-login-policy-acceptance.md) | Login policy acceptance — admin-managed, versioned, server-driven gate | Accepted | 2026-06-17 |
 | [ADR-0044](./ADR-0044-task-tat-priority.md) | Task priority as a TAT (turnaround-time) SLA instead of an abstract enum | Proposed | 2026-06-18 |
+| [ADR-0045](./ADR-0045-web-session-lifecycle.md) | Web session lifecycle — idle auto-logout + 12h absolute cap + FIELD_AGENT carve-out | Accepted | 2026-06-18 |
