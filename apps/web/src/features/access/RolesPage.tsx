@@ -98,6 +98,24 @@ export function RolesPage() {
         ),
       },
       {
+        id: 'idleLogoutMinutes',
+        header: 'Idle Logout',
+        cell: (r) => (
+          <span className="text-muted-foreground">
+            {r.idleLogoutMinutes != null ? `${r.idleLogoutMinutes} min` : 'Exempt'}
+          </span>
+        ),
+      },
+      {
+        id: 'maxSessionMinutes',
+        header: 'Max Session',
+        cell: (r) => (
+          <span className="text-muted-foreground">
+            {r.maxSessionMinutes != null ? `${r.maxSessionMinutes} min` : 'No cap'}
+          </span>
+        ),
+      },
+      {
         id: 'dimensions',
         header: 'Scope Dimensions',
         cell: (r) =>
@@ -265,6 +283,13 @@ function RoleDialog({ row, onClose }: { row: RoleView | null; onClose: () => voi
   const [pwExpiry, setPwExpiry] = useState(
     row ? (row.passwordExpiryDays != null ? String(row.passwordExpiryDays) : '') : '90',
   );
+  // Web idle auto-logout (ADR-0045): '' = exempt; new roles default to 10-min idle / 720-min (12h) cap.
+  const [idleLogout, setIdleLogout] = useState(
+    row ? (row.idleLogoutMinutes != null ? String(row.idleLogoutMinutes) : '') : '10',
+  );
+  const [maxSession, setMaxSession] = useState(
+    row ? (row.maxSessionMinutes != null ? String(row.maxSessionMinutes) : '') : '720',
+  );
   const [permissions, setPermissions] = useState<Set<string>>(new Set(row?.permissions ?? []));
   const [wiring, setWiring] = useState<Map<string, RoleDimensionWiring['mode']>>(
     new Map((row?.dimensions ?? []).map((d) => [d.dimension, d.mode])),
@@ -294,6 +319,8 @@ function RoleDialog({ row, onClose }: { row: RoleView | null; onClose: () => voi
         hierarchyMode,
         reportsToRole: reportsToRole || null,
         passwordExpiryDays: pwExpiry.trim() === '' ? null : Number(pwExpiry),
+        idleLogoutMinutes: idleLogout.trim() === '' ? null : Number(idleLogout),
+        maxSessionMinutes: maxSession.trim() === '' ? null : Number(maxSession),
         dimensions,
       };
       if (!isEdit) {
@@ -418,6 +445,42 @@ function RoleDialog({ row, onClose }: { row: RoleView | null; onClose: () => voi
             />
             <span className="mt-1 block text-xs text-muted-foreground">
               Leave blank to never expire (e.g. field agents and admins).
+            </span>
+          </label>
+
+          <label className="block max-w-xs">
+            <span className="mb-1 block text-xs font-medium text-foreground">
+              Idle auto-logout after (minutes)
+            </span>
+            <input
+              className="input"
+              type="number"
+              min={1}
+              max={1440}
+              value={idleLogout}
+              onChange={(e) => setIdleLogout(e.target.value)}
+              placeholder="Exempt"
+            />
+            <span className="mt-1 block text-xs text-muted-foreground">
+              Web inactivity timeout. Leave blank to exempt (e.g. field agents).
+            </span>
+          </label>
+
+          <label className="block max-w-xs">
+            <span className="mb-1 block text-xs font-medium text-foreground">
+              Maximum session length (minutes)
+            </span>
+            <input
+              className="input"
+              type="number"
+              min={5}
+              max={10080}
+              value={maxSession}
+              onChange={(e) => setMaxSession(e.target.value)}
+              placeholder="No cap"
+            />
+            <span className="mt-1 block text-xs text-muted-foreground">
+              Absolute lifetime; forces re-login even with activity. Leave blank for no cap.
             </span>
           </label>
 
