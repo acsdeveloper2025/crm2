@@ -91,3 +91,5 @@ Numbers are never reused. Filenames follow `ADR-NNNN-kebab-slug.md`. Use
 | [ADR-0040](./ADR-0040-field-photo-reverse-geocode.md) | Field-photo reverse-geocode (frozen address, async, DLQ) | Accepted | 2026-06-17 |
 | [ADR-0041](./ADR-0041-case-report-engine.md) | CASE_REPORT Engine — multi-format client report (PDF / Word / Excel) | Proposed | 2026-06-17 |
 | [ADR-0042](./ADR-0042-dependency-stack-freeze.md) | Dependency stack freeze — latest majors, lockfile-enforced | Accepted | 2026-06-17 |
+| [ADR-0043](./ADR-0043-login-policy-acceptance.md) | Login policy acceptance — admin-managed, versioned, server-driven gate | Accepted | 2026-06-17 |
+| [ADR-0044](./ADR-0044-task-tat-priority.md) | Task priority as a TAT (turnaround-time) SLA instead of an abstract enum | Proposed | 2026-06-18 |
