@@ -27,6 +27,17 @@ export function setUnauthorizedHandler(fn: () => void): void {
   onUnauthorized = fn;
 }
 
+/**
+ * Idle-logout pause signal (ADR-0045): count of in-flight user-initiated mutations (non-GET) and
+ * uploads. The session manager skips its idle tick while this is > 0 so a long save/upload never
+ * times out mid-flight. Background GET refetches are deliberately NOT counted — a noisy polling tab
+ * must not be able to keep a walked-away session alive.
+ */
+let activeMutations = 0;
+export function hasActiveMutations(): boolean {
+  return activeMutations > 0;
+}
+
 let refreshing: Promise<boolean> | null = null;
 
 async function doRefresh(): Promise<boolean> {
@@ -52,29 +63,37 @@ function refreshOnce(): Promise<boolean> {
 }
 
 export async function api<T>(method: string, path: string, body?: unknown, retry = false): Promise<T> {
-  const accessToken = tokenStore.access();
-  const init: RequestInit = {
-    method,
-    headers: {
-      'content-type': 'application/json',
-      ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
-    },
-  };
-  if (body !== undefined) init.body = JSON.stringify(body);
+  // Count only the top-level non-GET call (the retry recursion passes retry=true) so the session
+  // manager treats an active save/upload as activity. `return await` keeps the count up across retry.
+  const tracked = !retry && method.toUpperCase() !== 'GET';
+  if (tracked) activeMutations += 1;
+  try {
+    const accessToken = tokenStore.access();
+    const init: RequestInit = {
+      method,
+      headers: {
+        'content-type': 'application/json',
+        ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
+      },
+    };
+    if (body !== undefined) init.body = JSON.stringify(body);
 
-  const res = await fetch(path, init);
+    const res = await fetch(path, init);
 
-  if (res.status === HTTP_UNAUTHORIZED && !retry && tokenStore.refresh()) {
-    if (await refreshOnce()) return api<T>(method, path, body, true);
-    tokenStore.clear();
-    onUnauthorized();
-    throw new Error('UNAUTHENTICATED');
+    if (res.status === HTTP_UNAUTHORIZED && !retry && tokenStore.refresh()) {
+      if (await refreshOnce()) return await api<T>(method, path, body, true);
+      tokenStore.clear();
+      onUnauthorized();
+      throw new Error('UNAUTHENTICATED');
+    }
+
+    const text = await res.text();
+    const json = text ? JSON.parse(text) : null;
+    if (!res.ok) throw new ApiError(res.status, json?.error ?? `HTTP ${res.status}`, json);
+    return json as T;
+  } finally {
+    if (tracked) activeMutations -= 1;
   }
-
-  const text = await res.text();
-  const json = text ? JSON.parse(text) : null;
-  if (!res.ok) throw new ApiError(res.status, json?.error ?? `HTTP ${res.status}`, json);
-  return json as T;
 }
 
 /**
@@ -147,26 +166,32 @@ export async function apiExport(path: string, retry = false): Promise<ExportOutc
  * 401-refresh path; a JSON error body (413 IMPORT_TOO_LARGE, 400 validation) is thrown as ApiError.
  */
 export async function apiUpload<T>(path: string, file: Blob, fileName: string, retry = false): Promise<T> {
-  const accessToken = tokenStore.access();
-  const res = await fetch(path, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/octet-stream',
-      'x-filename': encodeURIComponent(fileName), // header must be latin1-safe; server treats it as a label
-      ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
-    },
-    body: file,
-  });
+  const tracked = !retry; // uploads are user-initiated mutations — pause idle while one is in flight
+  if (tracked) activeMutations += 1;
+  try {
+    const accessToken = tokenStore.access();
+    const res = await fetch(path, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/octet-stream',
+        'x-filename': encodeURIComponent(fileName), // header must be latin1-safe; server treats it as a label
+        ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
+      },
+      body: file,
+    });
 
-  if (res.status === HTTP_UNAUTHORIZED && !retry && tokenStore.refresh()) {
-    if (await refreshOnce()) return apiUpload<T>(path, file, fileName, true);
-    tokenStore.clear();
-    onUnauthorized();
-    throw new Error('UNAUTHENTICATED');
+    if (res.status === HTTP_UNAUTHORIZED && !retry && tokenStore.refresh()) {
+      if (await refreshOnce()) return await apiUpload<T>(path, file, fileName, true);
+      tokenStore.clear();
+      onUnauthorized();
+      throw new Error('UNAUTHENTICATED');
+    }
+
+    const text = await res.text();
+    const json = text ? JSON.parse(text) : null;
+    if (!res.ok) throw new ApiError(res.status, json?.error ?? `HTTP ${res.status}`, json);
+    return json as T;
+  } finally {
+    if (tracked) activeMutations -= 1;
   }
-
-  const text = await res.text();
-  const json = text ? JSON.parse(text) : null;
-  if (!res.ok) throw new ApiError(res.status, json?.error ?? `HTTP ${res.status}`, json);
-  return json as T;
 }
