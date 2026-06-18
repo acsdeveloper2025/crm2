@@ -39,6 +39,10 @@ export interface RoleView {
   /** Force users of this role to change their password every N days; null = never (the field-agent +
    *  super-admin default). Enforced at login + token refresh. */
   passwordExpiryDays: number | null;
+  /** Web idle auto-logout window in minutes (ADR-0045); null = exempt (field agents). */
+  idleLogoutMinutes: number | null;
+  /** Absolute session lifetime in minutes (ADR-0045); null = no cap. */
+  maxSessionMinutes: number | null;
   version: number;
   createdAt: string;
   updatedAt: string;
@@ -67,6 +71,10 @@ const DimensionWiringSchema = z.object({
 
 /** Per-role password rotation: 1–3650 days, or null = never expire (exempt). */
 const passwordExpiryDays = z.number().int().min(1).max(3650).nullable();
+/** Web idle auto-logout window: 1–1440 min, or null = exempt (ADR-0045). */
+const idleLogoutMinutes = z.number().int().min(1).max(1440).nullable();
+/** Absolute session lifetime: 5–10080 min (7 days), or null = no cap (ADR-0045). */
+const maxSessionMinutes = z.number().int().min(5).max(10080).nullable();
 
 export const CreateRoleSchema = z.object({
   code: ROLE_CODE,
@@ -79,6 +87,10 @@ export const CreateRoleSchema = z.object({
   dimensions: z.array(DimensionWiringSchema).max(MAX_DIMENSIONS).default([]),
   /** password rotation policy; omitted ⇒ null (never expire). */
   passwordExpiryDays: passwordExpiryDays.optional(),
+  /** web idle auto-logout window; omitted ⇒ null (exempt). */
+  idleLogoutMinutes: idleLogoutMinutes.optional(),
+  /** absolute session lifetime; omitted ⇒ null (no cap). */
+  maxSessionMinutes: maxSessionMinutes.optional(),
 });
 export type CreateRoleInput = z.input<typeof CreateRoleSchema>;
 
@@ -91,6 +103,10 @@ export const UpdateRoleSchema = z.object({
   dimensions: z.array(DimensionWiringSchema).max(MAX_DIMENSIONS).optional(),
   /** password rotation policy; omit to leave unchanged, null to clear (never expire). */
   passwordExpiryDays: passwordExpiryDays.optional(),
+  /** idle auto-logout window; omit to leave unchanged, null to clear (exempt). */
+  idleLogoutMinutes: idleLogoutMinutes.optional(),
+  /** absolute session lifetime; omit to leave unchanged, null to clear (no cap). */
+  maxSessionMinutes: maxSessionMinutes.optional(),
   version: z.number().int().nonnegative(),
 });
 export type UpdateRoleInput = z.infer<typeof UpdateRoleSchema>;

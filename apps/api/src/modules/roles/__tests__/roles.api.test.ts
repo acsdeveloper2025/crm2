@@ -436,4 +436,64 @@ describe.skipIf(!RUN)('roles API (ADR-0022 slice 2 — editable role→permissio
       ).status,
     ).toBe(400);
   });
+
+  it('idle-logout + session cap: per-role policy (seed 10/720 desk, null exempt; settable/editable/bounded)', async () => {
+    // migration 0075 seed: DESK roles + SUPER_ADMIN get 10-min idle + 720-min cap; FIELD_AGENT exempt
+    const list = await request(app).get('/api/v2/roles?limit=200').set(SA);
+    const byCode = Object.fromEntries(
+      (
+        list.body.items as {
+          code: string;
+          idleLogoutMinutes: number | null;
+          maxSessionMinutes: number | null;
+        }[]
+      ).map((r) => [r.code, r]),
+    );
+    expect(byCode['MANAGER']!.idleLogoutMinutes).toBe(10);
+    expect(byCode['MANAGER']!.maxSessionMinutes).toBe(720);
+    expect(byCode['SUPER_ADMIN']!.idleLogoutMinutes).toBe(10);
+    expect(byCode['FIELD_AGENT']!.idleLogoutMinutes).toBeNull();
+    expect(byCode['FIELD_AGENT']!.maxSessionMinutes).toBeNull();
+
+    // create with an explicit policy; omit ⇒ null
+    const created = await request(app).post('/api/v2/roles').set(SA).send({
+      code: 'IDLE_ROLE',
+      name: 'Idle',
+      hierarchyMode: 'SELF',
+      idleLogoutMinutes: 12,
+      maxSessionMinutes: 480,
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.idleLogoutMinutes).toBe(12);
+    expect(created.body.maxSessionMinutes).toBe(480);
+    const noPolicy = await request(app)
+      .post('/api/v2/roles')
+      .set(SA)
+      .send({ code: 'IDLE_NULL', name: 'Idle Null', hierarchyMode: 'SELF' });
+    expect(noPolicy.body.idleLogoutMinutes).toBeNull();
+    expect(noPolicy.body.maxSessionMinutes).toBeNull();
+
+    // edit changes idle (omitted maxSessionMinutes left unchanged); null clears idle back to exempt
+    const edited = await request(app)
+      .put('/api/v2/roles/IDLE_ROLE')
+      .set(SA)
+      .send({ name: 'Idle', hierarchyMode: 'SELF', idleLogoutMinutes: 20, version: created.body.version });
+    expect(edited.body.idleLogoutMinutes).toBe(20);
+    expect(edited.body.maxSessionMinutes).toBe(480);
+    const cleared = await request(app)
+      .put('/api/v2/roles/IDLE_ROLE')
+      .set(SA)
+      .send({ name: 'Idle', hierarchyMode: 'SELF', idleLogoutMinutes: null, version: edited.body.version });
+    expect(cleared.body.idleLogoutMinutes).toBeNull();
+
+    // out-of-range is rejected (idle 1–1440)
+    expect(
+      (
+        await request(app)
+          .post('/api/v2/roles')
+          .set(SA)
+          .send({ code: 'IDLE_BAD', name: 'X', hierarchyMode: 'SELF', idleLogoutMinutes: 0 })
+      ).status,
+    ).toBe(400);
+  });
 });
