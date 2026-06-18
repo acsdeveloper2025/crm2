@@ -50,6 +50,9 @@ export interface TaskView {
   overdue: boolean;
   /** Measured elapsed minutes assigned→completed (ADR-0044), immutable once set; null until completed. */
   completedElapsedMinutes: number | null;
+  /** The TAT band the task was completed within (ADR-0044): the smallest active `tat_policies` band ≥
+   *  the completed-in hours; -1 when elapsed overflows every band; null until completed. Derived at read. */
+  completedTatBand: number | null;
   createdAt: string;
   updatedAt: string;
 }

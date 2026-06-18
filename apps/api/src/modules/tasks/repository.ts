@@ -95,6 +95,11 @@ const TASK_SELECT_BASE = `
          (ct.assigned_at + (ct.tat_hours * interval '1 hour')) AS due_at,
          ${OVERDUE_SQL} AS overdue,
          ct.completed_elapsed_minutes AS completed_elapsed_minutes,
+         COALESCE((SELECT tp.tat_hours FROM tat_policies tp
+            WHERE tp.is_active AND tp.effective_from <= now()
+              AND tp.tat_hours >= CEIL(ct.completed_elapsed_minutes / 60.0)
+            ORDER BY tp.tat_hours ASC LIMIT 1),
+            CASE WHEN ct.completed_elapsed_minutes IS NULL THEN NULL ELSE -1 END) AS completed_tat_band,
          (ct.status = 'COMPLETED') AS billable`;
 
 /** Amount columns — resolved via the laterals when billing-visible, else nulled (laterals skipped). */

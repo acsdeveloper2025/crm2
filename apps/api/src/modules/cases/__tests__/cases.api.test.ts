@@ -813,6 +813,43 @@ describe.skipIf(!RUN)('cases API', () => {
     expect(again.body.error).toBe('INVALID_TRANSITION');
   });
 
+  it('completion stamps the immutable elapsed minutes (assigned→completed) and derives the completed-in TAT band (ADR-0044)', async () => {
+    const { caseId, taskId } = await seedCaseWithTask('TATBAND');
+    const verifier = await createUser({ username: 'kyc_tatband', name: 'DESK TAT', role: 'KYC_VERIFIER' });
+    // assign (version 1 → 2) so the task carries an assigned_at clock start
+    expect(
+      (
+        await request(app)
+          .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
+          .set(SA)
+          .send({ assignedTo: verifier, visitType: 'OFFICE', billCount: 1, version: 1 })
+      ).status,
+    ).toBe(200);
+    // backdate the clock start ~5h so the measured elapsed lands in the 6h band
+    await db!.pool.query(`UPDATE case_tasks SET assigned_at = now() - interval '5 hours' WHERE id = $1`, [
+      taskId,
+    ]);
+
+    const res = await request(app)
+      .post(`/api/v2/cases/${caseId}/tasks/${taskId}/complete`)
+      .set(SA)
+      .send({ result: 'POSITIVE', remark: 'done within band', version: 2 });
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('COMPLETED');
+    // immutable elapsed minutes assigned→completed (~300 = 5h, server clock)
+    expect(res.body.completedElapsedMinutes).toBeGreaterThan(290);
+    expect(res.body.completedElapsedMinutes).toBeLessThan(320);
+    // smallest active band >= ceil(elapsed_minutes / 60) = 5h → 6h band
+    expect(res.body.completedTatBand).toBe(6);
+
+    // surfaced on the tasks pipeline read-model too
+    const pipe = await request(app).get(`/api/v2/tasks`).set(SA);
+    const row = (pipe.body.items as { id: string; completedTatBand: number | null }[]).find(
+      (t) => t.id === taskId,
+    );
+    expect(row?.completedTatBand).toBe(6);
+  });
+
   describe('case finalize + rollup (ADR-0032)', () => {
     // Grant a BACKEND_USER the case's client+product portfolio so it is in case scope.
     async function grantPortfolio(userId: string, caseId: string): Promise<void> {

@@ -149,6 +149,12 @@ const TASK_VIEW_COLS = `ct.id, ct.case_id, cs.case_number, ct.verification_unit_
             LIMIT 1) AS rate_type,
          ct.assigned_at,
          ct.verification_outcome, ct.remark, ct.completed_at, cb.name AS completed_by_name,
+         ct.completed_elapsed_minutes,
+         COALESCE((SELECT tp.tat_hours FROM tat_policies tp
+            WHERE tp.is_active AND tp.effective_from <= now()
+              AND tp.tat_hours >= CEIL(ct.completed_elapsed_minutes / 60.0)
+            ORDER BY tp.tat_hours ASC LIMIT 1),
+            CASE WHEN ct.completed_elapsed_minutes IS NULL THEN NULL ELSE -1 END) AS completed_tat_band,
          ct.version, ct.created_at, ct.updated_at`;
 
 const TASK_VIEW_FROM = `FROM case_tasks ct
@@ -722,6 +728,7 @@ export const caseRepository = {
         `UPDATE case_tasks
          SET status = 'COMPLETED', verification_outcome = $3, remark = $4,
              completed_by = $5, completed_at = now(),
+             completed_elapsed_minutes = CEIL(EXTRACT(EPOCH FROM (now() - COALESCE(assigned_at, created_at))) / 60)::int,
              version = version + 1, updated_by = $5, updated_at = now()
          WHERE id = $1 AND case_id = $2 AND version = $6
          RETURNING id`,
@@ -1101,6 +1108,7 @@ export const caseRepository = {
       const [updated] = await q<{ id: string }>(
         `UPDATE case_tasks
            SET status = 'COMPLETED', completed_by = $3, completed_at = now(),
+               completed_elapsed_minutes = CEIL(EXTRACT(EPOCH FROM (now() - COALESCE(assigned_at, created_at))) / 60)::int,
                version = version + 1, updated_by = $3, updated_at = now()
          WHERE id = $1 AND case_id = $2 AND status IN ('ASSIGNED', 'IN_PROGRESS')
          RETURNING id`,
