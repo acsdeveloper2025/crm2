@@ -1,0 +1,39 @@
+import { z } from 'zod';
+
+/**
+ * @crm2/sdk — the TAT Policy contract (ADR-0044). One row = a configurable turnaround-time band
+ * (4/6/8/12/24/48h) used for target-TAT assignment AND completed-in-band classification. Effective-
+ * dated + OCC like the other master data (commission_rates / rates): a revision inserts a new dated
+ * row; the prior is end-dated, never overwritten. Mirrors migration 0077 `tat_policies`.
+ */
+export interface TatPolicy {
+  id: number;
+  tatHours: number;
+  label: string;
+  isActive: boolean;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  /** OCC concurrency token (ADR-0019); sent back on revise/(de)activate. */
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A TAT policy as listed (no joins — kept as an alias so the FE can name the list type). */
+export type TatPolicyView = TatPolicy;
+
+export const CreateTatPolicySchema = z.object({
+  tatHours: z.number().int().positive(),
+  label: z.string().min(1).max(40),
+  /** when the band takes effect; defaults to now server-side. */
+  effectiveFrom: z.string().optional(),
+});
+
+/** Revise = a new effective-dated version of an existing TAT policy (old row is end-dated). */
+export const ReviseTatPolicySchema = z.object({
+  label: z.string().min(1).max(40),
+  effectiveFrom: z.string().optional(),
+});
+
+export type CreateTatPolicyInput = z.input<typeof CreateTatPolicySchema>;
+export type ReviseTatPolicyInput = z.input<typeof ReviseTatPolicySchema>;

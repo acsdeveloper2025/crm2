@@ -37,6 +37,7 @@ import type {
   CreateCommissionRateInput,
   ReviseCommissionRateInput,
 } from './commissionRates.js';
+import type { TatPolicy, TatPolicyView, CreateTatPolicyInput, ReviseTatPolicyInput } from './tatPolicies.js';
 import type { BillingCaseRow, BillingTaskLine } from './billing.js';
 import type {
   ReportLayout,
@@ -332,6 +333,22 @@ export function createSdk(opts: SdkOptions) {
         req<CommissionRate>('POST', `/api/v2/commission-rates/${id}/activate`, { version }),
       deactivate: (id: number, version: number) =>
         req<CommissionRate>('POST', `/api/v2/commission-rates/${id}/deactivate`, { version }),
+    },
+
+    /** TAT band master (ADR-0044). Same effective-dated/OCC shape as commission rates. */
+    tatPolicies: {
+      list: (q: PageQuery = {}) => {
+        const qs = pageQueryToParams(q).toString();
+        return req<Paginated<TatPolicyView>>('GET', `/api/v2/tat-policies${qs ? `?${qs}` : ''}`);
+      },
+      create: (input: CreateTatPolicyInput) => req<TatPolicy>('POST', '/api/v2/tat-policies', input),
+      // OCC (ADR-0019): revise/(de)activate carry the current row's `version`; 409 STALE_UPDATE on conflict.
+      revise: (id: number, input: ReviseTatPolicyInput & { version: number }) =>
+        req<TatPolicy>('POST', `/api/v2/tat-policies/${id}/revise`, input),
+      activate: (id: number, version: number) =>
+        req<TatPolicy>('POST', `/api/v2/tat-policies/${id}/activate`, { version }),
+      deactivate: (id: number, version: number) =>
+        req<TatPolicy>('POST', `/api/v2/tat-policies/${id}/deactivate`, { version }),
     },
 
     /** MIS layout config (ADR-0037) — per-(client,product) data-entry / MIS / Billing-MIS column

@@ -32,6 +32,7 @@ import { clientProductRoutes, cpvUnitRoutes } from '../modules/cpv/routes.js';
 import { rateRoutes } from '../modules/rates/routes.js';
 import { rateTypeRoutes } from '../modules/rateTypes/routes.js';
 import { commissionRateRoutes } from '../modules/commissionRates/routes.js';
+import { tatPolicyRoutes } from '../modules/tatPolicies/routes.js';
 import { billingRoutes } from '../modules/billing/routes.js';
 import { locationRoutes } from '../modules/locations/routes.js';
 import { userRoutes } from '../modules/users/routes.js';
@@ -105,6 +106,7 @@ export function createApp(opts: { enableTestAuth?: boolean } = {}): Express {
   mount('/api/v2/rates', rateRoutes);
   mount('/api/v2/rate-types', rateTypeRoutes);
   mount('/api/v2/commission-rates', commissionRateRoutes);
+  mount('/api/v2/tat-policies', tatPolicyRoutes);
   mount('/api/v2/billing', billingRoutes);
   mount('/api/v2/locations', locationRoutes);
   mount('/api/v2/users', userRoutes);
