@@ -3,7 +3,21 @@ import request from 'supertest';
 import { createTestDb, userFactory, authHeaderForRole } from '@crm2/test-utils';
 import { createApp } from '../../../http/app.js';
 import { setPool } from '../../../platform/db.js';
+import { setRealtime, type Realtime } from '../../../platform/realtime/index.js';
 import { totp } from '../../../platform/totp.js';
+
+/** Capture realtime emits (for the auth:session_revoked forced-logout assertions). */
+function spyRealtime(): { events: Array<{ userId: string; event: string; payload: unknown }> } {
+  const events: Array<{ userId: string; event: string; payload: unknown }> = [];
+  const rt: Realtime = {
+    emitToUser: (userId, event, payload) => {
+      events.push({ userId, event, payload });
+    },
+    emitToFieldMonitoring: () => undefined,
+  };
+  setRealtime(rt);
+  return { events };
+}
 
 const RUN = !!process.env['DATABASE_URL'];
 const db = RUN ? createTestDb() : null;
@@ -114,9 +128,91 @@ describe.skipIf(!RUN)('auth API', () => {
     expect(after.status).toBe(401);
   });
 
+  // ── auth:session_revoked realtime forced-logout (ADR-0014/0027, mobile parity) ──
+  it('logout emits auth:session_revoked to the device (immediate forced-logout)', async () => {
+    await makeUser({ username: 'sock', role: 'FIELD_AGENT' });
+    const { events } = spyRealtime();
+    try {
+      const login1 = await request(app)
+        .post('/api/v2/auth/login')
+        .send({ username: 'sock', password: PASSWORD, deviceId: 'device-xyz' });
+      const accessToken = login1.body.tokens.accessToken as string;
+      const out = await request(app)
+        .post('/api/v2/auth/logout')
+        .set('authorization', `Bearer ${accessToken}`);
+      expect(out.status).toBe(200);
+      const revoked = events.filter((e) => e.event === 'auth:session_revoked');
+      expect(revoked).toHaveLength(1);
+      expect(revoked[0]!.payload).toEqual({ deviceId: 'device-xyz' });
+    } finally {
+      setRealtime(null);
+    }
+  });
+
+  it('revoking ONE session emits auth:session_revoked for that device only', async () => {
+    await makeUser({ username: 'sock2', role: 'FIELD_AGENT' });
+    const { events } = spyRealtime();
+    try {
+      const login1 = await request(app)
+        .post('/api/v2/auth/login')
+        .send({ username: 'sock2', password: PASSWORD, deviceId: 'dev-A' });
+      const accessToken = login1.body.tokens.accessToken as string;
+      const sessions = await request(app)
+        .get('/api/v2/auth/sessions')
+        .set('authorization', `Bearer ${accessToken}`);
+      const jti = sessions.body[0].id as string;
+      const rev = await request(app)
+        .post(`/api/v2/auth/sessions/${jti}/revoke`)
+        .set('authorization', `Bearer ${accessToken}`);
+      expect(rev.status).toBeLessThan(300);
+      const revoked = events.filter((e) => e.event === 'auth:session_revoked');
+      expect(revoked).toHaveLength(1);
+      expect(revoked[0]!.payload).toEqual({ deviceId: 'dev-A' });
+    } finally {
+      setRealtime(null);
+    }
+  });
+
   it('rejects a garbage refresh token (401)', async () => {
     const res = await request(app).post('/api/v2/auth/refresh').send({ refreshToken: 'not.a.jwt' });
     expect(res.status).toBe(401);
+  });
+
+  // ── version-check force-update gate (mobile parity); public, seeded ANDROID latest=1.0.56 min=1.0.0 ──
+  describe('version-check gate', () => {
+    const check = (currentVersion: string, platform: string) =>
+      request(app).post('/api/v2/auth/version-check').send({ currentVersion, platform });
+
+    it('no update when the device is at the latest version', async () => {
+      const r = await check('1.0.56', 'ANDROID');
+      expect(r.status).toBe(200);
+      expect(r.body).toMatchObject({
+        success: true,
+        forceUpdate: false,
+        updateRequired: false,
+        latestVersion: '1.0.56',
+      });
+    });
+
+    it('force-updates a version below the minimum supported', async () => {
+      const r = await check('0.9.0', 'ANDROID');
+      expect(r.body).toMatchObject({ forceUpdate: true, updateRequired: true });
+    });
+
+    it('flags an optional update using NUMERIC compare (1.0.9 < 1.0.56) and accepts lowercase platform', async () => {
+      const r = await check('1.0.9', 'android');
+      expect(r.body).toMatchObject({ forceUpdate: false, updateRequired: true, latestVersion: '1.0.56' });
+    });
+
+    it('never gates a platform with no policy row', async () => {
+      const r = await check('0.0.1', 'WEB');
+      expect(r.body).toMatchObject({ forceUpdate: false, updateRequired: false });
+    });
+
+    it('rejects a malformed body (400)', async () => {
+      const r = await request(app).post('/api/v2/auth/version-check').send({ platform: 'ANDROID' });
+      expect(r.status).toBe(400);
+    });
   });
 
   it('the seeded admin can log in with the migration-seeded password', async () => {

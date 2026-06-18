@@ -378,4 +378,46 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
       expect(bad.body.data.failed).toHaveLength(1);
     });
   });
+
+  // ── reads: office-reference attachments list + form-template stub (mobile parity, Phase 1C) ──
+  describe('reads (mobile parity)', () => {
+    it('lists office reference docs for an owned task; 404 for a non-owner', async () => {
+      const { caseId, taskId, agent } = await seedAssignedTask('ATT');
+      await db!.pool.query(
+        `INSERT INTO case_attachments
+           (case_id, task_id, original_name, mime_type, file_size, storage_key, sha256, uploaded_by)
+         VALUES ($1, NULL, 'policy.pdf',   'application/pdf', 2048, 'attachments/x/p.pdf', repeat('a',64), $2),
+                ($1, $3,   'task-ref.pdf', 'application/pdf', 1024, 'attachments/x/t.pdf', repeat('b',64), $2)`,
+        [caseId, agent, taskId],
+      );
+
+      const res = await request(app)
+        .get(`/api/v2/verification-tasks/${taskId}/attachments`)
+        .set(hdr('FIELD_AGENT', agent));
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data).toHaveLength(2);
+      expect((res.body.data as { originalName: string }[]).map((a) => a.originalName).sort()).toEqual([
+        'policy.pdf',
+        'task-ref.pdf',
+      ]);
+      expect(res.body.data[0]).toMatchObject({ mimeType: 'application/pdf' });
+      expect(typeof res.body.data[0].size).toBe('number');
+      expect(res.body.data[0].uploadedAt).toBeTruthy();
+
+      // a different agent (not assigned this task) → 404 (ownership, IDOR-safe)
+      const other = await createUser({ username: 'fa_other', name: 'Other', role: 'FIELD_AGENT' });
+      const denied = await request(app)
+        .get(`/api/v2/verification-tasks/${taskId}/attachments`)
+        .set(hdr('FIELD_AGENT', other));
+      expect(denied.status).toBe(404);
+    });
+
+    it('serves a null form template so the device uses its bundled template', async () => {
+      const { agent } = await seedAssignedTask('FT');
+      const res = await request(app).get('/api/v2/forms/residence/template').set(hdr('FIELD_AGENT', agent));
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ success: true, data: null });
+    });
+  });
 });

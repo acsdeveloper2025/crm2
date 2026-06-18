@@ -1369,6 +1369,30 @@ export const caseRepository = {
     );
   },
 
+  /** Reference attachments the field device shows for an OWNED task (mobile parity): the case-level
+   *  docs (task_id NULL) + this task's docs, scoped by ownership (ct.assigned_to = device user). The
+   *  caller has already established ownership; the assigned_to filter is belt-and-braces. */
+  async attachmentsForDeviceTask(
+    taskId: string,
+    userId: string,
+  ): Promise<{ id: string; originalName: string; mimeType: string; fileSize: number; createdAt: string }[]> {
+    return query<{
+      id: string;
+      originalName: string;
+      mimeType: string;
+      fileSize: number;
+      createdAt: string;
+    }>(
+      `SELECT ca.id, ca.original_name, ca.mime_type, ca.file_size, ca.created_at
+       FROM case_attachments ca
+       JOIN case_tasks ct ON ct.case_id = ca.case_id
+       WHERE ct.id = $1 AND ct.assigned_to = $2 AND ca.deleted_at IS NULL
+         AND (ca.task_id IS NULL OR ca.task_id = ct.id)
+       ORDER BY ca.created_at DESC`,
+      [taskId, userId],
+    );
+  },
+
   /** A single attachment the actor can reach (case-level, or a task they can see) — for serve/delete.
    *  Returns the storage key + metadata, or null (→ 404, IDOR-safe). */
   async attachmentForAccess(

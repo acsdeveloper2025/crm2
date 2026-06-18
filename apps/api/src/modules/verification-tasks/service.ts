@@ -5,6 +5,7 @@ import {
   type CaseTaskView,
   type DeviceAttachment,
   type DeviceAttachmentUploadResult,
+  type DeviceTaskAttachmentList,
 } from '@crm2/sdk';
 import { logger } from '@crm2/logger';
 import { caseRepository as repo } from '../cases/repository.js';
@@ -116,6 +117,24 @@ export const verificationTaskService = {
   async setPriority(taskId: string, input: unknown, actor: Actor): Promise<CaseTaskView> {
     const v = PrioritySchema.parse(input);
     return repo.setTaskPriorityByDevice(await ownedCaseId(taskId, actor), taskId, actor.userId, v.priority);
+  },
+
+  /** List the office REFERENCE docs for an owned task (mobile parity). 404 if the task isn't the
+   *  actor's (ownership, IDOR-safe). Mapped to the device's { id, originalName, mimeType, size,
+   *  uploadedAt } row shape in the v1 `{ success, data }` envelope. */
+  async listAttachments(taskId: string, actor: Actor): Promise<DeviceTaskAttachmentList> {
+    await ownedCaseId(taskId, actor); // 404 unless the task is assigned to the actor
+    const rows = await repo.attachmentsForDeviceTask(taskId, actor.userId);
+    return {
+      success: true,
+      data: rows.map((r) => ({
+        id: r.id,
+        originalName: r.originalName,
+        mimeType: r.mimeType,
+        size: r.fileSize,
+        uploadedAt: r.createdAt,
+      })),
+    };
   },
 
   /** Submit a verification form (evidence) for the task. `formType` must be one of the LOCKED slugs

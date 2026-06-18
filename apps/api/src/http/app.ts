@@ -14,6 +14,10 @@ import { verificationTaskRoutes } from '../modules/verification-tasks/routes.js'
 import { fieldMonitoringRoutes } from '../modules/field-monitoring/routes.js';
 import { dashboardRoutes } from '../modules/dashboard/routes.js';
 import { notificationRoutes } from '../modules/notifications/routes.js';
+import { referenceRoutes } from '../modules/reference/routes.js';
+import { consentRoutes } from '../modules/consents/routes.js';
+import { telemetryRoutes } from '../modules/telemetry/routes.js';
+import { formsRoutes } from '../modules/forms/routes.js';
 import { jobRoutes } from '../modules/jobs/routes.js';
 import { savedViewRoutes } from '../modules/saved-views/routes.js';
 import { registerJobs } from './registerJobs.js';
@@ -117,6 +121,10 @@ export function createApp(opts: { enableTestAuth?: boolean } = {}): Express {
   mount('/api/v2/field-monitoring', fieldMonitoringRoutes);
   mount('/api/v2/dashboard', dashboardRoutes);
   mount('/api/v2/notifications', notificationRoutes);
+  mount('/api/v2/reference', referenceRoutes); // mobile reference masters (outcomes + revoke reasons)
+  mount('/api/v2/consents', consentRoutes); // DPDP consent (mobile parity)
+  mount('/api/v2/telemetry', telemetryRoutes); // optional mobile telemetry ingest (mobile parity)
+  mount('/api/v2/forms', formsRoutes); // field form templates (mobile parity — bundled-template fallback)
   mount('/api/v2/jobs', jobRoutes);
   mount('/api/v2/saved-views', savedViewRoutes);
   mount('/api/v2/location', locationCaptureRoutes);

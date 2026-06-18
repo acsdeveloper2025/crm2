@@ -43,3 +43,5 @@ verificationTaskRoutes.post(
 verificationTaskRoutes.post('/:id/complete', authorize(PERMISSIONS.TASK_EXECUTE), c.complete);
 verificationTaskRoutes.post('/:id/revoke', authorize(PERMISSIONS.TASK_EXECUTE), c.revoke);
 verificationTaskRoutes.put('/:id/priority', authorize(PERMISSIONS.TASK_EXECUTE), c.setPriority);
+// List the office reference docs for an owned task (mobile parity) — read; same task.execute gate.
+verificationTaskRoutes.get('/:id/attachments', authorize(PERMISSIONS.TASK_EXECUTE), c.listAttachments);

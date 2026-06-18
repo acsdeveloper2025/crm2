@@ -35,7 +35,7 @@ export const notificationRepository = {
     const unread = p.unreadOnly ? 'AND read_at IS NULL' : '';
     return query<Notification>(
       `SELECT ${SELECT_COLS} FROM notifications
-       WHERE user_id = $1 ${unread}
+       WHERE user_id = $1 AND deleted_at IS NULL ${unread}
        ORDER BY ${p.sortColumn} ${p.sortOrder.toUpperCase()}
        LIMIT $2 OFFSET $3`,
       [p.userId, p.limit, p.offset],
@@ -45,10 +45,75 @@ export const notificationRepository = {
   async count(userId: string, unreadOnly: boolean): Promise<number> {
     const unread = unreadOnly ? 'AND read_at IS NULL' : '';
     const rows = await query<{ count: string }>(
-      `SELECT count(*)::text AS count FROM notifications WHERE user_id = $1 ${unread}`,
+      `SELECT count(*)::text AS count FROM notifications
+       WHERE user_id = $1 AND deleted_at IS NULL ${unread}`,
       [userId],
     );
     return Number(rows[0]?.count ?? 0);
+  },
+
+  /** Trash feed: the user's soft-deleted rows, newest-first (restorable). */
+  async listTrash(p: ListParams): Promise<Notification[]> {
+    return query<Notification>(
+      `SELECT ${SELECT_COLS} FROM notifications
+       WHERE user_id = $1 AND deleted_at IS NOT NULL
+       ORDER BY ${p.sortColumn} ${p.sortOrder.toUpperCase()}
+       LIMIT $2 OFFSET $3`,
+      [p.userId, p.limit, p.offset],
+    );
+  },
+
+  async countTrash(userId: string): Promise<number> {
+    const rows = await query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM notifications
+       WHERE user_id = $1 AND deleted_at IS NOT NULL`,
+      [userId],
+    );
+    return Number(rows[0]?.count ?? 0);
+  },
+
+  /** Soft-delete one own visible row. Returns the row, or null if absent/already trashed. */
+  async softDeleteOne(userId: string, id: string): Promise<Notification | null> {
+    const rows = await query<Notification>(
+      `UPDATE notifications SET deleted_at = now()
+       WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
+       RETURNING ${SELECT_COLS}`,
+      [id, userId],
+    );
+    return rows[0] ?? null;
+  },
+
+  /** Soft-delete every visible own row (clear-all); returns how many were trashed. */
+  async softDeleteAll(userId: string): Promise<number> {
+    const rows = await query<{ id: string }>(
+      `UPDATE notifications SET deleted_at = now()
+       WHERE user_id = $1 AND deleted_at IS NULL
+       RETURNING id`,
+      [userId],
+    );
+    return rows.length;
+  },
+
+  /** Restore one own trashed row. Returns the row, or null if absent/not trashed. */
+  async restoreOne(userId: string, id: string): Promise<Notification | null> {
+    const rows = await query<Notification>(
+      `UPDATE notifications SET deleted_at = NULL
+       WHERE id = $1 AND user_id = $2 AND deleted_at IS NOT NULL
+       RETURNING ${SELECT_COLS}`,
+      [id, userId],
+    );
+    return rows[0] ?? null;
+  },
+
+  /** Restore every trashed own row; returns how many were restored. */
+  async restoreAll(userId: string): Promise<number> {
+    const rows = await query<{ id: string }>(
+      `UPDATE notifications SET deleted_at = NULL
+       WHERE user_id = $1 AND deleted_at IS NOT NULL
+       RETURNING id`,
+      [userId],
+    );
+    return rows.length;
   },
 
   /** Idempotent mark-read of one own row. Returns the row (read_at preserved on re-read), or null if absent. */

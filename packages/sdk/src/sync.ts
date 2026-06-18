@@ -127,3 +127,20 @@ export interface DeviceAttachmentUploadResult {
     submissionId: string | null;
   };
 }
+
+/**
+ * GET /api/v2/verification-tasks/:id/attachments — the office REFERENCE docs the device shows the
+ * agent for an owned task (the device labels these REMOTE / "Source: Backend/Web"). v1-envelope shape.
+ */
+export interface DeviceTaskAttachment {
+  id: string;
+  originalName: string;
+  mimeType: string;
+  size: number;
+  uploadedAt: string;
+}
+
+export interface DeviceTaskAttachmentList {
+  success: boolean;
+  data: DeviceTaskAttachment[];
+}
