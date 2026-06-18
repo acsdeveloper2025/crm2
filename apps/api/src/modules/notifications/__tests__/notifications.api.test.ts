@@ -1,9 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import request from 'supertest';
 import { createTestDb, authHeaderForRole } from '@crm2/test-utils';
 import { createApp } from '../../../http/app.js';
 import { setPool } from '../../../platform/db.js';
 import { notificationService } from '../service.js';
+import { tokenRepository } from '../token.repository.js';
+import { setPusher, type Pusher, type PushResult } from '../../../platform/push/index.js';
 
 const RUN = !!process.env['DATABASE_URL'];
 const db = RUN ? createTestDb() : null;
@@ -223,6 +225,84 @@ describe.skipIf(!RUN)('notifications feed (ADR-0027)', () => {
 
       const get2 = await request(app).get('/api/v2/notifications/preferences').set(h());
       expect(get2.body.preferences).toMatchObject({ push: false, taskAssigned: true });
+    });
+  });
+
+  // ── FCM wake-leg + delivery lifecycle (ADR-0027 phase 2) ──
+  describe('FCM push + delivery lifecycle', () => {
+    let captured: { tokens?: string[]; data?: Record<string, string> };
+    function fakePusher(result: PushResult): Pusher {
+      return {
+        sendDataMessage(tokens, data) {
+          captured = { tokens, data };
+          return Promise.resolve(result);
+        },
+        ready: () => true,
+      };
+    }
+    beforeEach(() => {
+      captured = {};
+    });
+    afterAll(() => setPusher(null));
+
+    it('pushes the durable row to the device and stamps DELIVERED', async () => {
+      const user = await createUser('notif_push_live');
+      await tokenRepository.register({
+        userId: user,
+        token: 'tok-live-1',
+        platform: 'ANDROID',
+        deviceId: 'dev-1',
+      });
+      setPusher(fakePusher({ successCount: 1, failureCount: 0, invalidTokens: [] }));
+      const row = await notificationService.notify({
+        userId: user,
+        type: 'CASE_ASSIGNED',
+        title: 'New task assigned',
+        body: 'VT-1 · Unit A',
+        payload: { caseId: 'c1', caseNumber: 'CASE-1', taskId: 't1', taskNumber: 'VT-1' },
+        actionType: 'OPEN_TASK',
+      });
+      // data is exactly the device's FcmDataSchema key set, all strings, no actionUrl (allowlist fallback)
+      expect(captured.tokens).toEqual(['tok-live-1']);
+      expect(captured.data).toMatchObject({
+        type: 'CASE_ASSIGNED',
+        title: 'New task assigned',
+        message: 'VT-1 · Unit A',
+        taskId: 't1',
+        taskNumber: 'VT-1',
+        caseId: 'c1',
+        caseNumber: 'CASE-1',
+        notificationId: row.id,
+      });
+      expect(captured.data).not.toHaveProperty('actionUrl');
+      expect(row.deliveryStatus).toBe('DELIVERED');
+      expect(row.sentAt).not.toBeNull();
+      expect(row.deliveredAt).not.toBeNull();
+    });
+
+    it('stamps SENT (no delivered_at) when the recipient has no device token', async () => {
+      const user = await createUser('notif_push_notoken');
+      setPusher(fakePusher({ successCount: 0, failureCount: 0, invalidTokens: [] }));
+      const row = await notificationService.notify({ userId: user, type: 'SYSTEM', title: 'hi' });
+      expect(captured.tokens).toBeUndefined(); // pusher not invoked with zero tokens
+      expect(row.deliveryStatus).toBe('SENT');
+      expect(row.sentAt).not.toBeNull();
+      expect(row.deliveredAt).toBeNull();
+    });
+
+    it('prunes a token FCM rejects as invalid (auto-deactivate)', async () => {
+      const user = await createUser('notif_push_prune');
+      await tokenRepository.register({
+        userId: user,
+        token: 'tok-dead',
+        platform: 'ANDROID',
+        deviceId: 'dev-2',
+      });
+      setPusher(fakePusher({ successCount: 0, failureCount: 1, invalidTokens: ['tok-dead'] }));
+      const row = await notificationService.notify({ userId: user, type: 'SYSTEM', title: 'bye' });
+      expect(row.deliveryStatus).toBe('SENT'); // no token accepted
+      const remaining = await tokenRepository.activeTokensFor(user);
+      expect(remaining).not.toContain('tok-dead');
     });
   });
 });

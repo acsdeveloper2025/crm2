@@ -9,6 +9,7 @@ import {
 } from '@crm2/sdk';
 import { logger } from '@crm2/logger';
 import { caseRepository as repo } from '../cases/repository.js';
+import { emitTaskUpdate } from '../cases/case-events.js';
 import { AppError } from '../../platform/errors.js';
 import { detectAttachment } from '../../platform/file.js';
 import { processFieldPhoto, MAX_FIELD_PHOTO_BYTES, MAX_FIELD_PHOTOS } from '../../platform/photo.js';
@@ -113,16 +114,27 @@ function uploadResult(
 
 export const verificationTaskService = {
   async start(taskId: string, actor: Actor): Promise<CaseTaskView> {
-    return repo.startTaskByDevice(await ownedCaseId(taskId, actor), taskId, actor.userId);
+    const view = await repo.startTaskByDevice(await ownedCaseId(taskId, actor), taskId, actor.userId);
+    emitTaskUpdate(view); // device IN_PROGRESS → office views refetch live (ADR-0027)
+    return view;
   },
 
   async complete(taskId: string, actor: Actor): Promise<CaseTaskView> {
-    return repo.completeTaskByDevice(await ownedCaseId(taskId, actor), taskId, actor.userId);
+    const view = await repo.completeTaskByDevice(await ownedCaseId(taskId, actor), taskId, actor.userId);
+    emitTaskUpdate(view); // device COMPLETED + case rollup → office views refetch live
+    return view;
   },
 
   async revoke(taskId: string, input: unknown, actor: Actor): Promise<CaseTaskView> {
     const v = RevokeSchema.parse(input);
-    return repo.revokeTaskInPlace(await ownedCaseId(taskId, actor), taskId, actor.userId, v.reason);
+    const view = await repo.revokeTaskInPlace(
+      await ownedCaseId(taskId, actor),
+      taskId,
+      actor.userId,
+      v.reason,
+    );
+    emitTaskUpdate(view); // device REVOKED + case rollup → office views refetch live
+    return view;
   },
 
   async setPriority(taskId: string, input: unknown, actor: Actor): Promise<CaseTaskView> {
@@ -172,7 +184,9 @@ export const verificationTaskService = {
     if (json.length > MAX_FORM_BYTES) throw AppError.badRequest('FORM_TOO_LARGE');
     const caseId = await ownedCaseId(taskId, actor);
     await repo.submitVerificationForm(caseId, taskId, actor.userId, formType, json);
-    return repo.completeTaskByDevice(caseId, taskId, actor.userId);
+    const view = await repo.completeTaskByDevice(caseId, taskId, actor.userId);
+    emitTaskUpdate(view); // form submit==complete → office views refetch live
+    return view;
   },
 
   /** Upload field photos (ADR-0034): multipart `files[]` + the locked form fields. Ownership-bound

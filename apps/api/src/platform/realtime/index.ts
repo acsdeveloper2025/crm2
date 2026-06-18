@@ -23,11 +23,16 @@ export interface Realtime {
   emitToUser(userId: string, event: string, payload: unknown): void;
   /** Deliver to the supervisor console room (sockets whose role grants `page.field_monitoring`). */
   emitToFieldMonitoring(event: string, payload: unknown): void;
+  /** Deliver to the office room (sockets whose role grants `page.dashboard` — every desk role, never
+   *  FIELD_AGENT). Used for case/task status fan-out so web views refetch live without spamming the
+   *  field app (which never joins this room). */
+  emitToOffice(event: string, payload: unknown): void;
 }
 
 const noopRealtime: Realtime = {
   emitToUser: () => undefined,
   emitToFieldMonitoring: () => undefined,
+  emitToOffice: () => undefined,
 };
 
 let override: Realtime | null = null;
@@ -45,6 +50,10 @@ export function getRealtime(): Realtime {
 
 const FIELD_MONITORING_PERM = 'page.field_monitoring';
 const FIELD_MONITORING_ROOM = 'perm:field_monitoring';
+// page.dashboard is granted to every web (desk) role and NEVER to FIELD_AGENT (migration 0047) — the
+// natural gate for the office case/task status feed (the field app stays out of this room).
+const OFFICE_PERM = 'page.dashboard';
+const OFFICE_ROOM = 'perm:office';
 const BEARER = 'Bearer ';
 
 function userRoom(userId: string): string {
@@ -54,6 +63,7 @@ function userRoom(userId: string): string {
 interface SocketData {
   userId: string;
   canFieldMonitoring: boolean;
+  canOffice: boolean;
 }
 type AppSocket = Socket<DefaultEventsMap, DefaultEventsMap, DefaultEventsMap, SocketData>;
 type AppServer = IOServer<DefaultEventsMap, DefaultEventsMap, DefaultEventsMap, SocketData>;
@@ -77,10 +87,12 @@ export async function resolveSocketIdentity(token: string | null): Promise<Socke
   const claims = token ? await verifyAccessToken(token) : null;
   if (!claims) return null;
   const attrs = await getRoleAttributes(claims.role);
+  const grantsAll = attrs?.grantsAll ?? false;
+  const permissions = attrs?.permissions ?? [];
   return {
     userId: claims.userId,
-    canFieldMonitoring:
-      (attrs?.grantsAll ?? false) || (attrs?.permissions ?? []).includes(FIELD_MONITORING_PERM),
+    canFieldMonitoring: grantsAll || permissions.includes(FIELD_MONITORING_PERM),
+    canOffice: grantsAll || permissions.includes(OFFICE_PERM),
   };
 }
 
@@ -128,6 +140,7 @@ export function initRealtime(httpServer: HttpServer, env: Env = loadEnv()): AppS
         }
         socket.data.userId = identity.userId;
         socket.data.canFieldMonitoring = identity.canFieldMonitoring;
+        socket.data.canOffice = identity.canOffice;
         next();
       } catch (e) {
         next(e instanceof Error ? e : new Error('HANDSHAKE_FAILED'));
@@ -138,6 +151,7 @@ export function initRealtime(httpServer: HttpServer, env: Env = loadEnv()): AppS
   io.on('connection', (socket) => {
     void socket.join(userRoom(socket.data.userId));
     if (socket.data.canFieldMonitoring) void socket.join(FIELD_MONITORING_ROOM);
+    if (socket.data.canOffice) void socket.join(OFFICE_ROOM);
   });
 
   active = {
@@ -146,6 +160,9 @@ export function initRealtime(httpServer: HttpServer, env: Env = loadEnv()): AppS
     },
     emitToFieldMonitoring: (event, payload) => {
       io.to(FIELD_MONITORING_ROOM).emit(event, payload);
+    },
+    emitToOffice: (event, payload) => {
+      io.to(OFFICE_ROOM).emit(event, payload);
     },
   };
 

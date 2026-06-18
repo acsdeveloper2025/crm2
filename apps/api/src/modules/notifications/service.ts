@@ -22,6 +22,41 @@ import { resolvePage, buildPage, type PageSpec } from '../../platform/pagination
 import { getRealtime } from '../../platform/realtime/index.js';
 import { getPusher } from '../../platform/push/index.js';
 import { AppError } from '../../platform/errors.js';
+import { logger } from '@crm2/logger';
+
+/**
+ * Build the silent FCM data payload from a durable feed row. FCM `data.*` MUST be all-strings with no
+ * nulls (firebase-admin rejects non-strings) — every value is coerced and empty/absent keys are dropped.
+ * The key set is exactly what the device's FcmDataSchema reads (type/taskId/taskNumber/caseId/caseNumber/
+ * title/message) and the handler navigates on (`type` + `taskId`); `actionUrl` is intentionally omitted —
+ * the device sanitizes it against a host allowlist and falls back to `type`+`taskId`, so a synthesized
+ * URL would only be dropped + log-warned on-device. `notificationId` is passed through for future ack.
+ */
+function buildPushData(row: Notification): Record<string, string> {
+  const data: Record<string, string> = { type: row.type, title: row.title, notificationId: row.id };
+  const put = (key: string, value: string | null | undefined): void => {
+    if (value != null && value !== '') data[key] = value;
+  };
+  put('message', row.message ?? row.body);
+  put('taskId', row.taskId);
+  put('taskNumber', row.taskNumber);
+  put('caseId', row.caseId);
+  put('caseNumber', row.caseNumber);
+  return data;
+}
+
+/**
+ * Best-effort FCM "wake-leg": push the durable row to the recipient's active device tokens so a
+ * killed/backgrounded app is woken (the socket leg only reaches a foregrounded app). Prunes tokens FCM
+ * rejects. Returns true iff FCM accepted >=1 token (optimistic "delivered", matching v1). Never throws.
+ */
+async function deliverPush(userId: string, row: Notification): Promise<boolean> {
+  const tokens = await tokenRepository.activeTokensFor(userId);
+  if (tokens.length === 0) return false;
+  const result = await getPusher().sendDataMessage(tokens, buildPushData(row));
+  if (result.invalidTokens.length > 0) await tokenRepository.deactivate(result.invalidTokens);
+  return result.successCount > 0;
+}
 
 /** Only `createdAt` is sortable; the feed is newest-first by default. */
 const NOTIFICATION_PAGE_SPEC: PageSpec = {
@@ -38,8 +73,20 @@ const NOTIFICATION_PAGE_SPEC: PageSpec = {
 export const notificationService = {
   async notify(input: NotifyInput): Promise<Notification> {
     const row = await repo.insert(input);
+    // Live legs: the socket reaches a foregrounded app; FCM wakes a killed/backgrounded one (v1 parity —
+    // every v1 NotificationService.create() pushed). Both are best-effort and never fail the producer; the
+    // durable row + badge already landed. The delivery lifecycle is then stamped on the row.
     getRealtime().emitToUser(input.userId, 'notification', row);
-    return row;
+    try {
+      const delivered = await deliverPush(input.userId, row);
+      return (await repo.markDelivery(row.id, delivered ? 'DELIVERED' : 'SENT')) ?? row;
+    } catch (e) {
+      logger.warn('notification delivery leg failed', {
+        notificationId: row.id,
+        error: e instanceof Error ? e.message : String(e),
+      });
+      return row;
+    }
   },
 
   async list(userId: string, rawQuery: Record<string, unknown>): Promise<Paginated<Notification>> {

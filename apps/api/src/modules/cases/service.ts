@@ -25,6 +25,7 @@ import {
 } from '@crm2/sdk';
 import { randomUUID, createHash } from 'node:crypto';
 import { caseRepository as repo } from './repository.js';
+import { emitTaskUpdate, emitCaseStatusUpdate } from './case-events.js';
 import { geocodeService } from '../geocode/service.js';
 import { geocodeConfigured } from '../../platform/geocode/index.js';
 import { taskRepository } from '../tasks/repository.js';
@@ -199,7 +200,9 @@ export const caseService = {
         if (!pool.some((u) => u.id === t.assigneeId)) throw AppError.badRequest('INVALID_ASSIGNEE');
       }
     }
-    return repo.addTasks(caseId, v.tasks, actor.userId);
+    const created = await repo.addTasks(caseId, v.tasks, actor.userId);
+    for (const t of created) emitTaskUpdate(t); // new tasks (incl. assign-at-create) appear live in the office
+    return created;
   },
 
   /** The eligible pool for a not-yet-created task (ADR-0024): visit-type pool ∩ hierarchy ∩ (FIELD
@@ -295,6 +298,7 @@ export const caseService = {
         actionType: 'OPEN_TASK',
       });
     }
+    emitTaskUpdate(task); // PENDING→ASSIGNED + case NEW→IN_PROGRESS → office views refetch live (ADR-0027)
     return task;
   },
 
@@ -303,7 +307,9 @@ export const caseService = {
     const state = await repo.taskAssignmentState(caseId, taskId, await resolveScope(actor));
     if (!state) throw AppError.notFound('TASK_NOT_FOUND');
     if (state.status !== 'ASSIGNED') throw AppError.conflict('TASK_NOT_ASSIGNED');
-    return repo.unassignTask(caseId, taskId, actor.userId, version);
+    const view = await repo.unassignTask(caseId, taskId, actor.userId, version);
+    emitTaskUpdate(view); // ASSIGNED→PENDING → office views refetch live
+    return view;
   },
 
   /** Finalize a task (ADR-0025): record the official result + remark → COMPLETED. The generic
@@ -329,6 +335,7 @@ export const caseService = {
         actionType: 'OPEN_TASK',
       });
     }
+    emitTaskUpdate(task); // office complete → COMPLETED + case rollup → office views refetch live
     return task;
   },
 
@@ -346,7 +353,16 @@ export const caseService = {
     const state = await repo.taskAssignmentState(caseId, taskId, await resolveScope(actor));
     if (!state) throw AppError.notFound('TASK_NOT_FOUND');
     if (state.status !== 'COMPLETED') throw AppError.conflict('INVALID_TRANSITION');
-    return repo.recordTaskResult(caseId, taskId, v.result, v.remark ?? null, actor.userId, version);
+    const view = await repo.recordTaskResult(
+      caseId,
+      taskId,
+      v.result,
+      v.remark ?? null,
+      actor.userId,
+      version,
+    );
+    emitTaskUpdate(view); // per-task office result recorded → case Review tab refreshes live (status unchanged)
+    return view;
   },
 
   /** Case verdict history (ADR-0033): every finalize (who/when/what), newest first. Case-visibility
@@ -365,7 +381,9 @@ export const caseService = {
     const v = RevokeTaskSchema.parse(input);
     const state = await repo.taskAssignmentState(caseId, taskId, await resolveScope(actor));
     if (!state) throw AppError.notFound('TASK_NOT_FOUND');
-    return repo.revokeTaskInPlace(caseId, taskId, actor.userId, v.reason);
+    const view = await repo.revokeTaskInPlace(caseId, taskId, actor.userId, v.reason);
+    emitTaskUpdate(view); // office REVOKED + case rollup → office views refetch live
+    return view;
   },
 
   /** REVISIT a COMPLETED task (ADR-0033): scope-guarded (out-of-scope → 404, IDOR-safe), the parent
@@ -379,7 +397,9 @@ export const caseService = {
     if (!state) throw AppError.notFound('TASK_NOT_FOUND');
     if (state.status !== 'COMPLETED') throw AppError.conflict('INVALID_TRANSITION');
     if (await repo.hasActiveRevisitOf(taskId)) throw AppError.conflict('ACTIVE_REVISIT_EXISTS');
-    return repo.revisitTask(caseId, taskId, actor.userId, v.reason ?? null);
+    const view = await repo.revisitTask(caseId, taskId, actor.userId, v.reason ?? null);
+    emitTaskUpdate(view); // REVISIT re-opens the case (new lineage task) → office views refetch live
+    return view;
   },
 
   /** REASSIGN-AFTER-REVOKE (ADR-0033): the office dispatches a replacement for a REVOKED task.
@@ -405,7 +425,9 @@ export const caseService = {
       await getScopedUserIds(actor),
     );
     if (eligible.length === 0) throw AppError.badRequest('INVALID_ASSIGNEE');
-    return repo.reassignRevokedTask(caseId, taskId, v, actor.userId);
+    const view = await repo.reassignRevokedTask(caseId, taskId, v, actor.userId);
+    emitTaskUpdate(view); // replacement ASSIGNED task after revoke → office views refetch live
+    return view;
   },
 
   /** Finalize a CASE (ADR-0032): record the ONE final verdict + optional remark → COMPLETED. The
@@ -422,6 +444,7 @@ export const caseService = {
     await repo.finalizeCase(caseId, v.result, v.remark ?? null, actor.userId, version);
     const detail = await repo.findById(caseId, scope);
     if (!detail) throw AppError.internal('finalize: case vanished');
+    emitCaseStatusUpdate(caseId, detail.caseNumber); // case → COMPLETED → MIS/dashboard refetch live
     return detail;
   },
 

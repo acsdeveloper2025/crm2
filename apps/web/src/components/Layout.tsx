@@ -8,6 +8,7 @@ import { HeaderClock } from './HeaderClock.js';
 import { UserMenu } from './UserMenu.js';
 import { useRealtimeNotifications } from '../features/notifications/useNotifications.js';
 import { useRealtimeJobs } from '../features/jobs/useJobs.js';
+import { useRealtimeCaseUpdates } from '../features/cases/useRealtimeCaseUpdates.js';
 import { IdleLogoutManager } from '../features/auth/IdleLogoutManager.js';
 
 /** Sidebar toggle glyph (VS Code / Claude-style "panel-left") — raw SVG, no icon dep. */
@@ -153,6 +154,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
   useRealtimeNotifications();
   // Background-job progress/completion (ADR-0030): live-updates the Jobs tray.
   useRealtimeJobs();
+  // Case/task status changes (ADR-0027): refetch case/pipeline/dashboard on device + office actions.
+  useRealtimeCaseUpdates();
   return (
     <div className="flex min-h-screen bg-surface-muted text-foreground">
       {/* Idle / absolute-session auto-logout (ADR-0045) — self-disables for exempt roles. */}

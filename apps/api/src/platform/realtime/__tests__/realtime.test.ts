@@ -26,22 +26,24 @@ describe.skipIf(!RUN)('realtime handshake identity (ADR-0027)', () => {
     expect(await resolveSocketIdentity('not.a.jwt')).toBeNull();
   });
 
-  it('SUPER_ADMIN resolves and may join the field-monitoring room (grants_all)', async () => {
+  it('SUPER_ADMIN resolves and may join the field-monitoring + office rooms (grants_all)', async () => {
     const token = await signAccessToken({ userId: UID, role: 'SUPER_ADMIN' }, TTL);
     const id = await resolveSocketIdentity(token);
-    expect(id).toMatchObject({ userId: UID, canFieldMonitoring: true });
+    expect(id).toMatchObject({ userId: UID, canFieldMonitoring: true, canOffice: true });
   });
 
-  it('MANAGER may join the field-monitoring room (holds page.field_monitoring)', async () => {
+  it('MANAGER may join the field-monitoring + office rooms (holds page.field_monitoring + page.dashboard)', async () => {
     const token = await signAccessToken({ userId: UID, role: 'MANAGER' }, TTL);
     const id = await resolveSocketIdentity(token);
     expect(id?.canFieldMonitoring).toBe(true);
+    expect(id?.canOffice).toBe(true);
   });
 
-  it('FIELD_AGENT resolves but may NOT join the field-monitoring room', async () => {
+  it('FIELD_AGENT resolves but may NOT join the field-monitoring or office rooms', async () => {
     const token = await signAccessToken({ userId: UID, role: 'FIELD_AGENT' }, TTL);
     const id = await resolveSocketIdentity(token);
-    expect(id).toMatchObject({ userId: UID, canFieldMonitoring: false });
+    // page.dashboard is granted to every web role EXCEPT FIELD_AGENT (migration 0047) → no office room.
+    expect(id).toMatchObject({ userId: UID, canFieldMonitoring: false, canOffice: false });
   });
 });
 
@@ -54,10 +56,16 @@ describe('realtime emit seam (no server)', () => {
     setRealtime({
       emitToUser: (userId, event) => calls.push(`user:${userId}:${event}`),
       emitToFieldMonitoring: (event) => calls.push(`fm:${event}`),
+      emitToOffice: (event) => calls.push(`office:${event}`),
     });
     getRealtime().emitToUser(UID, 'notification', {});
     getRealtime().emitToFieldMonitoring('field-monitoring:location-updated', {});
+    getRealtime().emitToOffice('case:updated', {});
     setRealtime(null);
-    expect(calls).toEqual([`user:${UID}:notification`, 'fm:field-monitoring:location-updated']);
+    expect(calls).toEqual([
+      `user:${UID}:notification`,
+      'fm:field-monitoring:location-updated',
+      'office:case:updated',
+    ]);
   });
 });

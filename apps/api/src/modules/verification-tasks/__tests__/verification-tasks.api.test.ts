@@ -10,6 +10,8 @@ import {
 import { createApp } from '../../../http/app.js';
 import { setPool } from '../../../platform/db.js';
 import { setStorage, type StorageProvider } from '../../../platform/storage/index.js';
+import { setRealtime, type Realtime } from '../../../platform/realtime/index.js';
+import { CASE_UPDATED_EVENT } from '@crm2/sdk';
 import sharp from 'sharp';
 import { createHash } from 'node:crypto';
 
@@ -147,6 +149,30 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
     expect((await request(app).post(`/api/v2/verification-tasks/${taskId}/complete`).set(h)).status).toBe(
       200,
     );
+  });
+
+  it('emits case:updated to the office room on device start + complete (ADR-0027 realtime)', async () => {
+    const office: Array<{ event: string; payload: unknown }> = [];
+    const rt: Realtime = {
+      emitToUser: () => undefined,
+      emitToFieldMonitoring: () => undefined,
+      emitToOffice: (event, payload) => office.push({ event, payload }),
+    };
+    setRealtime(rt);
+    try {
+      const { caseId, taskId, agent } = await seedAssignedTask('RT');
+      const h = hdr('FIELD_AGENT', agent);
+
+      await request(app).post(`/api/v2/verification-tasks/${taskId}/start`).set(h);
+      await request(app).post(`/api/v2/verification-tasks/${taskId}/complete`).set(h);
+
+      const updates = office.filter((e) => e.event === CASE_UPDATED_EVENT);
+      expect(updates.length).toBeGreaterThanOrEqual(2); // one per device transition (start, complete)
+      const last = updates.at(-1)!.payload as { caseId: string; taskId: string; status: string };
+      expect(last).toMatchObject({ caseId, taskId, status: 'COMPLETED' });
+    } finally {
+      setRealtime(null); // never leak the fake into sibling tests
+    }
   });
 
   it('revoke → REVOKED (reason in audit, no result); a COMPLETED task cannot be device-revoked', async () => {

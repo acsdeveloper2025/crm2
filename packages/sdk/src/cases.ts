@@ -159,6 +159,21 @@ export interface CaseView extends Case {
   taskCount: number;
 }
 
+/** Realtime event name (office room, ADR-0027). Emitted when a task/case status changes — by a device
+ *  action (start/complete/revoke/submit) or another office user (assign/complete/revoke/finalize) — so
+ *  web views (case detail, pipeline, dashboard) refetch live instead of waiting for a manual reload. */
+export const CASE_UPDATED_EVENT = 'case:updated';
+
+/** Payload of {@link CASE_UPDATED_EVENT}. `caseId`/`caseNumber` are always present (the affected case);
+ *  the task fields are present when a specific task transition triggered it (absent on case finalize). */
+export interface CaseUpdateEvent {
+  caseId: string;
+  caseNumber: string;
+  taskId?: string;
+  taskNumber?: string;
+  status?: CaseTaskStatus;
+}
+
 export interface CaseTaskView {
   id: string;
   caseId: string;

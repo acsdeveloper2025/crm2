@@ -7,6 +7,7 @@ import type { Notification, NotifyInput } from '@crm2/sdk';
  * task_id/case_id/task_number/case_number/action_url surfaced from the `payload` jsonb. Additive — web ignores them.
  */
 const SELECT_COLS = `id, type, title, body, payload, action_type, read_at, created_at,
+  sent_at, delivered_at, delivery_status,
   body AS message, (read_at IS NOT NULL) AS is_read,
   payload->>'taskId' AS task_id, payload->>'caseId' AS case_id,
   payload->>'taskNumber' AS task_number, payload->>'caseNumber' AS case_number,
@@ -122,6 +123,27 @@ export const notificationRepository = {
       [userId],
     );
     return rows.length;
+  },
+
+  /**
+   * Stamp the delivery lifecycle after the live legs ran (ADR-0027 phase 2). `sent_at` is set once
+   * (the first delivery attempt); `delivered_at` is set once when FCM accepted a token (status
+   * `DELIVERED`). No user scope — this is a server-internal producer update, keyed by row id.
+   */
+  async markDelivery(id: string, status: 'SENT' | 'DELIVERED' | 'FAILED'): Promise<Notification | null> {
+    // $2 (status) is bound only to the varchar assignment; the "delivered?" branch uses a separate
+    // boolean param $3 — never reuse one bind across a SET-assign + a literal-compare on a varchar col
+    // (that triggers a varchar/text type-resolution conflict — a known regression on this codebase).
+    const rows = await query<Notification>(
+      `UPDATE notifications
+         SET delivery_status = $2,
+             sent_at = COALESCE(sent_at, now()),
+             delivered_at = CASE WHEN $3 THEN COALESCE(delivered_at, now()) ELSE delivered_at END
+       WHERE id = $1
+       RETURNING ${SELECT_COLS}`,
+      [id, status, status === 'DELIVERED'],
+    );
+    return rows[0] ?? null;
   },
 
   /** Idempotent mark-read of one own row. Returns the row (read_at preserved on re-read), or null if absent. */

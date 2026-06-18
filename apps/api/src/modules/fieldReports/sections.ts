@@ -43,8 +43,21 @@ export function toLabel(key: string): string {
     .join(' ');
 }
 
-/** Render a leaf value to a display string. Primitives → String; arrays of primitives → ", "-joined;
- *  nested objects are skipped by the caller (returns null here so they're dropped). */
+/**
+ * Render a leaf value to a display string. Primitives → String; arrays of primitives → ", "-joined;
+ * nested objects / arrays-of-objects return null here so they're dropped.
+ *
+ * WONTFIX (verified 2026-06-18 vs v1 real data — `acs_db_final_version.sql`): dropping nested
+ * objects/object-arrays loses NO agent answer. The device form catalog is flat by construction — every
+ * field in `LegacyFormTemplateBuilders.ts` is type text/number/select/multiselect/date/textarea/etc.,
+ * never an object/group/table field (see `FormFieldTemplate.type`, crm-mobile-native types/api.ts:389).
+ * A full scan of all 93 `form_submissions.submission_data` + 92 `cases.verification_data` blobs: the
+ * agent-answer leaves under `.formData` are exclusively int / string / list-of-primitives — ZERO nested
+ * objects and ZERO arrays-of-objects. The only nested values that exist are envelope/geo metadata
+ * (`geoLocation`, `verification`, `submissionLocation` {lat,long,accuracy,timestamp}, `metadata`,
+ * `photos`) — all in SKIP_KEYS or under the skipped `verification` key, and surfaced by the Field Photos
+ * card, not here. So this projection only ever drops metadata, never a submitted field.
+ */
 function toValue(v: unknown): string | null {
   if (v === null || v === undefined || v === '') return null;
   if (Array.isArray(v)) {

@@ -23,6 +23,17 @@ export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 export const NOTIFICATION_ACTION_TYPES = ['OPEN_CASE', 'OPEN_TASK', 'NAVIGATE', 'DOWNLOAD'] as const;
 export type NotificationActionType = (typeof NOTIFICATION_ACTION_TYPES)[number];
 
+/** Per-recipient delivery lifecycle (ADR-0027 phase 2, restores v1 parity). `DELIVERED` is optimistic
+ *  (FCM accepted the token), as v1; `FAILED`/`ACKNOWLEDGED` are reserved for a future client receipt. */
+export const NOTIFICATION_DELIVERY_STATUSES = [
+  'PENDING',
+  'SENT',
+  'DELIVERED',
+  'FAILED',
+  'ACKNOWLEDGED',
+] as const;
+export type NotificationDeliveryStatus = (typeof NOTIFICATION_DELIVERY_STATUSES)[number];
+
 /** A feed row. `payload` carries the navigation target ids (e.g. { caseId, taskId }); never PII.
  *  The `message`/`isRead`/`taskId`/… fields are MOBILE-COMPAT projections the field app reads
  *  (v1 names): `message`=body, `isRead`=readAt!=null, the rest surfaced from `payload`. Web ignores them. */
@@ -35,6 +46,10 @@ export interface Notification {
   actionType: NotificationActionType | null;
   readAt: string | null;
   createdAt: string;
+  // ── delivery lifecycle (ADR-0027 phase 2; additive — web ignores) ──
+  sentAt?: string | null;
+  deliveredAt?: string | null;
+  deliveryStatus?: NotificationDeliveryStatus;
   // ── mobile-compat projections (v1 field names) ──
   message?: string | null;
   isRead?: boolean;

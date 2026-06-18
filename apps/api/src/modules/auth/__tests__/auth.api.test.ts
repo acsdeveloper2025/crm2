@@ -14,6 +14,7 @@ function spyRealtime(): { events: Array<{ userId: string; event: string; payload
       events.push({ userId, event, payload });
     },
     emitToFieldMonitoring: () => undefined,
+    emitToOffice: () => undefined,
   };
   setRealtime(rt);
   return { events };
