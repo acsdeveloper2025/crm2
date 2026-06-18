@@ -153,16 +153,33 @@ export function PipelinePage() {
             >
               {t.status.replace(/_/g, ' ')}
             </span>
-            {t.outOfTat && (
+            {(t.overdue || t.outOfTat) && (
               <span
                 className="rounded bg-st-rejected-bg px-1.5 py-0.5 text-xs font-medium text-st-rejected"
-                title="Out of TAT (SLA breached)"
+                title="Out of TAT (target turnaround exceeded)"
               >
                 ⚠ TAT
+                {t.dueAt
+                  ? ` +${Math.max(0, Math.floor((Date.now() - new Date(t.dueAt).getTime()) / 3_600_000))}h`
+                  : ''}
+                {t.tatHours ? ` / ${t.tatHours}h` : ''}
               </span>
             )}
           </span>
         ),
+      },
+      {
+        id: 'completedTatBand',
+        header: 'Completed In',
+        align: 'right',
+        cell: (t) =>
+          t.completedTatBand == null ? (
+            <span className="text-muted-foreground">—</span>
+          ) : t.completedTatBand === -1 ? (
+            <span className="tabular-nums">&gt;48h</span>
+          ) : (
+            <span className="tabular-nums">{t.completedTatBand}h</span>
+          ),
       },
       {
         id: 'assignedToName',
