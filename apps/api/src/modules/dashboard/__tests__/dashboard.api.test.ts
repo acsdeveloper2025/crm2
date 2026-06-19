@@ -125,8 +125,7 @@ describe.skipIf(!RUN)('Dashboard overview (ADR-0029)', () => {
     const s = res.body as DashboardStats;
     expect(s.assigned).toBeGreaterThanOrEqual(1);
     expect(s.assignedToday).toBeGreaterThanOrEqual(1);
-    // freshly assigned → "fresh" aging bucket, and within its TAT target (not Out of TAT)
-    expect(s.agingFresh).toBeGreaterThanOrEqual(1);
+    // freshly assigned → within its TAT target (not Out of TAT)
     expect(s.overdue).toBe(0);
     expect(s.completed).toBe(0);
   });
@@ -146,10 +145,6 @@ describe.skipIf(!RUN)('Dashboard overview (ADR-0029)', () => {
       'completedYesterday',
       'completed7d',
       'overdue',
-      'agingFresh',
-      'aging1d',
-      'aging2d',
-      'aging3dPlus',
     ]) {
       expect(typeof (s as unknown as Record<string, unknown>)[k], k).toBe('number');
     }
@@ -162,7 +157,7 @@ describe.skipIf(!RUN)('Dashboard overview (ADR-0029)', () => {
     const s = res.body as DashboardStats;
     expect(s.assigned).toBe(0);
     expect(s.assignedToday).toBe(0);
-    expect(s.agingFresh).toBe(0);
+    expect(s.overdue).toBe(0);
   });
 
   it('RBAC: FIELD_AGENT has no page.dashboard → 403', async () => {

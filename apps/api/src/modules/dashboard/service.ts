@@ -15,7 +15,6 @@ function windows(): DashboardWindows {
   const istMidnightUtcMs =
     Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()) - IST_OFFSET_MS;
   return {
-    now: new Date(now).toISOString(),
     startOfToday: new Date(istMidnightUtcMs).toISOString(),
     startOfYesterday: new Date(istMidnightUtcMs - MS_PER_DAY).toISOString(),
     sevenDaysAgo: new Date(now - TREND_WINDOW_DAYS * MS_PER_DAY).toISOString(),

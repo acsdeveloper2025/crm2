@@ -14,13 +14,11 @@ import {
  * requires), so the scope leg matches the Pipeline's visibility exactly. All counts are FILTER
  * aggregates over that single scan (Postgres does them in one pass — cheap, no MV needed).
  *
- * Param contract (pushed FIRST, before scope): $1 = now, $2 = IST start-of-today,
- * $3 = IST start-of-yesterday, $4 = seven-days-ago. Aging buckets derive their cutoffs from $1 via
- * interval arithmetic (one window param, not three). The scope predicate is appended AFTER and
- * lands in the OUTER WHERE — never inside a FILTER — so an out-of-scope row is never counted
- * (SUPER_ADMIN / hierarchy-ALL → empty predicate → no filter).
+ * Param contract (pushed FIRST, before scope): $1 = IST start-of-today, $2 = IST start-of-yesterday,
+ * $3 = seven-days-ago. The scope predicate is appended AFTER and lands in the OUTER WHERE — never
+ * inside a FILTER — so an out-of-scope row is never counted (SUPER_ADMIN / hierarchy-ALL → empty
+ * predicate → no filter).
  */
-const OPEN_HELD = "('ASSIGNED','IN_PROGRESS','SUBMITTED_FOR_REVIEW')";
 
 /**
  * Out-of-TAT (overdue) predicate (ADR-0044) — kept local to respect module boundaries (mirrors the
@@ -48,7 +46,6 @@ function caseScopePredicate(params: unknown[], scope: Scope): string {
 }
 
 export interface DashboardWindows {
-  now: string;
   startOfToday: string;
   startOfYesterday: string;
   sevenDaysAgo: string;
@@ -66,10 +63,6 @@ const ZERO: DashboardStats = {
   completedYesterday: 0,
   completed7d: 0,
   overdue: 0,
-  agingFresh: 0,
-  aging1d: 0,
-  aging2d: 0,
-  aging3dPlus: 0,
   oldestUnassignedAt: null,
 };
 
@@ -91,7 +84,7 @@ export const dashboardRepository = {
    * caller resolves the office-pool role from `assignment_pool_roles`, no role literal here).
    */
   async stats(actor: Actor, w: DashboardWindows, officeOnly = false): Promise<DashboardStats> {
-    const params: unknown[] = [w.now, w.startOfToday, w.startOfYesterday, w.sevenDaysAgo];
+    const params: unknown[] = [w.startOfToday, w.startOfYesterday, w.sevenDaysAgo];
     const scope = await resolveScope(actor);
     const conds: string[] = [];
     const predicate = taskScopePredicate(params, scope);
@@ -105,15 +98,11 @@ export const dashboardRepository = {
          count(*) FILTER (WHERE ct.status = 'IN_PROGRESS')::int           AS in_progress,
          count(*) FILTER (WHERE ct.status = 'COMPLETED')::int             AS completed,
          count(*) FILTER (WHERE ct.status = 'REVOKED')::int               AS revoked,
-         count(*) FILTER (WHERE ct.assigned_at >= $2)::int                AS assigned_today,
-         count(*) FILTER (WHERE ct.status = 'COMPLETED' AND ct.completed_at >= $2)::int AS completed_today,
-         count(*) FILTER (WHERE ct.status = 'COMPLETED' AND ct.completed_at >= $3 AND ct.completed_at < $2)::int AS completed_yesterday,
-         count(*) FILTER (WHERE ct.status = 'COMPLETED' AND ct.completed_at >= $4)::int AS completed7d,
+         count(*) FILTER (WHERE ct.assigned_at >= $1)::int                AS assigned_today,
+         count(*) FILTER (WHERE ct.status = 'COMPLETED' AND ct.completed_at >= $1)::int AS completed_today,
+         count(*) FILTER (WHERE ct.status = 'COMPLETED' AND ct.completed_at >= $2 AND ct.completed_at < $1)::int AS completed_yesterday,
+         count(*) FILTER (WHERE ct.status = 'COMPLETED' AND ct.completed_at >= $3)::int AS completed7d,
          count(*) FILTER (WHERE ${OVERDUE_SQL})::int AS overdue,
-         count(*) FILTER (WHERE ct.status IN ${OPEN_HELD} AND ct.assigned_at >= $1::timestamptz - interval '24 hours')::int AS aging_fresh,
-         count(*) FILTER (WHERE ct.status IN ${OPEN_HELD} AND ct.assigned_at < $1::timestamptz - interval '24 hours' AND ct.assigned_at >= $1::timestamptz - interval '48 hours')::int AS aging1d,
-         count(*) FILTER (WHERE ct.status IN ${OPEN_HELD} AND ct.assigned_at < $1::timestamptz - interval '48 hours' AND ct.assigned_at >= $1::timestamptz - interval '72 hours')::int AS aging2d,
-         count(*) FILTER (WHERE ct.status IN ${OPEN_HELD} AND ct.assigned_at < $1::timestamptz - interval '72 hours')::int AS aging3d_plus,
          min(ct.created_at) FILTER (WHERE ct.status = 'PENDING') AS oldest_unassigned_at
        FROM case_tasks ct JOIN cases cs ON cs.id = ct.case_id
        ${where}`,

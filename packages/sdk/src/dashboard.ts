@@ -1,8 +1,8 @@
 /**
  * @crm2/sdk — Dashboard (read-only operations overview). One scoped scan over the actor's
  * visible tasks (`case_tasks ct` JOIN `cases cs`, hierarchy-filtered via the scope seam):
- * the pipeline counter bar + today's throughput/trend + aging of open work. Every field is a
- * real aggregate — no fabricated metric. Widgets without a truthful source (activity feed,
+ * the pipeline counter bar + today's throughput/trend + the out-of-TAT late-work count. Every
+ * field is a real aggregate — no fabricated metric. Widgets without a truthful source (activity feed,
  * revisit/recheck, device idle/active) are deliberately absent, not zero-filled.
  */
 export interface DashboardStats {
@@ -29,18 +29,10 @@ export interface DashboardStats {
   /** tasks completed in the trailing 7 days. */
   completed7d: number;
 
-  // ── Aging of open work (held tasks by time-since-assignment) ──
+  // ── Late work + the unassigned backlog ──
   /** Out of TAT (ADR-0044): OPEN tasks past their per-task `tat_hours` target since `assigned_at` —
-   *  the headline late-work count. Derived; not the same as the time-since-assignment aging buckets. */
+   *  the headline late-work count. */
   overdue: number;
-  /** open, assigned within the last 24h (fresh, not yet overdue). */
-  agingFresh: number;
-  /** open, assigned 24–48h ago. */
-  aging1d: number;
-  /** open, assigned 48–72h ago. */
-  aging2d: number;
-  /** open, assigned more than 72h ago. */
-  aging3dPlus: number;
   /** oldest still-unassigned task's creation time; null when nothing is pending. */
   oldestUnassignedAt: string | null;
 }
