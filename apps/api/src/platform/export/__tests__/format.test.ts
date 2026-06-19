@@ -48,7 +48,7 @@ describe('toXlsx — formula injection (CWE-1236)', () => {
   it('does not store formula-leading string cells as live Excel formulas', async () => {
     const buf = await toXlsx(dangerousRows, columns);
     const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(buf);
+    await wb.xlsx.load(buf as unknown as Parameters<typeof wb.xlsx.load>[0]);
     const ws = wb.getWorksheet(1)!;
 
     // Row 2 is the first data row (row 1 = header)
