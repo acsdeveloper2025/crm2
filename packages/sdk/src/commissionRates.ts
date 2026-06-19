@@ -12,9 +12,21 @@ import { z } from 'zod';
 export interface CommissionRate {
   id: number;
   userId: string;
-  rateType: string;
-  /** null ⇒ universal (applies to every client) for this user+rate_type. */
+  /**
+   * Optional executive classification label (LOCAL/OGL/OUTSTATION — descriptive only).
+   * No longer a resolution key (ADR-0046): the resolver is decoupled from the client rate.
+   */
+  rateType: string | null;
+  /** null ⇒ universal (applies to every client) for this user. */
   clientId: number | null;
+  /** executive's location dimension; null ⇒ applies to any location (ADR-0046). */
+  locationId: number | null;
+  /** product dimension; null ⇒ applies to any product (ADR-0046). */
+  productId: number | null;
+  /** verification-unit dimension; null ⇒ applies to any unit (ADR-0046). */
+  verificationUnitId: number | null;
+  /** completed-in TAT band: tat_hours, or -1 (overflow / out-of-band), or null ⇒ any band (ADR-0046). */
+  tatBand: number | null;
   amount: number;
   currency: string;
   isActive: boolean;
@@ -28,13 +40,21 @@ export interface CommissionRate {
   updatedAt: string;
 }
 
-/** A commission rate joined with the user / client display fields (list view). */
+/** A commission rate joined with the user / client / dimension display fields (list view). */
 export interface CommissionRateView extends CommissionRate {
   userName: string;
   userEmail: string | null;
   /** null when the rate is universal (clientId null). */
   clientCode: string | null;
   clientName: string | null;
+  /** null when the rate applies to any product (productId null). */
+  productCode: string | null;
+  productName: string | null;
+  /** null when the rate applies to any verification unit (verificationUnitId null). */
+  verificationUnitName: string | null;
+  /** location display fields; null when the rate applies to any location (locationId null). */
+  pincode: string | null;
+  area: string | null;
 }
 
 const positiveInt = z.number().int().positive();
@@ -45,10 +65,21 @@ const rateType = z.string().trim().min(1).max(60);
 
 export const CreateCommissionRateSchema = z.object({
   userId: uuid,
-  /** the rate tier this commission applies to (matches a rates.rate_type code: LOCAL/OGL/…). */
-  rateType,
+  /**
+   * optional executive classification label (LOCAL/OGL/OUTSTATION — descriptive only).
+   * No longer required nor used in resolution (ADR-0046).
+   */
+  rateType: rateType.nullish(),
   /** client this commission is scoped to; null/absent ⇒ universal (every client). */
   clientId: positiveInt.nullish(),
+  /** executive location dimension; null/absent ⇒ applies to any location (ADR-0046). */
+  locationId: positiveInt.nullish(),
+  /** product dimension; null/absent ⇒ applies to any product (ADR-0046). */
+  productId: positiveInt.nullish(),
+  /** verification-unit dimension; null/absent ⇒ applies to any unit (ADR-0046). */
+  verificationUnitId: positiveInt.nullish(),
+  /** completed-in TAT band: tat_hours, -1 (overflow), or null/absent ⇒ any band (ADR-0046). */
+  tatBand: z.number().int().nullish(),
   amount: money,
   currency: z.string().length(3).default('INR'),
   /** when the rate takes effect; defaults to now server-side. */

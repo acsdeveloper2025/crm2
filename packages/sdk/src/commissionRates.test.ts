@@ -23,6 +23,27 @@ describe('CommissionRate contract', () => {
   it('rejects an empty rateType', () => {
     expect(CreateCommissionRateSchema.safeParse({ ...base, rateType: '' }).success).toBe(false);
   });
+  it('accepts a rate WITHOUT rateType (now an optional classification label) plus the new dims', () => {
+    const { rateType: _omit, ...noClassification } = base;
+    const parsed = CreateCommissionRateSchema.safeParse({
+      ...noClassification,
+      locationId: 12,
+      productId: 3,
+      verificationUnitId: 5,
+      tatBand: 24,
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.locationId).toBe(12);
+    expect(parsed.success && parsed.data.productId).toBe(3);
+    expect(parsed.success && parsed.data.verificationUnitId).toBe(5);
+    expect(parsed.success && parsed.data.tatBand).toBe(24);
+  });
+  it('accepts the overflow tat_band sentinel (-1)', () => {
+    expect(CreateCommissionRateSchema.safeParse({ ...base, tatBand: -1 }).success).toBe(true);
+  });
+  it('rejects a non-positive locationId', () => {
+    expect(CreateCommissionRateSchema.safeParse({ ...base, locationId: -3 }).success).toBe(false);
+  });
   it('revise accepts an amount (+ optional effectiveFrom) only', () => {
     expect(ReviseCommissionRateSchema.safeParse({ amount: 99.99 }).success).toBe(true);
     expect(
