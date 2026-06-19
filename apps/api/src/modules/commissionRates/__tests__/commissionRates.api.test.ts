@@ -1,9 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import request from 'supertest';
-import { createTestDb, clientFactory, authHeaderForRole } from '@crm2/test-utils';
+import { createTestDb, authHeaderForRole } from '@crm2/test-utils';
 import { createApp } from '../../../http/app.js';
 import { setPool } from '../../../platform/db.js';
-import { commissionRateRepository } from '../repository.js';
 
 const RUN = !!process.env['DATABASE_URL'];
 const db = RUN ? createTestDb() : null;
@@ -13,8 +12,6 @@ const FA = authHeaderForRole('FIELD_AGENT'); // holds neither masterdata perm
 const MGR = authHeaderForRole('MANAGER'); // holds masterdata.view but NOT masterdata.manage
 const TL = authHeaderForRole('TEAM_LEADER'); // holds data.export but NOT masterdata.manage
 
-const newClient = async (code: string) =>
-  (await request(app).post('/api/v2/clients').set(SA).send(clientFactory({ code }))).body.id as number;
 const newUser = async (username: string): Promise<string> => {
   const res = await request(app)
     .post('/api/v2/users')
@@ -128,52 +125,6 @@ describe.skipIf(!RUN)('commission-rates API (ADR-0036)', () => {
       .send({ version: 2 });
     expect(on.status).toBe(200);
     expect(on.body.isActive).toBe(true);
-  });
-
-  it('resolveAmount: most-specific-client-wins, temporal, active-only', async () => {
-    const userId = await newUser('cr_res');
-    const clientId = await newClient('C_RES');
-    // universal ₹50 + client-scoped ₹80 for the same user+rate_type (different client scope → no overlap)
-    await request(app)
-      .post('/api/v2/commission-rates')
-      .set(SA)
-      .send({ userId, rateType: 'LOCAL', amount: 50 });
-    const scoped = await request(app)
-      .post('/api/v2/commission-rates')
-      .set(SA)
-      .send({ userId, rateType: 'LOCAL', clientId, amount: 80 });
-    const scopedId = scoped.body.id as number;
-
-    // client-scoped wins for that client
-    expect(await commissionRateRepository.resolveAmount(userId, 'LOCAL', clientId)).toBe(80);
-    // another client falls back to the universal row
-    const otherClient = await newClient('C_OTHER');
-    expect(await commissionRateRepository.resolveAmount(userId, 'LOCAL', otherClient)).toBe(50);
-    // an unconfigured rate_type → null (assignee has no matching rate)
-    expect(await commissionRateRepository.resolveAmount(userId, 'OGL', clientId)).toBeNull();
-
-    // active-only: deactivating the client-scoped row → resolution falls back to the universal one
-    expect(
-      (
-        await request(app)
-          .post(`/api/v2/commission-rates/${scopedId}/deactivate`)
-          .set(SA)
-          .send({ version: 1 })
-      ).status,
-    ).toBe(200);
-    expect(await commissionRateRepository.resolveAmount(userId, 'LOCAL', clientId)).toBe(50);
-
-    // temporal: a future-dated rate is not yet effective → not resolved
-    const future = new Date(Date.now() + 7 * 86_400_000).toISOString();
-    expect(
-      (
-        await request(app)
-          .post('/api/v2/commission-rates')
-          .set(SA)
-          .send({ userId, rateType: 'OGL', amount: 120, effectiveFrom: future })
-      ).status,
-    ).toBe(201);
-    expect(await commissionRateRepository.resolveAmount(userId, 'OGL', clientId)).toBeNull();
   });
 
   it('both read and write require masterdata.manage (SA-only); a masterdata.view-only role is denied', async () => {

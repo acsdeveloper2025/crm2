@@ -183,24 +183,4 @@ export const commissionRateRepository = {
       return mapWriteError(e);
     }
   },
-
-  /**
-   * Resolve the CURRENT commission amount for (user, rate_type, client) — most-specific-client-wins
-   * (a client-scoped row beats a universal one), temporal (effective as of the DB clock — `now()`,
-   * skew-proof and consistent with the list view), active only. Returns null when the assignee has no
-   * matching rate (commission shown as "unset", not a failure). The amount source the billing
-   * read-model (slice 5b) reads per COMPLETED task.
-   */
-  async resolveAmount(userId: string, rateType: string, clientId: number): Promise<number | null> {
-    const rows = await query<{ amount: number }>(
-      `SELECT amount::float8 AS amount FROM commission_rates
-        WHERE user_id = $1 AND rate_type = $2 AND is_active
-          AND (client_id IS NULL OR client_id = $3)
-          AND effective_from <= now() AND (effective_to IS NULL OR effective_to > now())
-        ORDER BY client_id DESC NULLS LAST
-        LIMIT 1`,
-      [userId, rateType, clientId],
-    );
-    return rows[0]?.amount ?? null;
-  },
 };
