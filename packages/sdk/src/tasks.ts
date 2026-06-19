@@ -61,6 +61,8 @@ export interface TaskStats {
   pending: number;
   assigned: number;
   inProgress: number;
+  /** Field-done, awaiting office completion (ADR-0047). Mutually exclusive with the other status buckets. */
+  submitted: number;
   completed: number;
   revoked: number;
   overdue: number;
@@ -86,7 +88,8 @@ export const BulkAssignSchema = z.object({
     .max(MAX_BULK_ASSIGN_ITEMS),
   assignedTo: uuid,
   visitType: z.enum(VISIT_TYPES),
-  // legacy/optional — rate type now comes from rate management (ADR-0024); UI no longer collects it.
+  // ADR-0050: optional — the trip distance band (LOCAL/OGL) is the executive-commission resolution key
+  // when set; a bulk assignment may omit it (those tasks just resolve no commission until set).
   distanceBand: z.enum(DISTANCE_BANDS).optional(),
   billCount: z.number().int().min(0).max(MAX_BILL_COUNT),
 });

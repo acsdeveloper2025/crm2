@@ -390,7 +390,7 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
     expect(seenBy2.body.data.revokedAssignmentIds).toEqual([]);
   });
 
-  it('emits inProgressAt + completedAt once the device starts and completes the task', async () => {
+  it('emits inProgressAt + submittedAt once the device starts and submits the task', async () => {
     const ctx = await seedCpvUnit('EX');
     const fa = await createUser({ username: 'fa_ex', name: 'FA EX', role: 'FIELD_AGENT' });
     const t = await seedTask(ctx, { name: 'EX APP', trigger: 'x' });
@@ -399,6 +399,7 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
     const beforeStart = await request(app).get('/api/v2/sync/download').set(hdr('FIELD_AGENT', fa));
     expect(beforeStart.body.data.cases[0].inProgressAt).toBeUndefined(); // omitted while null
     expect(beforeStart.body.data.cases[0].completedAt).toBeUndefined();
+    expect(beforeStart.body.data.cases[0].submittedAt).toBeUndefined();
 
     expect(
       (await request(app).post(`/api/v2/verification-tasks/${t.taskId}/start`).set(hdr('FIELD_AGENT', fa)))
@@ -413,6 +414,7 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
     const task = after.body.data.cases[0];
     expect(task.status).toBe('SUBMITTED'); // ADR-0047: the device terminal is SUBMITTED, not COMPLETED
     expect(typeof task.inProgressAt).toBe('string'); // ← started_at
+    expect(typeof task.submittedAt).toBe('string'); // ← submitted_at set by the device submit (ADR-0047)
     expect(task.completedAt).toBeUndefined(); // completed_at is set only by the office complete (omitted while null)
     expect(task.formData).toBeUndefined(); // no form submitted on this task → no form_data to echo
   });

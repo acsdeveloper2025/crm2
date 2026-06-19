@@ -41,6 +41,8 @@ export interface MobileSyncTask {
   assignedAt: string;
   /** The delta watermark driver. */
   updatedAt: string;
+  /** Field-terminal timestamp (ADR-0047) — set when the device submits; powers the device "Submitted" tab. Omitted until submit. */
+  submittedAt?: string;
   completedAt?: string;
   /** The bank trigger instruction (device renders it as `notes`). */
   notes?: string;

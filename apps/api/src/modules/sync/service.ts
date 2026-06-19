@@ -39,6 +39,7 @@ function toMobileTask(r: SyncTaskRow): MobileSyncTask {
     // preserves local pending state (sync_status / local_updated_at) so emitting these is safe;
     // they re-hydrate completion/start time after a local wipe. Omitted when null (v1 wire).
     ...(r.startedAt ? { inProgressAt: iso(r.startedAt) } : {}),
+    ...(r.submittedAt ? { submittedAt: iso(r.submittedAt) } : {}),
     ...(r.completedAt ? { completedAt: iso(r.completedAt) } : {}),
     notes: r.trigger,
     verificationType: r.unitName,

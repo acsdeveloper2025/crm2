@@ -12,9 +12,11 @@ import {
   type Paginated,
   type TaskStats,
   type TaskView,
+  type DistanceBand,
   type VisitType,
   VISIT_TYPES,
   VISIT_TYPE_LABELS,
+  DISTANCE_BANDS,
 } from '@crm2/sdk';
 import { api, apiExport } from '../../lib/sdk.js';
 import { formatDateTime } from '../../lib/format.js';
@@ -49,6 +51,8 @@ const BUCKETS: {
   { label: 'Unassigned', status: 'PENDING', stat: 'pending' },
   { label: 'Assigned', status: 'ASSIGNED', stat: 'assigned' },
   { label: 'In Progress', status: 'IN_PROGRESS', stat: 'inProgress' },
+  // Submitted (ADR-0047): field-done, awaiting the office to add the report + result → COMPLETED.
+  { label: 'Submitted', status: 'SUBMITTED', stat: 'submitted' },
   { label: 'Completed', status: 'COMPLETED', stat: 'completed' },
   { label: 'Revoked', status: 'REVOKED', stat: 'revoked' },
   // Out of TAT (ADR-0044): the exact overdue set (server-side `overdue=1`, urgency-ordered) — an OPEN
@@ -292,6 +296,9 @@ function BulkAssignAction({ selection }: { selection: BulkSelection<TaskView> })
   const [message, setMessage] = useState<string | null>(null);
   const [assignedTo, setAssignedTo] = useState('');
   const [visitType, setVisitType] = useState<VisitType>('FIELD');
+  // ADR-0050: the trip distance band is the executive-commission resolution key — REQUIRED, no default
+  // (a conscious LOCAL/OGL choice shared across the whole selection).
+  const [distanceBand, setDistanceBand] = useState<DistanceBand | ''>('');
   const [billCount, setBillCount] = useState(1);
   const [busy, setBusy] = useState(false);
   const [poolError, setPoolError] = useState(false);
@@ -326,6 +333,8 @@ function BulkAssignAction({ selection }: { selection: BulkSelection<TaskView> })
         items: selection.rows.map((r) => ({ id: r.id, version: r.version })),
         assignedTo,
         visitType,
+        // distanceBand is OPTIONAL (ADR-0050 commission key) — send only when chosen.
+        ...(distanceBand ? { distanceBand } : {}),
         billCount,
       });
       void qc.invalidateQueries({ queryKey: [QK] });
@@ -404,6 +413,21 @@ function BulkAssignAction({ selection }: { selection: BulkSelection<TaskView> })
                     {VISIT_TYPES.map((v) => (
                       <option key={v} value={v}>
                         {VISIT_TYPE_LABELS[v]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs uppercase tracking-wide text-muted-foreground">Distance band</span>
+                  <select
+                    className="h-9 w-36 rounded-md border border-border bg-background px-2 text-sm"
+                    value={distanceBand}
+                    onChange={(e) => setDistanceBand(e.target.value as DistanceBand | '')}
+                  >
+                    <option value="">Select…</option>
+                    {DISTANCE_BANDS.map((b) => (
+                      <option key={b} value={b}>
+                        {b}
                       </option>
                     ))}
                   </select>
