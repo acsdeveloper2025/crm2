@@ -59,9 +59,14 @@ ALTER TABLE case_tasks ALTER COLUMN task_number SET NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_case_task_number ON case_tasks (case_id, task_number);
 
 -- (8) case_tasks: extend the status enum (ingest/review legs land later; migrate once).
+-- Re-run safety (the prod migrate re-applies EVERY file in order each deploy): this list must be a
+-- SUPERSET of every status the live data may hold by the time this file re-runs. ADR-0047 (0081) later
+-- introduces 'SUBMITTED' and the app writes it; since 0037 re-runs BEFORE 0081, omitting 'SUBMITTED'
+-- here makes ADD CONSTRAINT reject live SUBMITTED rows ("violated by some row") and aborts the deploy.
+-- So 'SUBMITTED' is included here too (0081 narrows it to the final set, dropping the vestigial SFR).
 ALTER TABLE case_tasks DROP CONSTRAINT IF EXISTS chk_case_task_status;
 ALTER TABLE case_tasks ADD CONSTRAINT chk_case_task_status CHECK (
-  status IN ('PENDING', 'ASSIGNED', 'IN_PROGRESS', 'SUBMITTED_FOR_REVIEW',
+  status IN ('PENDING', 'ASSIGNED', 'IN_PROGRESS', 'SUBMITTED', 'SUBMITTED_FOR_REVIEW',
              'COMPLETED', 'REVOKED', 'CANCELLED')
 );
 
