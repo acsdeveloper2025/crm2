@@ -307,4 +307,16 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
     const lines = await billingRepository.caseTasks(caseId);
     expect(lines.find((l) => l.taskNumber === t2Number)!.commissionAmount).toBe(90);
   });
+
+  // NOTE: mutates the shared seed (bill_count). `beforeEach` re-seeds, so isolation holds, but this
+  // is kept as the LAST `it()` so the earlier §E bill_count=1 assertions (850/140) are unaffected.
+  it('bill_count multiplies bill+commission and reports billable_units', async () => {
+    await query(`UPDATE case_tasks SET bill_count = 3 WHERE task_number = $1`, [t2Number]);
+    const { items } = await billingRepository.listCases(baseOpts);
+    const c = items.find((i) => i.caseId === caseId)!;
+    expect(c.billTotal).toBe(350 + 500 * 3); // 1850
+    expect(c.commissionTotal).toBe(50 + 90 * 3); // 320
+    expect(c.billableUnits).toBe(4); // 1 + 3
+    expect(c.completedTaskCount).toBe(2); // task count unchanged
+  });
 });

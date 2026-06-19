@@ -78,8 +78,9 @@ export const billingRepository = {
       `SELECT cs.id AS case_id, cs.case_number, cl.name AS client_name, p.name AS product_name,
               cs.status,
               count(*)::int AS completed_task_count,
-              COALESCE(SUM(rt.bill_amount), 0)::float8 AS bill_total,
-              COALESCE(SUM(com.commission_amount), 0)::float8 AS commission_total,
+              COALESCE(SUM(ct.bill_count), 0)::int AS billable_units,
+              COALESCE(SUM(rt.bill_amount * ct.bill_count), 0)::float8 AS bill_total,
+              COALESCE(SUM(com.commission_amount * ct.bill_count), 0)::float8 AS commission_total,
               max(ct.completed_at) AS last_completed_at
        ${CASES_FROM} ${clause}
        GROUP BY cs.id, cs.case_number, cl.name, p.name, cs.status
@@ -107,7 +108,7 @@ export const billingRepository = {
     return query<BillingTaskLine>(
       `SELECT ct.id AS task_id, ct.task_number, vu.name AS unit_name, au.name AS assignee_name,
               ct.task_origin AS billing_class, ct.visit_type, rt.rate_type,
-              rt.bill_amount, com.commission_amount, ct.completed_at
+              rt.bill_amount, com.commission_amount, ct.bill_count, ct.completed_at
        FROM case_tasks ct
        JOIN cases cs ON cs.id = ct.case_id
        JOIN verification_units vu ON vu.id = ct.verification_unit_id

@@ -14,6 +14,8 @@ export interface BillingCaseRow {
   productName: string;
   status: string;
   completedTaskCount: number;
+  /** Σ ct.bill_count over the case's completed tasks (unit-weighted count; G-2). */
+  billableUnits: number;
   /** Σ client bill amount over the case's completed tasks (rates engine). */
   billTotal: number;
   /** Σ agent commission over the case's completed tasks (commission_rates; unconfigured ⇒ 0). */
@@ -35,5 +37,7 @@ export interface BillingTaskLine {
   billAmount: number | null;
   /** agent commission; null when the assignee has no matching commission_rate. */
   commissionAmount: number | null;
+  /** bill-count multiplier for this task line (G-2); line total = amount × billCount. */
+  billCount: number;
   completedAt: string | null;
 }
