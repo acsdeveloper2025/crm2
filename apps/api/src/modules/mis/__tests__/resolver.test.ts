@@ -136,6 +136,13 @@ describe('resolveColumns', () => {
     expect(params).toEqual([]);
   });
 
+  it('FORM_DATA_PATH with a whitespace-bearing segment → NULL, no param pushed (injection containment)', () => {
+    const params: unknown[] = [];
+    const result = resolveColumns([col('FORM_DATA_PATH', 'key.bad segment.leaf', 'Evil', 'TEXT')], params);
+    expect(result.selects).toEqual([`NULL AS "c0"`]);
+    expect(params).toEqual([]);
+  });
+
   it('multiple columns produce sequential c0,c1,c2 aliases', () => {
     const params: unknown[] = [];
     const result = resolveColumns(
