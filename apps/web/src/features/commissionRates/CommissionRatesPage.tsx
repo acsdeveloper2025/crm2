@@ -6,6 +6,9 @@ import {
   type Option,
   type UserOption,
   type RateType,
+  type VerificationUnitOption,
+  type Location,
+  type TatPolicy,
   type CommissionRate,
   type CommissionRateView,
   type PageQuery,
@@ -31,9 +34,15 @@ function CommissionRateDialog({ row, onClose }: { row: CommissionRateView | null
   const [userId, setUserId] = useState(row?.userId ?? '');
   const [rateType, setRateType] = useState(row?.rateType ?? '');
   const [clientId, setClientId] = useState(row?.clientId ? String(row.clientId) : '');
+  const [productId, setProductId] = useState(row?.productId ? String(row.productId) : '');
+  const [unitId, setUnitId] = useState(row?.verificationUnitId ? String(row.verificationUnitId) : '');
+  const [pincode, setPincode] = useState(row?.pincode ?? '');
+  const [locationId, setLocationId] = useState(row?.locationId ? String(row.locationId) : '');
+  const [tatBand, setTatBand] = useState(row?.tatBand != null ? String(row.tatBand) : '');
   const [amount, setAmount] = useState(row ? String(row.amount) : '');
   const [effectiveFrom, setEffectiveFrom] = useState(toDateInput(row?.effectiveFrom));
   const [error, setError] = useState<string | null>(null);
+  const validPincode = /^\d{6}$/.test(pincode);
 
   const users = useQuery({
     queryKey: ['user-options'],
@@ -47,6 +56,31 @@ function CommissionRateDialog({ row, onClose }: { row: CommissionRateView | null
     queryKey: ['client-options'],
     queryFn: () => api<Option[]>('GET', '/api/v2/clients/options'),
   });
+  const products = useQuery({
+    queryKey: ['product-options'],
+    queryFn: () => api<Option[]>('GET', '/api/v2/products/options'),
+  });
+  const units = useQuery({
+    queryKey: ['verification-unit-options'],
+    queryFn: () => api<VerificationUnitOption[]>('GET', '/api/v2/verification-units/options'),
+  });
+  // Cascading location: type a pincode (server-search suggestions) → pick the area = a locations row.
+  const pincodes = useQuery({
+    queryKey: ['location-pincodes', pincode],
+    queryFn: () => api<string[]>('GET', `/api/v2/locations/pincodes?q=${encodeURIComponent(pincode)}`),
+    enabled: !isRevise && pincode.length >= 2,
+  });
+  const areas = useQuery({
+    queryKey: ['location-areas', pincode],
+    queryFn: () =>
+      api<Paginated<Location>>('GET', `/api/v2/locations?pincode=${pincode}&limit=200`).then((r) => r.items),
+    enabled: !isRevise && validPincode,
+  });
+  const tatPolicies = useQuery({
+    queryKey: ['tat-policies', 'active'],
+    queryFn: () =>
+      api<Paginated<TatPolicy>>('GET', '/api/v2/tat-policies?active=true&limit=100').then((r) => r.items),
+  });
 
   const mut = useMutation({
     mutationFn: () =>
@@ -58,8 +92,12 @@ function CommissionRateDialog({ row, onClose }: { row: CommissionRateView | null
           })
         : api<CommissionRate>('POST', '/api/v2/commission-rates', {
             userId,
-            rateType,
+            rateType: rateType || null,
             clientId: clientId ? Number(clientId) : null,
+            productId: productId ? Number(productId) : null,
+            verificationUnitId: unitId ? Number(unitId) : null,
+            locationId: locationId ? Number(locationId) : null,
+            tatBand: tatBand === '' ? null : Number(tatBand),
             amount: Number(amount),
             effectiveFrom: toIsoDate(effectiveFrom),
           }),
@@ -77,7 +115,7 @@ function CommissionRateDialog({ row, onClose }: { row: CommissionRateView | null
       ),
   });
 
-  const valid = isRevise ? amount !== '' : userId && rateType && amount !== '';
+  const valid = isRevise ? amount !== '' : !!userId && amount !== '';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40">
@@ -107,14 +145,14 @@ function CommissionRateDialog({ row, onClose }: { row: CommissionRateView | null
             </select>
           </label>
           <label className="block">
-            <span className="mb-1 block text-xs font-medium text-foreground">Rate Type</span>
+            <span className="mb-1 block text-xs font-medium text-foreground">Classification (optional)</span>
             <select
               className="input"
               value={rateType}
               disabled={isRevise}
               onChange={(e) => setRateType(e.target.value)}
             >
-              <option value="">Select a rate type…</option>
+              <option value="">None — descriptive label, not a resolution key</option>
               {(rateTypes.data ?? []).map((rt) => (
                 <option key={rt.id} value={rt.code}>
                   {rt.code}
@@ -138,6 +176,84 @@ function CommissionRateDialog({ row, onClose }: { row: CommissionRateView | null
               ))}
             </select>
           </label>
+          {!isRevise && (
+            <>
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-foreground">Product (blank = any)</span>
+                <select className="input" value={productId} onChange={(e) => setProductId(e.target.value)}>
+                  <option value="">Any product</option>
+                  {(products.data ?? []).map((p) => (
+                    <option key={p.id} value={String(p.id)}>
+                      {p.code} — {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-foreground">
+                  Verification Unit (blank = any)
+                </span>
+                <select className="input" value={unitId} onChange={(e) => setUnitId(e.target.value)}>
+                  <option value="">Any unit</option>
+                  {(units.data ?? []).map((u) => (
+                    <option key={u.id} value={String(u.id)}>
+                      {u.code} — {u.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-foreground">
+                  Pincode (blank = any location)
+                </span>
+                <input
+                  className="input"
+                  list="commission-pincodes"
+                  value={pincode}
+                  placeholder="Type ≥2 digits…"
+                  onChange={(e) => {
+                    setPincode(e.target.value);
+                    setLocationId('');
+                  }}
+                />
+                <datalist id="commission-pincodes">
+                  {(pincodes.data ?? []).map((p) => (
+                    <option key={p} value={p} />
+                  ))}
+                </datalist>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-foreground">Area</span>
+                <select
+                  className="input"
+                  value={locationId}
+                  disabled={!validPincode}
+                  onChange={(e) => setLocationId(e.target.value)}
+                >
+                  <option value="">
+                    {validPincode ? 'Select an area…' : 'Enter a 6-digit pincode first'}
+                  </option>
+                  {(areas.data ?? []).map((l) => (
+                    <option key={l.id} value={String(l.id)}>
+                      {l.area}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-foreground">TAT Band (blank = any)</span>
+                <select className="input" value={tatBand} onChange={(e) => setTatBand(e.target.value)}>
+                  <option value="">Any band</option>
+                  {(tatPolicies.data ?? []).map((tp) => (
+                    <option key={tp.id} value={String(tp.tatHours)}>
+                      {tp.label}
+                    </option>
+                  ))}
+                  <option value="-1">Out of band</option>
+                </select>
+              </label>
+            </>
+          )}
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-foreground">Amount (₹)</span>
             <input
@@ -220,9 +336,52 @@ export function CommissionRatesPage() {
       },
       {
         id: 'rateType',
-        header: 'Rate Type',
+        header: 'Classification',
         sortable: true,
-        cell: (r) => <span className="text-xs uppercase">{r.rateType}</span>,
+        cell: (r) =>
+          r.rateType ? (
+            <span className="text-xs uppercase">{r.rateType}</span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
+      },
+      {
+        id: 'product',
+        header: 'Product',
+        cell: (r) =>
+          r.productName ? (
+            `${r.productCode ?? ''} ${r.productName}`.trim()
+          ) : (
+            <span className="text-muted-foreground">Any</span>
+          ),
+      },
+      {
+        id: 'verificationUnit',
+        header: 'Unit',
+        cell: (r) => r.verificationUnitName ?? <span className="text-muted-foreground">Any</span>,
+      },
+      {
+        id: 'location',
+        header: 'Location',
+        cell: (r) =>
+          r.pincode || r.area ? (
+            `${r.pincode ?? ''} ${r.area ?? ''}`.trim()
+          ) : (
+            <span className="text-muted-foreground">Any</span>
+          ),
+      },
+      {
+        id: 'tatBand',
+        header: 'TAT Band',
+        align: 'right',
+        cell: (r) =>
+          r.tatBand == null ? (
+            <span className="text-muted-foreground">Any</span>
+          ) : r.tatBand === -1 ? (
+            'Out of band'
+          ) : (
+            `${r.tatBand}h`
+          ),
       },
       {
         id: 'amount',
@@ -280,8 +439,8 @@ export function CommissionRatesPage() {
         <div className="min-w-0">
           <h1 className="text-xl font-bold tracking-tight">Commission Rates</h1>
           <p className="text-sm text-muted-foreground">
-            Per-user agent commission by rate type &amp; client. The amount source for the Billing &amp;
-            Commission view.
+            Per-executive commission by location (pincode/area), client, product, unit &amp; completed-in TAT
+            band — decoupled from the client rate. The amount source for the Billing &amp; Commission view.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
