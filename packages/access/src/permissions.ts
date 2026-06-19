@@ -76,6 +76,8 @@ export const PERMISSIONS = {
   BILLING_VIEW: 'billing.view',
   // platform capabilities — DataGrid export (IMPORT_EXPORT_STANDARD §1; default-deny, granted to web roles)
   DATA_EXPORT: 'data.export',
+  // MIS report page (ADR-0049) — the structured MIS data view for desk roles.
+  MIS_VIEW: 'page.mis',
 } as const;
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 
@@ -100,6 +102,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     PERMISSIONS.BILLING_VIEW,
     PERMISSIONS.DATA_ENTRY_MANAGE,
     PERMISSIONS.DATA_EXPORT,
+    PERMISSIONS.MIS_VIEW,
   ],
   TEAM_LEADER: [
     PERMISSIONS.MASTERDATA_VIEW,
@@ -109,6 +112,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     PERMISSIONS.FIELD_MONITORING_VIEW,
     PERMISSIONS.DASHBOARD_VIEW,
     PERMISSIONS.DATA_EXPORT,
+    PERMISSIONS.MIS_VIEW,
   ],
   BACKEND_USER: [
     PERMISSIONS.MASTERDATA_VIEW,
@@ -122,6 +126,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     PERMISSIONS.BILLING_VIEW,
     PERMISSIONS.DATA_ENTRY_MANAGE,
     PERMISSIONS.DATA_EXPORT,
+    PERMISSIONS.MIS_VIEW,
   ],
   FIELD_AGENT: [PERMISSIONS.CASE_VIEW, PERMISSIONS.LOCATION_CAPTURE, PERMISSIONS.TASK_EXECUTE],
   KYC_VERIFIER: [PERMISSIONS.CASE_VIEW, PERMISSIONS.DASHBOARD_VIEW],
@@ -158,4 +163,5 @@ export const PERMISSION_META: Record<Permission, { label: string; group: string 
   'billing.generate': { label: 'Billing — Generate', group: 'Billing' },
   'billing.view': { label: 'Billing & Commission — View', group: 'Billing' },
   'data.export': { label: 'Data Export', group: 'Platform' },
+  'page.mis': { label: 'MIS — View', group: 'Operations' },
 };
