@@ -42,7 +42,7 @@ const CASES_FROM = `FROM case_tasks ct
  * `-1` = out of every band; `NULL` = task carries no elapsed minutes. Mirrors COMMISSION_LATERAL's
  * inner band lookup — do NOT fork the logic.
  */
-const COMPLETED_BAND = `COALESCE(
+export const COMPLETED_BAND = `COALESCE(
     (SELECT tp.tat_hours FROM tat_policies tp
        WHERE tp.is_active
          AND tp.effective_from <= COALESCE(ct.completed_at, now())
