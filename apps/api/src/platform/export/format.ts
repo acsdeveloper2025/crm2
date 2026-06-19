@@ -32,6 +32,9 @@ const cell = <T>(col: ExportColumn<T>, row: T): string => {
   return String(v);
 };
 
+/** Leading characters a spreadsheet treats as a formula trigger (CWE-1236). */
+const FORMULA_LEAD = /^[=+\-@\t\r]/;
+
 /**
  * Formula-injection guard (CWE-1236): a string whose first character is a spreadsheet formula
  * trigger (`= + - @` or tab/CR) is prefixed with `'` so no spreadsheet executes it as a formula.
@@ -39,20 +42,20 @@ const cell = <T>(col: ExportColumn<T>, row: T): string => {
  * store them as native cell types.
  */
 export function neutralizeFormula(v: unknown): unknown {
-  if (typeof v === 'string' && /^[=+\-@\t\r]/.test(v)) return `'${v}`;
+  if (typeof v === 'string' && FORMULA_LEAD.test(v)) return `'${v}`;
   return v;
 }
 
 /**
- * CSV cell escaping: RFC 4180 (quote fields containing `,`/`"`/newline, double embedded quotes)
- * PLUS formula-injection neutralization (CWE-1236) — a leading `= + - @` or tab/CR is prefixed with
- * a single quote so spreadsheets never execute the cell as a formula. The formula guard takes
- * precedence: when applied, RFC 4180 quoting is skipped (the `'` sentinel itself signals inert text).
+ * CSV cell escaping: formula-injection neutralization (CWE-1236) FIRST — a leading `= + - @` or
+ * tab/CR is prefixed with `'` so spreadsheets never execute the cell as a formula — THEN RFC 4180
+ * quoting (fields containing `,`/`"`/newline are wrapped, embedded quotes doubled). BOTH apply: a
+ * formula-leading cell that also contains a comma/quote gets the `'` guard AND the quote-wrapping.
  */
 export function escapeCsvCell(raw: string): string {
-  if (/^[=+\-@\t\r]/.test(raw)) return `'${raw}`;
-  if (/[",\n\r]/.test(raw)) return `"${raw.replace(/"/g, '""')}"`;
-  return raw;
+  const guarded = FORMULA_LEAD.test(raw) ? `'${raw}` : raw;
+  if (/[",\n\r]/.test(guarded)) return `"${guarded.replace(/"/g, '""')}"`;
+  return guarded;
 }
 
 export function toCsv<T>(rows: T[], columns: ExportColumn<T>[]): string {

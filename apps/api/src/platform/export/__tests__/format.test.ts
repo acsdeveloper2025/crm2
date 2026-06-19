@@ -11,7 +11,9 @@ const columns: ExportColumn<Row>[] = [
 ];
 
 const dangerousRows: Row[] = [
-  { label: '=HYPERLINK("http://evil.example")', value: 42 },
+  // formula-leading payloads WITHOUT embedded quotes/commas (the guard+RFC-4180-wrap interaction
+  // for quote/comma cells is covered authoritatively in platform/__tests__/export.test.ts).
+  { label: '=HYPERLINK(http://evil.example)', value: 42 },
   { label: '+1', value: 0 },
   { label: '-2', value: -1 },
   { label: '@cmd', value: 100 },
@@ -20,7 +22,7 @@ const dangerousRows: Row[] = [
 
 describe('escapeCsvCell — formula injection (CWE-1236)', () => {
   it('neutralizes leading = + - @ in CSV', () => {
-    expect(escapeCsvCell('=HYPERLINK("x")')).toMatch(/^'/);
+    expect(escapeCsvCell('=1+1')).toMatch(/^'/);
     expect(escapeCsvCell('+1')).toMatch(/^'/);
     expect(escapeCsvCell('-2')).toMatch(/^'/);
     expect(escapeCsvCell('@cmd')).toMatch(/^'/);
@@ -52,7 +54,7 @@ describe('toXlsx — formula injection (CWE-1236)', () => {
     const ws = wb.getWorksheet(1)!;
 
     // Row 2 is the first data row (row 1 = header)
-    const formulaLeadingCases = ['=HYPERLINK("http://evil.example")', '+1', '-2', '@cmd'];
+    const formulaLeadingCases = ['=HYPERLINK(http://evil.example)', '+1', '-2', '@cmd'];
 
     for (let i = 0; i < formulaLeadingCases.length; i++) {
       const dataRow = ws.getRow(i + 2); // row 2, 3, 4, 5
