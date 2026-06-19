@@ -565,15 +565,18 @@ verify on the prod-dev box post-deploy or via a local preview. New discovery →
 - **Disposition:** DEFERRED pending owner decision §5 (remove from pipeline; confine money to the
   `billing.view` Billing page). Clean ~6-edit FE-only removal; no backend/security change.
 
-### G-4 · MIS Layout `RATE_AMOUNT`/`COMMISSION_AMOUNT` column types ungated at generation — 🔵 IN PROGRESS → being FIXED by the MIS build (ADR-0049, 2026-06-19)
-- **Severity:** LOW (no live leak today). **Finding:** these are bindable column *types* in the
-  report-layout catalog (`packages/sdk/src/reportLayouts.ts:36-37`); **no generation endpoint exists**
-  that turns them into money. No runtime exposure now.
-- **Disposition:** The MIS generation/export build (ADR-0049, `docs/specs/2026-06-19-mis-page-design.md`)
-  enforces **per-column `billing.view` gating at BOTH generation and export** — when `!billing.view`,
-  `RATE_AMOUNT`/`COMMISSION_AMOUNT` columns are dropped server-side from the resolved column set, the
-  SQL, and the `ExportColumn[]` manifest (the laterals are omitted entirely). Mark ✅ FIXED when the
-  build ships + verifies (a non-`billing.view` actor's MIS + export carry no money).
+### G-4 · MIS Layout `RATE_AMOUNT`/`COMMISSION_AMOUNT` column types ungated at generation — ✅ FIXED (ADR-0049, MIS build, 2026-06-19)
+- **Severity:** LOW (no live leak today). **Finding:** these were bindable column *types* in the
+  report-layout catalog (`packages/sdk/src/reportLayouts.ts:36-37`) with no generation endpoint to turn
+  them into money.
+- **Disposition:** FIXED by the MIS generation/export build (ADR-0049, `docs/specs/2026-06-19-mis-page-design.md`).
+  The `mis` service enforces **per-column `billing.view` gating at BOTH `/rows` and `/export`**
+  (`apps/api/src/modules/mis/service.ts` `filterColumns`): when the actor lacks `billing.view` (and isn't
+  grants_all), `RATE_AMOUNT`/`COMMISSION_AMOUNT` columns are dropped **server-side** from the resolved
+  set, the SQL, and the `ExportColumn[]` manifest (the laterals are omitted entirely). **Proven** by
+  `mis.api.test.ts` (a non-`billing.view` actor's `columns` exclude the money columns and rows carry no
+  money keys — structural absence, not nulling) + an independent security review (APPROVE). Full
+  `pnpm verify` green. (Live prod browser-verify pending deploy.)
 
 ### G-5 · Billing SUMs do not normalize currency — 🟢 RATCHET (latent; all-INR today)
 - **Severity:** LOW. **Finding:** `SUM(bill_amount)`/`SUM(commission_amount)` add `amount` across
@@ -618,17 +621,18 @@ verify on the prod-dev box post-deploy or via a local preview. New discovery →
   together. Real-world impact depends on whether any CPV actually has both a location-less default and a
   location override (verify against prod data before prioritizing). **Must not be silently dropped.**
 
-### G-9 · `toXlsx` omits the formula-injection escape that `toCsv` applies — 🔵 IN PROGRESS → being FIXED by the MIS build (ADR-0049, 2026-06-19)
-- **Severity:** MEDIUM (latent across **all** XLSX exports; CWE-1236). **Finding:** `escapeCsvCell`
-  (`apps/api/src/platform/export/format.ts:40-45`) prefixes a leading `= + - @ \t \r` with `'` and is
-  applied by `toCsv` (`:47-52`), but **`toXlsx` (`:55-69`) writes raw cell values** — so a cell starting
-  with `=`/`+`/`-`/`@` is a live formula when the XLSX is opened in Excel. Existing exports (billing,
-  locations, tasks) carry mostly system-controlled text, so the leak was latent. The **MIS export**
-  carries attacker-influenceable free text — `form_data` (`FORM_DATA_PATH`), `DATA_ENTRY_FIELD` values,
-  `remark`/`address` — making it exploitable (`=HYPERLINK(...)`, `=cmd|...`).
-- **Disposition:** The MIS build hardens the **platform XLSX path** to neutralize formula-leading values
-  (apply the same leading-char guard, or write cells as text) — a platform-wide fix benefiting every
-  XLSX consumer. Mark ✅ FIXED when shipped + covered by a `platform/export` unit test.
+### G-9 · `toXlsx` omits the formula-injection escape that `toCsv` applies — ✅ FIXED (ADR-0049, MIS build, 2026-06-19)
+- **Severity:** MEDIUM (was latent across **all** XLSX exports; CWE-1236). **Finding:** `escapeCsvCell`
+  prefixes a leading `= + - @ \t \r` with `'` and was applied by `toCsv`, but **`toXlsx` wrote raw cell
+  values** — so a cell starting with `=`/`+`/`-`/`@` was a live formula in Excel. Latent for system-text
+  exports (billing/locations/tasks); the **MIS export** carries attacker-influenceable free text
+  (`form_data`, `DATA_ENTRY_FIELD`, `remark`/`address`), making it exploitable.
+- **Disposition:** FIXED platform-wide in `apps/api/src/platform/export/format.ts` — extracted
+  `neutralizeFormula(v)` (prefix `'` on a formula-leading STRING; native number/Date/boolean pass
+  through) and applied it in `toXlsx`'s cell write; also corrected `escapeCsvCell` to apply the guard
+  **AND** RFC-4180 quoting (a formula cell that also contains a comma/quote gets both — the earlier
+  "guard-instead-of-quote" form produced invalid CSV). Covered by `platform/export/__tests__/format.test.ts`
+  (CSV + XLSX) + the pre-existing `platform/__tests__/export.test.ts`. Full `pnpm verify` green.
 
 ### Verified PASS (no finding)
 - RBAC: commission config = `masterdata.manage` = SUPER_ADMIN-only; `billing.view` = MANAGER +
