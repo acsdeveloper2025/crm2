@@ -37,7 +37,7 @@ const OPERATIONS: { label: string; to?: string; perm?: string }[] = [
   { label: 'Pipeline', to: '/pipeline', perm: 'case.view' },
   { label: 'Cases', to: '/cases', perm: 'case.view' },
   { label: 'Dedupe Check', to: '/dedupe', perm: 'dedupe.view' },
-  { label: 'MIS & Billing' },
+  { label: 'MIS', to: '/mis', perm: 'page.mis' },
   { label: 'Billing & Commission', to: '/billing', perm: 'billing.view' },
   { label: 'Field Monitoring', to: '/field-monitoring', perm: 'page.field_monitoring' },
 ];

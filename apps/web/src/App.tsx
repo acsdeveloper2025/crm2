@@ -32,6 +32,7 @@ import { ProfilePage } from './features/profile/ProfilePage.js';
 import { BillingPage } from './features/billing/BillingPage.js';
 import { CommissionRatesPage } from './features/commissionRates/CommissionRatesPage.js';
 import { ReportLayoutsPage } from './features/reportLayouts/ReportLayoutsPage.js';
+import { MisPage } from './features/mis/MisPage.js';
 
 export function App() {
   const { user, ready, mustChangePassword, mustAcceptPolicies } = useAuth();
@@ -84,6 +85,7 @@ export function App() {
         <Route path="/cases" element={<CasesPage />} />
         <Route path="/cases/new" element={<CaseCreatePage />} />
         <Route path="/cases/:id" element={<CaseDetailPage />} />
+        <Route path="/mis" element={<MisPage />} />
         <Route path="/billing" element={<BillingPage />} />
         <Route path="*" element={<div className="text-muted-foreground">Not built yet.</div>} />
       </Routes>
