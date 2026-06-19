@@ -77,7 +77,9 @@ type BillingFilterOptions = Pick<
  * `WHERE …` string. FROM contract: `case_tasks ct` / `cases cs` / `clients cl` / `products p`.
  */
 function buildBillingWhere(o: BillingFilterOptions, params: unknown[]): string {
-  const where = [`ct.status = 'COMPLETED'`];
+  // ADR-0047: field commission is frozen at SUBMIT, client bill at COMPLETE. Include SUBMITTED rows so
+  // the field commission surfaces; the bill-side aggregates below are FILTERed back to COMPLETED.
+  const where = [`ct.status IN ('SUBMITTED', 'COMPLETED')`];
   const add = (clause: string, val: unknown) => {
     params.push(val);
     where.push(clause.replace('$?', `$${params.length}`));
@@ -114,9 +116,9 @@ export const billingRepository = {
     const items = await query<BillingCaseRow>(
       `SELECT cs.id AS case_id, cs.case_number, cl.name AS client_name, p.name AS product_name,
               cs.status,
-              count(*)::int AS completed_task_count,
-              COALESCE(SUM(ct.bill_count), 0)::int AS billable_units,
-              COALESCE(SUM(rt.bill_amount * ct.bill_count), 0)::float8 AS bill_total,
+              count(*) FILTER (WHERE ct.status = 'COMPLETED')::int AS completed_task_count,
+              COALESCE(SUM(ct.bill_count) FILTER (WHERE ct.status = 'COMPLETED'), 0)::int AS billable_units,
+              COALESCE(SUM(rt.bill_amount * ct.bill_count) FILTER (WHERE ct.status = 'COMPLETED'), 0)::float8 AS bill_total,
               COALESCE(SUM(COALESCE(ct.commission_amount, com.commission_amount) * ct.bill_count), 0)::float8 AS commission_total,
               max(ct.completed_at) AS last_completed_at
        ${CASES_FROM} ${clause}
@@ -145,7 +147,8 @@ export const billingRepository = {
     return query<BillingTaskLine>(
       `SELECT ct.id AS task_id, ct.task_number, vu.name AS unit_name, au.name AS assignee_name,
               ct.task_origin AS billing_class, ct.visit_type, rt.rate_type,
-              rt.bill_amount, COALESCE(ct.commission_amount, com.commission_amount) AS commission_amount,
+              CASE WHEN ct.status = 'COMPLETED' THEN rt.bill_amount END AS bill_amount,
+              COALESCE(ct.commission_amount, com.commission_amount) AS commission_amount,
               ct.bill_count, ${COMPLETED_BAND} AS tat_band,
               ct.completed_at
        FROM case_tasks ct
@@ -154,7 +157,7 @@ export const billingRepository = {
        LEFT JOIN users au ON au.id = ct.assigned_to
        ${RATE_LATERAL}
        ${COMMISSION_LATERAL}
-       WHERE ct.status = 'COMPLETED' AND cs.id = $1
+       WHERE ct.status IN ('SUBMITTED', 'COMPLETED') AND cs.id = $1
        ORDER BY ct.task_number`,
       [caseId],
     );
@@ -172,8 +175,8 @@ export const billingRepository = {
       `SELECT COALESCE(ct.area_id, ct.pincode_id, cs.area_id, cs.pincode_id) AS location_id,
               l.pincode, l.area,
               count(*)::int                                                AS completed_task_count,
-              COALESCE(SUM(ct.bill_count), 0)::int                         AS billable_units,
-              COALESCE(SUM(rt.bill_amount * ct.bill_count), 0)::float8      AS bill_total,
+              COALESCE(SUM(ct.bill_count) FILTER (WHERE ct.status = 'COMPLETED'), 0)::int AS billable_units,
+              COALESCE(SUM(rt.bill_amount * ct.bill_count) FILTER (WHERE ct.status = 'COMPLETED'), 0)::float8 AS bill_total,
               COALESCE(SUM(COALESCE(ct.commission_amount, com.commission_amount) * ct.bill_count), 0)::float8 AS commission_total
        ${CASES_FROM}
        LEFT JOIN locations l ON l.id = COALESCE(ct.area_id, ct.pincode_id, cs.area_id, cs.pincode_id)
@@ -188,8 +191,8 @@ export const billingRepository = {
     const byBand = await query<BillingBandGroup>(
       `SELECT ${COMPLETED_BAND} AS band,
               count(*)::int                                                AS completed_task_count,
-              COALESCE(SUM(ct.bill_count), 0)::int                         AS billable_units,
-              COALESCE(SUM(rt.bill_amount * ct.bill_count), 0)::float8      AS bill_total,
+              COALESCE(SUM(ct.bill_count) FILTER (WHERE ct.status = 'COMPLETED'), 0)::int AS billable_units,
+              COALESCE(SUM(rt.bill_amount * ct.bill_count) FILTER (WHERE ct.status = 'COMPLETED'), 0)::float8 AS bill_total,
               COALESCE(SUM(COALESCE(ct.commission_amount, com.commission_amount) * ct.bill_count), 0)::float8 AS commission_total
        ${CASES_FROM} ${bandClause}
        GROUP BY 1 ORDER BY 1`,

@@ -194,6 +194,35 @@ async function driveToCompleted(
   ).toBe(200); // office → COMPLETED (client bill)
 }
 
+/** Assign → start → (set location) → device SUBMIT only (NO office complete) — ADR-0047: the field
+ *  terminal. The commission snapshot is frozen here; the client bill stays absent until the office completes. */
+async function driveToSubmitted(
+  caseId: string,
+  taskId: string,
+  fa: string,
+  locationId?: number,
+): Promise<void> {
+  expect(
+    (
+      await request(app)
+        .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
+        .set(SA)
+        .send({ assignedTo: fa, visitType: 'FIELD', distanceBand: 'LOCAL', billCount: 1, version: 1 })
+    ).status,
+  ).toBe(200);
+  expect(
+    (await request(app).post(`/api/v2/verification-tasks/${taskId}/start`).set(hdr('FIELD_AGENT', fa)))
+      .status,
+  ).toBe(200);
+  if (locationId !== undefined) {
+    await query(`UPDATE case_tasks SET area_id = $2, pincode_id = $2 WHERE id = $1`, [taskId, locationId]);
+  }
+  expect(
+    (await request(app).post(`/api/v2/verification-tasks/${taskId}/complete`).set(hdr('FIELD_AGENT', fa)))
+      .status,
+  ).toBe(200); // device → SUBMITTED (commission frozen; not yet billable)
+}
+
 describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
   // SUPER_ADMIN ALL scope = empty scope object (no hierarchy/restrict filter).
   const baseOpts: BillingCaseListOptions = {
@@ -405,5 +434,54 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
     expect(c.commissionTotal).toBe(50 + 90 * 3); // 320
     expect(c.billableUnits).toBe(4); // 1 + 3
     expect(c.completedTaskCount).toBe(2); // task count unchanged
+  });
+
+  it('ADR-0047: a SUBMITTED task shows field commission but NO client bill; a COMPLETED sibling bills', async () => {
+    const ctx = await seedCpvUnit('SB');
+    const fa = await createUser({ username: 'sb_fa', name: 'SB FA', role: 'FIELD_AGENT' });
+    const loc = await seedLocation('500001', 'SBAREA');
+    await seedRate(ctx, loc, 350); // client bill rate
+    await seedCommissionRate({ userId: fa, amount: 50 }); // universal field commission
+
+    const created = seeded<{ id: string }>(
+      await request(app)
+        .post('/api/v2/cases')
+        .set(SA)
+        .send({
+          clientId: ctx.clientId,
+          productId: ctx.productId,
+          backendContactNumber: BC,
+          applicants: [
+            { name: 'SB A1', mobile: '9000012345' },
+            { name: 'SB A2', mobile: '9000012346' },
+          ],
+          dedupeDecision: 'NO_DUPLICATES_FOUND',
+        }),
+    );
+    const applicants = seeded<{ applicants: { id: string }[] }>(
+      await request(app).get(`/api/v2/cases/${created.id}`).set(SA),
+    ).applicants;
+    const byApplicant = await addTasks(created.id, ctx.unitId, [
+      { applicantId: applicants[0]!.id, address: '1 SB ROAD' },
+      { applicantId: applicants[1]!.id, address: '2 SB ROAD' },
+    ]);
+    const subTaskId = byApplicant.get(applicants[0]!.id)!;
+    const compTaskId = byApplicant.get(applicants[1]!.id)!;
+    await driveToSubmitted(created.id, subTaskId, fa, loc); // → SUBMITTED (commission ₹50, no bill)
+    await driveToCompleted(created.id, compTaskId, fa, loc); // → COMPLETED (commission ₹50 + bill ₹350)
+
+    const lines = await billingRepository.caseTasks(created.id);
+    const subLine = lines.find((l) => l.taskId === subTaskId)!;
+    const compLine = lines.find((l) => l.taskId === compTaskId)!;
+    expect(subLine.commissionAmount).toBe(50); // field commission frozen at submit
+    expect(subLine.billAmount).toBeNull(); // NOT billed until the office completes
+    expect(compLine.commissionAmount).toBe(50);
+    expect(compLine.billAmount).toBe(350);
+
+    const { items } = await billingRepository.listCases(baseOpts);
+    const c = items.find((x) => x.caseId === created.id)!;
+    expect(c.commissionTotal).toBe(100); // 50 (submitted) + 50 (completed) — both field-commissioned
+    expect(c.billTotal).toBe(350); // only the COMPLETED task bills the client
+    expect(c.completedTaskCount).toBe(1); // client billing count = COMPLETED only
   });
 });
