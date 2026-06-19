@@ -648,8 +648,14 @@ export function DataGrid<T>({
         </div>
       )}
 
-      {/* Table */}
-      <div className="overflow-x-auto rounded-lg border border-border bg-card shadow-sm">
+      {/* Table — tabIndex=0 gives the horizontal-scroll region keyboard access (axe
+          scrollable-region-focusable) for grids wide enough to overflow (e.g. Commission Rates). */}
+      <div
+        className="overflow-x-auto rounded-lg border border-border bg-card shadow-sm"
+        tabIndex={0}
+        role="group"
+        aria-label="Table (scroll horizontally)"
+      >
         <table className="rtable w-full text-sm">
           <thead className="sticky top-0 z-10 bg-surface-muted text-left text-xs uppercase tracking-wide text-muted-foreground">
             {table.getHeaderGroups().map((hg) => (
