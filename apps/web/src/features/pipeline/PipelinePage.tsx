@@ -18,15 +18,11 @@ import {
 } from '@crm2/sdk';
 import { api, apiExport } from '../../lib/sdk.js';
 import { formatDateTime } from '../../lib/format.js';
-import { useAuth } from '../../lib/AuthContext.js';
 import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { DataGrid, type BulkSelection, type DataGridColumn } from '../../components/ui/data-grid/index.js';
 
 const BASE = '/api/v2/tasks';
 const QK = 'tasks';
-
-/** ₹ for the derived billing amounts (5d); null = no active rate/commission configured. */
-const money = (n: number | null) => (n === null ? '—' : `₹${n.toFixed(2)}`);
 
 /** Status → frozen status-token pair (COLOR_SYSTEM_FREEZE). */
 const STATUS_TONE: Record<string, string> = {
@@ -39,13 +35,13 @@ const STATUS_TONE: Record<string, string> = {
 };
 
 /** The Zion-style work buckets. Status buckets set the `status` domain filter; the Out-of-TAT bucket
- *  sets `overdue` and the Commissionable bucket sets `commissionable` (cross-status derived filters,
- *  ADR-0044/0036). All buckets are mutually exclusive. Revoked replaces the old Cancelled chip. */
+ *  sets `overdue` (a cross-status derived filter, ADR-0044). All buckets are mutually exclusive.
+ *  Money (bill/commission) lives only on the Billing & Commission page (ADR-0046 §6) — there is no
+ *  Commissionable bucket here. Revoked replaces the old Cancelled chip. */
 const BUCKETS: {
   label: string;
   status?: string;
   overdue?: boolean;
-  comm?: boolean;
   stat: keyof TaskStats;
 }[] = [
   { label: 'All', status: '', stat: 'total' },
@@ -57,7 +53,6 @@ const BUCKETS: {
   // Out of TAT (ADR-0044): the exact overdue set (server-side `overdue=1`, urgency-ordered) — an OPEN
   // task past its `tat_hours` target since `assigned_at`.
   { label: 'Out of TAT', overdue: true, stat: 'overdue' },
-  { label: 'Commissionable', comm: true, stat: 'commissionable' },
 ];
 
 /**
@@ -68,23 +63,15 @@ const BUCKETS: {
  */
 export function PipelinePage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
-  // The ₹ amounts + Commissionable bucket are billing.view-gated (comp data). The server nulls the
-  // amounts for non-holders regardless; this only hides the columns/bucket so the UI mirrors it.
-  const canViewBilling =
-    !!user && (user.grantsAll === true || (user.permissions ?? []).includes('billing.view'));
   const [searchParams, setSearchParams] = useSearchParams();
   const status = searchParams.get('status') ?? '';
   const overdue = searchParams.get('overdue') === '1';
-  const commissionable = searchParams.get('commissionable') === '1';
   // All buckets are mutually exclusive — selecting one clears the others.
-  const selectBucket = (b: { status?: string; overdue?: boolean; comm?: boolean }) => {
+  const selectBucket = (b: { status?: string; overdue?: boolean }) => {
     const next = new URLSearchParams(searchParams);
     next.delete('status');
     next.delete('overdue');
-    next.delete('commissionable');
     if (b.overdue) next.set('overdue', '1');
-    else if (b.comm) next.set('commissionable', '1');
     else if (b.status) next.set('status', b.status);
     next.delete('page'); // a bucket change re-anchors to page 1
     setSearchParams(next, { replace: true });
@@ -197,23 +184,6 @@ export function PipelinePage() {
         cell: (t) => t.assignedToName ?? '—',
       },
       { id: 'billCount', header: 'Bills', align: 'right', cell: (t) => t.billCount },
-      // ₹ amounts: display-only (not sortable — they live only in the billing FROM), billing.view-gated.
-      ...(canViewBilling
-        ? ([
-            {
-              id: 'billAmount',
-              header: 'Bill Amt',
-              align: 'right',
-              cell: (t: TaskView) => <span className="tabular-nums">{money(t.billAmount)}</span>,
-            },
-            {
-              id: 'commissionAmount',
-              header: 'Commission',
-              align: 'right',
-              cell: (t: TaskView) => <span className="tabular-nums">{money(t.commissionAmount)}</span>,
-            },
-          ] satisfies DataGridColumn<TaskView>[])
-        : []),
       {
         id: 'assignedAt',
         header: 'Assigned At',
@@ -241,7 +211,7 @@ export function PipelinePage() {
         ),
       },
     ],
-    [canViewBilling],
+    [],
   );
 
   return (
@@ -257,12 +227,8 @@ export function PipelinePage() {
 
       {/* Status bucket bar (counts are scope+filter aware; `status` itself excluded server-side). */}
       <div className="flex flex-wrap gap-2" role="group" aria-label="Status buckets">
-        {BUCKETS.filter((b) => canViewBilling || !b.comm).map((b) => {
-          const active = b.overdue
-            ? overdue
-            : b.comm
-              ? commissionable
-              : !overdue && !commissionable && status === (b.status ?? '');
+        {BUCKETS.map((b) => {
+          const active = b.overdue ? overdue : !overdue && status === (b.status ?? '');
           const count = stats.data?.[b.stat];
           return (
             <button
@@ -295,7 +261,6 @@ export function PipelinePage() {
         filters={{
           status: status || undefined,
           overdue: overdue ? '1' : undefined,
-          commissionable: commissionable ? '1' : undefined,
         }}
         fetchPage={(query: PageQuery) =>
           api<Paginated<TaskView>>('GET', `${BASE}?${pageQueryToParams(query).toString()}`)
