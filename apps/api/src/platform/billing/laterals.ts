@@ -43,9 +43,11 @@ export const RATE_LATERAL = `LEFT JOIN LATERAL (
  *  DIFFERENT location). The location-less default MUST beat a row scoped to a non-matching location —
  *  a single CASE rank encodes this (plain `(loc = X) DESC NULLS LAST` would rank a non-matching FALSE
  *  above a location-less NULL, breaking §E). Then client > product > unit > tat_band specificity.
- *  Point-in-time as-of COALESCE(ct.completed_at, now()) so editing rates/tat_policies later never
- *  rewrites a completed task's commission (ADR-0046 §4). The completed-in band is derived from
- *  completed_elapsed_minutes vs tat_policies as-of the same anchor. LIMIT 1 → 1:1 (COUNT/SUM exact). */
+ *  Point-in-time as-of COALESCE(ct.submitted_at, ct.completed_at, now()) — ADR-0047 freezes commission at
+ *  SUBMIT (office-only tasks with no submit fall back to completed_at), so editing rates/tat_policies later
+ *  never rewrites a frozen commission. The band is the SUBMIT-in band, derived from
+ *  COALESCE(submitted_elapsed_minutes, completed_elapsed_minutes) vs tat_policies as-of the same anchor.
+ *  LIMIT 1 → 1:1 (COUNT/SUM exact). */
 export const COMMISSION_LATERAL = `LEFT JOIN LATERAL (
     SELECT cmr.amount::float8 AS commission_amount
     FROM commission_rates cmr
@@ -57,13 +59,13 @@ export const COMMISSION_LATERAL = `LEFT JOIN LATERAL (
             COALESCE(
               (SELECT tp.tat_hours FROM tat_policies tp
                  WHERE tp.is_active
-                   AND tp.effective_from <= COALESCE(ct.completed_at, now())
-                   AND (tp.effective_to IS NULL OR tp.effective_to > COALESCE(ct.completed_at, now()))
-                   AND tp.tat_hours >= CEIL(ct.completed_elapsed_minutes / 60.0)
+                   AND tp.effective_from <= COALESCE(ct.submitted_at, ct.completed_at, now())
+                   AND (tp.effective_to IS NULL OR tp.effective_to > COALESCE(ct.submitted_at, ct.completed_at, now()))
+                   AND tp.tat_hours >= CEIL(COALESCE(ct.submitted_elapsed_minutes, ct.completed_elapsed_minutes) / 60.0)
                  ORDER BY tp.tat_hours ASC LIMIT 1),
-              CASE WHEN ct.completed_elapsed_minutes IS NULL THEN NULL ELSE -1 END)))
-      AND cmr.effective_from <= COALESCE(ct.completed_at, now())
-      AND (cmr.effective_to IS NULL OR cmr.effective_to > COALESCE(ct.completed_at, now()))
+              CASE WHEN COALESCE(ct.submitted_elapsed_minutes, ct.completed_elapsed_minutes) IS NULL THEN NULL ELSE -1 END)))
+      AND cmr.effective_from <= COALESCE(ct.submitted_at, ct.completed_at, now())
+      AND (cmr.effective_to IS NULL OR cmr.effective_to > COALESCE(ct.submitted_at, ct.completed_at, now()))
     ORDER BY (CASE
                WHEN cmr.location_id = ct.area_id    THEN 5
                WHEN cmr.location_id = ct.pincode_id THEN 4

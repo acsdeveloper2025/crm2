@@ -222,6 +222,36 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
     expect(Number(r2.commission_amount)).toBe(50); // unchanged — frozen at submit, not re-stamped
   });
 
+  it('field commission resolves the SUBMIT-in TAT band at submit (ADR-0047 × ADR-0046 band dim)', async () => {
+    const { taskId, agent } = await seedAssignedTask('BND');
+    // a single 24h TAT band (clear any seeded policies so the submit-in band is deterministically 24h)
+    // + a band-specific commission rate for that band (universal location)
+    await db!.pool.query(`DELETE FROM tat_policies`);
+    await db!.pool.query(`INSERT INTO tat_policies (tat_hours, label) VALUES (24, '24h')`);
+    await db!.pool.query(
+      `INSERT INTO commission_rates (user_id, location_id, tat_band, amount, currency, effective_from)
+       VALUES ($1::uuid, NULL, 24, 88, 'INR', now() - interval '1 day')`,
+      [agent],
+    );
+    const h = hdr('FIELD_AGENT', agent);
+    await request(app).post(`/api/v2/verification-tasks/${taskId}/start`).set(h);
+    const sub = await request(app)
+      .post(`/api/v2/verification-tasks/${taskId}/verification/residence`)
+      .set(h)
+      .send({ formData: { x: 1 } });
+    expect(sub.status).toBe(200);
+    // submitted within minutes → submit-in band = 24h → the band-specific rate (₹88) resolves AT SUBMIT
+    // (the band is derived from submitted_elapsed_minutes, not completed_elapsed which is null at submit)
+    const r = (
+      await db!.pool.query(
+        `SELECT commission_amount, submitted_elapsed_minutes FROM case_tasks WHERE id = $1`,
+        [taskId],
+      )
+    ).rows[0];
+    expect(r.submitted_elapsed_minutes).not.toBeNull();
+    expect(Number(r.commission_amount)).toBe(88);
+  });
+
   it('revoke → REVOKED (reason in audit, no result); a COMPLETED task cannot be device-revoked', async () => {
     const { taskId, agent } = await seedAssignedTask('RV');
     const h = hdr('FIELD_AGENT', agent);
