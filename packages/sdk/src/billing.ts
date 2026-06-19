@@ -39,6 +39,8 @@ export interface BillingTaskLine {
   commissionAmount: number | null;
   /** bill-count multiplier for this task line (G-2); line total = amount × billCount. */
   billCount: number;
+  /** completed-in TAT band (tat_hours), -1 = out of every band, null = no elapsed (ADR-0046 §4.2). */
+  tatBand: number | null;
   completedAt: string | null;
 }
 

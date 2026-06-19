@@ -145,7 +145,8 @@ export const billingRepository = {
     return query<BillingTaskLine>(
       `SELECT ct.id AS task_id, ct.task_number, vu.name AS unit_name, au.name AS assignee_name,
               ct.task_origin AS billing_class, ct.visit_type, rt.rate_type,
-              rt.bill_amount, com.commission_amount, ct.bill_count, ct.completed_at
+              rt.bill_amount, com.commission_amount, ct.bill_count, ${COMPLETED_BAND} AS tat_band,
+              ct.completed_at
        FROM case_tasks ct
        JOIN cases cs ON cs.id = ct.case_id
        JOIN verification_units vu ON vu.id = ct.verification_unit_id

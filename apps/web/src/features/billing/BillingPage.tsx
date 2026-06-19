@@ -6,6 +6,7 @@ import {
   type Option,
   type BillingCaseRow,
   type BillingTaskLine,
+  type BillingBreakdown,
   type PageQuery,
   type Paginated,
   type ExportRequest,
@@ -17,10 +18,16 @@ import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/ind
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
 
 const money = (n: number | null) => (n === null ? '—' : `₹${n.toFixed(2)}`);
+/** Line total = per-unit amount × billable-units (ADR-0046 §5 / G-2). */
+const lineMoney = (amount: number | null, count: number) =>
+  amount === null ? '—' : `₹${(amount * count).toFixed(2)}`;
+/** Completed-in TAT band label: -1 = completed outside every band; null = not derivable. */
+const bandLabel = (b: number | null) => (b == null ? '—' : b === -1 ? 'Out of band' : `≤${b}h`);
 
 /**
  * Inline per-case detail (DATAGRID accordion): the COMPLETED-task billing lines for one case,
  * lazy-loaded on expand. Owner's no-empty-pane rule → detail renders below the row, not a side pane.
+ * Bill/Commission are shown as line totals (per-unit amount × bill_count).
  */
 function BillingCaseLines({ caseId }: { caseId: string }) {
   const q = useQuery({
@@ -30,8 +37,8 @@ function BillingCaseLines({ caseId }: { caseId: string }) {
   if (q.isLoading) return <HexagonLoader operation="Loading Billing Lines" />;
   const lines = q.data ?? [];
   if (lines.length === 0) return <div className="p-3 text-sm text-muted-foreground">No completed tasks.</div>;
-  const billSum = lines.reduce((s, l) => s + (l.billAmount ?? 0), 0);
-  const commSum = lines.reduce((s, l) => s + (l.commissionAmount ?? 0), 0);
+  const billSum = lines.reduce((s, l) => s + (l.billAmount ?? 0) * l.billCount, 0);
+  const commSum = lines.reduce((s, l) => s + (l.commissionAmount ?? 0) * l.billCount, 0);
   return (
     <table className="rtable w-full text-sm">
       <thead>
@@ -41,6 +48,8 @@ function BillingCaseLines({ caseId }: { caseId: string }) {
           <th className="py-1">Assignee</th>
           <th className="py-1">Class</th>
           <th className="py-1">Rate Type</th>
+          <th className="py-1 text-right">TAT Band</th>
+          <th className="py-1 text-right">Units</th>
           <th className="py-1 text-right">Bill</th>
           <th className="py-1 text-right">Commission</th>
           <th className="py-1">Completed</th>
@@ -64,11 +73,17 @@ function BillingCaseLines({ caseId }: { caseId: string }) {
             <td data-label="Rate Type" className="py-1 text-xs uppercase">
               {l.rateType ?? '—'}
             </td>
+            <td data-label="TAT Band" className="py-1 text-right">
+              {bandLabel(l.tatBand)}
+            </td>
+            <td data-label="Units" className="py-1 text-right tabular-nums">
+              {l.billCount}
+            </td>
             <td data-label="Bill" className="py-1 text-right tabular-nums">
-              {money(l.billAmount)}
+              {lineMoney(l.billAmount, l.billCount)}
             </td>
             <td data-label="Commission" className="py-1 text-right tabular-nums">
-              {money(l.commissionAmount)}
+              {lineMoney(l.commissionAmount, l.billCount)}
             </td>
             <td data-label="Completed" className="py-1">
               {l.completedAt ? formatDateTime(l.completedAt) : '—'}
@@ -76,7 +91,7 @@ function BillingCaseLines({ caseId }: { caseId: string }) {
           </tr>
         ))}
         <tr className="border-t-2 border-border font-semibold">
-          <td className="py-1" colSpan={5}>
+          <td className="py-1" colSpan={7}>
             Case total
           </td>
           <td className="py-1 text-right tabular-nums">{money(billSum)}</td>
@@ -88,7 +103,112 @@ function BillingCaseLines({ caseId }: { caseId: string }) {
   );
 }
 
-/** Billing & Commission (ADR-0036) — per-case client billing + agent commission over completed tasks. */
+/**
+ * Breakdown panels (ADR-0046 §6): completed-task bill/commission grouped by pincode/area and by the
+ * completed-in TAT band, over the currently selected client filter. Amounts are bill_count-weighted.
+ */
+function BillingBreakdownPanels({ clientId }: { clientId: string }) {
+  const q = useQuery({
+    queryKey: ['billing-breakdown', clientId],
+    queryFn: () =>
+      api<BillingBreakdown>('GET', `/api/v2/billing/breakdown${clientId ? `?clientId=${clientId}` : ''}`),
+  });
+  if (q.isLoading) return <HexagonLoader operation="Loading Breakdown" />;
+  const data = q.data ?? { byLocation: [], byBand: [] };
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      <div className="rounded-lg border border-border bg-card p-4">
+        <h2 className="mb-2 text-sm font-semibold">By pincode / area</h2>
+        <table className="rtable w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs uppercase text-muted-foreground">
+              <th className="py-1">Location</th>
+              <th className="py-1 text-right">Tasks</th>
+              <th className="py-1 text-right">Units</th>
+              <th className="py-1 text-right">Bill</th>
+              <th className="py-1 text-right">Commission</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.byLocation.length === 0 ? (
+              <tr>
+                <td className="py-2 text-muted-foreground" colSpan={5}>
+                  No completed tasks.
+                </td>
+              </tr>
+            ) : (
+              data.byLocation.map((g) => (
+                <tr key={g.locationId ?? 'unmapped'} className="border-t border-border">
+                  <td data-label="Location" className="py-1">
+                    {g.pincode || g.area ? `${g.pincode ?? ''} ${g.area ?? ''}`.trim() : 'Unmapped'}
+                  </td>
+                  <td data-label="Tasks" className="py-1 text-right tabular-nums">
+                    {g.completedTaskCount}
+                  </td>
+                  <td data-label="Units" className="py-1 text-right tabular-nums">
+                    {g.billableUnits}
+                  </td>
+                  <td data-label="Bill" className="py-1 text-right tabular-nums">
+                    {money(g.billTotal)}
+                  </td>
+                  <td data-label="Commission" className="py-1 text-right tabular-nums">
+                    {money(g.commissionTotal)}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+      <div className="rounded-lg border border-border bg-card p-4">
+        <h2 className="mb-2 text-sm font-semibold">By completed-in TAT band</h2>
+        <table className="rtable w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs uppercase text-muted-foreground">
+              <th className="py-1">Band</th>
+              <th className="py-1 text-right">Tasks</th>
+              <th className="py-1 text-right">Units</th>
+              <th className="py-1 text-right">Bill</th>
+              <th className="py-1 text-right">Commission</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.byBand.length === 0 ? (
+              <tr>
+                <td className="py-2 text-muted-foreground" colSpan={5}>
+                  No completed tasks.
+                </td>
+              </tr>
+            ) : (
+              data.byBand.map((g) => (
+                <tr key={g.band ?? 'none'} className="border-t border-border">
+                  <td data-label="Band" className="py-1">
+                    {bandLabel(g.band)}
+                  </td>
+                  <td data-label="Tasks" className="py-1 text-right tabular-nums">
+                    {g.completedTaskCount}
+                  </td>
+                  <td data-label="Units" className="py-1 text-right tabular-nums">
+                    {g.billableUnits}
+                  </td>
+                  <td data-label="Bill" className="py-1 text-right tabular-nums">
+                    {money(g.billTotal)}
+                  </td>
+                  <td data-label="Commission" className="py-1 text-right tabular-nums">
+                    {money(g.commissionTotal)}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/** Billing & Commission (ADR-0046) — per-case client billing + per-executive commission over completed
+ *  tasks, with per-pincode/area + completed-in-band breakdowns. */
 export function BillingPage() {
   const { user } = useAuth();
   const has = (perm: string) =>
@@ -122,6 +242,12 @@ export function BillingPage() {
         cell: (r) => <span className="tabular-nums">{r.completedTaskCount}</span>,
       },
       {
+        id: 'billableUnits',
+        header: 'Units',
+        align: 'right',
+        cell: (r) => <span className="tabular-nums">{r.billableUnits}</span>,
+      },
+      {
         id: 'billTotal',
         header: 'Bill Total',
         sortable: true,
@@ -152,8 +278,9 @@ export function BillingPage() {
       <div>
         <h1 className="text-xl font-bold tracking-tight">Billing &amp; Commission</h1>
         <p className="text-sm text-muted-foreground">
-          Per-case client billing and agent commission over completed tasks. Expand a case to see its per-task
-          lines.
+          Per-case client billing and per-executive commission over completed tasks (bill_count-weighted).
+          Expand a case for its per-task lines; the breakdowns below group by location and completed-in TAT
+          band.
         </p>
       </div>
       <DataGrid<BillingCaseRow>
@@ -191,6 +318,7 @@ export function BillingPage() {
           </select>
         }
       />
+      <BillingBreakdownPanels clientId={clientId} />
     </div>
   );
 }
