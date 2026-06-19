@@ -316,6 +316,25 @@
         ]
       }
     },
+    "/api/v2/billing/breakdown": {
+      "get": {
+        "tags": [
+          "billing"
+        ],
+        "operationId": "get_api_v2_billing_breakdown",
+        "summary": "GET /api/v2/billing/breakdown",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v2/billing/cases": {
       "get": {
         "tags": [
