@@ -2568,6 +2568,44 @@
         ]
       }
     },
+    "/api/v2/mis/export": {
+      "get": {
+        "tags": [
+          "mis"
+        ],
+        "operationId": "get_api_v2_mis_export",
+        "summary": "GET /api/v2/mis/export",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/mis/rows": {
+      "get": {
+        "tags": [
+          "mis"
+        ],
+        "operationId": "get_api_v2_mis_rows",
+        "summary": "GET /api/v2/mis/rows",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v2/notifications": {
       "delete": {
         "tags": [

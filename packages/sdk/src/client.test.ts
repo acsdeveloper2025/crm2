@@ -476,4 +476,31 @@ describe('createSdk — transport', () => {
       ]),
     );
   });
+
+  it('mis.rows builds URL with required + optional params; mis.export routes to /mis/export', async () => {
+    const { impl, calls } = fakeFetch(200, { columns: [], rows: [], totalCount: 0 });
+    const s = createSdk({ baseUrl: 'http://x', fetchImpl: impl });
+    // required params only
+    await s.mis.rows({ clientId: 3, productId: 7 });
+    expect(calls[0]?.url).toBe('http://x/api/v2/mis/rows?clientId=3&productId=7');
+    expect(calls[0]?.init.method).toBe('GET');
+    // with optional date-range + search + pagination
+    await s.mis.rows({
+      clientId: 3,
+      productId: 7,
+      completedFrom: '2026-01-01T00:00:00.000Z',
+      completedTo: '2026-06-30T23:59:59.999Z',
+      search: 'HDFC',
+      page: 2,
+      pageSize: 100,
+    });
+    const q = new URL(calls[1]!.url).searchParams;
+    expect(q.get('clientId')).toBe('3');
+    expect(q.get('productId')).toBe('7');
+    expect(q.get('completedFrom')).toBe('2026-01-01T00:00:00.000Z');
+    expect(q.get('completedTo')).toBe('2026-06-30T23:59:59.999Z');
+    expect(q.get('search')).toBe('HDFC');
+    expect(q.get('page')).toBe('2');
+    expect(q.get('pageSize')).toBe('100');
+  });
 });

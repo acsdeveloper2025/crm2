@@ -39,6 +39,7 @@ import type {
 } from './commissionRates.js';
 import type { TatPolicy, TatPolicyView, CreateTatPolicyInput, ReviseTatPolicyInput } from './tatPolicies.js';
 import type { BillingCaseRow, BillingTaskLine, BillingBreakdown, BillingBreakdownQuery } from './billing.js';
+import type { MisRowsResponse, MisQuery } from './mis.js';
 import type {
   ReportLayout,
   ReportLayoutView,
@@ -408,6 +409,35 @@ export function createSdk(opts: SdkOptions) {
       },
       /** DataGrid export (IMPORT_EXPORT_STANDARD): same list query + format/mode → a file blob. */
       export: (r: ExportRequest) => reqBlob('billing/cases', r),
+    },
+
+    /**
+     * MIS (ADR-0037) — layout-driven tabular view of COMPLETED tasks. Gated `page.mis`.
+     * Money columns (RATE_AMOUNT / COMMISSION_AMOUNT) are present only when the actor also holds
+     * `billing.view`; the endpoint never 403s on billing.view absence — it silently strips them.
+     * No active layout for the clientId/productId pair → `{ columns: [], rows: [], totalCount: 0 }`.
+     */
+    mis: {
+      rows: (q: MisQuery) => {
+        const p = new URLSearchParams();
+        p.set('clientId', String(q.clientId));
+        p.set('productId', String(q.productId));
+        if (q.completedFrom !== undefined) p.set('completedFrom', q.completedFrom);
+        if (q.completedTo !== undefined) p.set('completedTo', q.completedTo);
+        if (q.search) p.set('search', q.search);
+        if (q.page !== undefined) p.set('page', String(q.page));
+        if (q.pageSize !== undefined) p.set('pageSize', String(q.pageSize));
+        return req<MisRowsResponse>('GET', `/api/v2/mis/rows?${p.toString()}`);
+      },
+      /** DataGrid export (IMPORT_EXPORT_STANDARD): same query + format/mode → a file blob. */
+      export: (q: Omit<MisQuery, 'page' | 'pageSize'>, r: ExportRequest) =>
+        reqBlob('mis', r, {
+          clientId: String(q.clientId),
+          productId: String(q.productId),
+          ...(q.completedFrom !== undefined ? { completedFrom: q.completedFrom } : {}),
+          ...(q.completedTo !== undefined ? { completedTo: q.completedTo } : {}),
+          ...(q.search ? { search: q.search } : {}),
+        }),
     },
 
     rateTypes: {
