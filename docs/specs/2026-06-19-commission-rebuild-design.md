@@ -131,11 +131,13 @@ export const COMMISSION_LATERAL = `LEFT JOIN LATERAL (
               CASE WHEN ct.completed_elapsed_minutes IS NULL THEN NULL ELSE -1 END)))
       AND cmr.effective_from <= COALESCE(ct.completed_at, now())
       AND (cmr.effective_to IS NULL OR cmr.effective_to > COALESCE(ct.completed_at, now()))
-    ORDER BY (cmr.location_id = ct.area_id)    DESC NULLS LAST,
-             (cmr.location_id = ct.pincode_id) DESC NULLS LAST,
-             (cmr.location_id = cs.area_id)    DESC NULLS LAST,
-             (cmr.location_id = cs.pincode_id) DESC NULLS LAST,
-             (cmr.location_id IS NULL)         DESC,
+    ORDER BY (CASE
+               WHEN cmr.location_id = ct.area_id    THEN 5
+               WHEN cmr.location_id = ct.pincode_id THEN 4
+               WHEN cmr.location_id = cs.area_id    THEN 3
+               WHEN cmr.location_id = cs.pincode_id THEN 2
+               WHEN cmr.location_id IS NULL         THEN 1
+               ELSE 0 END) DESC,
              cmr.client_id            DESC NULLS LAST,
              cmr.product_id           DESC NULLS LAST,
              cmr.verification_unit_id DESC NULLS LAST,
@@ -143,6 +145,8 @@ export const COMMISSION_LATERAL = `LEFT JOIN LATERAL (
              cmr.id                   DESC
     LIMIT 1) com ON true`;
 ```
+
+> **Location-rank note (corrected during the build):** a plain `(cmr.location_id = X) DESC NULLS LAST` ladder is WRONG here — a row scoped to a *non-matching* location yields `FALSE` (a non-null), which sorts **above** the location-less default's `NULL` (nulls last), so a task at L1 would wrongly pick an L2-scoped rate over the universal default. The single `CASE` rank fixes it: location match (task.area 5 > task.pincode 4 > case.area 3 > case.pincode 2) > location-less default (1) > non-matching scoped (0). ⚠ `RATE_LATERAL` has the same latent `FALSE > NULL` pattern but is out of scope here (client bill, ADR-0018, frozen) — logged as a DEFERRED discovery in COMPLIANCE_GAPS §G.
 
 **Notes**
 - The `tat_band` match: when the completed band is `NULL` (task not completed / no elapsed), `cmr.tat_band = NULL` is NULL ⇒ only `cmr.tat_band IS NULL` (any-band) rows match. Correct — a non-completed task only earns from any-band rates (and in the billing read-model every task is `COMPLETED` anyway).
