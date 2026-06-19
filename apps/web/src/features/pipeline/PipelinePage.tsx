@@ -29,6 +29,7 @@ const STATUS_TONE: Record<string, string> = {
   PENDING: 'bg-st-pending-bg text-st-pending',
   ASSIGNED: 'bg-st-assigned-bg text-st-assigned',
   IN_PROGRESS: 'bg-st-in-progress-bg text-st-in-progress',
+  SUBMITTED: 'bg-st-under-review-bg text-st-under-review',
   COMPLETED: 'bg-st-approved-bg text-st-approved',
   REVOKED: 'bg-st-rejected-bg text-st-rejected',
   CANCELLED: 'bg-st-rejected-bg text-st-rejected',
