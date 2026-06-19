@@ -51,10 +51,10 @@ Export shares the rows audience (`page.mis`) with money dropped per-actor — mi
 ## 3. Platform — XLSX formula-escape (G-9, ADR-0049 R5)
 Harden `apps/api/src/platform/export/format.ts` so `toXlsx` neutralizes formula-leading cells (apply the existing `escapeCsvCell` leading-char guard, or write string cells as text). Add a `platform/export` unit test covering a `=cmd` / `+1` / `-1` / `@x` cell in both CSV and XLSX. Platform-wide fix.
 
-## 4. RBAC — `packages/access/src/permissions.ts` + mig 0081
+## 4. RBAC — `packages/access/src/permissions.ts` + mig 0082
 - Add `MIS_VIEW: 'page.mis'` + `PERMISSION_META['page.mis'] = { label: 'MIS — View', group: 'Operations' }`.
 - Add `PERMISSIONS.MIS_VIEW` to `ROLE_PERMISSIONS` for **MANAGER, TEAM_LEADER, BACKEND_USER** (SUPER_ADMIN via `Object.values`). (Updates the day-0 parity reference + its seed parity test.)
-- **Migration `0081`** seeds `page.mis` into `role_permissions` for those roles (triple-write per `feedback_sql_live_db_apply`: the live runtime source is the table — ADR-0022). Idempotent insert (`ON CONFLICT DO NOTHING`).
+- **Migration `0082`** seeds `page.mis` into `role_permissions` for those roles (triple-write per `feedback_sql_live_db_apply`: the live runtime source is the table — ADR-0022). Idempotent insert (`ON CONFLICT DO NOTHING`).
 
 ## 5. SDK — `packages/sdk/src/mis.ts` + `client.ts`
 - Types: `MisColumn`, `MisRowsResponse { columns: MisColumn[]; rows: Record<string, unknown>[]; totalCount: number }`, `MisQuery { clientId; productId; completedFrom?; completedTo?; search?; page?; pageSize? }`.
@@ -63,7 +63,7 @@ Harden `apps/api/src/platform/export/format.ts` so `toXlsx` neutralizes formula-
 ## 6. Web — `apps/web/src/features/mis/MisPage.tsx` + route + nav
 - Route `/mis` in `App.tsx` (gated `page.mis`), lazy like the others.
 - Nav: `Layout.tsx:40` `{ label: 'MIS & Billing' }` → `{ label: 'MIS', to: '/mis', perm: 'page.mis' }` (rename to **MIS** — "pure MIS"; the separate `Billing & Commission` item stays).
-- Page: cascading **client → product** picker (reuse the same picker the BillingPage / ReportLayouts designer uses), **completed-date range** + **search**, **Generate** → `mis.rows`. Render a **DataGrid** whose columns are `response.columns` (server-authoritative; money columns simply absent for non-billing.view) and rows keyed by `col.key`. **Export** button → `mis.export` (XLSX default; CSV option). Empty-state when `columns.length === 0`. Mirror `BillingPage.tsx` structure (DataGrid + toolbar) — do not duplicate its billing read-model.
+- Page: cascading **client → product** picker (reuse the same picker the BillingPage / ReportLayouts designer uses), **completed-date range** + **search**, **Generate** → `mis.rows`. Render a **table** (the project's `rtable` pattern — the codebase has no MUI; mirror `BillingPage.tsx`) whose columns are `response.columns` (server-authoritative; money columns simply absent for non-billing.view) and rows keyed by `col.key`. **Export** button → `mis.export` (XLSX default; CSV option). Empty-state when `columns.length === 0`. Mirror `BillingPage.tsx` structure (table + toolbar) — do not duplicate its billing read-model.
 
 ## 7. Acceptance — the "done" worked example
 Configure (MIS Layouts designer) an active `MIS` layout for a real (client, product) with columns: `case_number` (CASE_FIELD), applicant `name` (APPLICANT_FIELD), `product_name`, `task_number` (TASK_FIELD), `unit_name`, `visit_type`, `completed_at`, `TAT`, `verification_outcome`, `RATE_AMOUNT`, `COMMISSION_AMOUNT`. Run a completed case, then:
@@ -75,7 +75,7 @@ Configure (MIS Layouts designer) an active `MIS` layout for a real (client, prod
 
 ## 8. Build order (slices → the plan)
 1. Platform XLSX escape (G-9) + test — isolated, unblocks safe export.
-2. `page.mis` perm + mig 0081 + parity test.
+2. `page.mis` perm + mig 0082 + parity test.
 3. Resolver + repository + service (TDD: resolver unit tests for each source_type incl. injection/binding; api tests for gating + scope + empty-state).
 4. Routes + SDK + OpenAPI + client.test.
 5. Web page + nav + route.

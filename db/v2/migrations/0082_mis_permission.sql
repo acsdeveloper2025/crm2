@@ -1,4 +1,4 @@
--- 0081_mis_permission.sql — ADR-0049: page.mis gates the MIS report page (desk roles).
+-- 0082_mis_permission.sql — ADR-0049: page.mis gates the MIS report page (desk roles).
 -- Grants the MIS view page permission to desk roles: MANAGER, TEAM_LEADER, BACKEND_USER.
 -- SUPER_ADMIN is covered by grants_all and requires no explicit row.
 -- Mirrors @crm2/access ROLE_PERMISSIONS (roles-parity-tested). Forward-only, idempotent.

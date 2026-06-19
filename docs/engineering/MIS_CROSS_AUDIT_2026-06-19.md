@@ -32,7 +32,7 @@ V1's operational MIS (`CRM-BACKEND .../reportsController.ts:1837-1879`) is a **3
 3. **A dynamic `ExportColumn[]` factory** from the layout columns (money-filtered).
 4. **`/api/v2/mis` endpoints** (rows + export) gated `page.mis`; money columns dropped server-side when `!billing.view`; export via the platform engine + `assertExportable` + audit.
 5. **Web `/mis` page** — cascading client→product picker + completed-date range + search → table (columns from the layout) + Export. Nav `MIS & Billing` (Layout.tsx:40) → wire to `/mis` (`page.mis`).
-6. **RBAC** — new `page.mis` perm (desk roles), seeded into `role_permissions` (mig 0081).
+6. **RBAC** — new `page.mis` perm (desk roles), seeded into `role_permissions` (mig 0082).
 
 ## 4. Security requirements (from the security audit — binding)
 The full 16-point checklist is in the audit; the load-bearing ones:

@@ -55,11 +55,11 @@ describe('export formula-injection guard', () => {
 
 ---
 
-## Task 2: `page.mis` permission + role seed (mig 0081)
+## Task 2: `page.mis` permission + role seed (mig 0082)
 
 **Files:**
 - Modify: `packages/access/src/permissions.ts` (PERMISSIONS, ROLE_PERMISSIONS, PERMISSION_META)
-- Create: `db/v2/migrations/0081_mis_permission.sql`
+- Create: `db/v2/migrations/0082_mis_permission.sql`
 - Test: the existing roles-seed parity test (find it: `grep -rl "ROLE_PERMISSIONS" apps/api/src --include=*.test.ts`)
 
 - [ ] **Step 1: Add the permission constant + meta + role grants.**
@@ -69,10 +69,10 @@ describe('export formula-injection guard', () => {
 
 - [ ] **Step 2: Run the parity test, verify it now expects the seed** — `pnpm -C apps/api vitest run <roles-seed parity test>`. If it asserts the constant ≡ DB seed, it will fail until the migration seeds it (Step 3). Expected: FAIL pointing at the missing `page.mis` rows.
 
-- [ ] **Step 3: Write migration `0081_mis_permission.sql`** — idempotent seed into `role_permissions` for the 3 roles (match the existing perm-seed migration style; `grep -rl "INSERT INTO role_permissions" db/v2/migrations | tail -1` for the template):
+- [ ] **Step 3: Write migration `0082_mis_permission.sql`** — idempotent seed into `role_permissions` for the 3 roles (match the existing perm-seed migration style; `grep -rl "INSERT INTO role_permissions" db/v2/migrations | tail -1` for the template):
 
 ```sql
--- 0081_mis_permission.sql — ADR-0049: page.mis gates the MIS report page (desk roles).
+-- 0082_mis_permission.sql — ADR-0049: page.mis gates the MIS report page (desk roles).
 INSERT INTO role_permissions (role, permission)
 SELECT r.role, 'page.mis'
 FROM (VALUES ('MANAGER'), ('TEAM_LEADER'), ('BACKEND_USER')) AS r(role)
@@ -82,7 +82,7 @@ ON CONFLICT DO NOTHING;
 
 - [ ] **Step 4: Apply to the test DB + run the parity test, verify PASS.** Apply per the repo's migrate runner (`grep -rl "migrate" package.json apps/api/package.json` for the script), or psql the file into `crm2_test`.
 
-- [ ] **Step 5: Commit** — `feat(access): page.mis permission + role seed (ADR-0049, mig 0081)`.
+- [ ] **Step 5: Commit** — `feat(access): page.mis permission + role seed (ADR-0049, mig 0082)`.
 
 ---
 

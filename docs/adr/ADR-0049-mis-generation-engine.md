@@ -28,7 +28,7 @@ A static `v_mis_rows` view cannot express a **per-layout dynamic** column projec
 
 3. **Per-column money gating, server-side, at generation AND export.** `canViewBilling = grantsAll || perms.includes('billing.view')`; when false, `RATE_AMOUNT`/`COMMISSION_AMOUNT` columns are dropped from the resolved set, the SQL, and the `ExportColumn[]` manifest, and the laterals are omitted. **Closes G-4.**
 
-4. **New permission `page.mis`** (group Operations) gates the MIS routes + nav (FE nav gate ≡ BE route gate). Seeded into `role_permissions` for the desk roles (MANAGER, TEAM_LEADER, BACKEND_USER; SUPER_ADMIN via grants_all) via migration `0081`. A non-`billing.view` holder of `page.mis` (e.g. TEAM_LEADER) gets the MIS **without** money columns — not a 403.
+4. **New permission `page.mis`** (group Operations) gates the MIS routes + nav (FE nav gate ≡ BE route gate). Seeded into `role_permissions` for the desk roles (MANAGER, TEAM_LEADER, BACKEND_USER; SUPER_ADMIN via grants_all) via migration `0082`. A non-`billing.view` holder of `page.mis` (e.g. TEAM_LEADER) gets the MIS **without** money columns — not a 403.
 
 5. **Export only through `platform/export`** (`ExportColumn[]` factory built dynamically from the money-filtered layout columns), with `assertExportable` row caps + the export-audit line (`resource:'mis'`). The XLSX path is hardened to neutralize formula-leading cells (**closes G-9**) — a platform-wide fix.
 
