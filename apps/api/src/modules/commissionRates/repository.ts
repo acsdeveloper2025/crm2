@@ -9,19 +9,26 @@ const FK_VIOLATION = '23503';
 const EXCLUSION_VIOLATION = '23P01'; // commission_rates_no_overlap (overlapping active period)
 
 // amount is numeric(12,2); cast to float8 so pg returns a JS number, not a string.
-const COLS = `id, user_id, rate_type, client_id, amount::float8 AS amount, currency, is_active,
+// Dimension columns (location/product/VU/tat_band) are nullable = "applies generally" (ADR-0046).
+const COLS = `id, user_id, rate_type, client_id,
+  location_id, product_id, verification_unit_id, tat_band,
+  amount::float8 AS amount, currency, is_active,
   effective_from, effective_to, version, created_by, updated_by, created_at, updated_at`;
 
-// Shared FROM + joins for the list view (used by both the COUNT and the page query).
+// Shared FROM + joins for the list view (used by both the COUNT and the page query). The dimension
+// joins (product/VU/location) are LEFT — null when the rate applies generally to that dimension.
 const CR_FROM = `FROM commission_rates cr
   JOIN users u ON u.id = cr.user_id
-  LEFT JOIN clients c ON c.id = cr.client_id`;
+  LEFT JOIN clients c ON c.id = cr.client_id
+  LEFT JOIN products p2 ON p2.id = cr.product_id
+  LEFT JOIN verification_units vu2 ON vu2.id = cr.verification_unit_id
+  LEFT JOIN locations l2 ON l2.id = cr.location_id`;
 
 const mapWriteError = (e: unknown): never => {
   if (pgCode(e) === EXCLUSION_VIOLATION)
     throw AppError.conflict(
       'COMMISSION_RATE_EXISTS',
-      'an active commission rate already overlaps this user + rate type + client + period',
+      'an active commission rate already overlaps this user + location + client + product + unit + TAT band + classification + period',
     );
   if (pgCode(e) === FK_VIOLATION) throw AppError.badRequest('INVALID_REFERENCE');
   throw e;
@@ -77,11 +84,15 @@ export const commissionRateRepository = {
     // sortColumn is whitelisted in the service (PageSpec.sortMap) → safe to interpolate.
     const items = await query<CommissionRateView>(
       `SELECT cr.id, cr.user_id, cr.rate_type, cr.client_id,
+              cr.location_id, cr.product_id, cr.verification_unit_id, cr.tat_band,
               cr.amount::float8 AS amount, cr.currency, cr.is_active,
               cr.effective_from, cr.effective_to, cr.version,
               cr.created_by, cr.updated_by, cr.created_at, cr.updated_at,
               u.name AS user_name, u.email AS user_email,
-              c.code AS client_code, c.name AS client_name
+              c.code AS client_code, c.name AS client_name,
+              p2.code AS product_code, p2.name AS product_name,
+              vu2.name AS verification_unit_name,
+              l2.pincode AS pincode, l2.area AS area
        ${CR_FROM}
        ${clause}
        ORDER BY ${o.sortColumn} ${o.sortOrder}, cr.id ${o.sortOrder}
@@ -100,13 +111,18 @@ export const commissionRateRepository = {
     try {
       const [row] = await query<CommissionRate>(
         `INSERT INTO commission_rates
-           (user_id, rate_type, client_id, amount, currency, effective_from, created_by, updated_by)
-         VALUES ($1, $2, $3, $4, $5, COALESCE($6::timestamptz, now()), $7, $7)
+           (user_id, rate_type, client_id, location_id, product_id, verification_unit_id, tat_band,
+            amount, currency, effective_from, created_by, updated_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10::timestamptz, now()), $11, $11)
          RETURNING ${COLS}`,
         [
           input.userId,
-          input.rateType,
+          input.rateType ?? null,
           input.clientId ?? null,
+          input.locationId ?? null,
+          input.productId ?? null,
+          input.verificationUnitId ?? null,
+          input.tatBand ?? null,
           input.amount,
           input.currency ?? 'INR',
           input.effectiveFrom ?? null,
@@ -145,12 +161,27 @@ export const commissionRateRepository = {
            WHERE id = $1`,
           [id, effectiveFrom, userId],
         );
+        // Carry ALL dimensions forward (ADR-0046 §4): revise only changes amount + effective_from;
+        // the new effective-dated version preserves location/product/VU/tat_band/rate_type/client.
         const [next] = await q<CommissionRate>(
           `INSERT INTO commission_rates
-             (user_id, rate_type, client_id, amount, currency, effective_from, created_by, updated_by)
-           VALUES ($1, $2, $3, $4, $5, COALESCE($6::timestamptz, now()), $7, $7)
+             (user_id, rate_type, client_id, location_id, product_id, verification_unit_id, tat_band,
+              amount, currency, effective_from, created_by, updated_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10::timestamptz, now()), $11, $11)
            RETURNING ${COLS}`,
-          [cur.userId, cur.rateType, cur.clientId, amount, cur.currency, effectiveFrom, userId],
+          [
+            cur.userId,
+            cur.rateType,
+            cur.clientId,
+            cur.locationId,
+            cur.productId,
+            cur.verificationUnitId,
+            cur.tatBand,
+            amount,
+            cur.currency,
+            effectiveFrom,
+            userId,
+          ],
         );
         if (!next) throw AppError.internal('revise insert returned no row');
         return next;

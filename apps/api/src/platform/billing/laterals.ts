@@ -33,11 +33,13 @@ export const RATE_LATERAL = `LEFT JOIN LATERAL (
 
 /** The assignee's commission, resolved from the executive's OWN location + dims (ADR-0046),
  *  DECOUPLED from the client rate (no rate_type join). Most-specific cascade: location
- *  (task.area > task.pincode > case.area > case.pincode > location-less) then client > product >
- *  unit > tat_band specificity. Point-in-time as-of COALESCE(ct.completed_at, now()) so editing
- *  rates/tat_policies later never rewrites a completed task's commission (ADR-0046 §4). The
- *  completed-in band is derived from completed_elapsed_minutes vs tat_policies as-of the same
- *  anchor. LIMIT 1 → 1:1 (COUNT/SUM stay exact). */
+ *  (task.area > task.pincode > case.area > case.pincode > location-LESS default > a row scoped to a
+ *  DIFFERENT location). The location-less default MUST beat a row scoped to a non-matching location —
+ *  a single CASE rank encodes this (plain `(loc = X) DESC NULLS LAST` would rank a non-matching FALSE
+ *  above a location-less NULL, breaking §E). Then client > product > unit > tat_band specificity.
+ *  Point-in-time as-of COALESCE(ct.completed_at, now()) so editing rates/tat_policies later never
+ *  rewrites a completed task's commission (ADR-0046 §4). The completed-in band is derived from
+ *  completed_elapsed_minutes vs tat_policies as-of the same anchor. LIMIT 1 → 1:1 (COUNT/SUM exact). */
 export const COMMISSION_LATERAL = `LEFT JOIN LATERAL (
     SELECT cmr.amount::float8 AS commission_amount
     FROM commission_rates cmr
@@ -56,11 +58,13 @@ export const COMMISSION_LATERAL = `LEFT JOIN LATERAL (
               CASE WHEN ct.completed_elapsed_minutes IS NULL THEN NULL ELSE -1 END)))
       AND cmr.effective_from <= COALESCE(ct.completed_at, now())
       AND (cmr.effective_to IS NULL OR cmr.effective_to > COALESCE(ct.completed_at, now()))
-    ORDER BY (cmr.location_id = ct.area_id)    DESC NULLS LAST,
-             (cmr.location_id = ct.pincode_id) DESC NULLS LAST,
-             (cmr.location_id = cs.area_id)    DESC NULLS LAST,
-             (cmr.location_id = cs.pincode_id) DESC NULLS LAST,
-             (cmr.location_id IS NULL)         DESC,
+    ORDER BY (CASE
+               WHEN cmr.location_id = ct.area_id    THEN 5
+               WHEN cmr.location_id = ct.pincode_id THEN 4
+               WHEN cmr.location_id = cs.area_id    THEN 3
+               WHEN cmr.location_id = cs.pincode_id THEN 2
+               WHEN cmr.location_id IS NULL         THEN 1
+               ELSE 0 END) DESC,
              cmr.client_id            DESC NULLS LAST,
              cmr.product_id           DESC NULLS LAST,
              cmr.verification_unit_id DESC NULLS LAST,

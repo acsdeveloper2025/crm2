@@ -17,11 +17,16 @@ import { commissionRateRepository } from '../../commissionRates/repository.js';
  * the client rate (no `cmr.rate_type = rt.rate_type` join), point-in-time as-of completed_at.
  *
  * Seed: client C, product P, unit VU; two locations L1, L2; client `rates` R-L1(loc L1, ₹350) /
- * R-L2(loc L2, ₹500); agent U; commission `CR-base(U, location=L1, ₹50)` + `CR-L2(U, location=L2, ₹90)`.
- * One case CASE-1 with two COMPLETED tasks T1(area=pincode=L1) / T2(area=pincode=L2), assignee U,
- * bill_count=1. The discriminator: T1 → ₹50, T2 → ₹90 — different commission for the SAME executive
- * when ONLY the location differs, with NO rate_type on either commission row (today both ₹50, because
- * the old lateral joins `cmr.rate_type = rt.rate_type` and ignores location).
+ * R-L2(loc L2, ₹500); agent U; commission `CR-base(U, all-NULL universal default, ₹50)` +
+ * `CR-L2(U, location=L2, ₹90)`. One case CASE-1 with two COMPLETED tasks T1(area=pincode=L1) /
+ * T2(area=pincode=L2), assignee U, bill_count=1. The discriminator: T1 → ₹50 (no L1-specific row → the
+ * location-less default), T2 → ₹90 — different commission for the SAME executive when ONLY the location
+ * differs, with NO rate_type on either commission row (today both ₹50, because the old lateral joins
+ * `cmr.rate_type = rt.rate_type` and ignores location).
+ *
+ * CR-base is the all-NULL universal default now that `revise` carries dimensions forward (Task 6): the
+ * §4 revise of CR-L2 produces a new L2-scoped row (not NULL-location), so it never collides with the
+ * all-NULL base under the no-overlap EXCLUDE.
  */
 
 const RUN = !!process.env['DATABASE_URL'];
@@ -220,11 +225,12 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
     await seedRate(ctx, l1, 350);
     await seedRate(ctx, l2, 500);
 
-    // Commission for agent U: CR-base ₹50 scoped to L1 + CR-L2 ₹90 scoped to L2. Neither carries a
-    // rate_type — the per-location resolution proves the decoupling. (CR-base is L1-scoped rather than
-    // all-NULL so the §4 test's revise of CR-L2 — which does not yet carry dims, Task 6 — produces a
-    // NULL-location new row that does not collide with CR-base under the no-overlap EXCLUDE.)
-    await seedCommissionRate({ userId: fa, locationId: l1, amount: 50 });
+    // Commission for agent U: CR-base ₹50 as the all-NULL universal default + CR-L2 ₹90 scoped to L2.
+    // Neither carries a rate_type — the per-location resolution proves the decoupling. T1 (@L1) has no
+    // L1-specific row so it resolves the location-less default (₹50); T2 (@L2) resolves CR-L2 (₹90).
+    // Task 6's `revise` carries dimensions forward, so revising CR-L2 keeps location=L2 and never
+    // collides with the all-NULL base under the no-overlap EXCLUDE.
+    await seedCommissionRate({ userId: fa, amount: 50 });
     crL2Id = await seedCommissionRate({ userId: fa, locationId: l2, amount: 90 });
 
     // One case with two applicants → two tasks (T1 @ L1, T2 @ L2), same assignee U.
@@ -300,12 +306,18 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
 
   it('§4: revising a commission rate after completion does NOT rewrite historical commission', async () => {
     const before = await commissionRateRepository.findById(crL2Id);
-    await commissionRateRepository.revise(crL2Id, 999, null, saId, before!.version);
+    const l2Id = before!.locationId;
+    expect(l2Id).not.toBeNull(); // CR-L2 is location-scoped
+    const next = await commissionRateRepository.revise(crL2Id, 999, null, saId, before!.version);
     // The task's anchor is its earlier completed_at (now - 1 day); the revise end-dates the old row
     // at now() and the new ₹999 row starts at now() — neither covers the completion instant, so the
     // old ₹90 row is still the effective one as-of completion.
     const lines = await billingRepository.caseTasks(caseId);
     expect(lines.find((l) => l.taskNumber === t2Number)!.commissionAmount).toBe(90);
+    // …AND the new effective-dated row preserves the location dimension (Task 6 — revise carries dims).
+    expect(next.locationId).toBe(l2Id);
+    const current = await commissionRateRepository.findById(next.id);
+    expect(current!.locationId).toBe(l2Id);
   });
 
   it('breakdown groups by location and by completed-in band', async () => {

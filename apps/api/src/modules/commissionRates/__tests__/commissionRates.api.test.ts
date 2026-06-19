@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import request from 'supertest';
-import { createTestDb, authHeaderForRole } from '@crm2/test-utils';
+import { createTestDb, authHeaderForRole, productFactory, verificationUnitFactory } from '@crm2/test-utils';
+import type { CommissionRateView } from '@crm2/sdk';
 import { createApp } from '../../../http/app.js';
 import { setPool } from '../../../platform/db.js';
 
@@ -221,6 +222,92 @@ describe.skipIf(!RUN)('commission-rates API (ADR-0036)', () => {
       expect(
         (await request(app).get('/api/v2/commission-rates/export?format=csv&mode=all').set(TL)).status,
       ).toBe(403);
+    });
+  });
+  /**
+   * Dimension CRUD + list view (ADR-0046 §1 D-c, §6, §7.1): create carries the new
+   * location/product/VU/tat_band dimensions; the list view returns their display fields; the no-overlap
+   * EXCLUDE keys on the full dimension tuple. Nested so it shares the outer migrate/end lifecycle (one
+   * shared `db`); its own `beforeEach` truncates the extra dimension tables + seeds them.
+   */
+  describe('dimensions (ADR-0046)', () => {
+    let dimUserId: string;
+    let locId: number;
+    let prodId: number;
+    let vuId: number;
+
+    beforeEach(async () => {
+      await db!.truncate('commission_rates', 'verification_units', 'products', 'locations', 'users');
+      dimUserId = await newUser('cr_dim');
+      locId = (
+        (
+          await request(app)
+            .post('/api/v2/locations')
+            .set(SA)
+            .send({ pincode: '411001', area: 'DIMAREA', city: 'Pune', state: 'MH' })
+        ).body as { id: number }
+      ).id;
+      prodId = (
+        (
+          await request(app)
+            .post('/api/v2/products')
+            .set(SA)
+            .send(productFactory({ code: 'P_DIM' }))
+        ).body as { id: number }
+      ).id;
+      vuId = (
+        (
+          await request(app)
+            .post('/api/v2/verification-units')
+            .set(SA)
+            .send(verificationUnitFactory({ code: 'VU_DIM' }))
+        ).body as { id: number }
+      ).id;
+    });
+
+    it('create accepts location/product/VU/tatBand and the list view returns them', async () => {
+      const res = await request(app).post('/api/v2/commission-rates').set(SA).send({
+        userId: dimUserId,
+        locationId: locId,
+        productId: prodId,
+        verificationUnitId: vuId,
+        tatBand: 24,
+        amount: 70,
+      });
+      expect(res.status).toBe(201);
+      expect(res.body.locationId).toBe(locId);
+      expect(res.body.productId).toBe(prodId);
+      expect(res.body.verificationUnitId).toBe(vuId);
+      expect(res.body.tatBand).toBe(24);
+
+      const list = await request(app).get(`/api/v2/commission-rates?userId=${dimUserId}`).set(SA);
+      expect(list.status).toBe(200);
+      const row = (list.body.items as CommissionRateView[]).find((r) => r.amount === 70)!;
+      expect(row.locationId).toBe(locId);
+      expect(row.productId).toBe(prodId);
+      expect(row.verificationUnitId).toBe(vuId);
+      expect(row.tatBand).toBe(24);
+      // display fields from the joins
+      expect(row.pincode).toBe('411001');
+      expect(row.area).toBe('DIMAREA');
+      expect(row.productCode).toBe('P_DIM');
+      expect(row.productName).toBeTruthy();
+      expect(row.verificationUnitName).toBeTruthy();
+    });
+
+    it('no-overlap holds on the new dimension tuple (two identical-dim active rows → 409)', async () => {
+      const body = { userId: dimUserId, locationId: locId, amount: 5 };
+      const first = await request(app).post('/api/v2/commission-rates').set(SA).send(body);
+      expect(first.status).toBe(201);
+      const dup = await request(app).post('/api/v2/commission-rates').set(SA).send(body);
+      expect(dup.status).toBe(409);
+      expect(dup.body.error).toBe('COMMISSION_RATE_EXISTS');
+      // a DIFFERENT location for the same user is allowed (new tuple ⇒ no overlap)
+      const other = await request(app)
+        .post('/api/v2/commission-rates')
+        .set(SA)
+        .send({ userId: dimUserId, amount: 5 }); // all-NULL default — a different tuple than (loc=locId)
+      expect(other.status).toBe(201);
     });
   });
 });
