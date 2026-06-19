@@ -525,7 +525,20 @@ the client rate_type** (executive's own pincode/area mapping; OGL-for-client can
 **SEQUENCE:** build the **TAT band system first** (G-7), then the full commission rebuild. See the
 audit doc's "Decisions LOCKED" section.
 
-### G-1 · Commission has no pincode/area dimension — 🟡 DEFERRED (owner decision + ADR-0046 if model i/iii)
+**✅ BUILT & GATE-VERIFIED 2026-06-19 (ADR-0046, branch `worktree-feat-commission-rebuild`, NOT yet
+deployed).** TAT (ADR-0044) shipped first; this rebuild then decoupled commission from the client rate
+(`COMMISSION_LATERAL` rewritten: location + client + product/VU + completed-in-TAT-band cascade, no
+`rate_type` join; point-in-time as-of `COALESCE(ct.completed_at, now())` per ADR-0046 §4 — read-derived,
+no persisted ledger), added the dimensions to `commission_rates` (mig **0079**, generalized no-overlap
+EXCLUDE), fixed the `bill_count` rollup (+`billable_units`), added the per-pincode/area + completed-in-band
+billing breakdown, removed the pipeline money surface, and added the cascading-picker commission form +
+breakdown panels. Resolutions: **G-1 ✅ FIXED**, **G-2 ✅ FIXED**, **G-3 ✅ FIXED**, **G-7 ✅ FIXED**
+(TAT shipped + consumed). Acceptance §E proven by integration test (T1 ₹50 @ L1 vs T2 ₹90 @ L2, total
+₹140; bill_count ×; by-location/by-band breakdown). Full `pnpm verify` GREEN (63 api + 25 sdk test files,
+coverage met, build clean). **Live browser-verify OUTSTANDING** — preview MCP unavailable this session;
+verify on the prod-dev box post-deploy or via a local preview. New discovery → **G-8** below.
+
+### G-1 · Commission has no pincode/area dimension — ✅ FIXED (ADR-0046, 2026-06-19)
 - **Severity:** HIGH (the requested capability). **Finding:** `commission_rates` is keyed
   `(user_id, rate_type, client_id, time)` with no location term; `COMMISSION_LATERAL`
   (`laterals.ts:35-42`) has no location operand. Commission varies by location only *transitively*
@@ -535,7 +548,7 @@ audit doc's "Decisions LOCKED" section.
   ADR-0036, needs ADR-0046**; reporting-only → model (ii) → no supersession). Not a defect against
   ADR-0036 (which deliberately excludes location); it is a scope/requirement change.
 
-### G-2 · Billing rollup ignores `case_tasks.bill_count` — 🟠 OPEN → DEFERRED (owner intent)
+### G-2 · Billing rollup ignores `case_tasks.bill_count` — ✅ FIXED (ADR-0046, 2026-06-19)
 - **Severity:** HIGH (location-independent amount/count correctness). **Finding:** `bill_count`
   (`0011_task_assignment.sql:11`, default 1, per-task editable in the SDK) is never read by the
   rollup or laterals — a `bill_count=3` task contributes `bill_amount×1` and counts as 1. If it is a
@@ -544,7 +557,7 @@ audit doc's "Decisions LOCKED" section.
 - **Disposition:** DEFERRED pending owner confirmation of intent (Decisions §2). If confirmed a bug →
   FIXED in the rebuild; if vestigial/always-1 → WONTFIX with rationale. **Must not be silently dropped.**
 
-### G-3 · "Commissionable" tab surfaces ₹ in the pipeline (operational view) — 🟡 DEFERRED (owner decision §5)
+### G-3 · "Commissionable" tab surfaces ₹ in the pipeline (operational view) — ✅ FIXED (ADR-0046, 2026-06-19)
 - **Severity:** LOW (UX/scope; **not** a security hole). **Finding:** `PipelinePage.tsx` shows
   bill/commission columns + a Commissionable bucket (gated `billing.view` on the FE). The **server is
   already safe** — it nulls amounts and ignores `commissionable=1` for non-`billing.view` actors
@@ -571,7 +584,7 @@ audit doc's "Decisions LOCKED" section.
 - **Disposition:** WONTFIX for now (cast is intentional for JS number transport); revisit if money
   precision is ever reported wrong.
 
-### G-7 · TAT band system (4/6/8/12/24/48h) is unbuilt — prerequisite for commission-by-TAT — 🟡 DEFERRED → BUILD FIRST
+### G-7 · TAT band system (4/6/8/12/24/48h) is unbuilt — prerequisite for commission-by-TAT — ✅ FIXED (ADR-0044 shipped + consumed by ADR-0046, 2026-06-19)
 - **Severity:** MEDIUM (newly prioritized prerequisite). **Finding:** the owner recalled TAT bands as
   "built earlier" — they are **not**. ADR-0044 (task-tat-priority) is **Status: Proposed**, nothing in
   the schema (`tat_hours`/`tat_policies`/`due_at` all absent). What exists: the priority enum
@@ -585,6 +598,22 @@ audit doc's "Decisions LOCKED" section.
   read-model) + amend ADR-0044 to allow commission as a consumer, **before** the commission rebuild.
   TAT design decisions (clock start, wall-clock vs business-hours, completion-time source,
   target-vs-actual band, full-ADR-0044 vs minimal) pending owner lock in the TAT design phase.
+
+### G-8 · `RATE_LATERAL` location ladder ranks a non-matching scoped rate above the location-less default — 🟡 DEFERRED (discovered 2026-06-19 during ADR-0046)
+- **Severity:** MEDIUM (latent client-bill correctness). **Finding:** `RATE_LATERAL`
+  (`apps/api/src/platform/billing/laterals.ts:21-32`) orders by `(r.location_id = ct.area_id) DESC NULLS
+  LAST, …, (r.location_id IS NULL) DESC`. Under Postgres, a row scoped to a **non-matching** location
+  yields `FALSE` (a non-null), which sorts **above** the location-less default's `NULL` (nulls last). So
+  for a CPV that has both a location-less default rate and a different-location override, a task at a
+  *third* location resolves the wrong (override) rate instead of the default. The same flaw was present
+  in the new `COMMISSION_LATERAL` and was **fixed there** (collapsed to a single `CASE` rank: match >
+  location-less > non-matching; see ADR-0046 spec §3). `RATE_LATERAL` (client bill) was **left
+  untouched** — it is governed by ADR-0018 (FROZEN) and out of ADR-0046's scope.
+- **Disposition:** DEFERRED — needs a superseding ADR (touches the frozen flat-rate model + changes
+  historical client-bill resolution) + owner/CTO sign-off. The same `CASE`-rank fix applies. The
+  mirrored `cases/repository.ts:139-149` rate_type display subquery shares the flaw and must be fixed
+  together. Real-world impact depends on whether any CPV actually has both a location-less default and a
+  location override (verify against prod data before prioritizing). **Must not be silently dropped.**
 
 ### Verified PASS (no finding)
 - RBAC: commission config = `masterdata.manage` = SUPER_ADMIN-only; `billing.view` = MANAGER +
