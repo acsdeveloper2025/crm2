@@ -308,6 +308,22 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
     expect(lines.find((l) => l.taskNumber === t2Number)!.commissionAmount).toBe(90);
   });
 
+  it('breakdown groups by location and by completed-in band', async () => {
+    const bd = await billingRepository.breakdown(baseOpts);
+    const l1 = bd.byLocation.find((r) => r.area === 'L1AREA');
+    const l2 = bd.byLocation.find((r) => r.area === 'L2AREA');
+    expect(l1?.commissionTotal).toBe(50); // T1 @ L1
+    expect(l2?.commissionTotal).toBe(90); // T2 @ L2
+    expect(l1?.billTotal).toBe(350);
+    expect(l2?.billTotal).toBe(500);
+    expect(l1?.completedTaskCount).toBe(1);
+    expect(l2?.billableUnits).toBe(1);
+    // Both tasks completed in 60 minutes → the same completed-in band; at least one band group.
+    expect(bd.byBand.length).toBeGreaterThanOrEqual(1);
+    const bandCommission = bd.byBand.reduce((s, b) => s + b.commissionTotal, 0);
+    expect(bandCommission).toBe(140); // 50 + 90 across all bands
+  });
+
   // NOTE: mutates the shared seed (bill_count). `beforeEach` re-seeds, so isolation holds, but this
   // is kept as the LAST `it()` so the earlier §E bill_count=1 assertions (850/140) are unaffected.
   it('bill_count multiplies bill+commission and reports billable_units', async () => {

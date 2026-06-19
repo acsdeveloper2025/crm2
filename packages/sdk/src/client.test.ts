@@ -212,6 +212,7 @@ describe('createSdk — transport', () => {
       s.dataEntry.savePickup('00000000-0000-0000-0000-0000000000aa', { pickupTrigger: 'x', version: 1 }),
       s.billing.cases({ filters: { clientId: 1 } }),
       s.billing.caseTasks('00000000-0000-0000-0000-0000000000aa'),
+      s.billing.breakdown(),
       s.rateTypes.list(),
       s.locations.list(),
       s.locations.pincodes('400'),
@@ -371,7 +372,7 @@ describe('createSdk — transport', () => {
       s.savedViews.remove('00000000-0000-0000-0000-0000000000aa'),
       s.savedViews.setDefault('00000000-0000-0000-0000-0000000000aa', true),
     ]);
-    expect(calls.length).toBe(161);
+    expect(calls.length).toBe(162);
     expect(calls.some((c) => c.url === 'http://x/api/v2/commission-rates')).toBe(true);
     expect(calls.some((c) => c.url === 'http://x/api/v2/tat-policies')).toBe(true);
     expect(calls.some((c) => c.url === 'http://x/api/v2/report-layouts')).toBe(true);
@@ -399,6 +400,14 @@ describe('createSdk — transport', () => {
           'http://x/api/v2/sync/download?lastSyncTimestamp=2026-06-11T00%3A00%3A00.000Z&limit=50&offset=0',
       ),
     ).toBe(true);
+  });
+
+  it('billing.breakdown builds a versioned URL with query params', async () => {
+    const { impl, calls } = fakeFetch(200, { byLocation: [], byBand: [] });
+    const sdk = createSdk({ baseUrl: 'http://x', fetchImpl: impl });
+    await sdk.billing.breakdown({ clientId: 5, completedFrom: '2026-01-01' });
+    expect(calls[0]?.url).toBe('http://x/api/v2/billing/breakdown?clientId=5&completedFrom=2026-01-01');
+    expect(calls[0]?.init.method).toBe('GET');
   });
 
   it('options endpoints (B-22) hit the unpaginated /options feeds', async () => {

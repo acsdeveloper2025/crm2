@@ -50,4 +50,12 @@ export const billingController = {
       next(e);
     }
   },
+
+  async breakdown(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json(await svc.breakdown(req.query as Record<string, unknown>, actor(req)));
+    } catch (e) {
+      next(e);
+    }
+  },
 };

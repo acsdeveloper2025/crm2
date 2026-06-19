@@ -41,3 +41,47 @@ export interface BillingTaskLine {
   billCount: number;
   completedAt: string | null;
 }
+
+/**
+ * Billing breakdown (ADR-0046) — completed-task bill/commission totals over the same filter as the
+ * case list, grouped two ways: by the task's resolved location (pincode/area) and by the completed-in
+ * TAT band. Read-only, derived; gated `billing.view`.
+ */
+
+/** One pincode/area group — the task's resolved location (task area > pincode > case area > pincode). */
+export interface BillingLocationGroup {
+  /** Resolved location id; null when the task carries no location (unmapped). */
+  locationId: number | null;
+  pincode: string | null;
+  area: string | null;
+  completedTaskCount: number;
+  /** Σ ct.bill_count over the group (unit-weighted count). */
+  billableUnits: number;
+  /** Σ client bill amount × bill_count over the group. */
+  billTotal: number;
+  /** Σ agent commission × bill_count over the group. */
+  commissionTotal: number;
+}
+
+/** One completed-in TAT band group. band = tat_hours | -1 (out of band) | null (no elapsed minutes). */
+export interface BillingBandGroup {
+  band: number | null;
+  completedTaskCount: number;
+  billableUnits: number;
+  billTotal: number;
+  commissionTotal: number;
+}
+
+/** Both groupings, returned by `GET /billing/breakdown` in one round-trip. */
+export interface BillingBreakdown {
+  byLocation: BillingLocationGroup[];
+  byBand: BillingBandGroup[];
+}
+
+/** Filter contract for `GET /billing/breakdown` — same fields the case list accepts (all optional). */
+export interface BillingBreakdownQuery {
+  clientId?: number;
+  completedFrom?: string;
+  completedTo?: string;
+  search?: string;
+}

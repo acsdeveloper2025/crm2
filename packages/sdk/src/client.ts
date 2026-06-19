@@ -38,7 +38,7 @@ import type {
   ReviseCommissionRateInput,
 } from './commissionRates.js';
 import type { TatPolicy, TatPolicyView, CreateTatPolicyInput, ReviseTatPolicyInput } from './tatPolicies.js';
-import type { BillingCaseRow, BillingTaskLine } from './billing.js';
+import type { BillingCaseRow, BillingTaskLine, BillingBreakdown, BillingBreakdownQuery } from './billing.js';
 import type {
   ReportLayout,
   ReportLayoutView,
@@ -396,6 +396,16 @@ export function createSdk(opts: SdkOptions) {
         return req<Paginated<BillingCaseRow>>('GET', `/api/v2/billing/cases${qs ? `?${qs}` : ''}`);
       },
       caseTasks: (caseId: string) => req<BillingTaskLine[]>('GET', `/api/v2/billing/cases/${caseId}/tasks`),
+      /** Per-pincode/area + completed-in-band totals (ADR-0046) — same filter contract as `cases`. */
+      breakdown: (q: BillingBreakdownQuery = {}) => {
+        const p = new URLSearchParams();
+        if (q.clientId !== undefined) p.set('clientId', String(q.clientId));
+        if (q.completedFrom !== undefined) p.set('completedFrom', q.completedFrom);
+        if (q.completedTo !== undefined) p.set('completedTo', q.completedTo);
+        if (q.search) p.set('search', q.search);
+        const qs = p.toString();
+        return req<BillingBreakdown>('GET', `/api/v2/billing/breakdown${qs ? `?${qs}` : ''}`);
+      },
       /** DataGrid export (IMPORT_EXPORT_STANDARD): same list query + format/mode → a file blob. */
       export: (r: ExportRequest) => reqBlob('billing/cases', r),
     },

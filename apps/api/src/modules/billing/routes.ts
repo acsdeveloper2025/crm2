@@ -16,3 +16,5 @@ export const billingRoutes: Router = Router();
 billingRoutes.get('/cases/export', authorize(PERMISSIONS.BILLING_VIEW), c.export);
 billingRoutes.get('/cases', authorize(PERMISSIONS.BILLING_VIEW), c.listCases);
 billingRoutes.get('/cases/:id/tasks', authorize(PERMISSIONS.BILLING_VIEW), c.caseTasks);
+// Per-pincode/area + completed-in-band totals (ADR-0046 §4.3). Same query contract + gate as /cases.
+billingRoutes.get('/breakdown', authorize(PERMISSIONS.BILLING_VIEW), c.breakdown);

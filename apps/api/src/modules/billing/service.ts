@@ -1,4 +1,4 @@
-import type { BillingCaseRow, BillingTaskLine, Paginated } from '@crm2/sdk';
+import type { BillingCaseRow, BillingTaskLine, BillingBreakdown, Paginated } from '@crm2/sdk';
 import { billingRepository as repo } from './repository.js';
 import { AppError } from '../../platform/errors.js';
 import { resolveScope, type Actor } from '../../platform/scope/index.js';
@@ -114,5 +114,26 @@ export const billingService = {
     const scope = await resolveScope(actor);
     if (!(await repo.caseVisible(caseId, scope))) throw AppError.notFound('CASE_NOT_FOUND');
     return repo.caseTasks(caseId);
+  },
+
+  /**
+   * Completed-task totals grouped by pincode/area + completed-in band (ADR-0046 §4.3), over the SAME
+   * filter contract as `listCases` (clientId, completedFrom/To, search, column filters). Read-only.
+   */
+  async breakdown(rawQuery: Record<string, unknown>, actor: Actor): Promise<BillingBreakdown> {
+    const r = resolvePage(rawQuery, BILLING_PAGE_SPEC);
+    const scope = await resolveScope(actor);
+    const clientId = toPosInt(rawQuery['clientId']);
+    const completedFrom = asStr(rawQuery['completedFrom']);
+    const completedTo = asStr(rawQuery['completedTo']);
+    const columnFilters = resolveFilters(rawQuery, BILLING_PAGE_SPEC);
+    return repo.breakdown({
+      scope,
+      ...(clientId !== undefined ? { clientId } : {}),
+      ...(completedFrom !== undefined ? { completedFrom } : {}),
+      ...(completedTo !== undefined ? { completedTo } : {}),
+      ...(r.search !== undefined ? { search: r.search } : {}),
+      columnFilters,
+    });
   },
 };
