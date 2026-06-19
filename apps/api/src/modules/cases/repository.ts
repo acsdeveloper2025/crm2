@@ -33,12 +33,14 @@ import {
 import { COMMISSION_LATERAL } from '../../platform/billing/laterals.js';
 
 /**
- * Snapshot the resolved field commission onto the just-completed task (ADR-0046 §4 persisted form,
- * owner 2026-06-19). Reuses COMMISSION_LATERAL so the stored value matches the read-model resolver;
- * the task's `completed_at` is already set by the completion UPDATE, so the point-in-time anchor
- * resolves the rate + completed-in band as-of completion. Runs in the completion transaction (`q`),
- * AFTER status→COMPLETED. The task's location (area_id/pincode_id) must be set by completion time
- * (true in prod — location is set at case/task creation) for the location cascade to resolve correctly.
+ * Snapshot the resolved field commission onto the task (ADR-0046 §4 persisted form; ADR-0047 freezes it
+ * at SUBMIT). Reuses COMMISSION_LATERAL so the stored value matches the read-model resolver. The anchor
+ * resolves the rate + band as-of `submitted_at` (the field executive earns at submit), falling back to
+ * `completed_at`/now() for office-only/desk tasks with no submit leg. **First-stamp-wins:** the
+ * `commission_amount IS NULL` guard means submit freezes the field commission and the later office
+ * COMPLETE never re-stamps it — while a desk task that goes ASSIGNED→COMPLETED directly is stamped at
+ * its completion. Runs in the writer's transaction (`q`). The task's location (area_id/pincode_id) must
+ * be set by submit/completion time (true in prod — set at case/task creation) for the cascade to resolve.
  */
 async function stampCommissionSnapshot(q: TxQuery, taskId: string): Promise<void> {
   await q(
@@ -51,7 +53,7 @@ async function stampCommissionSnapshot(q: TxQuery, taskId: string): Promise<void
        ${COMMISSION_LATERAL}
        WHERE ct.id = $1
      ) sub
-     WHERE t.id = $1`,
+     WHERE t.id = $1 AND t.commission_amount IS NULL`,
     [taskId],
   );
 }
@@ -128,7 +130,7 @@ async function recomputeCaseStatus(q: TxQuery, caseId: string, actorId: string):
   if (!cur || cur.status === 'REVOKED') return; // missing or manual-terminal → leave untouched
   const [agg] = await q<{ total: number; active: number; completed: number }>(
     `SELECT count(*)::int AS total,
-            count(*) FILTER (WHERE status IN ('PENDING','ASSIGNED','IN_PROGRESS'))::int AS active,
+            count(*) FILTER (WHERE status IN ('PENDING','ASSIGNED','IN_PROGRESS','SUBMITTED'))::int AS active,
             count(*) FILTER (WHERE status = 'COMPLETED')::int AS completed
      FROM case_tasks WHERE case_id = $1`,
     [caseId],
@@ -177,6 +179,7 @@ const TASK_VIEW_COLS = `ct.id, ct.case_id, cs.case_number, ct.verification_unit_
          -- ⚠ location rank mirrors RATE_LATERAL (ADR-0048, §G-8): a CASE rank so the location-less
          -- default outranks a non-matching scoped rate. Keep in sync with platform/billing/laterals.ts.
          ct.assigned_at,
+         ct.submitted_at, ct.submitted_elapsed_minutes,
          ct.verification_outcome, ct.remark, ct.completed_at, cb.name AS completed_by_name,
          ct.completed_elapsed_minutes,
          COALESCE((SELECT tp.tat_hours FROM tat_policies tp
@@ -1135,15 +1138,17 @@ export const caseRepository = {
     });
   },
 
-  /** Device submit/complete: {ASSIGNED,IN_PROGRESS}→COMPLETED. Field records NO result (single-layer,
-   *  ADR-0032 D1) — verification_outcome stays null; the office records the per-task result + case
-   *  verdict later. Rolls the case up (→ AWAITING_COMPLETION when all tasks are done). */
-  async completeTaskByDevice(caseId: string, taskId: string, actorId: string): Promise<CaseTaskView> {
+  /** Device submit (ADR-0047): {ASSIGNED,IN_PROGRESS}→SUBMITTED — the field executive's terminal. Field
+   *  records NO result (single-layer, ADR-0032 D1) — verification_outcome stays null; the office records
+   *  the per-task result at COMPLETE. Stamps submitted_at + submitted_elapsed_minutes and FREEZES the
+   *  field commission here (stampCommissionSnapshot, first-stamp-wins). Rolls the case up — SUBMITTED is
+   *  active, so the case stays IN_PROGRESS until the office completes every task. */
+  async submitTaskByDevice(caseId: string, taskId: string, actorId: string): Promise<CaseTaskView> {
     return withTransaction(async (q) => {
       const [updated] = await q<{ id: string }>(
         `UPDATE case_tasks
-           SET status = 'COMPLETED', completed_by = $3, completed_at = now(),
-               completed_elapsed_minutes = CEIL(EXTRACT(EPOCH FROM (now() - COALESCE(assigned_at, created_at))) / 60)::int,
+           SET status = 'SUBMITTED', submitted_at = now(),
+               submitted_elapsed_minutes = CEIL(EXTRACT(EPOCH FROM (now() - COALESCE(assigned_at, created_at))) / 60)::int,
                version = version + 1, updated_by = $3, updated_at = now()
          WHERE id = $1 AND case_id = $2 AND status IN ('ASSIGNED', 'IN_PROGRESS')
          RETURNING id`,
@@ -1152,23 +1157,23 @@ export const caseRepository = {
       if (!updated) {
         const [cur] = await q<CaseTaskView>(TASK_VIEW_BY_ID, [taskId]);
         if (!cur) throw AppError.notFound('TASK_NOT_FOUND');
-        if (cur.status !== 'COMPLETED') throw AppError.conflict('INVALID_TRANSITION');
-        return cur; // idempotent re-complete
+        if (cur.status !== 'SUBMITTED') throw AppError.conflict('INVALID_TRANSITION');
+        return cur; // idempotent re-submit
       }
-      await stampCommissionSnapshot(q, taskId);
+      await stampCommissionSnapshot(q, taskId); // freeze the field commission as-of submit
       await appendAudit(
         {
           entityType: 'case_task',
           entityId: taskId,
           action: 'UPDATE',
           actorId,
-          after: { status: 'COMPLETED' },
+          after: { status: 'SUBMITTED' },
         },
         q,
       );
       await recomputeCaseStatus(q, caseId, actorId);
       const [row] = await q<CaseTaskView>(TASK_VIEW_BY_ID, [taskId]);
-      if (!row) throw AppError.internal('device complete returned no row');
+      if (!row) throw AppError.internal('device submit returned no row');
       return row;
     });
   },
@@ -1234,7 +1239,7 @@ export const caseRepository = {
         `UPDATE case_tasks
            SET form_data = jsonb_set(COALESCE(form_data, '{}'::jsonb), ARRAY[$4], $5::jsonb, true),
                version = version + 1, updated_by = $3, updated_at = now()
-         WHERE id = $1 AND case_id = $2 AND status IN ('ASSIGNED', 'IN_PROGRESS', 'COMPLETED')
+         WHERE id = $1 AND case_id = $2 AND status IN ('ASSIGNED', 'IN_PROGRESS', 'SUBMITTED', 'COMPLETED')
          RETURNING id`,
         [taskId, caseId, actorId, formType, formData],
       );

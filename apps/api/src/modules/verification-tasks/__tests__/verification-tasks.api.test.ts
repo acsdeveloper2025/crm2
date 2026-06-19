@@ -127,7 +127,7 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
     );
   });
 
-  it('start → IN_PROGRESS, complete → COMPLETED, case rolls to AWAITING_COMPLETION; retries idempotent', async () => {
+  it('start → IN_PROGRESS, device complete → SUBMITTED (field terminal), case stays IN_PROGRESS; retries idempotent (ADR-0047)', async () => {
     const { caseId, taskId, agent } = await seedAssignedTask('LC');
     const h = hdr('FIELD_AGENT', agent);
 
@@ -141,11 +141,12 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
 
     const done = await request(app).post(`/api/v2/verification-tasks/${taskId}/complete`).set(h);
     expect(done.status).toBe(200);
-    expect(done.body.status).toBe('COMPLETED');
-    expect(done.body.verificationOutcome).toBeNull(); // still no result — the office records the verdict
-    expect(await caseStatus(caseId)).toBe('AWAITING_COMPLETION'); // rollup: the only task is done
+    expect(done.body.status).toBe('SUBMITTED'); // ADR-0047: the device terminal is SUBMITTED, not COMPLETED
+    expect(done.body.submittedAt).not.toBeNull();
+    expect(done.body.verificationOutcome).toBeNull(); // still no result — the office records it at COMPLETE
+    expect(await caseStatus(caseId)).toBe('IN_PROGRESS'); // SUBMITTED is active — awaits the office complete
 
-    // idempotent re-complete → 200
+    // idempotent re-submit → 200
     expect((await request(app).post(`/api/v2/verification-tasks/${taskId}/complete`).set(h)).status).toBe(
       200,
     );
@@ -167,12 +168,58 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
       await request(app).post(`/api/v2/verification-tasks/${taskId}/complete`).set(h);
 
       const updates = office.filter((e) => e.event === CASE_UPDATED_EVENT);
-      expect(updates.length).toBeGreaterThanOrEqual(2); // one per device transition (start, complete)
+      expect(updates.length).toBeGreaterThanOrEqual(2); // one per device transition (start, submit)
       const last = updates.at(-1)!.payload as { caseId: string; taskId: string; status: string };
-      expect(last).toMatchObject({ caseId, taskId, status: 'COMPLETED' });
+      expect(last).toMatchObject({ caseId, taskId, status: 'SUBMITTED' }); // device terminal (ADR-0047)
     } finally {
       setRealtime(null); // never leak the fake into sibling tests
     }
+  });
+
+  it('device submit → SUBMITTED freezes field commission; office complete → COMPLETED does NOT re-stamp (ADR-0047)', async () => {
+    const { caseId, taskId, agent } = await seedAssignedTask('SUB');
+    // a universal commission rate for the agent so the at-submit snapshot resolves non-null
+    await db!.pool.query(
+      `INSERT INTO commission_rates (user_id, location_id, amount, currency, effective_from)
+       VALUES ($1::uuid, NULL, 50, 'INR', now() - interval '1 day')`,
+      [agent],
+    );
+    const h = hdr('FIELD_AGENT', agent);
+    await request(app).post(`/api/v2/verification-tasks/${taskId}/start`).set(h);
+    const sub = await request(app)
+      .post(`/api/v2/verification-tasks/${taskId}/verification/residence`)
+      .set(h)
+      .send({ formData: { addressConfirmed: true } });
+    expect(sub.status).toBe(200);
+    expect(sub.body.status).toBe('SUBMITTED');
+
+    const r1 = (
+      await db!.pool.query(
+        `SELECT status, submitted_at, completed_at, commission_amount FROM case_tasks WHERE id = $1`,
+        [taskId],
+      )
+    ).rows[0];
+    expect(r1.status).toBe('SUBMITTED');
+    expect(r1.submitted_at).not.toBeNull();
+    expect(r1.completed_at).toBeNull();
+    expect(Number(r1.commission_amount)).toBe(50); // frozen at submit
+    expect(await caseStatus(caseId)).toBe('IN_PROGRESS');
+
+    // office completes (records result) → COMPLETED; commission must NOT be re-stamped
+    const comp = await request(app)
+      .post(`/api/v2/cases/${caseId}/tasks/${taskId}/complete`)
+      .set(SA)
+      .send({ result: 'POSITIVE', remark: 'office verified', version: sub.body.version });
+    expect(comp.status).toBe(200);
+    expect(comp.body.status).toBe('COMPLETED');
+    const r2 = (
+      await db!.pool.query(`SELECT status, completed_at, commission_amount FROM case_tasks WHERE id = $1`, [
+        taskId,
+      ])
+    ).rows[0];
+    expect(r2.status).toBe('COMPLETED');
+    expect(r2.completed_at).not.toBeNull();
+    expect(Number(r2.commission_amount)).toBe(50); // unchanged — frozen at submit, not re-stamped
   });
 
   it('revoke → REVOKED (reason in audit, no result); a COMPLETED task cannot be device-revoked', async () => {
@@ -261,7 +308,7 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
     ).toBe(200);
   });
 
-  it('submit form → evidence stored under form_data[slug] AND task COMPLETED (submit==complete); result stays null; case rolls up; unknown slug 400; idempotent', async () => {
+  it('submit form → evidence stored under form_data[slug] AND task SUBMITTED (ADR-0047); result stays null; case stays IN_PROGRESS; unknown slug 400; idempotent', async () => {
     const { caseId, taskId, agent } = await seedAssignedTask('FRM');
     const h = hdr('FIELD_AGENT', agent);
     await request(app).post(`/api/v2/verification-tasks/${taskId}/start`).set(h);
@@ -271,9 +318,9 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
       .set(h)
       .send({ formData: { addressConfirmed: true }, verificationOutcome: 'POSITIVE' });
     expect(sub.status).toBe(200);
-    expect(sub.body.status).toBe('COMPLETED'); // ADR-0032 submit==complete (the device posts only the form)
+    expect(sub.body.status).toBe('SUBMITTED'); // ADR-0047: the device posts only the form → SUBMITTED
     expect(sub.body.verificationOutcome).toBeNull(); // the blob's outcome is NOT the official result (D1)
-    expect(await caseStatus(caseId)).toBe('AWAITING_COMPLETION'); // the only task is done → case rolls up
+    expect(await caseStatus(caseId)).toBe('IN_PROGRESS'); // SUBMITTED is active — awaits the office complete
 
     const fd = (
       await db!.pool.query<{
@@ -288,7 +335,7 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
       (await request(app).post(`/api/v2/verification-tasks/${taskId}/verification/bogus`).set(h).send({}))
         .status,
     ).toBe(400);
-    // idempotent resubmit on the now-COMPLETED task (overwrites the slug key, re-completes) → 200
+    // idempotent resubmit on the now-SUBMITTED task (overwrites the slug key, stays SUBMITTED) → 200
     expect(
       (
         await request(app)
@@ -299,7 +346,7 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
     ).toBe(200);
   });
 
-  it('submit form directly from ASSIGNED (no explicit start) also completes the task + rolls the case up', async () => {
+  it('submit form directly from ASSIGNED (no explicit start) also SUBMITS the task; case stays IN_PROGRESS', async () => {
     const { caseId, taskId, agent } = await seedAssignedTask('FRA');
     const h = hdr('FIELD_AGENT', agent);
     const sub = await request(app)
@@ -307,8 +354,8 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
       .set(h)
       .send({ formData: { officeConfirmed: true } });
     expect(sub.status).toBe(200);
-    expect(sub.body.status).toBe('COMPLETED');
-    expect(await caseStatus(caseId)).toBe('AWAITING_COMPLETION');
+    expect(sub.body.status).toBe('SUBMITTED');
+    expect(await caseStatus(caseId)).toBe('IN_PROGRESS');
   });
 
   describe('field-photo upload (ADR-0034)', () => {

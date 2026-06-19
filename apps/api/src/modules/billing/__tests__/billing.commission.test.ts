@@ -153,10 +153,11 @@ async function addTasks(
 }
 
 /**
- * Assign → start → (set location) → complete a task as the field agent. The optional `locationId` is
- * stamped onto the task AFTER start but BEFORE complete: assign validates assignee eligibility by
- * territory (a located task the agent isn't scoped to → 400), so the location can't exist at assign;
- * but the commission snapshot is taken at completion (ADR-0046 §4), so it must exist by then.
+ * Assign → start → (set location) → device SUBMIT → office COMPLETE (ADR-0047). The optional `locationId`
+ * is stamped AFTER start but BEFORE submit: assign validates assignee eligibility by territory (a located
+ * task the agent isn't scoped to → 400), so the location can't exist at assign; and the commission
+ * snapshot is now FROZEN at SUBMIT (ADR-0047), so the location must exist by then. The office then records
+ * the result → COMPLETED (which does NOT re-stamp commission — it stays frozen at submit).
  */
 async function driveToCompleted(
   caseId: string,
@@ -179,10 +180,18 @@ async function driveToCompleted(
   if (locationId !== undefined) {
     await query(`UPDATE case_tasks SET area_id = $2, pincode_id = $2 WHERE id = $1`, [taskId, locationId]);
   }
+  const submit = await request(app)
+    .post(`/api/v2/verification-tasks/${taskId}/complete`)
+    .set(hdr('FIELD_AGENT', fa));
+  expect(submit.status).toBe(200); // device → SUBMITTED (commission frozen here)
   expect(
-    (await request(app).post(`/api/v2/verification-tasks/${taskId}/complete`).set(hdr('FIELD_AGENT', fa)))
-      .status,
-  ).toBe(200);
+    (
+      await request(app)
+        .post(`/api/v2/cases/${caseId}/tasks/${taskId}/complete`)
+        .set(SA)
+        .send({ result: 'POSITIVE', remark: 'office verified', version: submit.body.version })
+    ).status,
+  ).toBe(200); // office → COMPLETED (client bill)
 }
 
 describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {

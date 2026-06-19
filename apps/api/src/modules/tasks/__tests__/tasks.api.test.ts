@@ -716,9 +716,18 @@ describe.skipIf(!RUN)('tasks API (Pipeline)', () => {
         (await request(app).post(`/api/v2/verification-tasks/${taskId}/start`).set(hdr('FIELD_AGENT', fa)))
           .status,
       ).toBe(200);
+      // ADR-0047: device submits → SUBMITTED; the office records the result → COMPLETED (billable)
+      const submit = await request(app)
+        .post(`/api/v2/verification-tasks/${taskId}/complete`)
+        .set(hdr('FIELD_AGENT', fa));
+      expect(submit.status).toBe(200);
       expect(
-        (await request(app).post(`/api/v2/verification-tasks/${taskId}/complete`).set(hdr('FIELD_AGENT', fa)))
-          .status,
+        (
+          await request(app)
+            .post(`/api/v2/cases/${caseId}/tasks/${taskId}/complete`)
+            .set(SA)
+            .send({ result: 'POSITIVE', remark: 'office verified', version: submit.body.version })
+        ).status,
       ).toBe(200);
     }
 

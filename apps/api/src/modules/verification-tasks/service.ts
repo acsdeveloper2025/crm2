@@ -120,7 +120,7 @@ export const verificationTaskService = {
   },
 
   async complete(taskId: string, actor: Actor): Promise<CaseTaskView> {
-    const view = await repo.completeTaskByDevice(await ownedCaseId(taskId, actor), taskId, actor.userId);
+    const view = await repo.submitTaskByDevice(await ownedCaseId(taskId, actor), taskId, actor.userId);
     emitTaskUpdate(view); // device COMPLETED + case rollup → office views refetch live
     return view;
   },
@@ -184,7 +184,7 @@ export const verificationTaskService = {
     if (json.length > MAX_FORM_BYTES) throw AppError.badRequest('FORM_TOO_LARGE');
     const caseId = await ownedCaseId(taskId, actor);
     await repo.submitVerificationForm(caseId, taskId, actor.userId, formType, json);
-    const view = await repo.completeTaskByDevice(caseId, taskId, actor.userId);
+    const view = await repo.submitTaskByDevice(caseId, taskId, actor.userId);
     emitTaskUpdate(view); // form submit==complete → office views refetch live
     return view;
   },

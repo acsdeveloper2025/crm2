@@ -411,12 +411,9 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
 
     const after = await request(app).get('/api/v2/sync/download').set(hdr('FIELD_AGENT', fa));
     const task = after.body.data.cases[0];
-    expect(task.status).toBe('COMPLETED');
+    expect(task.status).toBe('SUBMITTED'); // ADR-0047: the device terminal is SUBMITTED, not COMPLETED
     expect(typeof task.inProgressAt).toBe('string'); // ← started_at
-    expect(typeof task.completedAt).toBe('string'); // ← completed_at
-    expect(new Date(task.completedAt).getTime()).toBeGreaterThanOrEqual(
-      new Date(task.inProgressAt).getTime(),
-    );
+    expect(task.completedAt).toBeUndefined(); // completed_at is set only by the office complete (omitted while null)
     expect(task.formData).toBeUndefined(); // no form submitted on this task → no form_data to echo
   });
 
