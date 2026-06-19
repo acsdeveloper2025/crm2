@@ -11,7 +11,7 @@ export interface FieldAgentView {
   employeeId: string | null;
   phone: string | null;
   isActive: boolean;
-  /** open = assigned & not yet completed (PENDING/ASSIGNED/IN_PROGRESS/SUBMITTED_FOR_REVIEW). */
+  /** open = assigned & not yet completed (PENDING/ASSIGNED/IN_PROGRESS/SUBMITTED). */
   openTasks: number;
   inProgress: number;
   /** tasks this agent completed since local start-of-day. */

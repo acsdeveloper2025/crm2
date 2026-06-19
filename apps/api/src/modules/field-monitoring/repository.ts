@@ -13,10 +13,10 @@ import { likeContains } from '../../platform/pagination.js';
  * the aggregate JOIN (which appears in the SQL before the WHERE), so the list/stats callers push
  * them FIRST; `buildWhere` appends scope/search/role params after.
  */
-const OPEN_STATUSES = "('PENDING','ASSIGNED','IN_PROGRESS','SUBMITTED_FOR_REVIEW')";
+const OPEN_STATUSES = "('PENDING','ASSIGNED','IN_PROGRESS','SUBMITTED')";
 // 'open & overdue' excludes PENDING (an unassigned task has no agent to be late) — only work the
 // agent already holds counts toward their aging.
-const OVERDUE_STATUSES = "('ASSIGNED','IN_PROGRESS','SUBMITTED_FOR_REVIEW')";
+const OVERDUE_STATUSES = "('ASSIGNED','IN_PROGRESS','SUBMITTED')";
 
 const TASK_AGG = `
   LEFT JOIN (

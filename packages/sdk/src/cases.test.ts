@@ -5,6 +5,7 @@ import {
   AddTasksSchema,
   AssignTaskSchema,
   CASE_STATUSES,
+  CASE_TASK_STATUSES,
   DEDUPE_DECISIONS,
   VISIT_TYPES,
   DISTANCE_BANDS,
@@ -24,6 +25,10 @@ const APPL = '00000000-0000-0000-0000-0000000000aa';
 const taskBase = { verificationUnitId: 1, applicantId: APPL, address: '12 MG Road' };
 
 describe('Case contract', () => {
+  it('task lifecycle exposes SUBMITTED (field-done) and retires SUBMITTED_FOR_REVIEW (ADR-0047)', () => {
+    expect(CASE_TASK_STATUSES).toContain('SUBMITTED');
+    expect(CASE_TASK_STATUSES as readonly string[]).not.toContain('SUBMITTED_FOR_REVIEW');
+  });
   it('accepts a valid create with one applicant and a dedupe decision', () => {
     expect(CreateCaseSchema.safeParse(base).success).toBe(true);
   });

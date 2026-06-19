@@ -34,20 +34,32 @@ export const CASE_STATUS_LABELS: Record<CaseStatus, string> = {
 };
 
 /**
- * Task lifecycle. SUBMITTED_FOR_REVIEW + REVOKED back the later field-ingest/review legs
- * (ADR-0023; the device collapses SUBMITTED_FOR_REVIEW→COMPLETED itself). Mirrors the
- * extended chk_case_task_status (migration 0037).
+ * Task lifecycle (ADR-0047 two-stage completion). The field executive's submit lands the task in
+ * SUBMITTED (their terminal; field commission frozen here); the office then adds report + official
+ * result to reach COMPLETED (client bill). SUBMITTED replaces the retired SUBMITTED_FOR_REVIEW.
+ * Mirrors chk_case_task_status (migration 0081).
  */
 export const CASE_TASK_STATUSES = [
   'PENDING',
   'ASSIGNED',
   'IN_PROGRESS',
-  'SUBMITTED_FOR_REVIEW',
+  'SUBMITTED',
   'COMPLETED',
   'REVOKED',
   'CANCELLED',
 ] as const;
 export type CaseTaskStatus = (typeof CASE_TASK_STATUSES)[number];
+
+/** Display labels for task statuses (UI maps UPPER_SNAKE → human text). */
+export const CASE_TASK_STATUS_LABELS: Record<CaseTaskStatus, string> = {
+  PENDING: 'Pending',
+  ASSIGNED: 'Assigned',
+  IN_PROGRESS: 'In Progress',
+  SUBMITTED: 'Submitted',
+  COMPLETED: 'Completed',
+  REVOKED: 'Revoked',
+  CANCELLED: 'Cancelled',
+};
 
 export const APPLICANT_TYPES = ['APPLICANT', 'CO_APPLICANT'] as const;
 export type ApplicantType = (typeof APPLICANT_TYPES)[number];
@@ -210,6 +222,11 @@ export interface CaseTaskView {
    *  the task's unit, and its location (area > pincode > default). Null when no rate is configured. */
   rateType: string | null;
   assignedAt: string | null;
+  /** When the field executive SUBMITTED the verification (ADR-0047) — the field terminal; field
+   *  commission is frozen as-of this moment. Null until submitted. */
+  submittedAt: string | null;
+  /** Measured elapsed minutes assigned→submitted (ADR-0047), immutable once set; null until submitted. */
+  submittedElapsedMinutes: number | null;
   /** Official result + completion (ADR-0025) — written only when the task reaches COMPLETED via the
    *  finalize endpoint; null on a not-yet-completed task. */
   verificationOutcome: KycResult | null;

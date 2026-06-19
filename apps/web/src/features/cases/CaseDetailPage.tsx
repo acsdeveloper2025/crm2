@@ -46,7 +46,7 @@ const TASK_REWORK = 'task.rework';
 /** Office data-entry (ADR-0037, MIS slice 3) — key a CASE's MIS fields against its active DATA_ENTRY layout. */
 const DATA_ENTRY_MANAGE = 'data_entry.manage';
 /** A task awaiting the back-office final result (ADR-0025) — the finalize affordance shows here. */
-const FINALIZABLE = new Set(['ASSIGNED', 'SUBMITTED_FOR_REVIEW']);
+const FINALIZABLE = new Set(['ASSIGNED', 'SUBMITTED']);
 /** Backend/office REVOKE (ADR-0033, v1 parity): a LIVE task only — never a COMPLETED one. */
 const REVOCABLE = new Set(['ASSIGNED', 'IN_PROGRESS']);
 /** REVISIT (ADR-0033): a follow-up only on a COMPLETED task (the client asked for more). */

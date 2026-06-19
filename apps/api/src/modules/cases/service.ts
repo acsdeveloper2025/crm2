@@ -312,16 +312,16 @@ export const caseService = {
     return view;
   },
 
-  /** Finalize a task (ADR-0025): record the official result + remark → COMPLETED. The generic
-   *  completion leg — desk/KYC tasks finalize from ASSIGNED; field tasks (later) from
-   *  SUBMITTED_FOR_REVIEW; the same endpoint serves both. Scope-guarded (out-of-scope → 404),
+  /** Finalize a task (ADR-0025/ADR-0047): record the official result + remark → COMPLETED. The generic
+   *  completion leg — desk/KYC tasks finalize from ASSIGNED; field tasks from SUBMITTED (the field
+   *  executive's submit); the same endpoint serves both. Scope-guarded (out-of-scope → 404),
    *  transition-guarded (else 409 INVALID_TRANSITION), OCC version-guarded. */
   async completeTask(caseId: string, taskId: string, input: unknown, actor: Actor): Promise<CaseTaskView> {
     const v = CompleteTaskSchema.parse(input);
     const version = requireVersion(input); // OCC token (400 VERSION_REQUIRED)
     const state = await repo.taskAssignmentState(caseId, taskId, await resolveScope(actor));
     if (!state) throw AppError.notFound('TASK_NOT_FOUND');
-    if (state.status !== 'ASSIGNED' && state.status !== 'SUBMITTED_FOR_REVIEW')
+    if (state.status !== 'ASSIGNED' && state.status !== 'SUBMITTED')
       throw AppError.conflict('INVALID_TRANSITION');
     const task = await repo.completeTask(caseId, taskId, v, actor.userId, version);
     // Producer (ADR-0027): tell the supervisor who dispatched it that it's finalized (skip self-complete).
