@@ -140,13 +140,17 @@ const TASK_VIEW_COLS = `ct.id, ct.case_id, cs.case_number, ct.verification_unit_
             WHERE r.client_id = cs.client_id AND r.product_id = cs.product_id
               AND r.verification_unit_id = ct.verification_unit_id AND r.is_active
               AND r.effective_from <= now() AND (r.effective_to IS NULL OR r.effective_to > now())
-            ORDER BY (r.location_id = ct.area_id) DESC NULLS LAST,
-                     (r.location_id = ct.pincode_id) DESC NULLS LAST,
-                     (r.location_id = cs.area_id) DESC NULLS LAST,
-                     (r.location_id = cs.pincode_id) DESC NULLS LAST,
-                     (r.location_id IS NULL) DESC,
+            ORDER BY (CASE
+                       WHEN r.location_id = ct.area_id    THEN 5
+                       WHEN r.location_id = ct.pincode_id THEN 4
+                       WHEN r.location_id = cs.area_id    THEN 3
+                       WHEN r.location_id = cs.pincode_id THEN 2
+                       WHEN r.location_id IS NULL         THEN 1
+                       ELSE 0 END) DESC,
                      r.location_id
             LIMIT 1) AS rate_type,
+         -- ⚠ location rank mirrors RATE_LATERAL (ADR-0048, §G-8): a CASE rank so the location-less
+         -- default outranks a non-matching scoped rate. Keep in sync with platform/billing/laterals.ts.
          ct.assigned_at,
          ct.verification_outcome, ct.remark, ct.completed_at, cb.name AS completed_by_name,
          ct.completed_elapsed_minutes,

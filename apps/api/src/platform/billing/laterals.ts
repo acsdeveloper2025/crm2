@@ -17,18 +17,24 @@
  */
 
 /** Most-specific active rate for the task's CPV (task area > task pincode > case area > case pincode >
- *  location-less default > any), temporal + active. LIMIT 1 → 1:1 (COUNT/SUM stay exact). */
+ *  location-less default > a non-matching scoped rate), temporal + active. The location rank is a single
+ *  CASE (ADR-0048): a plain `(loc = X) DESC NULLS LAST` ladder ranks a non-matching FALSE ABOVE the
+ *  location-less NULL, so a task at an unmatched location would wrongly bill a different-location override
+ *  instead of the default (COMPLIANCE §G-8). LIMIT 1 → 1:1 (COUNT/SUM stay exact). */
 export const RATE_LATERAL = `LEFT JOIN LATERAL (
     SELECT r.rate_type, r.amount::float8 AS bill_amount
     FROM rates r
     WHERE r.client_id = cs.client_id AND r.product_id = cs.product_id
       AND r.verification_unit_id = ct.verification_unit_id AND r.is_active
       AND r.effective_from <= now() AND (r.effective_to IS NULL OR r.effective_to > now())
-    ORDER BY (r.location_id = ct.area_id) DESC NULLS LAST,
-             (r.location_id = ct.pincode_id) DESC NULLS LAST,
-             (r.location_id = cs.area_id) DESC NULLS LAST,
-             (r.location_id = cs.pincode_id) DESC NULLS LAST,
-             (r.location_id IS NULL) DESC, r.location_id
+    ORDER BY (CASE
+               WHEN r.location_id = ct.area_id    THEN 5
+               WHEN r.location_id = ct.pincode_id THEN 4
+               WHEN r.location_id = cs.area_id    THEN 3
+               WHEN r.location_id = cs.pincode_id THEN 2
+               WHEN r.location_id IS NULL         THEN 1
+               ELSE 0 END) DESC,
+             r.location_id
     LIMIT 1) rt ON true`;
 
 /** The assignee's commission, resolved from the executive's OWN location + dims (ADR-0046),

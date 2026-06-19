@@ -187,6 +187,8 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
   let t2Number: string;
   let crL2Id: number;
   let saId: string;
+  let l1Id: number;
+  let ctxShared: { clientId: number; productId: number; unitId: number };
 
   beforeAll(async () => {
     await db!.migrate();
@@ -220,6 +222,8 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
     // Two distinct locations L1, L2 (distinct pincode + area).
     const l1 = await seedLocation('400001', 'L1AREA');
     const l2 = await seedLocation('400002', 'L2AREA');
+    l1Id = l1;
+    ctxShared = ctx;
 
     // Client rates: R-L1 ₹350 (loc L1), R-L2 ₹500 (loc L2). Same client+product+unit.
     await seedRate(ctx, l1, 350);
@@ -334,6 +338,27 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
     expect(bd.byBand.length).toBeGreaterThanOrEqual(1);
     const bandCommission = bd.byBand.reduce((s, b) => s + b.commissionTotal, 0);
     expect(bandCommission).toBe(140); // 50 + 90 across all bands
+  });
+
+  it('G-8 (ADR-0048): an unmatched-location task bills the location-less default, not a different-location override', async () => {
+    // Deactivate the L1-specific rate so T1 (@ L1) has NO matching rate; add a location-less default ₹100
+    // for the CPV alongside the existing L2 override (₹500). T1 must resolve the DEFAULT.
+    await query(
+      `UPDATE rates SET is_active = false
+         WHERE client_id = $1 AND product_id = $2 AND verification_unit_id = $3 AND location_id = $4`,
+      [ctxShared.clientId, ctxShared.productId, ctxShared.unitId, l1Id],
+    );
+    await query(
+      `INSERT INTO rates (client_id, product_id, verification_unit_id, location_id, rate_type, amount, effective_from)
+       VALUES ($1, $2, $3, NULL, 'LOCAL', 100, now() - interval '2 days')`,
+      [ctxShared.clientId, ctxShared.productId, ctxShared.unitId],
+    );
+    const lines = await billingRepository.caseTasks(caseId);
+    // The FALSE>NULL bug ranks the non-matching L2 override (₹500) above the NULL default → would bill 500.
+    // The ADR-0048 CASE rank picks the location-less default instead.
+    expect(lines.find((l) => l.taskNumber === t1Number)!.billAmount).toBe(100);
+    // T2 (@ L2) still matches its own L2 rate.
+    expect(lines.find((l) => l.taskNumber === t2Number)!.billAmount).toBe(500);
   });
 
   // NOTE: mutates the shared seed (bill_count). `beforeEach` re-seeds, so isolation holds, but this
