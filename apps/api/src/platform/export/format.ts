@@ -33,15 +33,26 @@ const cell = <T>(col: ExportColumn<T>, row: T): string => {
 };
 
 /**
+ * Formula-injection guard (CWE-1236): a string whose first character is a spreadsheet formula
+ * trigger (`= + - @` or tab/CR) is prefixed with `'` so no spreadsheet executes it as a formula.
+ * Non-string values (numbers, dates, booleans, null, undefined) are returned unchanged so XLSX can
+ * store them as native cell types.
+ */
+export function neutralizeFormula(v: unknown): unknown {
+  if (typeof v === 'string' && /^[=+\-@\t\r]/.test(v)) return `'${v}`;
+  return v;
+}
+
+/**
  * CSV cell escaping: RFC 4180 (quote fields containing `,`/`"`/newline, double embedded quotes)
  * PLUS formula-injection neutralization (CWE-1236) — a leading `= + - @` or tab/CR is prefixed with
- * a single quote so spreadsheets never execute the cell as a formula.
+ * a single quote so spreadsheets never execute the cell as a formula. The formula guard takes
+ * precedence: when applied, RFC 4180 quoting is skipped (the `'` sentinel itself signals inert text).
  */
 export function escapeCsvCell(raw: string): string {
-  let s = raw;
-  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-  if (/[",\n\r]/.test(s)) s = `"${s.replace(/"/g, '""')}"`;
-  return s;
+  if (/^[=+\-@\t\r]/.test(raw)) return `'${raw}`;
+  if (/[",\n\r]/.test(raw)) return `"${raw.replace(/"/g, '""')}"`;
+  return raw;
 }
 
 export function toCsv<T>(rows: T[], columns: ExportColumn<T>[]): string {
@@ -64,7 +75,17 @@ export async function toXlsx<T>(
   const ws = wb.addWorksheet(sheetName.replace(/[\\/?*[\]:]/g, ' ').slice(0, 31) || 'Export');
   ws.addRow(columns.map((c) => c.header));
   ws.getRow(1).font = { bold: true };
-  for (const r of rows) ws.addRow(columns.map((c) => cell(c, r)));
+  for (const r of rows) {
+    ws.addRow(
+      columns.map((c) => {
+        const v = c.value(r);
+        if (v === null || v === undefined) return null;
+        if (v instanceof Date) return v;
+        // neutralizeFormula guards string cells; numbers/booleans pass through as native types.
+        return neutralizeFormula(typeof v === 'number' || typeof v === 'boolean' ? v : String(v));
+      }),
+    );
+  }
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
 
