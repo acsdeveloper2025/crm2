@@ -30,6 +30,31 @@ import {
   type Actor,
   type Scope,
 } from '../../platform/scope/index.js';
+import { COMMISSION_LATERAL } from '../../platform/billing/laterals.js';
+
+/**
+ * Snapshot the resolved field commission onto the just-completed task (ADR-0046 §4 persisted form,
+ * owner 2026-06-19). Reuses COMMISSION_LATERAL so the stored value matches the read-model resolver;
+ * the task's `completed_at` is already set by the completion UPDATE, so the point-in-time anchor
+ * resolves the rate + completed-in band as-of completion. Runs in the completion transaction (`q`),
+ * AFTER status→COMPLETED. The task's location (area_id/pincode_id) must be set by completion time
+ * (true in prod — location is set at case/task creation) for the location cascade to resolve correctly.
+ */
+async function stampCommissionSnapshot(q: TxQuery, taskId: string): Promise<void> {
+  await q(
+    `UPDATE case_tasks t
+       SET commission_amount = sub.commission_amount
+     FROM (
+       SELECT com.commission_amount
+       FROM case_tasks ct
+       JOIN cases cs ON cs.id = ct.case_id
+       ${COMMISSION_LATERAL}
+       WHERE ct.id = $1
+     ) sub
+     WHERE t.id = $1`,
+    [taskId],
+  );
+}
 
 /** Resolved, validated list options — `sortColumn`/`sortOrder` are whitelisted by the service. */
 export interface CaseListOptions {
@@ -748,6 +773,7 @@ export const caseRepository = {
         if (!current || current.caseId !== caseId) throw AppError.notFound('TASK_NOT_FOUND');
         throw AppError.stale(current);
       }
+      await stampCommissionSnapshot(q, taskId);
       await appendAudit(
         {
           entityType: 'case_task',
@@ -1129,6 +1155,7 @@ export const caseRepository = {
         if (cur.status !== 'COMPLETED') throw AppError.conflict('INVALID_TRANSITION');
         return cur; // idempotent re-complete
       }
+      await stampCommissionSnapshot(q, taskId);
       await appendAudit(
         {
           entityType: 'case_task',

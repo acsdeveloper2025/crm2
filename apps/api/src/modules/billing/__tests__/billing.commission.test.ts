@@ -152,8 +152,18 @@ async function addTasks(
   return new Map(rows.map((r) => [r.applicantId, r.id]));
 }
 
-/** Assign → start → complete a task as the field agent. */
-async function driveToCompleted(caseId: string, taskId: string, fa: string): Promise<void> {
+/**
+ * Assign → start → (set location) → complete a task as the field agent. The optional `locationId` is
+ * stamped onto the task AFTER start but BEFORE complete: assign validates assignee eligibility by
+ * territory (a located task the agent isn't scoped to → 400), so the location can't exist at assign;
+ * but the commission snapshot is taken at completion (ADR-0046 §4), so it must exist by then.
+ */
+async function driveToCompleted(
+  caseId: string,
+  taskId: string,
+  fa: string,
+  locationId?: number,
+): Promise<void> {
   expect(
     (
       await request(app)
@@ -166,6 +176,9 @@ async function driveToCompleted(caseId: string, taskId: string, fa: string): Pro
     (await request(app).post(`/api/v2/verification-tasks/${taskId}/start`).set(hdr('FIELD_AGENT', fa)))
       .status,
   ).toBe(200);
+  if (locationId !== undefined) {
+    await query(`UPDATE case_tasks SET area_id = $2, pincode_id = $2 WHERE id = $1`, [taskId, locationId]);
+  }
   expect(
     (await request(app).post(`/api/v2/verification-tasks/${taskId}/complete`).set(hdr('FIELD_AGENT', fa)))
       .status,
@@ -264,22 +277,18 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
     ]);
     const t1Id = byApplicant.get(applicants[0]!.id)!;
     const t2Id = byApplicant.get(applicants[1]!.id)!;
-    await driveToCompleted(caseId, t1Id, fa);
-    await driveToCompleted(caseId, t2Id, fa);
+    // Each task's location (area=pincode) is set inside driveToCompleted — after start, before complete
+    // — so the commission snapshot (stamped at completion, ADR-0046 §4) resolves the correct per-location
+    // rate. (It cannot be set before assign: assign validates the assignee's territory eligibility.)
+    await driveToCompleted(caseId, t1Id, fa, l1); // stamps commission_amount: T1 @ L1 → 50
+    await driveToCompleted(caseId, t2Id, fa, l2); // → 90
 
-    // Pin each task's resolved location (area=pincode) + a PAST completion instant + a small
-    // completed-in band, so the location cascade + as-of-completed_at resolution are deterministic.
+    // Pin a PAST completion instant + a small completed-in band so the as-of-completed_at reads + the
+    // band derivation stay deterministic. The snapshot was already stamped at the live completion above.
     await query(
-      `UPDATE case_tasks SET area_id = $2, pincode_id = $2,
-         completed_at = now() - interval '1 day', completed_elapsed_minutes = 60
-       WHERE id = $1`,
-      [t1Id, l1],
-    );
-    await query(
-      `UPDATE case_tasks SET area_id = $2, pincode_id = $2,
-         completed_at = now() - interval '1 day', completed_elapsed_minutes = 60
-       WHERE id = $1`,
-      [t2Id, l2],
+      `UPDATE case_tasks SET completed_at = now() - interval '1 day', completed_elapsed_minutes = 60
+       WHERE id = ANY($1)`,
+      [[t1Id, t2Id]],
     );
 
     // db.query camelizes row keys → taskNumber (not task_number).
@@ -322,6 +331,22 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
     expect(next.locationId).toBe(l2Id);
     const current = await commissionRateRepository.findById(next.id);
     expect(current!.locationId).toBe(l2Id);
+  });
+
+  it('§4 persisted: commission is stamped on the task at completion and survives rate deletion (owner 2026-06-19)', async () => {
+    // The amount was stamped onto each task at completion (location set pre-completion in the seed).
+    const [t2] = await query<{ commissionAmount: number | null }>(
+      `SELECT commission_amount::float8 AS commission_amount FROM case_tasks WHERE task_number = $1`,
+      [t2Number],
+    );
+    expect(t2!.commissionAmount).toBe(90); // stamped @ completion (T2 @ L2 → CR-L2)
+    // Remove ALL commission rates → the live lateral now resolves NULL, but the stored snapshot holds.
+    await query(`DELETE FROM commission_rates`);
+    const lines = await billingRepository.caseTasks(caseId);
+    expect(lines.find((l) => l.taskNumber === t1Number)!.commissionAmount).toBe(50); // snapshot, not live
+    expect(lines.find((l) => l.taskNumber === t2Number)!.commissionAmount).toBe(90);
+    const { items } = await billingRepository.listCases(baseOpts);
+    expect(items.find((i) => i.caseId === caseId)!.commissionTotal).toBe(140);
   });
 
   it('breakdown groups by location and by completed-in band', async () => {

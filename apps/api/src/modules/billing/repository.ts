@@ -117,7 +117,7 @@ export const billingRepository = {
               count(*)::int AS completed_task_count,
               COALESCE(SUM(ct.bill_count), 0)::int AS billable_units,
               COALESCE(SUM(rt.bill_amount * ct.bill_count), 0)::float8 AS bill_total,
-              COALESCE(SUM(com.commission_amount * ct.bill_count), 0)::float8 AS commission_total,
+              COALESCE(SUM(COALESCE(ct.commission_amount, com.commission_amount) * ct.bill_count), 0)::float8 AS commission_total,
               max(ct.completed_at) AS last_completed_at
        ${CASES_FROM} ${clause}
        GROUP BY cs.id, cs.case_number, cl.name, p.name, cs.status
@@ -145,7 +145,8 @@ export const billingRepository = {
     return query<BillingTaskLine>(
       `SELECT ct.id AS task_id, ct.task_number, vu.name AS unit_name, au.name AS assignee_name,
               ct.task_origin AS billing_class, ct.visit_type, rt.rate_type,
-              rt.bill_amount, com.commission_amount, ct.bill_count, ${COMPLETED_BAND} AS tat_band,
+              rt.bill_amount, COALESCE(ct.commission_amount, com.commission_amount) AS commission_amount,
+              ct.bill_count, ${COMPLETED_BAND} AS tat_band,
               ct.completed_at
        FROM case_tasks ct
        JOIN cases cs ON cs.id = ct.case_id
@@ -173,7 +174,7 @@ export const billingRepository = {
               count(*)::int                                                AS completed_task_count,
               COALESCE(SUM(ct.bill_count), 0)::int                         AS billable_units,
               COALESCE(SUM(rt.bill_amount * ct.bill_count), 0)::float8      AS bill_total,
-              COALESCE(SUM(com.commission_amount * ct.bill_count), 0)::float8 AS commission_total
+              COALESCE(SUM(COALESCE(ct.commission_amount, com.commission_amount) * ct.bill_count), 0)::float8 AS commission_total
        ${CASES_FROM}
        LEFT JOIN locations l ON l.id = COALESCE(ct.area_id, ct.pincode_id, cs.area_id, cs.pincode_id)
        ${locClause}
@@ -189,7 +190,7 @@ export const billingRepository = {
               count(*)::int                                                AS completed_task_count,
               COALESCE(SUM(ct.bill_count), 0)::int                         AS billable_units,
               COALESCE(SUM(rt.bill_amount * ct.bill_count), 0)::float8      AS bill_total,
-              COALESCE(SUM(com.commission_amount * ct.bill_count), 0)::float8 AS commission_total
+              COALESCE(SUM(COALESCE(ct.commission_amount, com.commission_amount) * ct.bill_count), 0)::float8 AS commission_total
        ${CASES_FROM} ${bandClause}
        GROUP BY 1 ORDER BY 1`,
       bandParams,
