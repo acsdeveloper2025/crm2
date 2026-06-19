@@ -54,7 +54,10 @@ export interface MisRowsResult {
  * Append WHERE conditions to `params` (mutates). Numbering continues from `params.length + 1`.
  */
 function buildMisWhere(o: MisRowsOptions, params: unknown[]): string {
-  const where: string[] = [`ct.status = 'COMPLETED'`];
+  // ADR-0047: a task is SUBMITTED (field done, commission frozen at submit) → COMPLETED (office closed).
+  // Mirror the billing read-model (`billing/repository.ts` `ct.status IN ('SUBMITTED','COMPLETED')`) so
+  // the MIS surfaces a task — and its earned commission — as soon as the field submits it.
+  const where: string[] = [`ct.status IN ('SUBMITTED', 'COMPLETED')`];
   const add = (clause: string, val: unknown) => {
     params.push(val);
     where.push(clause.replace('$?', `$${params.length}`));

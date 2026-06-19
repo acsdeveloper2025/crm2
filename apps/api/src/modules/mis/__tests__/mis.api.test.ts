@@ -161,6 +161,9 @@ async function seedCompletedTask(
     (await request(app).post(`/api/v2/verification-tasks/${taskId}/start`).set(hdr('FIELD_AGENT', fa)))
       .status,
   ).toBe(200);
+  // ADR-0047: the device /complete transitions the task to SUBMITTED (field done, commission frozen),
+  // NOT COMPLETED — office-complete is a separate step. The MIS read-model includes SUBMITTED tasks
+  // (mirrors the billing read-model), so this submitted task appears in the MIS below.
   expect(
     (await request(app).post(`/api/v2/verification-tasks/${taskId}/complete`).set(hdr('FIELD_AGENT', fa)))
       .status,

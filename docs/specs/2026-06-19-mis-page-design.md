@@ -30,7 +30,7 @@ A pure function `resolveColumn(col: ReportLayoutColumn, params: unknown[]) → {
 `misRows(opts)` builds, mirroring `billing.listCases` exactly:
 - **FROM** = `case_tasks ct JOIN cases cs JOIN clients cl JOIN products p JOIN verification_units vu LEFT JOIN users au ON au.id = ct.assigned_to` + applicant join + (DATA_ENTRY_FIELD present → `LEFT JOIN case_data_entries de ON de.case_id = cs.id`) + (**any money column survived gating** → `RATE_LATERAL` + `COMMISSION_LATERAL`, else omit both).
 - **SELECT** = the resolved `sql AS alias` list (money columns already dropped by the service when `!canViewBilling`).
-- **WHERE** = reuse the billing filter shape: `ct.status = 'COMPLETED'` + `cs.client_id = $` + `cs.product_id = $` + `ct.completed_at >= / <= $` + `search` ILIKE + **the scope predicate** (reuse `billing`'s `caseScopePredicate`, or the task-grain `taskScopePredicate` from `platform/scope` — pick the one the pipeline/tasks read-model uses; verify in the plan).
+- **WHERE** = reuse the billing filter shape: `ct.status IN ('SUBMITTED','COMPLETED')` (ADR-0047 — mirror the billing read-model so a field-submitted task and its earned commission surface immediately; office-complete just flips SUBMITTED→COMPLETED) + `cs.client_id = $` + `cs.product_id = $` + `ct.completed_at >= / <= $` + `search` ILIKE + **the scope predicate** (reuse `billing`'s `caseScopePredicate`, or the task-grain `taskScopePredicate` from `platform/scope` — pick the one the pipeline/tasks read-model uses; verify in the plan).
 - **ORDER BY** `ct.completed_at DESC, ct.id DESC` · `LIMIT/OFFSET` (paginated, like billing).
 - Returns `{ rows: Array<Record<alias, unknown>>, totalCount }`.
 
