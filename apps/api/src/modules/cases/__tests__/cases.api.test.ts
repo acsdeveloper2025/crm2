@@ -2430,6 +2430,15 @@ describe.skipIf(!RUN)('cases API', () => {
       expect(res.status).toBe(201);
       expect(res.body.dedupeDecision).toBe('CREATE_NEW');
       expect(res.body.dedupeMatchedCaseNumbers).toEqual(['CASE-000001']);
+
+      // The per-applicant verdict must survive a re-read (GET /cases/:id), not be write-only.
+      const detail = await request(app).get(`/api/v2/cases/${id}`).set(SA);
+      const added = detail.body.applicants.find((a: { name: string }) => a.name === 'Dup Person');
+      expect(added.dedupeDecision).toBe('CREATE_NEW');
+      expect(added.dedupeMatchedCaseNumbers).toEqual(['CASE-000001']);
+      // The creation-time primary applicant has no per-row verdict (covered by the case-level record).
+      const primary = detail.body.applicants.find((a: { isPrimary: boolean }) => a.isPrimary);
+      expect(primary.dedupeDecision).toBeNull();
     });
 
     it('rejects adding to a non-open (CANCELLED) case (409 CASE_NOT_OPEN)', async () => {

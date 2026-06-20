@@ -265,7 +265,10 @@ export function CaseCreatePage() {
                     ) : (
                       <button
                         className="text-sm text-destructive hover:underline"
-                        onClick={() => setApplicants((rows) => rows.filter((_, idx) => idx !== i))}
+                        onClick={() => {
+                          armSearch(); // changing the applicant set re-arms the dedupe gate (ADR-0053)
+                          setApplicants((rows) => rows.filter((_, idx) => idx !== i));
+                        }}
                       >
                         Remove
                       </button>
@@ -276,7 +279,10 @@ export function CaseCreatePage() {
             ))}
             <button
               className="text-sm font-medium text-primary hover:underline"
-              onClick={() => setApplicants((rows) => [...rows, emptyApplicant()])}
+              onClick={() => {
+                armSearch(); // a new applicant must be deduped before Create (ADR-0053)
+                setApplicants((rows) => [...rows, emptyApplicant()]);
+              }}
             >
               + Add co-applicant
             </button>

@@ -640,7 +640,8 @@ export const caseRepository = {
     const head = rows[0];
     if (!head) return null;
     const applicants = await query<CaseApplicant>(
-      `SELECT id, case_id, name, mobile, pan, company_name, applicant_type, is_primary, calling_code, created_at
+      `SELECT id, case_id, name, mobile, pan, company_name, applicant_type, is_primary, calling_code, created_at,
+              dedupe_decision, dedupe_rationale, dedupe_matched_case_numbers
        FROM case_applicants WHERE case_id = $1 ORDER BY is_primary DESC, created_at`,
       [id],
     );
