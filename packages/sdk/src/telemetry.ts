@@ -11,7 +11,7 @@ export const TelemetryIngestSchema = z.object({
 });
 export type TelemetryIngestInput = z.infer<typeof TelemetryIngestSchema>;
 
+/** Bare v2-native ack (ADR-0054, no `{success}` envelope) — how many events were accepted. */
 export interface TelemetryIngestResult {
-  success: boolean;
   accepted: number;
 }

@@ -34,9 +34,9 @@ export const LocationCaptureSchema = z.object({
 });
 export type LocationCaptureRequest = z.infer<typeof LocationCaptureSchema>;
 
-/** Capture response — the envelope the device's offline queue keys off (`success` truthy). */
+/** Capture response — the bare v2-native body (ADR-0054, no `{success,message,data}` envelope). */
 export interface LocationCaptureResponse {
-  success: true;
-  message: string;
-  data: { id: string; timestamp: string; accuracy: number | null };
+  id: string;
+  timestamp: string;
+  accuracy: number | null;
 }

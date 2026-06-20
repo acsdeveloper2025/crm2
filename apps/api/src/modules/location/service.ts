@@ -79,10 +79,6 @@ export const locationService = {
       source: b.source,
     });
 
-    return {
-      success: true,
-      message: 'Location captured',
-      data: { id: row.id, timestamp: row.recordedAt, accuracy: row.accuracy },
-    };
+    return { id: row.id, timestamp: row.recordedAt, accuracy: row.accuracy };
   },
 };

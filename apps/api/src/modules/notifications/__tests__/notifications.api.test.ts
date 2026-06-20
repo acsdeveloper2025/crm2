@@ -181,7 +181,7 @@ describe.skipIf(!RUN)('notifications feed (ADR-0027)', () => {
       expect(back.body.totalCount).toBeGreaterThanOrEqual(1);
     });
 
-    it('mutes a task (UPSERT idempotent), lists it in the v1 envelope, unmutes', async () => {
+    it('mutes a task (UPSERT idempotent), lists it as a bare array, unmutes', async () => {
       const m1 = await request(app).post('/api/v2/notifications/mute').set(h()).send({ taskId: TASK });
       expect(m1.status).toBe(200);
       expect(m1.body.taskId).toBe(TASK);
@@ -193,14 +193,15 @@ describe.skipIf(!RUN)('notifications feed (ADR-0027)', () => {
       expect(m2.body.id).toBe(m1.body.id); // same row (UPSERT)
 
       const mutes = await request(app).get('/api/v2/notifications/mutes').set(h());
-      expect(mutes.body).toMatchObject({ success: true });
-      expect(mutes.body.data).toHaveLength(1);
-      expect(mutes.body.data[0].taskId).toBe(TASK);
+      expect(Array.isArray(mutes.body)).toBe(true);
+      expect(mutes.body).toHaveLength(1);
+      expect(mutes.body[0].taskId).toBe(TASK);
 
       const un = await request(app).delete(`/api/v2/notifications/mute/task/${TASK}`).set(h());
       expect(un.status).toBe(200);
+      expect(un.body).toEqual({});
       const after = await request(app).get('/api/v2/notifications/mutes').set(h());
-      expect(after.body.data).toHaveLength(0);
+      expect(after.body).toHaveLength(0);
 
       const un2 = await request(app).delete(`/api/v2/notifications/mute/task/${TASK}`).set(h());
       expect(un2.status).toBe(404); // no active mute

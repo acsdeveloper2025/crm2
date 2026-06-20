@@ -172,15 +172,15 @@ export const notificationService = {
   },
 
   /** Unmute a task (idempotent — 404 if no active mute, so the device can converge state). */
-  async unmuteTask(userId: string, taskId: string): Promise<{ success: true }> {
+  async unmuteTask(userId: string, taskId: string): Promise<Record<string, never>> {
     const removed = await settings.unmuteTask(userId, taskId);
     if (!removed) throw AppError.notFound();
-    return { success: true };
+    return {};
   },
 
-  /** List active mutes in the v1 `{ success, data }` envelope the device reads. */
+  /** List active mutes as a bare v2-native array (ADR-0054, no `{ success, data }` envelope). */
   async listMutes(userId: string): Promise<NotificationMuteList> {
-    return { success: true, data: await settings.listMutes(userId) };
+    return settings.listMutes(userId);
   },
 
   /** Get this user's delivery preferences (empty map when unset). */

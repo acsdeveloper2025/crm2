@@ -285,11 +285,11 @@ describe.skipIf(!RUN)('auth API', () => {
       const r = await check('1.0.56', 'ANDROID');
       expect(r.status).toBe(200);
       expect(r.body).toMatchObject({
-        success: true,
         forceUpdate: false,
         updateRequired: false,
         latestVersion: '1.0.56',
       });
+      expect(r.body).not.toHaveProperty('success');
     });
 
     it('force-updates a version below the minimum supported', async () => {

@@ -1,8 +1,9 @@
 /**
  * @crm2/sdk — mobile force-update gate (mobile parity). POST /api/v2/auth/version-check gates the
  * whole app: the device sends its current version + platform; the server returns whether an update is
- * required/forced. The response is a FLAT object (the device reads `forceUpdate`/`latestVersion`/…
- * top-level, not under `data`) — keep these field names stable (the gate silently no-ops otherwise).
+ * required/forced. The response is a BARE, FLAT v2-native object (ADR-0054 — no `{success}` envelope);
+ * the device reads `forceUpdate`/`latestVersion`/… top-level — keep these field names stable (the gate
+ * silently no-ops otherwise).
  */
 import { z } from 'zod';
 
@@ -17,7 +18,6 @@ export const VersionCheckSchema = z.object({
 export type VersionCheckInput = z.infer<typeof VersionCheckSchema>;
 
 export interface MobileVersionCheckResponse {
-  success: boolean;
   /** currentVersion < minSupportedVersion — hard gate (ForceUpdateScreen). */
   forceUpdate: boolean;
   /** forceUpdate OR currentVersion < latestVersion — show an update prompt. */

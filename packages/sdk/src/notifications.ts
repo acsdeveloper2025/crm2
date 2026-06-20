@@ -95,11 +95,8 @@ export interface NotificationMute {
   expiresAt: string | null;
 }
 
-/** GET /notifications/mutes — v1-envelope shape the device reads (`res.data`). */
-export interface NotificationMuteList {
-  success: boolean;
-  data: NotificationMute[];
-}
+/** GET /notifications/mutes — a bare v2-native array of active mutes (ADR-0054, no `{success,data}`). */
+export type NotificationMuteList = NotificationMute[];
 
 // ── Per-user delivery preferences (mobile parity) ──
 

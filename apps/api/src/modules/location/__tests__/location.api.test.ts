@@ -42,7 +42,9 @@ describe.skipIf(!RUN)('device location capture (ADR-0026, locked contract)', () 
       .set(agentHdr())
       .send({ latitude: 19.07, longitude: 72.87, accuracy: 8, timestamp: TS_INSIDE, source: 'TRACKING' });
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ success: true, data: { accuracy: 8 } });
+    expect(res.body).toMatchObject({ accuracy: 8 });
+    expect(res.body).not.toHaveProperty('success');
+    expect(typeof res.body.id).toBe('string');
     const { rows } = await db!.pool.query(`SELECT * FROM latest_device_location WHERE user_id = $1`, [
       agentId,
     ]);
@@ -99,7 +101,7 @@ describe.skipIf(!RUN)('device location capture (ADR-0026, locked contract)', () 
       .set(agentHdr())
       .send({ latitude: 19.05, longitude: 72.85, accuracy: 6, timestamp: TS_INSIDE, source: 'GPS' });
     expect(res.status).toBe(200);
-    expect(res.body.success).toBe(true);
+    expect(typeof res.body.id).toBe('string');
     const { rows } = await db!.pool.query(
       `SELECT count(*)::int AS n FROM device_locations WHERE user_id = $1 AND source = 'GPS'`,
       [agentId],
@@ -121,7 +123,7 @@ describe.skipIf(!RUN)('device location capture (ADR-0026, locked contract)', () 
       .send(body);
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
-    expect(second.body.data.id).toBe(first.body.data.id);
+    expect(second.body.id).toBe(first.body.id);
     const { rows } = await db!.pool.query(
       `SELECT count(*)::int AS n FROM device_locations WHERE operation_id = $1`,
       ['op-123'],

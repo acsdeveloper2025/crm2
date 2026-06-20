@@ -27,7 +27,6 @@ export const versionService = {
     const release = await repo.releaseFor(b.platform);
     if (!release) {
       return {
-        success: true,
         forceUpdate: false,
         updateRequired: false,
         latestVersion: b.currentVersion,
@@ -40,7 +39,6 @@ export const versionService = {
     // Omit downloadUrl/releaseNotes/releaseDate when null — the device schema validates them as
     // string-or-absent (an explicit null trips its non-strict validation with a warning).
     return {
-      success: true,
       forceUpdate: belowMin,
       updateRequired: belowMin || belowLatest,
       latestVersion: release.latestVersion,

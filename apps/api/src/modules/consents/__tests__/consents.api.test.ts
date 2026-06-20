@@ -54,7 +54,7 @@ describe.skipIf(!RUN)('mobile consents + telemetry (parity)', () => {
       .set(h())
       .send({ events: [{ a: 1 }, { b: 2 }] });
     expect(r.status).toBe(202);
-    expect(r.body).toEqual({ success: true, accepted: 2 });
+    expect(r.body).toEqual({ accepted: 2 });
   });
 
   it('telemetry tolerates an empty body', async () => {

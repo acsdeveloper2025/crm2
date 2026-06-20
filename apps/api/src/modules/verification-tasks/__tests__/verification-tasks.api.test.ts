@@ -597,11 +597,11 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
       expect(denied.status).toBe(404);
     });
 
-    it('serves a null form template so the device uses its bundled template', async () => {
+    it('serves a bare null form template so the device uses its bundled template', async () => {
       const { agent } = await seedAssignedTask('FT');
       const res = await request(app).get('/api/v2/forms/residence/template').set(hdr('FIELD_AGENT', agent));
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ success: true, data: null });
+      expect(res.body).toBeNull();
     });
   });
 });

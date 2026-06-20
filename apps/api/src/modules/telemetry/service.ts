@@ -8,6 +8,6 @@ import { TelemetryIngestSchema, type TelemetryIngestResult } from '@crm2/sdk';
 export const telemetryService = {
   ingest(rawBody: unknown): TelemetryIngestResult {
     const b = TelemetryIngestSchema.parse(rawBody ?? {});
-    return { success: true, accepted: b.events?.length ?? 0 };
+    return { accepted: b.events?.length ?? 0 };
   },
 };
