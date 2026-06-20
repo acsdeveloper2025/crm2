@@ -691,6 +691,75 @@ LOCAL/OGL and OFFICE rate-spaces are disjoint; `fieldRateType` client enum = LOC
 server-derived from `visit_type`, not client-settable); the MANAGER/TL grant unlocks only the 2 task-close
 routes (no money/export/admin); completion stays scope-bound (404, IDOR-safe); all SQL parameterized.
 
+## Section R0054 — ADR-0054 v2-native mobile: 3 app-side findings + pre-release review gate (2026-06-20)
+
+The 3 device-smoke findings from the v2-native cutover (`crm-mobile-native`, branch `feat/v2-native-sync`)
+fixed via the multi-agent method, then a 4-agent adversarial review gate (CEO · CTO · Design · Security)
+on the green static gate (`tsc --noEmit` + `contract:mobile` 14/14 + eslint). Verdicts: CEO/Design/CTO
+**GO-with-fixes**, Security **NO-GO** (one cross-user PII blocker — now fixed). All dispositioned below.
+Re-smoked on the real device (Android RZ8M813301M, debug 10073 vs local v2-native :4000): login + consent
+sync clean, v2 sync "Downloaded 2 / Available 2", addresses render clean on TaskCard + TaskInfoModal.
+
+### R0054-1 · Address `", ,"` gap when v2 drops city/state — ✅ FIXED + device-verified (2026-06-20)
+ADR-0054 made `/sync/download` send one free-text `address` (→ local `addressStreet`) + `pincode` and DROP
+city/state (now empty). `TaskCard`/`TaskDetailScreen` rendered `{street}, {city}, {state} {pincode}` → e.g.
+"…Mumbai, , 400001". **FIX:** shared `src/utils/formatTaskAddress.ts` — comma-joins the non-empty
+street/city/state then appends a space-separated pincode (Indian convention; matches pre-ADR-0054). Unit-
+tested 5 edge cases. On-device: "42 MARINE DRIVE, CHURCHGATE, MUMBAI 400020 400001" / "12 MG ROAD, FORT,
+MUMBAI 400001" — no stray commas (UI-dump text confirmed).
+
+### R0054-2 · Cross-user wipe threw on `user_session` (whitelist gap) — ✅ FIXED (2026-06-20)
+`clearAllData failed during user-change wipe` (the device-smoke toast): `MaintenanceRepository.clearAllTables`
+threw on `user_session` because it was missing from `CLEARABLE_TABLES`, aborting the wipe mid-loop (partial
+wipe). Root cause was the whitelist gap (pre-existing, commit `5eca463`) — **NOT** the v19→v20 migration the
+memory hypothesized. **FIX:** added `user_session` to the whitelist. Statically proven: all StorageService
+wipe tables ⊆ `CLEARABLE_TABLES`. Schema/FK/open-timing throw paths ruled out (CTO). On-device cross-user
+repro not run (see R0054-R1).
+
+### R0054-3 · Cross-user wipe left prior-user PII (notifications + projections) — ✅ FIXED (Security BLOCKER, 2026-06-20)
+Even with R0054-2, `StorageService.clearAllData`'s 8-table list omitted `notifications`,
+`task_list_projection`, `task_detail_projection`, `dashboard_projection`, `form_templates` — all read
+**UNSCOPED** by the UI. Login sync only does incremental `rebuildTask`, never `rebuildAll`, so User A's
+tasks/notifications render to User B on first launch (this is exactly the original "stale data didn't clear"
+finding). **FIX:** added the 5 tables to the wipe list (all already whitelisted; no FKs → order-free). The
+fix completes the wipe; the leak is closed. On-device cross-user repro still pending (R0054-R1).
+
+### R0054-4 · TaskInfoModal dropped the pincode / 3 address surfaces diverged — ✅ FIXED + device-verified (2026-06-20)
+`TaskInfoModal` used `addressStreet || [...]` → dropped the pincode whenever street was present (always, for
+v2), while card/detail showed it — same task, different address per screen (Design). **FIX:** all 3 surfaces
+now call `formatTaskAddress(task)`. On-device: the modal shows "…MUMBAI 400020 400001" (pincode present),
+identical to the card.
+
+### R0054-5 · versionCode 73 → 10073 — ✅ FIXED + device-verified (2026-06-20)
+Stale code 73 vs the `10000+minor` release scheme. **FIX:** `android/gradle.properties` versionCode=10073
+(versionName stays 1.0.73). `dumpsys package` on the rebuilt debug APK confirms `versionCode=10073`
+(mitigation #4 identifiable build).
+
+### R0054-R1 · finding-2 cross-user wipe = deterministic proof, no on-device cross-user repro — 🟡 residual (2026-06-20)
+No second seeded field user on local `:4000` (and the only reachable Postgres ports are SSH-forwarded =
+do-not-write), so the User-A→User-B login swap was not exercised on-device. R0054-2/3 rest on the static
+subset proof + the simple guard logic. **Action:** run one cross-user login swap during the post-release
+canary; confirm B's task list / detail / dashboard / bell show zero A rows before and after first sync.
+
+### R0054-6 · Cross-user wipe is two independent hardcoded lists (drift) — 🟡 DEFERRED (2026-06-20)
+`StorageService.clearAllData`'s wipe list and `MaintenanceRepository.CLEARABLE_TABLES` are separate literals;
+a future table added to one and not the other re-introduces R0054-2's partial-wipe bug. A subset-guard test
+can't load under the dependency-free `node --experimental-strip-types` runner (native `react-native-fs`
+import). **Follow-up:** hoist the wipe list to an exported constant + assert `wipeList ⊆ CLEARABLE_TABLES`,
+or derive one from the other.
+
+### R0054-7 · Cross-user wipe non-transactional + failure swallowed — 🟡 DEFERRED (2026-06-20)
+`clearAllTables` runs per-table `DELETE` with no transaction, and `AuthService` catches a wipe failure and
+**continues login** onto possibly-stale cross-user data. Acceptable now (R0054-2/3 remove the known throw),
+but the right cross-user boundary is all-or-nothing + fail-closed (block login on wipe failure). Behavioural
+change → its own reviewed change next cycle.
+
+### Process / pre-release checklist
+TEMP smoke repoint (`src/config/index.ts` dev → `http://localhost:4000`) **reverted** to the prod HTTPS URL
+(it was `__DEV__`-only so could not ship in a release, but a landmine). Owner gate before distribution
+(CEO): **staged/canary rollout** (a few field agents first, incl. the R0054-R1 cross-user swap) before
+fleet-wide, and confirm the "no other live v2 app" freeze (mitigation #5) still holds at distribution time.
+
 ---
 *Governance ledger. Update — never overwrite — as findings change state. Linked from
 `CRM2_MASTER_MEMORY.md`, `PROJECT_INDEX.md`, `docs/ARCHITECTURE_GOVERNANCE.md`,
