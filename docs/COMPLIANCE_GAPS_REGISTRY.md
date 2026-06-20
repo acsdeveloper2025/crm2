@@ -713,8 +713,8 @@ MUMBAI 400001" — no stray commas (UI-dump text confirmed).
 threw on `user_session` because it was missing from `CLEARABLE_TABLES`, aborting the wipe mid-loop (partial
 wipe). Root cause was the whitelist gap (pre-existing, commit `5eca463`) — **NOT** the v19→v20 migration the
 memory hypothesized. **FIX:** added `user_session` to the whitelist. Statically proven: all StorageService
-wipe tables ⊆ `CLEARABLE_TABLES`. Schema/FK/open-timing throw paths ruled out (CTO). On-device cross-user
-repro not run (see R0054-R1).
+wipe tables ⊆ `CLEARABLE_TABLES`. Schema/FK/open-timing throw paths ruled out (CTO). **Device-verified**
+(R0054-R1): real cross-user login swap → `All local data cleared`, no throw.
 
 ### R0054-3 · Cross-user wipe left prior-user PII (notifications + projections) — ✅ FIXED (Security BLOCKER, 2026-06-20)
 Even with R0054-2, `StorageService.clearAllData`'s 8-table list omitted `notifications`,
@@ -722,7 +722,8 @@ Even with R0054-2, `StorageService.clearAllData`'s 8-table list omitted `notific
 **UNSCOPED** by the UI. Login sync only does incremental `rebuildTask`, never `rebuildAll`, so User A's
 tasks/notifications render to User B on first launch (this is exactly the original "stale data didn't clear"
 finding). **FIX:** added the 5 tables to the wipe list (all already whitelisted; no FKs → order-free). The
-fix completes the wipe; the leak is closed. On-device cross-user repro still pending (R0054-R1).
+fix completes the wipe; the leak is closed. **Device-verified** (R0054-R1): smokefb saw 0 assigned tasks,
+no smokefa cases in Recent Activity, and the notification badge gone after the cross-user swap.
 
 ### R0054-4 · TaskInfoModal dropped the pincode / 3 address surfaces diverged — ✅ FIXED + device-verified (2026-06-20)
 `TaskInfoModal` used `addressStreet || [...]` → dropped the pincode whenever street was present (always, for
@@ -735,11 +736,17 @@ Stale code 73 vs the `10000+minor` release scheme. **FIX:** `android/gradle.prop
 (versionName stays 1.0.73). `dumpsys package` on the rebuilt debug APK confirms `versionCode=10073`
 (mitigation #4 identifiable build).
 
-### R0054-R1 · finding-2 cross-user wipe = deterministic proof, no on-device cross-user repro — 🟡 residual (2026-06-20)
-No second seeded field user on local `:4000` (and the only reachable Postgres ports are SSH-forwarded =
-do-not-write), so the User-A→User-B login swap was not exercised on-device. R0054-2/3 rest on the static
-subset proof + the simple guard logic. **Action:** run one cross-user login swap during the post-release
-canary; confirm B's task list / detail / dashboard / bell show zero A rows before and after first sync.
+### R0054-R1 · on-device cross-user wipe repro — ✅ FIXED + device-verified (2026-06-20)
+Closed same day. Seeded a 2nd FIELD_AGENT via the real admin API path (`admin`/`admin123` on local
+`:4000`/`crm2_dev` → `POST /users` → `smokefb`/`Field@12345`, CRM-00003) and ran the User-A→User-B login
+swap on the real device (RZ8M813301M). Logcat proves the path: `User changed on this device
+(4e51…[smokefa] → ae16…[smokefb]); wiping local data` → `[StorageService] All local data cleared` (fires
+only after `clearAllTables` returns) → `Login successful` — **no `clearAllData failed`** (the old
+`user_session` throw is gone). Visual: smokefb's dashboard shows ASSIGNED/IN-PROGRESS/COMPLETED/SAVED **all
+0**, RECENT ACTIVITY has **no** smokefa cases, and the notification bell badge (was "1") is **gone** — i.e.
+R0054-3's notifications + projections + dashboard tables were all cleared, zero cross-user leak. (Observed
+but pre-existing + dev-only: a background `/auth/refresh` 401 `INVALID_REFRESH` surfaces in the RN LogBox —
+appeared for smokefa too [no wipe], invisible in release builds; not a regression.)
 
 ### R0054-6 · Cross-user wipe is two independent hardcoded lists (drift) — 🟡 DEFERRED (2026-06-20)
 `StorageService.clearAllData`'s wipe list and `MaintenanceRepository.CLEARABLE_TABLES` are separate literals;
