@@ -1,4 +1,4 @@
-import { SyncDownloadQuerySchema, type MobileSyncResponse, type MobileSyncTask } from '@crm2/sdk';
+import { SyncDownloadQuerySchema, type MobileSyncDownload, type MobileSyncTask } from '@crm2/sdk';
 import { syncRepository as repo, type SyncTaskRow } from './repository.js';
 import { AppError } from '../../platform/errors.js';
 import { resolveScope, type Actor } from '../../platform/scope/index.js';
@@ -10,81 +10,61 @@ const MS_PER_DAY = 86_400_000;
 
 const iso = (d: string | Date): string => new Date(d).toISOString();
 
-/** Map a flat assigned-task row to the locked `MobileCaseResponse` shape (audit §3.1). */
+/** Map a flat assigned-task row to the v2-native `MobileSyncTask` shape (ADR-0054). */
 function toMobileTask(r: SyncTaskRow): MobileSyncTask {
   return {
     id: r.id,
+    taskNumber: r.taskNumber,
     caseId: r.caseId,
-    title: r.taskNumber,
-    description: `${r.unitName} - ${r.customerName}`,
+    caseNumber: r.caseNumber,
     customerName: r.customerName,
     customerCallingCode: r.customerCallingCode,
     ...(r.customerPhone ? { customerPhone: r.customerPhone } : {}),
     ...(r.companyName ? { companyName: r.companyName } : {}),
-    addressStreet: r.address,
-    // City/State have no source column → empty (v1 wire). Pincode is resolved from the task's location
-    // (ct.pincode_id → locations.pincode) when set; '' for office tasks without a location.
-    addressCity: '',
-    addressState: '',
+    applicantType: r.applicantType,
+    address: r.address,
     addressPincode: r.addressPincode ?? '',
-    // Dispatch coordinates for the task's address (v1 parity). pg returns numeric as a string →
-    // coerce to a number for the device; omitted when null.
     ...(r.latitude != null ? { latitude: Number(r.latitude) } : {}),
     ...(r.longitude != null ? { longitude: Number(r.longitude) } : {}),
     status: r.status,
     priority: r.priority,
+    verificationUnit: { id: r.unitId, name: r.unitName, code: r.unitCode },
+    ...(r.trigger ? { notes: r.trigger } : {}),
     assignedAt: iso(r.assignedAt ?? r.updatedAt),
     updatedAt: iso(r.updatedAt),
-    // Execution timestamps the office/device set on the task. The device's conflict resolver
-    // preserves local pending state (sync_status / local_updated_at) so emitting these is safe;
-    // they re-hydrate completion/start time after a local wipe. Omitted when null (v1 wire).
     ...(r.startedAt ? { inProgressAt: iso(r.startedAt) } : {}),
     ...(r.submittedAt ? { submittedAt: iso(r.submittedAt) } : {}),
     ...(r.completedAt ? { completedAt: iso(r.completedAt) } : {}),
-    notes: r.trigger,
-    verificationType: r.unitName,
-    // The office's recorded result on a completed task (v1 parity) — null until the office finalizes.
     ...(r.verificationOutcome ? { verificationOutcome: r.verificationOutcome } : {}),
-    applicantType: r.applicantType,
+    ...(r.formData ? { formData: r.formData } : {}),
     backendContactNumber: r.backendContactNumber,
-    createdByBackendUser: r.createdByName ?? '',
+    ...(r.createdByName ? { createdByBackendUser: r.createdByName } : {}),
     ...(r.assignedToName ? { assignedToFieldUser: r.assignedToName } : {}),
-    verificationTaskId: r.id,
-    verificationTaskNumber: r.taskNumber,
-    isRevoked: r.status === 'REVOKED',
-    // Revoke detail (v1 parity) — only on a revoked task. reason ← case_tasks.remark; revokedAt ← the
-    // revoke write's updated_at; revokedByName ← who revoked (ct.updated_by).
     ...(r.status === 'REVOKED'
       ? {
+          isRevoked: true,
           revokedAt: iso(r.updatedAt),
           ...(r.remark ? { revokeReason: r.remark } : {}),
           ...(r.revisedByName ? { revokedByName: r.revisedByName } : {}),
         }
       : {}),
-    // Pre-filled / office-side form data (v1 parity). The jsonb passes through the shallow camelize
-    // unchanged, so the inner form keys are preserved.
-    ...(r.formData ? { formData: r.formData } : {}),
-    isSaved: false,
     attachmentCount: r.attachmentCount,
     client: { id: r.clientId, name: r.clientName, code: r.clientCode },
     product: { id: r.productId, name: r.productName, code: r.productCode },
-    verificationTypeDetails: { id: r.unitId, name: r.unitName, code: r.unitCode },
-    attachments: [],
-    syncStatus: 'SYNCED',
   };
 }
 
 export const syncService = {
   /**
-   * Down-sync for the field device (ADR-0012, ADR-0035). Returns the v1-compatible `{ success, message,
-   * data }` envelope; `data.cases` and `data.changes` are the SAME array. `revokedAssignmentIds` carries
-   * tasks the device was assigned but no longer is (reassigned/unassigned away) so the device purges the
-   * orphans. `deletedTaskIds`/`deletedCaseIds` stay empty — v2 has no hard task/case delete (a revoked
-   * task that is still the user's flows via `cases` with `isRevoked = true`, not a purge). The delta is
+   * Down-sync for the field device (ADR-0054). Returns the v2-native BARE body — `{ tasks,
+   * revokedAssignmentIds, syncTimestamp, hasMore, nextCursor }` — with no v1 `{ success, message, data }`
+   * wrapper. `tasks` is the assigned-task page. `revokedAssignmentIds` carries tasks the device was
+   * assigned but no longer is (reassigned/unassigned away) so the device purges the orphans (a revoked
+   * task that is still the user's flows via `tasks` with `isRevoked = true`, not a purge). The delta is
    * computed only on the first page (offset 0): the device restarts every cycle at offset 0, and the
    * device-side purge is idempotent + `recentlyCleaned`-deduped, so repeating it per page is wasteful.
    */
-  async download(rawQuery: Record<string, unknown>, actor: Actor): Promise<MobileSyncResponse> {
+  async download(rawQuery: Record<string, unknown>, actor: Actor): Promise<MobileSyncDownload> {
     const q = SyncDownloadQuerySchema.parse({
       ...(typeof rawQuery['lastSyncTimestamp'] === 'string'
         ? { lastSyncTimestamp: rawQuery['lastSyncTimestamp'] }
@@ -110,20 +90,11 @@ export const syncService = {
       offset === 0 ? await repo.revokedAssignmentIdsForUser(actor.userId, cutoff) : [];
 
     return {
-      success: true,
-      message: 'Sync data retrieved',
-      data: {
-        cases: tasks,
-        changes: tasks,
-        revokedAssignmentIds,
-        deletedTaskIds: [],
-        deletedCaseIds: [],
-        conflicts: [],
-        attachmentChanges: [],
-        syncTimestamp: new Date().toISOString(),
-        hasMore,
-        nextCursor: hasMore ? String(offset + limit) : null,
-      },
+      tasks,
+      revokedAssignmentIds,
+      syncTimestamp: new Date().toISOString(),
+      hasMore,
+      nextCursor: hasMore ? String(offset + limit) : null,
     };
   },
 };

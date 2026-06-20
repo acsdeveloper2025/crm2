@@ -5,6 +5,7 @@ import { taskScopePredicate, type Scope } from '../../platform/scope/index.js';
 export interface SyncTaskRow {
   id: string;
   caseId: string;
+  caseNumber: string;
   taskNumber: string;
   address: string;
   trigger: string;
@@ -55,7 +56,7 @@ export interface SyncTaskRow {
  * `COALESCE(ct.updated_at, cs.updated_at)`; deterministic order for offset paging.
  */
 const SYNC_SELECT = `
-  SELECT ct.id, cs.case_number AS case_id, ct.task_number,
+  SELECT ct.id, cs.id AS case_id, cs.case_number AS case_number, ct.task_number,
          ct.address, ct.trigger, ct.priority, ct.status, ct.assigned_at, ct.updated_at,
          ct.started_at, ct.submitted_at, ct.completed_at, ct.verification_outcome, ct.form_data, ct.remark,
          ct.latitude, ct.longitude,

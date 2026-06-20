@@ -142,7 +142,7 @@ import type {
 import type { LocationCaptureRequest, LocationCaptureResponse } from './location.js';
 import type { ReverseGeocodeResult, ReverseGeocodeDlqRow } from './geocode.js';
 import type { ServerTime } from './time.js';
-import type { MobileSyncResponse, SyncDownloadQuery } from './sync.js';
+import type { MobileSyncDownload, SyncDownloadQuery } from './sync.js';
 import type { JobView, JobListQuery, JobResultUrl } from './jobs.js';
 import type { SavedView, CreateSavedViewInput, UpdateSavedViewInput } from './savedViews.js';
 
@@ -810,7 +810,7 @@ export function createSdk(opts: SdkOptions) {
     time: {
       now: () => req<ServerTime>('GET', '/api/v2/time'),
     },
-    /** Mobile down-sync (ADR-0012): the locked field-dispatch contract for the field app. */
+    /** Mobile down-sync (ADR-0054): the v2-native field-dispatch contract for the field app. */
     sync: {
       download: (q: SyncDownloadQuery = {}) => {
         const p = new URLSearchParams();
@@ -818,7 +818,7 @@ export function createSdk(opts: SdkOptions) {
         if (q.limit !== undefined) p.set('limit', String(q.limit));
         if (q.offset !== undefined) p.set('offset', String(q.offset));
         const qs = p.toString();
-        return req<MobileSyncResponse>('GET', `/api/v2/sync/download${qs ? `?${qs}` : ''}`);
+        return req<MobileSyncDownload>('GET', `/api/v2/sync/download${qs ? `?${qs}` : ''}`);
       },
     },
   };

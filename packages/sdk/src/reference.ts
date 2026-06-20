@@ -10,7 +10,7 @@ export interface VerificationTypeOutcome {
   id: number;
   /** Mirrors the v1 numeric verification-type id (device ordering/shape contract). */
   verificationTypeId: number;
-  /** The v2 unit code the device matches a task on (= sync DTO `verificationTypeDetails.code`). */
+  /** The v2 unit code the device matches a task on (= sync DTO `verificationUnit.code`). */
   verificationTypeCode: string;
   /** Wire enum (UPPERCASE): POSITIVE, SHIFTED, NSP, ENTRY_RESTRICTED, UNTRACEABLE, NEGATIVE. */
   outcomeCode: string;

@@ -147,7 +147,7 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
     );
   });
 
-  it('serves the device user their assigned task in the locked MobileCaseResponse envelope', async () => {
+  it('serves the device user their assigned task in the v2-native bare body', async () => {
     const ctx = await seedCpvUnit('ENV');
     const fa = await createUser({ username: 'fa_sync', name: 'FIELD SYNC', role: 'FIELD_AGENT' });
     const t = await seedTask(ctx, {
@@ -159,40 +159,56 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
 
     const res = await request(app).get('/api/v2/sync/download').set(hdr('FIELD_AGENT', fa));
     expect(res.status).toBe(200);
-    expect(res.body.success).toBe(true);
-    const d = res.body.data;
-    // envelope: cases === changes; placeholder delta arrays; watermark present
-    expect(d.cases).toHaveLength(1);
-    expect(d.changes).toEqual(d.cases);
+    // v2-native: the body IS the bare { tasks, revokedAssignmentIds, syncTimestamp, hasMore, nextCursor }
+    const d = res.body;
+    expect(d.success).toBeUndefined(); // no v1 { success, message, data } wrapper
+    expect(d.data).toBeUndefined();
+    expect(d.tasks).toHaveLength(1);
     expect(d.revokedAssignmentIds).toEqual([]);
-    expect(d.deletedTaskIds).toEqual([]);
-    expect(d.conflicts).toEqual([]);
     expect(typeof d.syncTimestamp).toBe('string');
     expect(d.hasMore).toBe(false);
     expect(d.nextCursor).toBeNull();
 
-    const task = d.cases[0];
+    const task = d.tasks[0];
     expect(task.id).toBe(t.taskId);
-    expect(task.caseId).toBe(t.caseNumber); // v2 sends case_number; device tolerates string
+    expect(task.taskNumber).toBe(`${t.caseNumber}-1`);
+    expect(task.caseId).toBe(t.caseId); // v2-native: the case UUID
+    expect(task.caseId).not.toBe(t.caseNumber); // NOT the case number anymore
+    expect(task.caseNumber).toBe(t.caseNumber);
     expect(task.customerName).toBe('RAMESH SYNC'); // derived from the targeted applicant
     expect(task.customerPhone).toBe('9000012345');
     expect(task.customerCallingCode).toMatch(/^CC-/);
-    expect(task.addressStreet).toBe('12 MG ROAD');
-    expect(task.addressCity).toBe(''); // phantom — byte-compat with v1
+    expect(task.address).toBe('12 MG ROAD');
     expect(task.addressPincode).toBe('');
     expect(task.notes).toBe('VERIFY RESIDENCE — ref 99'); // trigger → notes
     expect(task.priority).toBe('HIGH');
     expect(task.status).toBe('ASSIGNED');
     expect(task.applicantType).toBe('APPLICANT');
     expect(task.backendContactNumber).toBe(BC);
-    expect(task.verificationTaskNumber).toBe(`${t.caseNumber}-1`);
     expect(task.assignedToFieldUser).toBe('FIELD SYNC');
     expect(task.client.name).toBeTruthy();
-    expect(task.verificationTypeDetails.id).toBe(ctx.unitId);
-    expect(task.isSaved).toBe(false);
+    expect(task.verificationUnit).toEqual({
+      id: ctx.unitId,
+      name: expect.any(String),
+      code: expect.any(String),
+    });
     expect(task.attachmentCount).toBe(0);
-    expect(task.syncStatus).toBe('SYNCED');
     expect(task.companyName).toBeUndefined(); // omitted when the applicant has no company
+
+    // dropped v1 aliases/phantoms are ABSENT
+    expect(task.verificationTaskId).toBeUndefined();
+    expect(task.verificationTaskNumber).toBeUndefined();
+    expect(task.title).toBeUndefined();
+    expect(task.description).toBeUndefined();
+    expect(task.addressStreet).toBeUndefined();
+    expect(task.addressCity).toBeUndefined();
+    expect(task.addressState).toBeUndefined();
+    expect(task.isSaved).toBeUndefined();
+    expect(task.savedAt).toBeUndefined();
+    expect(task.syncStatus).toBeUndefined();
+    expect(task.attachments).toBeUndefined();
+    expect(task.verificationType).toBeUndefined();
+    expect(task.verificationTypeDetails).toBeUndefined();
   });
 
   it('emits the applicant company_name additively when present (omitted otherwise)', async () => {
@@ -202,7 +218,7 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
     expect((await assign(t.caseId, t.taskId, fa)).status).toBe(200);
 
     const res = await request(app).get('/api/v2/sync/download').set(hdr('FIELD_AGENT', fa));
-    expect(res.body.data.cases[0].companyName).toBe('ACME INDUSTRIES');
+    expect(res.body.tasks[0].companyName).toBe('ACME INDUSTRIES');
   });
 
   it('emits the task dispatch coordinates (latitude/longitude) as numbers when set, omitted otherwise', async () => {
@@ -212,7 +228,7 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
     expect((await assign(t.caseId, t.taskId, fa)).status).toBe(200);
 
     const res = await request(app).get('/api/v2/sync/download').set(hdr('FIELD_AGENT', fa));
-    const task = res.body.data.cases[0];
+    const task = res.body.tasks[0];
     expect(typeof task.latitude).toBe('number'); // pg numeric → string → coerced to number
     expect(task.latitude).toBe(19.076);
     expect(task.longitude).toBe(72.8777);
@@ -221,7 +237,7 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
     const t2 = await seedTask(ctx, { name: 'NO GEO', trigger: 'x' });
     expect((await assign(t2.caseId, t2.taskId, fa)).status).toBe(200);
     const res2 = await request(app).get('/api/v2/sync/download').set(hdr('FIELD_AGENT', fa));
-    const noGeo = res2.body.data.cases.find((c: { id: string }) => c.id === t2.taskId);
+    const noGeo = res2.body.tasks.find((c: { id: string }) => c.id === t2.taskId);
     expect(noGeo.latitude).toBeUndefined();
   });
 
@@ -241,7 +257,7 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
     await ins(t.taskId, false); // this task → counts
     await ins(t.taskId, true); // soft-deleted → excluded
     const res = await request(app).get('/api/v2/sync/download').set(hdr('FIELD_AGENT', fa));
-    expect(res.body.data.cases[0].attachmentCount).toBe(2);
+    expect(res.body.tasks[0].attachmentCount).toBe(2);
   });
 
   it('a device only sees its OWN assigned tasks, never another agent’s (assignment is the scope)', async () => {
@@ -253,8 +269,8 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
 
     const seenBy1 = await request(app).get('/api/v2/sync/download').set(hdr('FIELD_AGENT', fa1));
     const seenBy2 = await request(app).get('/api/v2/sync/download').set(hdr('FIELD_AGENT', fa2));
-    expect(seenBy1.body.data.cases).toHaveLength(1);
-    expect(seenBy2.body.data.cases).toHaveLength(0); // fa2 was never assigned → never synced
+    expect(seenBy1.body.tasks).toHaveLength(1);
+    expect(seenBy2.body.tasks).toHaveLength(0); // fa2 was never assigned → never synced
   });
 
   it('the watermark filters out tasks unchanged since lastSyncTimestamp', async () => {
@@ -267,7 +283,7 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
     const res = await request(app)
       .get(`/api/v2/sync/download?lastSyncTimestamp=${encodeURIComponent(future)}`)
       .set(hdr('FIELD_AGENT', fa));
-    expect(res.body.data.cases).toHaveLength(0); // nothing changed after a future watermark
+    expect(res.body.tasks).toHaveLength(0); // nothing changed after a future watermark
   });
 
   it('paginates with limit / offset → hasMore + nextCursor', async () => {
@@ -281,18 +297,18 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
     const page1 = await request(app)
       .get('/api/v2/sync/download?limit=1&offset=0')
       .set(hdr('FIELD_AGENT', fa));
-    expect(page1.body.data.cases).toHaveLength(1);
-    expect(page1.body.data.hasMore).toBe(true);
-    expect(page1.body.data.nextCursor).toBe('1');
+    expect(page1.body.tasks).toHaveLength(1);
+    expect(page1.body.hasMore).toBe(true);
+    expect(page1.body.nextCursor).toBe('1');
 
     const page2 = await request(app)
       .get('/api/v2/sync/download?limit=1&offset=1')
       .set(hdr('FIELD_AGENT', fa));
-    expect(page2.body.data.cases).toHaveLength(1);
-    expect(page2.body.data.hasMore).toBe(false);
-    expect(page2.body.data.nextCursor).toBeNull();
+    expect(page2.body.tasks).toHaveLength(1);
+    expect(page2.body.hasMore).toBe(false);
+    expect(page2.body.nextCursor).toBeNull();
     // the two pages are different tasks
-    expect(page1.body.data.cases[0].id).not.toBe(page2.body.data.cases[0].id);
+    expect(page1.body.tasks[0].id).not.toBe(page2.body.tasks[0].id);
   });
 
   it('rejects a malformed lastSyncTimestamp with 400 (not a 500)', async () => {
@@ -324,13 +340,13 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
     expect(reassign.status).toBe(200);
 
     const seenBy1 = await request(app).get('/api/v2/sync/download').set(hdr('FIELD_AGENT', fa1));
-    expect(seenBy1.body.data.cases).toEqual([]); // no longer assigned → out of the cases filter
-    expect(seenBy1.body.data.revokedAssignmentIds).toEqual([t.taskId]); // purge-orphan signal (task UUID)
+    expect(seenBy1.body.tasks).toEqual([]); // no longer assigned → out of the tasks filter
+    expect(seenBy1.body.revokedAssignmentIds).toEqual([t.taskId]); // purge-orphan signal (task UUID)
 
     const seenBy2 = await request(app).get('/api/v2/sync/download').set(hdr('FIELD_AGENT', fa2));
-    expect(seenBy2.body.data.cases).toHaveLength(1); // the new assignee now sees it
-    expect(seenBy2.body.data.cases[0].id).toBe(t.taskId);
-    expect(seenBy2.body.data.revokedAssignmentIds).toEqual([]); // fa2 lost nothing
+    expect(seenBy2.body.tasks).toHaveLength(1); // the new assignee now sees it
+    expect(seenBy2.body.tasks[0].id).toBe(t.taskId);
+    expect(seenBy2.body.revokedAssignmentIds).toEqual([]); // fa2 lost nothing
   });
 
   it('does NOT purge a revoked-but-still-assigned task — it flows via cases with isRevoked=true', async () => {
@@ -346,9 +362,9 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
     expect(rev.status).toBe(200);
 
     const res = await request(app).get('/api/v2/sync/download').set(hdr('FIELD_AGENT', fa));
-    expect(res.body.data.revokedAssignmentIds).toEqual([]); // NOT a purge — assignee unchanged
-    expect(res.body.data.cases).toHaveLength(1);
-    const rv = res.body.data.cases[0];
+    expect(res.body.revokedAssignmentIds).toEqual([]); // NOT a purge — assignee unchanged
+    expect(res.body.tasks).toHaveLength(1);
+    const rv = res.body.tasks[0];
     expect(rv.status).toBe('REVOKED');
     expect(rv.isRevoked).toBe(true); // device's keep-the-row cleanup path
     // revoke detail restored (v1 parity) — only on a revoked task
@@ -383,11 +399,11 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
     const replacementId = reassign.body.id as string;
 
     const seenBy1 = await request(app).get('/api/v2/sync/download').set(hdr('FIELD_AGENT', fa1));
-    expect(seenBy1.body.data.revokedAssignmentIds).toEqual([]); // replacement NOT leaked to fa1
-    expect(seenBy1.body.data.cases.map((c: { id: string }) => c.id)).toEqual([t.taskId]); // only the revoked one
+    expect(seenBy1.body.revokedAssignmentIds).toEqual([]); // replacement NOT leaked to fa1
+    expect(seenBy1.body.tasks.map((c: { id: string }) => c.id)).toEqual([t.taskId]); // only the revoked one
     const seenBy2 = await request(app).get('/api/v2/sync/download').set(hdr('FIELD_AGENT', fa2));
-    expect(seenBy2.body.data.cases.map((c: { id: string }) => c.id)).toContain(replacementId);
-    expect(seenBy2.body.data.revokedAssignmentIds).toEqual([]);
+    expect(seenBy2.body.tasks.map((c: { id: string }) => c.id)).toContain(replacementId);
+    expect(seenBy2.body.revokedAssignmentIds).toEqual([]);
   });
 
   it('emits inProgressAt + submittedAt once the device starts and submits the task', async () => {
@@ -397,9 +413,9 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
     expect((await assign(t.caseId, t.taskId, fa)).status).toBe(200);
 
     const beforeStart = await request(app).get('/api/v2/sync/download').set(hdr('FIELD_AGENT', fa));
-    expect(beforeStart.body.data.cases[0].inProgressAt).toBeUndefined(); // omitted while null
-    expect(beforeStart.body.data.cases[0].completedAt).toBeUndefined();
-    expect(beforeStart.body.data.cases[0].submittedAt).toBeUndefined();
+    expect(beforeStart.body.tasks[0].inProgressAt).toBeUndefined(); // omitted while null
+    expect(beforeStart.body.tasks[0].completedAt).toBeUndefined();
+    expect(beforeStart.body.tasks[0].submittedAt).toBeUndefined();
 
     expect(
       (await request(app).post(`/api/v2/verification-tasks/${t.taskId}/start`).set(hdr('FIELD_AGENT', fa)))
@@ -411,7 +427,7 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
     ).toBe(200);
 
     const after = await request(app).get('/api/v2/sync/download').set(hdr('FIELD_AGENT', fa));
-    const task = after.body.data.cases[0];
+    const task = after.body.tasks[0];
     expect(task.status).toBe('SUBMITTED'); // ADR-0047: the device terminal is SUBMITTED, not COMPLETED
     expect(typeof task.inProgressAt).toBe('string'); // ← started_at
     expect(typeof task.submittedAt).toBe('string'); // ← submitted_at set by the device submit (ADR-0047)
@@ -437,40 +453,37 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
     await db!.pool.query(`UPDATE case_tasks SET verification_outcome = 'POSITIVE' WHERE id = $1`, [t.taskId]);
 
     const res = await request(app).get('/api/v2/sync/download').set(hdr('FIELD_AGENT', fa));
-    const task = res.body.data.cases[0];
+    const task = res.body.tasks[0];
     expect(task.verificationOutcome).toBe('POSITIVE');
     // the jsonb blob round-trips with inner keys INTACT (shallow camelize) — address_confirmed not mangled
     expect(task.formData.residence.formData.address_confirmed).toBe(true);
   });
 
-  it('keeps the locked envelope shape — NOT normalized to the v2 Paginated list shape', async () => {
+  it('serves the v2-native bare body — NOT the v1 envelope, NOT the Paginated list shape', async () => {
     const ctx = await seedCpvUnit('SH');
     const fa = await createUser({ username: 'fa_sh', name: 'FA SH', role: 'FIELD_AGENT' });
     const t = await seedTask(ctx, { name: 'SH APP', trigger: 'x' });
     expect((await assign(t.caseId, t.taskId, fa)).status).toBe(200);
 
     const res = await request(app).get('/api/v2/sync/download').set(hdr('FIELD_AGENT', fa));
-    // top-level: { success, message, data } — the device contract, not raw JSON
-    expect(Object.keys(res.body).sort()).toEqual(['data', 'message', 'success']);
-    // data carries EVERY contract key the device reads/iterates — none dropped
-    expect(Object.keys(res.body.data).sort()).toEqual(
-      [
-        'attachmentChanges',
-        'cases',
-        'changes',
-        'conflicts',
-        'deletedCaseIds',
-        'deletedTaskIds',
-        'hasMore',
-        'nextCursor',
-        'revokedAssignmentIds',
-        'syncTimestamp',
-      ].sort(),
+    // top-level IS the bare body — exactly these keys, no v1 wrapper, no v1 delta arrays
+    expect(Object.keys(res.body).sort()).toEqual(
+      ['hasMore', 'nextCursor', 'revokedAssignmentIds', 'syncTimestamp', 'tasks'].sort(),
     );
-    // explicitly NOT the Paginated<T> list envelope
-    expect(res.body.data.items).toBeUndefined();
-    expect(res.body.data.total).toBeUndefined();
-    expect(res.body.data.page).toBeUndefined();
+    // v1 envelope + v1-only delta arrays are GONE
+    expect(res.body.success).toBeUndefined();
+    expect(res.body.message).toBeUndefined();
+    expect(res.body.data).toBeUndefined();
+    expect(res.body.cases).toBeUndefined();
+    expect(res.body.changes).toBeUndefined();
+    expect(res.body.deletedTaskIds).toBeUndefined();
+    expect(res.body.deletedCaseIds).toBeUndefined();
+    expect(res.body.conflicts).toBeUndefined();
+    expect(res.body.attachmentChanges).toBeUndefined();
+    // explicitly NOT the Paginated<T> list envelope either
+    expect(res.body.items).toBeUndefined();
+    expect(res.body.total).toBeUndefined();
+    expect(res.body.page).toBeUndefined();
   });
 
   it('computes revokedAssignmentIds only on the first page (offset 0)', async () => {
@@ -489,8 +502,8 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
     ).toBe(200);
 
     const page0 = await request(app).get('/api/v2/sync/download?offset=0').set(hdr('FIELD_AGENT', fa1));
-    expect(page0.body.data.revokedAssignmentIds).toEqual([t.taskId]);
+    expect(page0.body.revokedAssignmentIds).toEqual([t.taskId]);
     const page1 = await request(app).get('/api/v2/sync/download?offset=1').set(hdr('FIELD_AGENT', fa1));
-    expect(page1.body.data.revokedAssignmentIds).toEqual([]); // delta is page-0 only
+    expect(page1.body.revokedAssignmentIds).toEqual([]); // delta is page-0 only
   });
 });

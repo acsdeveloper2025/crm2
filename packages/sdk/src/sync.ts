@@ -1,14 +1,14 @@
 import { z } from 'zod';
 
 /**
- * @crm2/sdk — Mobile down-sync contract (ADR-0012; the LOCKED field-dispatch contract,
- * docs/specs/2026-06-11-v1-zion-case-task-creation-audit.md §3). v2's `GET /api/v2/sync/download`
- * serves this byte-compatibly to the UNMODIFIED field app: one row per task assigned to the
- * device user, in the v1 `MobileCaseResponse` shape, wrapped in `{ success, message, data }`.
- *
- * Only `id` and `caseId` are hard-required on the device (sync.schema); every other field is
- * optional with a safe default. Fields v2 does not store yet (execution timestamps, formData,
- * attachments) are emitted as undefined/empty — exactly as v1 does on the wire today.
+ * @crm2/sdk — Mobile down-sync contract (ADR-0054; the v2-native field-dispatch contract).
+ * v2's `GET /api/v2/sync/download` serves a clean v2-native body to the rebuilt field app: one row
+ * per task assigned to the device user, with a single canonical id (`id`) and number (`taskNumber`),
+ * one free-text `address` + `addressPincode`, structured catalog refs (`client`/`product`/
+ * `verificationUnit`), execution timestamps, and the delta/watermark envelope — bare, with NO v1
+ * `{ success, message, data }` wrapper and NO v1 aliases/phantoms
+ * (`verificationTaskId`/`verificationTaskNumber`/`title`/`description`/`addressStreet`/`addressCity`/
+ * `addressState`/`isSaved`/`savedAt`/`syncStatus`/`attachments[]`/`verificationTypeDetails`).
  */
 
 interface CatalogRef {
@@ -17,81 +17,60 @@ interface CatalogRef {
   code?: string;
 }
 
-/** One task as the field app consumes it (mirrors crm-mobile-native `src/types/api.ts`). */
+/** One task as the v2-native field app consumes it (ADR-0054 — v1 aliases/phantoms removed). */
 export interface MobileSyncTask {
+  /** Task id — the device's task primary key. */
   id: string;
-  caseId: string | number;
-  title: string;
-  description: string;
+  /** Display task number, e.g. CASE-000123-1. */
+  taskNumber: string;
+  /** Owning case id (uuid). */
+  caseId: string;
+  /** Owning case display number. */
+  caseNumber: string;
   customerName: string;
-  customerCallingCode?: string;
   customerPhone?: string;
-  /** Targeted applicant's employer/company (case_applicants.company_name); omitted when absent. */
+  customerCallingCode: string;
   companyName?: string;
-  addressStreet: string;
-  /** Phantom fields — v1 sends these empty (no source columns); kept for byte-compat. */
-  addressCity: string;
-  addressState: string;
+  applicantType: string;
+  /** The single free-text visit address. */
+  address: string;
   addressPincode: string;
-  /** Dispatch coordinates for the task's address (v1 parity) — present only when known. */
   latitude?: number;
   longitude?: number;
   status: string;
   priority: string;
+  /** The verification unit (catalog ref). */
+  verificationUnit: CatalogRef;
+  /** The bank trigger instruction. */
+  notes?: string;
   assignedAt: string;
-  /** The delta watermark driver. */
   updatedAt: string;
-  /** Field-terminal timestamp (ADR-0047) — set when the device submits; powers the device "Submitted" tab. Omitted until submit. */
+  inProgressAt?: string;
   submittedAt?: string;
   completedAt?: string;
-  /** The bank trigger instruction (device renders it as `notes`). */
-  notes?: string;
-  verificationType?: string;
   verificationOutcome?: string;
-  applicantType?: string;
-  backendContactNumber?: string;
+  formData?: Record<string, unknown>;
+  backendContactNumber: string;
   createdByBackendUser?: string;
   assignedToFieldUser?: string;
-  verificationTaskId?: string;
-  verificationTaskNumber?: string;
   isRevoked?: boolean;
-  /** Revoke detail (v1 parity) — present only on a revoked task. */
   revokedAt?: string;
-  revokedByName?: string;
   revokeReason?: string;
-  inProgressAt?: string;
-  savedAt?: string;
-  isSaved?: boolean;
-  attachmentCount?: number;
+  revokedByName?: string;
+  attachmentCount: number;
   client: CatalogRef;
   product?: CatalogRef;
-  verificationTypeDetails?: CatalogRef;
-  attachments?: unknown[];
-  formData?: Record<string, unknown>;
-  syncStatus?: 'SYNCED' | 'PENDING' | 'CONFLICT';
 }
 
-/** The `data` envelope: `cases` and `changes` are the SAME array (v1 semantics). */
+/** The v2-native down-sync body (ADR-0054 — bare; no v1 {success,message,data} wrapper). */
 export interface MobileSyncDownload {
-  cases: MobileSyncTask[];
-  changes: MobileSyncTask[];
-  /** Assignments the device must purge (revoked / no longer the user's). */
+  tasks: MobileSyncTask[];
+  /** Assignments the device must purge (reassigned/unassigned away). */
   revokedAssignmentIds: string[];
-  deletedTaskIds: string[];
-  deletedCaseIds: string[];
-  conflicts: unknown[];
-  attachmentChanges: unknown[];
-  /** The watermark the device persists as `last_download_sync_at`. */
+  /** The watermark the device persists as last_download_sync_at. */
   syncTimestamp: string;
   hasMore: boolean;
   nextCursor: string | null;
-}
-
-/** The wire response — v1-compatible `{ success, message, data }` (NOT the v2 list envelope). */
-export interface MobileSyncResponse {
-  success: boolean;
-  message: string;
-  data: MobileSyncDownload;
 }
 
 const positiveInt = z.number().int().positive();
