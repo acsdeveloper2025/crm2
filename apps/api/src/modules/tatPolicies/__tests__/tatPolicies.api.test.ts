@@ -42,6 +42,30 @@ describe.skipIf(!RUN)('tat-policies API (ADR-0044)', () => {
     expect(list.body.sort).toEqual({ sortBy: 'tatHours', sortOrder: 'asc' });
   });
 
+  it('GET /options returns active bands (ascending, slim) for a page.masterdata role; 403 for field agents', async () => {
+    const MGR = authHeaderForRole('MANAGER'); // holds page.masterdata (case-creator), not masterdata.manage
+    await request(app).post('/api/v2/tat-policies').set(SA).send({ tatHours: 24, label: '24 hours' });
+    await request(app).post('/api/v2/tat-policies').set(SA).send({ tatHours: 4, label: '4 hours' });
+    const eight = await request(app)
+      .post('/api/v2/tat-policies')
+      .set(SA)
+      .send({ tatHours: 8, label: '8 hours' });
+    // deactivate the 8h band — it must NOT appear in the options
+    await request(app)
+      .post(`/api/v2/tat-policies/${eight.body.id}/deactivate`)
+      .set(SA)
+      .send({ version: eight.body.version });
+
+    const opts = await request(app).get('/api/v2/tat-policies/options').set(MGR);
+    expect(opts.status).toBe(200);
+    expect(opts.body.map((o: { tatHours: number }) => o.tatHours)).toEqual([4, 24]); // active, ascending
+    expect(opts.body[0]).toMatchObject({ tatHours: 4, label: '4 hours' });
+    expect(typeof opts.body[0].id).toBe('number');
+
+    // a field agent (no page.masterdata) cannot read the options
+    expect((await request(app).get('/api/v2/tat-policies/options').set(FA)).status).toBe(403);
+  });
+
   it('rejects a second active policy for the same tat_hours (409)', async () => {
     const first = await request(app)
       .post('/api/v2/tat-policies')

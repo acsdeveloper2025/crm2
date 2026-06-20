@@ -12,6 +12,14 @@ const parseId = (req: Request): number => {
 const userId = (req: Request): string => req.auth?.userId ?? 'unknown';
 
 export const tatPolicyController = {
+  async options(_req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json(await svc.options());
+    } catch (e) {
+      next(e);
+    }
+  },
+
   async list(req: Request, res: Response, next: NextFunction) {
     try {
       res.json(await svc.list(req.query as Record<string, unknown>));

@@ -75,7 +75,7 @@ describe('Case contract', () => {
     expect(ok({ name: 'A', mobile: '98765-43210' })).toBe(false); // non-digit
   });
 
-  it('add-tasks requires explicit per-task specs (unit + applicant + address)', () => {
+  it('add-tasks requires explicit per-task specs (unit + applicant; address only for a FIELD visit)', () => {
     expect(AddTasksSchema.safeParse({ tasks: [] }).success).toBe(false);
     const parsed = AddTasksSchema.safeParse({ tasks: [taskBase] });
     expect(parsed.success).toBe(true);
@@ -84,10 +84,19 @@ describe('Case contract', () => {
       expect(parsed.data.tasks[0]?.trigger).toBe('');
       expect(parsed.data.tasks[0]?.priority).toBe('MEDIUM');
     }
-    // applicantId must be a uuid; address required; priority enum-checked
+    // applicantId must be a uuid; priority enum-checked
     expect(AddTasksSchema.safeParse({ tasks: [{ ...taskBase, applicantId: 'nope' }] }).success).toBe(false);
-    expect(AddTasksSchema.safeParse({ tasks: [{ ...taskBase, address: '' }] }).success).toBe(false);
     expect(AddTasksSchema.safeParse({ tasks: [{ ...taskBase, priority: 'WHENEVER' }] }).success).toBe(false);
+    // ADR-0044/0050: address is required only for a FIELD visit; an assign-later task (no visitType) may
+    // omit it (it's set when later dispatched as FIELD), and OFFICE/desk tasks have no address.
+    expect(AddTasksSchema.safeParse({ tasks: [{ ...taskBase, address: '' }] }).success).toBe(true);
+    expect(
+      AddTasksSchema.safeParse({ tasks: [{ ...taskBase, visitType: 'FIELD', address: '' }] }).success,
+    ).toBe(false);
+    // a target-TAT override (ADR-0044) is accepted alongside the defaulted priority.
+    const withTat = AddTasksSchema.safeParse({ tasks: [{ ...taskBase, tatHours: 8 }] });
+    expect(withTat.success).toBe(true);
+    if (withTat.success) expect(withTat.data.tasks[0]?.tatHours).toBe(8);
   });
 
   it('exposes the case statuses and dedupe decisions', () => {

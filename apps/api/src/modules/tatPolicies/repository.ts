@@ -73,6 +73,15 @@ export const tatPolicyRepository = {
     return rows[0] ?? null;
   },
 
+  /** Slim active-band options for a target-TAT picker (GET /tat-policies/options) — id + hours + label. */
+  async options(): Promise<{ id: number; tatHours: number; label: string }[]> {
+    return query<{ id: number; tatHours: number; label: string }>(
+      `SELECT id, tat_hours AS "tatHours", label FROM tat_policies
+        WHERE is_active AND effective_from <= now()
+        ORDER BY tat_hours ASC`,
+    );
+  },
+
   /** Ascending list of usable (active AND in effect) band hours — used by the TAT classifier (no endpoint). */
   async listUsableHours(): Promise<number[]> {
     const rows = await query<{ tatHours: number }>(

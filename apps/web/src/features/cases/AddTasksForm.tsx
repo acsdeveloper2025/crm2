@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import {
-  PRIORITIES,
   VISIT_TYPES,
   VISIT_TYPE_LABELS,
   FIELD_RATE_TYPES,
@@ -13,7 +12,7 @@ import {
   type FieldRateType,
   type Location,
   type Paginated,
-  type Priority,
+  type TatPolicyOption,
   type VisitType,
 } from '@crm2/sdk';
 import { api, apiUpload } from '../../lib/sdk.js';
@@ -23,7 +22,8 @@ interface TaskRow {
   applicantId: string;
   address: string;
   trigger: string;
-  priority: Priority;
+  /** Target TAT in hours (ADR-0044) — the office SLA promise; replaces the old abstract priority. */
+  tatHours: number;
   // ADR-0024 assign-at-create (only when canAssign): the pool, the FIELD location, and the executive.
   visitType: VisitType | '';
   // ADR-0050: the trip distance band (LOCAL/OGL) — required whenever this row is assigned (assigneeId
@@ -41,7 +41,7 @@ const emptyTask = (): TaskRow => ({
   applicantId: '',
   address: '',
   trigger: '',
-  priority: 'MEDIUM',
+  tatHours: 24, // default 24h (= the old MEDIUM default)
   visitType: '',
   fieldRateType: '',
   pincodeQuery: '',
@@ -87,15 +87,20 @@ export function AddTasksForm({
         `/api/v2/cases/available-units?clientId=${clientId}&productId=${productId}`,
       ),
   });
+  // ADR-0044: the configurable target-TAT bands (4/6/8/12/24/48h) for the per-task TAT picker.
+  const { data: tatBands } = useQuery({
+    queryKey: ['tat-policies', 'options'],
+    queryFn: () => api<TatPolicyOption[]>('GET', '/api/v2/tat-policies/options'),
+  });
   const [rows, setRows] = useState<TaskRow[]>([emptyTask()]);
   const [attachError, setAttachError] = useState(false);
   const setRow = (i: number, patch: Partial<TaskRow>) =>
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
 
-  // A row is submittable with its core fields. Address is required for a visit but NOT for OFFICE/desk
-  // (incl. KYC document) tasks. fieldRateType is the FIELD commission key (sent only when chosen).
+  // A row is submittable with its core fields. Address is required only for a FIELD visit (OFFICE/desk
+  // tasks have none; an assign-later task gets its address when later dispatched as FIELD).
   const valid = rows.filter(
-    (r) => r.verificationUnitId && r.applicantId && (r.visitType === 'OFFICE' || r.address.trim()),
+    (r) => r.verificationUnitId && r.applicantId && (r.visitType !== 'FIELD' || r.address.trim()),
   );
 
   const add = useMutation({
@@ -110,7 +115,7 @@ export function AddTasksForm({
             applicantId: r.applicantId,
             address: r.address.trim(),
             trigger: r.trigger.trim(),
-            priority: r.priority,
+            tatHours: r.tatHours, // ADR-0044 target TAT; priority defaults MEDIUM server-side (vestigial)
             ...(assigning ? { visitType: r.visitType as VisitType } : {}),
             // A FIELD task carries its location (= area = pincode row); OFFICE has none.
             ...(assigning && r.visitType === 'FIELD' && locationId
@@ -158,6 +163,7 @@ export function AddTasksForm({
           productId={productId}
           row={r}
           units={units ?? []}
+          tatBands={tatBands ?? []}
           applicants={applicants}
           canAssign={canAssign}
           onChange={(patch) => setRow(i, patch)}
@@ -202,6 +208,7 @@ function TaskRowEditor({
   productId,
   row,
   units,
+  tatBands,
   applicants,
   canAssign,
   onChange,
@@ -213,6 +220,7 @@ function TaskRowEditor({
   productId: number;
   row: TaskRow;
   units: AvailableUnit[];
+  tatBands: TatPolicyOption[];
   applicants: Pick<CaseApplicant, 'id' | 'name' | 'applicantType'>[];
   canAssign: boolean;
   onChange: (patch: Partial<TaskRow>) => void;
@@ -221,6 +229,9 @@ function TaskRowEditor({
   const isField = row.visitType === 'FIELD';
   // OFFICE/desk (incl. KYC document) tasks have no visit address and no LOCAL/OGL field rate type.
   const isOffice = row.visitType === 'OFFICE';
+  // Dispatch fields (address/trigger/attachment) are shown ONLY once the visit type is chosen — they
+  // depend on HOW the task is verified. A create-only role (no visit-type picker) keeps them visible.
+  const showDispatch = !canAssign || !!row.visitType;
 
   // ADR-0050 rate-type preview: once a unit + location (area) are picked, show the CLIENT rate type
   // (Rate Management) and the FIELD rate type(s) (Commission Management) mapped to that pincode/area.
@@ -279,20 +290,6 @@ function TaskRowEditor({
           clean rectangular shape no matter which conditional fields are visible. Wide/long inputs and
           the attachment span more columns. */}
       <div className="grid grid-cols-1 gap-x-4 gap-y-3 p-3 sm:grid-cols-2 lg:grid-cols-4">
-        <FieldLabel label="Verification Unit">
-          <select
-            className="input"
-            value={row.verificationUnitId}
-            onChange={(e) => onChange({ verificationUnitId: e.target.value })}
-          >
-            <option value="">Select unit…</option>
-            {units.map((u) => (
-              <option key={u.verificationUnitId} value={u.verificationUnitId}>
-                {u.name}
-              </option>
-            ))}
-          </select>
-        </FieldLabel>
         <FieldLabel label="For Applicant">
           <select
             className="input"
@@ -307,15 +304,31 @@ function TaskRowEditor({
             ))}
           </select>
         </FieldLabel>
-        <FieldLabel label="Priority">
+        <FieldLabel label="Verification Unit">
           <select
             className="input"
-            value={row.priority}
-            onChange={(e) => onChange({ priority: e.target.value as Priority })}
+            value={row.verificationUnitId}
+            onChange={(e) => onChange({ verificationUnitId: e.target.value })}
           >
-            {PRIORITIES.map((p) => (
-              <option key={p} value={p}>
-                {p}
+            <option value="">Select unit…</option>
+            {units.map((u) => (
+              <option key={u.verificationUnitId} value={u.verificationUnitId}>
+                {u.name}
+              </option>
+            ))}
+          </select>
+        </FieldLabel>
+        {/* ADR-0044: target TAT (the office's SLA promise) — a configurable band, replaces the old
+            abstract LOW/MEDIUM/HIGH/URGENT priority. The backend derives due_at = assigned_at + tat. */}
+        <FieldLabel label="Target TAT">
+          <select
+            className="input"
+            value={String(row.tatHours)}
+            onChange={(e) => onChange({ tatHours: Number(e.target.value) })}
+          >
+            {tatBands.map((tp) => (
+              <option key={tp.id} value={String(tp.tatHours)}>
+                {tp.label}
               </option>
             ))}
           </select>
@@ -351,9 +364,9 @@ function TaskRowEditor({
           <span className="hidden lg:block" aria-hidden />
         )}
 
-        {/* Address + Trigger are free text — give them more room (half-width each on large).
-            Address is hidden for OFFICE/desk tasks (no visit location). */}
-        {!isOffice && (
+        {/* Dispatch fields appear only once a visit type is chosen (showDispatch) — they depend on HOW
+            the task is verified. Address is a FIELD-only visit location (OFFICE/desk has none). */}
+        {showDispatch && !isOffice && (
           <FieldLabel label="Address" className="sm:col-span-2">
             <input
               className="input"
@@ -363,14 +376,16 @@ function TaskRowEditor({
             />
           </FieldLabel>
         )}
-        <FieldLabel label="Trigger (instruction)" className="sm:col-span-2">
-          <input
-            className="input"
-            value={row.trigger}
-            onChange={(e) => onChange({ trigger: e.target.value })}
-            placeholder="Bank instruction shown to the field agent"
-          />
-        </FieldLabel>
+        {showDispatch && (
+          <FieldLabel label="Trigger (instruction)" className="sm:col-span-2">
+            <input
+              className="input"
+              value={row.trigger}
+              onChange={(e) => onChange({ trigger: e.target.value })}
+              placeholder="Bank instruction shown to the field agent"
+            />
+          </FieldLabel>
+        )}
 
         {/* ADR-0024 assignment — FIELD reveals pincode → area; both pools show the eligible executive. */}
         {canAssign && isField && (
@@ -463,8 +478,10 @@ function TaskRowEditor({
           </FieldLabel>
         )}
 
-        {/* Per-task reference document (ADR-0025 B2) — full-width, after the executive. */}
-        <FileField label="Attachment (optional)" file={row.file} onPick={(f) => onChange({ file: f })} />
+        {/* Per-task reference document (ADR-0025 B2) — full-width; shown once a visit type is chosen. */}
+        {showDispatch && (
+          <FileField label="Attachment (optional)" file={row.file} onPick={(f) => onChange({ file: f })} />
+        )}
       </div>
     </div>
   );

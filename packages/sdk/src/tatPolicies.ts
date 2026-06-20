@@ -22,6 +22,14 @@ export interface TatPolicy {
 /** A TAT policy as listed (no joins — kept as an alias so the FE can name the list type). */
 export type TatPolicyView = TatPolicy;
 
+/** Slim active-band option for a target-TAT dropdown (ADR-0044). Read via `GET /tat-policies/options`
+ *  (page.masterdata-gated, so case-creators can pick a TAT at task creation). */
+export interface TatPolicyOption {
+  id: number;
+  tatHours: number;
+  label: string;
+}
+
 export const CreateTatPolicySchema = z.object({
   tatHours: z.number().int().positive(),
   label: z.string().min(1).max(40),

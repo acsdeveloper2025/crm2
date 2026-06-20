@@ -4339,6 +4339,25 @@
         ]
       }
     },
+    "/api/v2/tat-policies/options": {
+      "get": {
+        "tags": [
+          "tat-policies"
+        ],
+        "operationId": "get_api_v2_tat_policies_options",
+        "summary": "GET /api/v2/tat-policies/options",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v2/telemetry/mobile/ingest": {
       "post": {
         "tags": [

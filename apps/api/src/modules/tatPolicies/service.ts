@@ -35,6 +35,11 @@ const TP_PAGE_SPEC: PageSpec = {
  *  - (de)activate: OCC-guarded soft state
  */
 export const tatPolicyService = {
+  /** Active bands for a target-TAT dropdown (read-only; gated page.masterdata so case-creators can pick). */
+  options(): Promise<{ id: number; tatHours: number; label: string }[]> {
+    return repo.options();
+  },
+
   async list(rawQuery: Record<string, unknown>): Promise<Paginated<TatPolicyView>> {
     const r = resolvePage(rawQuery, TP_PAGE_SPEC);
     const active = rawQuery['active'] === 'true' ? true : rawQuery['active'] === 'false' ? false : undefined;

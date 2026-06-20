@@ -412,8 +412,10 @@ export const AddTasksSchema = z.object({
           areaId: positiveInt.optional(),
           assigneeId: z.string().uuid().optional(),
         })
-        .refine((t) => t.visitType === 'OFFICE' || t.address.length >= 1, {
-          message: 'address is required (except OFFICE/desk tasks)',
+        // Address is the visit location — required only for a FIELD visit. OFFICE/desk tasks have none,
+        // and an unassigned (assign-later) task gets its address when it is later dispatched as FIELD.
+        .refine((t) => t.visitType !== 'FIELD' || t.address.length >= 1, {
+          message: 'address is required for a FIELD task',
           path: ['address'],
         })
         .refine((t) => !t.assigneeId || !!t.visitType, {
