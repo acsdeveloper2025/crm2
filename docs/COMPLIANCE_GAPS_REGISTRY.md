@@ -767,6 +767,51 @@ TEMP smoke repoint (`src/config/index.ts` dev → `http://localhost:4000`) **rev
 (CEO): **staged/canary rollout** (a few field agents first, incl. the R0054-R1 cross-user swap) before
 fleet-wide, and confirm the "no other live v2 app" freeze (mitigation #5) still holds at distribution time.
 
+## Section R0056 — ADR-0056 field-rate-type auto-derive: pre-push 4-agent review gate (2026-06-21)
+
+Verdict: **Security GO · CTO GO (conditional) · Design GO · CEO GO.** One blocker (B-1) FIXED; the rest DEFERRED.
+
+### R0056-1 · Derive drops `tat_band` → could stamp a band that resolves ₹0 at submit — ✅ FIXED (2026-06-21)
+CTO blocker. The two derive helpers (`cases/repository.ts` `deriveFieldRateTypeForTask`/`…ForNewTask`)
+mirror `COMMISSION_LATERAL` minus the `field_rate_type` equality (we derive it) and minus `tat_band`. Among
+same-specificity/same-location rows differing by both `field_rate_type` AND `tat_band`, `id DESC` could pick
+a tat-band-specific band (e.g. `OGL@4`) that, at submit (completing in another band), resolves ₹0 via
+`COMMISSION_LATERAL` (which DOES filter `tat_band`). **FIX:** added a tie-break `(cmr.tat_band IS NULL) DESC`
+(after specificity+location, before `id DESC`) so the derive prefers an always-resolvable (tat-band-universal)
+band + a test (`rate-preview.api.test.ts` "prefers a tat_band-universal band … (B-1)"). Security confirmed the
+worst case was always ₹0, never over-payment, and it is **not a regression** (the old manual-pick model had the
+same assign-time→submit-time band drift). **Residual** (the cross-*specificity* case — the most-specific row is
+itself tat-band-specific) → 🟡 **DEFERRED**: inherent to any assign-time stamp; band is unknowable until submit;
+prod commission rows are overwhelmingly `tat_band=NULL` so this is latent.
+
+### R0056-2 · Save/Add not disabled despite a known-bad preview — 🟡 DEFERRED (UX follow-up)
+Design major. All 3 forms leave Save enabled when `ratePreview.fieldRateTypes.length === 0`, so the operator
+clicks and gets a predictable server 400. The server hard-block is authoritative and the inline red warning
+already explains it; disabling the button (esp. AddTasksForm, which needs child→parent state lifting) is a
+clean follow-up, not a gate.
+
+### R0056-3 · Generic 400 copy doesn't name `NO_FIELD_COMMISSION` — 🟡 DEFERRED (UX follow-up)
+Design major. "Failed to add tasks." / "Assignment failed." don't echo the cause; adequate because the inline
+warning explains it when the preview is visible. Thin only on the rare edge where commission changed between
+preview and submit. Follow-up: map the error code to a clearer message.
+
+### R0056-4 · Case-detail preview passes only `locationId=areaId`, not the full ladder — 🟢 WONTFIX
+CTO minor. `CaseDetailPage` AssignForm's preview uses `task.areaId` only, while the server derive checks
+`IN (task.area, task.pincode, case.area, case.pincode)`. The warning hint can be a false +/- when pincode/case
+location differ; **no money impact** (server is authoritative). AddTasksForm is consistent (area=pincode).
+
+### R0056-5 · Pre-seed commissions before go-live — 🟡 OPS launch-checklist (CEO)
+The hard block means FIELD assignment is impossible until an exec has commission at the location. **Pre-seed at
+least one Universal LOCAL/OGL `commission_rates` row per active field exec per dispatch territory** before
+go-live, else dispatch is blocked fleet-wide. Brief dispatchers on the inline warning.
+
+### Verified PASS (no finding)
+Security: no money-leak (derive keys on `cmr.user_id`=assignee; explicit-band hatch can't conjure commission →
+₹0 not over-pay), no SQL injection (uuid-validated + `$5::uuid` bound), no IDOR (rate-preview gated `CASE_CREATE`,
+FIELD_AGENT excluded; types-only response). CTO: 4 write paths complete + correct; OFFICE auto-stamp intact;
+bulk per-row status correct; tx rollback clean; no migration. CEO: delivers the owner's ask (picker removed,
+exec-first, auto-derive, block); mobile unaffected (additive). `pnpm verify` GREEN.
+
 ---
 *Governance ledger. Update — never overwrite — as findings change state. Linked from
 `CRM2_MASTER_MEMORY.md`, `PROJECT_INDEX.md`, `docs/ARCHITECTURE_GOVERNANCE.md`,

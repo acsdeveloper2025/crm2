@@ -102,12 +102,13 @@ async function seedCommission(o: {
   locationId: number;
   fieldRateType: 'LOCAL' | 'OGL';
   amount: number;
+  tatBand?: number | null;
 }): Promise<void> {
   await query(
     `INSERT INTO commission_rates (user_id, client_id, product_id, verification_unit_id, location_id,
        field_rate_type, tat_band, amount, currency, effective_from)
-     VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, 'INR', now() - interval '2 days')`,
-    [o.userId, o.clientId, o.productId, o.unitId, o.locationId, o.fieldRateType, o.amount],
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'INR', now() - interval '2 days')`,
+    [o.userId, o.clientId, o.productId, o.unitId, o.locationId, o.fieldRateType, o.tatBand ?? null, o.amount],
   );
 }
 
@@ -288,5 +289,39 @@ describe.skipIf(!RUN)('FIELD assign derives + blocks field_rate_type (ADR-0056)'
       .send({ assignedTo: fa, visitType: 'FIELD', billCount: 1, version: 1 });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('NO_FIELD_COMMISSION');
+  });
+
+  it('prefers a tat_band-universal band so the derived band always resolves (B-1)', async () => {
+    const ctx = await seedCpvUnit('TATBAND');
+    const pin = await seedLocation('560005', 'Yeshwanthpur');
+    const fa = await createUser({ username: 'fa_tat', name: 'Tat FA', role: 'FIELD_AGENT' });
+    await scopeToPincode(fa, pin);
+    // Same exec/location/specificity, two bands: LOCAL at tat_band NULL (resolves at ANY submit band)
+    // seeded FIRST (lower id), then OGL only at tat_band=4 (resolves only in that band, higher id). Without
+    // the tie-break, `id DESC` would pick OGL → ₹0 risk; the tie-break must pick the always-resolvable LOCAL.
+    await seedCommission({
+      ...ctx,
+      userId: fa,
+      locationId: pin,
+      fieldRateType: 'LOCAL',
+      tatBand: null,
+      amount: 55,
+    });
+    await seedCommission({
+      ...ctx,
+      userId: fa,
+      locationId: pin,
+      fieldRateType: 'OGL',
+      tatBand: 4,
+      amount: 99,
+    });
+    const { caseId, taskId } = await createLocatedTask(ctx, pin);
+
+    const res = await request(app)
+      .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
+      .set(SA)
+      .send({ assignedTo: fa, visitType: 'FIELD', billCount: 1, version: 1 });
+    expect(res.status).toBe(200);
+    expect(res.body.fieldRateType).toBe('LOCAL');
   });
 });

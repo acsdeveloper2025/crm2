@@ -188,6 +188,10 @@ async function deriveFieldRateTypeForTask(
                (CASE WHEN cmr.location_id = t.area_id   THEN 4 WHEN cmr.location_id = t.pincode_id THEN 3
                      WHEN cmr.location_id = t.c_area    THEN 2 WHEN cmr.location_id = t.c_pincode  THEN 1
                      ELSE 0 END) DESC,
+               -- Among otherwise-tied rows prefer a tat_band-universal (NULL) band: it resolves a
+               -- commission amount at ANY submit band, so the derived band can't strand the task at ₹0
+               -- when the only same-specificity alternative is a tat-band-specific row (ADR-0056 B-1).
+               (cmr.tat_band IS NULL) DESC,
                cmr.id DESC
       LIMIT 1`,
     [assigneeId, taskId, caseId],
@@ -220,6 +224,8 @@ async function deriveFieldRateTypeForNewTask(
                (CASE WHEN cmr.location_id = $4 THEN 4 WHEN cmr.location_id = $5 THEN 3
                      WHEN cmr.location_id = c.c_area THEN 2 WHEN cmr.location_id = c.c_pincode THEN 1
                      ELSE 0 END) DESC,
+               -- Prefer a tat_band-universal (NULL) band among ties — always resolves downstream (B-1).
+               (cmr.tat_band IS NULL) DESC,
                cmr.id DESC
       LIMIT 1`,
     [assigneeId, caseId, verificationUnitId, areaId, pincodeId],
