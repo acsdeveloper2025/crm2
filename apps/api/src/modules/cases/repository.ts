@@ -7,6 +7,7 @@ import type {
   AvailableUnit,
   DuplicateMatch,
   CreateCaseInput,
+  AddApplicantInput,
   DedupeQuery,
   AssignableUser,
   AssignTaskInput,
@@ -370,6 +371,44 @@ export const caseRepository = {
       [caseId],
     );
     return rows[0] ?? null;
+  },
+
+  /** A case's current status — for open-state guards (ADR-0053 add-applicant). */
+  async caseStatusOf(caseId: string): Promise<string | null> {
+    const rows = await query<{ status: string }>(`SELECT status FROM cases WHERE id = $1`, [caseId]);
+    return rows[0]?.status ?? null;
+  },
+
+  /** Add ONE co-applicant to an existing case (ADR-0053). Always CO_APPLICANT / non-primary; carries
+   *  its own dedupe verdict. The service has already validated the case is open. */
+  async addApplicant(caseId: string, input: AddApplicantInput, userId: string): Promise<CaseApplicant> {
+    return await withTransaction(async (q) => {
+      const [row] = await q<CaseApplicant>(
+        `INSERT INTO case_applicants
+           (case_id, name, mobile, pan, company_name, applicant_type, is_primary, calling_code,
+            dedupe_decision, dedupe_rationale, dedupe_matched_case_numbers)
+         VALUES ($1, $2, $3, $4, $5, 'CO_APPLICANT', false, $6, $7, $8, $9)
+         RETURNING id, case_id, name, mobile, pan, company_name, applicant_type, is_primary,
+                   calling_code, created_at, dedupe_decision, dedupe_rationale, dedupe_matched_case_numbers`,
+        [
+          caseId,
+          input.name,
+          input.mobile ?? null,
+          input.pan ?? null,
+          input.companyName ?? null,
+          nextCallingCode(),
+          input.dedupeDecision,
+          input.dedupeRationale ?? null,
+          input.dedupeMatches ?? [],
+        ],
+      );
+      if (!row) throw AppError.internal('insert returned no row');
+      await appendAudit(
+        { entityType: 'case_applicant', entityId: row.id, action: 'CREATE', actorId: userId, after: row },
+        q,
+      );
+      return row;
+    });
   },
 
   /** Units enabled (CPV) for a client+product — the case-creation unit picker. */

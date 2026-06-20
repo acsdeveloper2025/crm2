@@ -108,6 +108,14 @@ export const caseController = {
     }
   },
 
+  async addApplicant(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.status(HTTP_STATUS.CREATED).json(await svc.addApplicant(parseId(req), req.body, userId(req)));
+    } catch (e) {
+      next(e);
+    }
+  },
+
   /** ADR-0024: the eligible pool for a not-yet-created task. ?visitType=FIELD|OFFICE (+ pincodeId &
    *  areaId for FIELD). The :id path keeps it symmetric with assignable-users; the pool itself is
    *  derived from the actor + visit type + location, not the case. */

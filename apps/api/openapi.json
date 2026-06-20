@@ -447,6 +447,25 @@
         ]
       }
     },
+    "/api/v2/cases/{id}/applicants": {
+      "post": {
+        "tags": [
+          "cases"
+        ],
+        "operationId": "post_api_v2_cases_id_applicants",
+        "summary": "POST /api/v2/cases/{id}/applicants",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v2/cases/{id}/assignable-users": {
       "get": {
         "tags": [

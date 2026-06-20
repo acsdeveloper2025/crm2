@@ -2,6 +2,7 @@ import {
   DedupeQuerySchema,
   CreateCaseSchema,
   AddTasksSchema,
+  AddApplicantSchema,
   AssignTaskSchema,
   CompleteTaskSchema,
   RecordTaskResultSchema,
@@ -11,6 +12,7 @@ import {
   ReassignTaskSchema,
   CASE_STATUSES,
   type Case,
+  type CaseApplicant,
   type CaseDetail,
   type CaseTaskView,
   type CaseVerdictEvent,
@@ -172,6 +174,16 @@ export const caseService = {
   create(input: unknown, userId: string): Promise<Case> {
     const v = CreateCaseSchema.parse(input);
     return repo.create(v, userId);
+  },
+
+  /** Add a co-applicant to an existing OPEN case (ADR-0053). Dedupe is advisory + captured per
+   *  applicant (mirrors create). Allowed only while the case is NEW or IN_PROGRESS. */
+  async addApplicant(caseId: string, input: unknown, userId: string): Promise<CaseApplicant> {
+    const v = AddApplicantSchema.parse(input);
+    const status = await repo.caseStatusOf(caseId);
+    if (!status) throw AppError.notFound('CASE_NOT_FOUND');
+    if (status !== 'NEW' && status !== 'IN_PROGRESS') throw AppError.conflict('CASE_NOT_OPEN');
+    return repo.addApplicant(caseId, v, userId);
   },
 
   availableUnits(clientId: number, productId: number): Promise<AvailableUnit[]> {

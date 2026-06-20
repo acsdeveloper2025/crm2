@@ -19,6 +19,9 @@ caseRoutes.get('/available-units', authorize(PERMISSIONS.CASE_CREATE), c.availab
 caseRoutes.get('/rate-preview', authorize(PERMISSIONS.CASE_CREATE), c.ratePreview);
 caseRoutes.post('/', authorize(PERMISSIONS.CASE_CREATE), c.create);
 caseRoutes.post('/:id/tasks', authorize(PERMISSIONS.CASE_CREATE), c.addTasks);
+// Add a co-applicant to an existing OPEN case (ADR-0053). Same actor as case creation (case.create);
+// dedupe verdict carried in the body; 409 CASE_NOT_OPEN once the case is COMPLETED/CANCELLED.
+caseRoutes.post('/:id/applicants', authorize(PERMISSIONS.CASE_CREATE), c.addApplicant);
 caseRoutes.post('/:id/tasks/:taskId/assign', authorize(PERMISSIONS.CASE_ASSIGN), c.assignTask);
 caseRoutes.post('/:id/tasks/:taskId/unassign', authorize(PERMISSIONS.CASE_ASSIGN), c.unassignTask);
 caseRoutes.post('/:id/tasks/:taskId/complete', authorize(PERMISSIONS.FIELD_REVIEW_COMPLETE), c.completeTask);

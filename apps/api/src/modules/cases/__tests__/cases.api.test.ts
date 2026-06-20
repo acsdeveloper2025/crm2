@@ -2373,4 +2373,91 @@ describe.skipIf(!RUN)('cases API', () => {
       expect((await geocodeService.dlq()).some((r) => r.attachmentId === photoId)).toBe(false);
     });
   });
+
+  describe('POST /cases/:id/applicants (ADR-0053)', () => {
+    async function newCase(tag: string): Promise<string> {
+      const { clientId, productId } = await seedCpv(`AP_${tag.toUpperCase()}`);
+      const res = await request(app)
+        .post('/api/v2/cases')
+        .set(SA)
+        .send({
+          clientId,
+          productId,
+          backendContactNumber: BC,
+          applicants: [{ name: 'PRIMARY PERSON', mobile: '9870000000' }],
+          dedupeDecision: 'NO_DUPLICATES_FOUND',
+        });
+      return seeded<{ id: string }>(res).id;
+    }
+
+    it('adds a co-applicant to a NEW case (201) as CO_APPLICANT/non-primary with its dedupe verdict', async () => {
+      const id = await newCase('clean');
+      const res = await request(app)
+        .post(`/api/v2/cases/${id}/applicants`)
+        .set(SA)
+        .send({ name: 'Sita Rao', mobile: '9990001111', dedupeDecision: 'NO_DUPLICATES_FOUND' });
+      expect(res.status).toBe(201);
+      expect(res.body.applicantType).toBe('CO_APPLICANT');
+      expect(res.body.isPrimary).toBe(false);
+      expect(res.body.dedupeDecision).toBe('NO_DUPLICATES_FOUND');
+      expect(res.body.dedupeMatchedCaseNumbers).toEqual([]);
+
+      const detail = await request(app).get(`/api/v2/cases/${id}`).set(SA);
+      expect(detail.body.applicants.map((a: { name: string }) => a.name)).toContain('Sita Rao');
+      expect(detail.body.applicants.filter((a: { isPrimary: boolean }) => a.isPrimary)).toHaveLength(1);
+    });
+
+    it('requires a rationale for CREATE_NEW (400)', async () => {
+      const id = await newCase('norat');
+      const res = await request(app)
+        .post(`/api/v2/cases/${id}/applicants`)
+        .set(SA)
+        .send({ name: 'Dup Person', dedupeDecision: 'CREATE_NEW' });
+      expect(res.status).toBe(400);
+    });
+
+    it('accepts CREATE_NEW with a rationale (201) and stores matched case numbers', async () => {
+      const id = await newCase('rat');
+      const res = await request(app)
+        .post(`/api/v2/cases/${id}/applicants`)
+        .set(SA)
+        .send({
+          name: 'Dup Person',
+          dedupeDecision: 'CREATE_NEW',
+          dedupeRationale: 'same name, different applicant',
+          dedupeMatches: ['CASE-000001'],
+        });
+      expect(res.status).toBe(201);
+      expect(res.body.dedupeDecision).toBe('CREATE_NEW');
+      expect(res.body.dedupeMatchedCaseNumbers).toEqual(['CASE-000001']);
+    });
+
+    it('rejects adding to a non-open (CANCELLED) case (409 CASE_NOT_OPEN)', async () => {
+      const id = await newCase('closed');
+      await db!.pool.query(`UPDATE cases SET status = 'CANCELLED' WHERE id = $1`, [id]);
+      const res = await request(app)
+        .post(`/api/v2/cases/${id}/applicants`)
+        .set(SA)
+        .send({ name: 'Late', dedupeDecision: 'NO_DUPLICATES_FOUND' });
+      expect(res.status).toBe(409);
+      expect(res.body.error).toBe('CASE_NOT_OPEN');
+    });
+
+    it('404 for an unknown case id', async () => {
+      const res = await request(app)
+        .post('/api/v2/cases/00000000-0000-0000-0000-000000000000/applicants')
+        .set(SA)
+        .send({ name: 'Ghost', dedupeDecision: 'NO_DUPLICATES_FOUND' });
+      expect(res.status).toBe(404);
+    });
+
+    it('forbids a role without case.create (FIELD_AGENT → 403)', async () => {
+      const id = await newCase('rbac');
+      const res = await request(app)
+        .post(`/api/v2/cases/${id}/applicants`)
+        .set(FA)
+        .send({ name: 'Sita', dedupeDecision: 'NO_DUPLICATES_FOUND' });
+      expect(res.status).toBe(403);
+    });
+  });
 });
