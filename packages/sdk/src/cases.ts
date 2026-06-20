@@ -136,6 +136,11 @@ export interface CaseApplicant {
   /** Auto-generated call-routing token (CC-<epoch>-<rand>); dispatched per task (ADR-0023). */
   callingCode: string;
   createdAt: string;
+  /** ADR-0053: dedupe verdict for an applicant ADDED after creation. NULL/absent for the original
+   *  set (whose dedupe is recorded on the case). */
+  dedupeDecision?: DedupeDecision | null;
+  dedupeRationale?: string | null;
+  dedupeMatchedCaseNumbers?: string[];
 }
 
 export interface Case {
@@ -376,6 +381,24 @@ export const CreateCaseSchema = z
     path: ['dedupeRationale'],
   });
 export type CreateCaseInput = z.infer<typeof CreateCaseSchema>;
+
+/** Add ONE applicant (always a co-applicant) to an existing case, with its own dedupe verdict
+ *  (ADR-0053). Mirrors the create-case dedupe contract for a single applicant. */
+export const AddApplicantSchema = z
+  .object({
+    name,
+    mobile: mobile.optional(),
+    pan: pan.optional(),
+    companyName: companyName.optional(),
+    dedupeDecision: z.enum(DEDUPE_DECISIONS),
+    dedupeRationale: z.string().trim().max(2000).optional(),
+    dedupeMatches: z.array(z.string().trim().max(20)).max(200).optional(),
+  })
+  .refine((v) => v.dedupeDecision !== 'CREATE_NEW' || (v.dedupeRationale?.length ?? 0) >= MIN_RATIONALE, {
+    message: 'a rationale is required when adding an applicant despite duplicates',
+    path: ['dedupeRationale'],
+  });
+export type AddApplicantInput = z.infer<typeof AddApplicantSchema>;
 
 const MAX_TASKS = 50;
 /**

@@ -112,6 +112,8 @@ import type {
   DedupeSearchQuery,
   CreateCaseInput,
   AddTasksInput,
+  AddApplicantInput,
+  CaseApplicant,
   AssignableUser,
   AssignTaskRequest,
   CompleteTaskRequest,
@@ -647,6 +649,9 @@ export function createSdk(opts: SdkOptions) {
       create: (input: CreateCaseInput) => req<Case>('POST', '/api/v2/cases', input),
       addTasks: (id: string, input: AddTasksInput) =>
         req<CaseTaskView[]>('POST', `/api/v2/cases/${id}/tasks`, input),
+      /** ADR-0053: add a co-applicant to an existing OPEN case (with its own dedupe verdict). */
+      addApplicant: (id: string, input: AddApplicantInput) =>
+        req<CaseApplicant>('POST', `/api/v2/cases/${id}/applicants`, input),
       list: (q: PageQuery = {}) => {
         const qs = pageQueryToParams(q).toString();
         return req<Paginated<CaseView>>('GET', `/api/v2/cases${qs ? `?${qs}` : ''}`);

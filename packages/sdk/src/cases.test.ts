@@ -3,6 +3,7 @@ import {
   CreateCaseSchema,
   DedupeQuerySchema,
   AddTasksSchema,
+  AddApplicantSchema,
   AssignTaskSchema,
   CASE_STATUSES,
   CASE_TASK_STATUSES,
@@ -141,5 +142,36 @@ describe('Case contract', () => {
     expect(AssignTaskSchema.safeParse({ ...ok, billCount: -1 }).success).toBe(false);
     expect(VISIT_TYPES).toEqual(['FIELD', 'OFFICE']);
     expect(FIELD_RATE_TYPES).toEqual(['LOCAL', 'OGL']);
+  });
+});
+
+describe('AddApplicantSchema (ADR-0053)', () => {
+  const base = { name: 'Sita Rao', dedupeDecision: 'NO_DUPLICATES_FOUND' as const };
+
+  it('accepts a clean add with no rationale', () => {
+    expect(AddApplicantSchema.safeParse(base).success).toBe(true);
+  });
+
+  it('accepts CREATE_NEW with a rationale', () => {
+    const r = AddApplicantSchema.safeParse({
+      ...base,
+      dedupeDecision: 'CREATE_NEW',
+      dedupeRationale: 'different loan, same person',
+      dedupeMatches: ['CASE-000123'],
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('rejects CREATE_NEW without a rationale', () => {
+    const r = AddApplicantSchema.safeParse({ ...base, dedupeDecision: 'CREATE_NEW' });
+    expect(r.success).toBe(false);
+  });
+
+  it('rejects a missing name', () => {
+    expect(AddApplicantSchema.safeParse({ dedupeDecision: 'NO_DUPLICATES_FOUND' }).success).toBe(false);
+  });
+
+  it('rejects a malformed PAN', () => {
+    expect(AddApplicantSchema.safeParse({ ...base, pan: 'nope' }).success).toBe(false);
   });
 });
