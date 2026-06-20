@@ -6,6 +6,7 @@ import { PAN_REGEX, PHONE_REGEX } from '@crm2/sdk';
 import { api } from '../../lib/sdk.js';
 import { useAuth } from '../../lib/AuthContext.js';
 import { AddTasksForm } from './AddTasksForm.js';
+import { summarizeDedupe, type DedupeGroup } from './dedupeBatch.js';
 
 interface Option {
   id: number;
@@ -46,6 +47,8 @@ export function CaseCreatePage() {
   const [created, setCreated] = useState<Case | null>(null);
   // Mandatory dedupe gate: Create is blocked until a search runs; editing identity re-arms it.
   const [hasSearched, setHasSearched] = useState(false);
+  // ADR-0053: per-applicant dedupe result groups (the Search checks EVERY applicant, not just primary).
+  const [groups, setGroups] = useState<DedupeGroup[]>([]);
   const [rationale, setRationale] = useState('');
 
   const { data: clients } = useQuery({
@@ -72,19 +75,37 @@ export function CaseCreatePage() {
     setApplicants((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
   };
 
+  // ADR-0053: search EVERY applicant that has ≥1 identifier (reuses the existing per-applicant dedupe
+  // endpoint, one call each), keep each applicant's matches in its own group, then derive the single
+  // case-level decision from the union. Co-applicants are no longer a dedupe blind spot.
   const dedupe = useMutation({
-    mutationFn: () =>
-      api<DuplicateMatch[]>('POST', '/api/v2/cases/dedupe', {
-        ...(primary.name.trim() ? { name: primary.name.trim() } : {}),
-        ...(primary.mobile.trim() ? { mobile: primary.mobile.trim() } : {}),
-        ...(primary.pan.trim() ? { pan: primary.pan.trim() } : {}),
-      }),
-    onSuccess: () => setHasSearched(true),
+    mutationFn: async (): Promise<DedupeGroup[]> => {
+      const labelOf = (i: number) => (i === 0 ? 'Applicant' : `Co-applicant ${i}`);
+      const searchable = applicants
+        .map((a, index) => ({ a, index }))
+        .filter(({ a }) => a.name.trim() || a.mobile.trim() || a.pan.trim());
+      return Promise.all(
+        searchable.map(async ({ a, index }) => ({
+          index,
+          label: labelOf(index),
+          name: a.name.trim(),
+          matches: await api<DuplicateMatch[]>('POST', '/api/v2/cases/dedupe', {
+            ...(a.name.trim() ? { name: a.name.trim() } : {}),
+            ...(a.mobile.trim() ? { mobile: a.mobile.trim() } : {}),
+            ...(a.pan.trim() ? { pan: a.pan.trim() } : {}),
+          }),
+        })),
+      );
+    },
+    onSuccess: (g) => {
+      setGroups(g);
+      setHasSearched(true);
+    },
   });
 
-  const matches = dedupe.data ?? [];
-  const hasMatches = hasSearched && matches.length > 0;
-  const decision = hasMatches ? 'CREATE_NEW' : 'NO_DUPLICATES_FOUND';
+  const summary = summarizeDedupe(groups);
+  const hasMatches = hasSearched && summary.matchedCaseNumbers.length > 0;
+  const decision = summary.decision;
 
   const create = useMutation({
     mutationFn: () =>
@@ -95,7 +116,7 @@ export function CaseCreatePage() {
         applicants: applicants.filter((a) => a.name.trim()).map(trimmed),
         dedupeDecision: decision,
         ...(hasMatches
-          ? { dedupeRationale: rationale.trim(), dedupeMatches: matches.map((m) => m.caseNumber) }
+          ? { dedupeRationale: rationale.trim(), dedupeMatches: summary.matchedCaseNumbers }
           : {}),
       }),
     onSuccess: (c) => setCreated(c),
@@ -294,61 +315,74 @@ export function CaseCreatePage() {
       {hasSearched && (
         <div className="overflow-x-auto rounded-lg border border-border bg-card shadow-sm">
           <div className="bg-surface-muted px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Dedupe Search Result — {matches.length} match{matches.length === 1 ? '' : 'es'}
+            Dedupe Search Result — {summary.matchedCaseNumbers.length} match
+            {summary.matchedCaseNumbers.length === 1 ? '' : 'es'} across {groups.length} applicant
+            {groups.length === 1 ? '' : 's'}
           </div>
-          {matches.length === 0 ? (
+          {!hasMatches ? (
             <div className="px-3 py-6 text-center text-sm text-muted-foreground">
               No duplicates found — safe to create (decision: NO DUPLICATES FOUND).
             </div>
           ) : (
             <>
-              <table className="rtable w-full text-sm">
-                <thead className="text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <tr>
-                    <th className="px-3 py-2 font-semibold">Case</th>
-                    <th className="px-3 py-2 font-semibold">Applicant</th>
-                    <th className="px-3 py-2 font-semibold">Mobile</th>
-                    <th className="px-3 py-2 font-semibold">PAN</th>
-                    <th className="px-3 py-2 font-semibold">Client</th>
-                    <th className="px-3 py-2 font-semibold">Status</th>
-                    <th className="px-3 py-2 font-semibold">Matched</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {matches.map((d, i) => (
-                    <tr key={`${d.caseId}-${i}`} className="border-t border-border">
-                      <td data-label="Case" className="px-3 py-2 font-mono text-xs">
-                        {d.caseNumber}
-                      </td>
-                      <td data-label="Applicant" className="px-3 py-2">
-                        {d.applicantName}
-                      </td>
-                      <td data-label="Mobile" className="px-3 py-2">
-                        {d.mobile ?? '—'}
-                      </td>
-                      <td data-label="PAN" className="px-3 py-2 font-mono text-xs">
-                        {d.pan ?? '—'}
-                      </td>
-                      <td data-label="Client" className="px-3 py-2">
-                        {d.clientName}
-                      </td>
-                      <td data-label="Status" className="px-3 py-2">
-                        {d.status.replace(/_/g, ' ')}
-                      </td>
-                      <td data-label="Matched" className="px-3 py-2">
-                        {d.matchType.map((m) => (
-                          <span
-                            key={m}
-                            className="mr-1 rounded bg-st-revisit-bg px-1.5 py-0.5 text-xs text-st-revisit"
-                          >
-                            {m}
-                          </span>
+              {groups.map((g) => (
+                <div key={g.index} className="border-t border-border">
+                  <div className="px-3 py-2 text-xs font-medium text-foreground">
+                    {g.label}
+                    {g.name ? ` (${g.name})` : ''} — {g.matches.length} match
+                    {g.matches.length === 1 ? '' : 'es'}
+                  </div>
+                  {g.matches.length > 0 && (
+                    <table className="rtable w-full text-sm">
+                      <thead className="text-left text-xs uppercase tracking-wide text-muted-foreground">
+                        <tr>
+                          <th className="px-3 py-2 font-semibold">Case</th>
+                          <th className="px-3 py-2 font-semibold">Applicant</th>
+                          <th className="px-3 py-2 font-semibold">Mobile</th>
+                          <th className="px-3 py-2 font-semibold">PAN</th>
+                          <th className="px-3 py-2 font-semibold">Client</th>
+                          <th className="px-3 py-2 font-semibold">Status</th>
+                          <th className="px-3 py-2 font-semibold">Matched</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {g.matches.map((d, i) => (
+                          <tr key={`${d.caseId}-${i}`} className="border-t border-border">
+                            <td data-label="Case" className="px-3 py-2 font-mono text-xs">
+                              {d.caseNumber}
+                            </td>
+                            <td data-label="Applicant" className="px-3 py-2">
+                              {d.applicantName}
+                            </td>
+                            <td data-label="Mobile" className="px-3 py-2">
+                              {d.mobile ?? '—'}
+                            </td>
+                            <td data-label="PAN" className="px-3 py-2 font-mono text-xs">
+                              {d.pan ?? '—'}
+                            </td>
+                            <td data-label="Client" className="px-3 py-2">
+                              {d.clientName}
+                            </td>
+                            <td data-label="Status" className="px-3 py-2">
+                              {d.status.replace(/_/g, ' ')}
+                            </td>
+                            <td data-label="Matched" className="px-3 py-2">
+                              {d.matchType.map((m) => (
+                                <span
+                                  key={m}
+                                  className="mr-1 rounded bg-st-revisit-bg px-1.5 py-0.5 text-xs text-st-revisit"
+                                >
+                                  {m}
+                                </span>
+                              ))}
+                            </td>
+                          </tr>
                         ))}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              ))}
               <div className="border-t border-border p-3">
                 <label className="block">
                   <span className="mb-1 block text-xs font-medium text-foreground">

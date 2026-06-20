@@ -9,7 +9,10 @@ import {
   KYC_RESULT_LABELS,
   TASK_ORIGIN_LABELS,
   CASE_STATUS_LABELS,
+  PAN_REGEX,
+  PHONE_REGEX,
   type CaseDetail,
+  type DuplicateMatch,
   type CaseTaskView,
   type CaseVerdictEvent,
   type AssignableUser,
@@ -174,6 +177,12 @@ export function CaseDetailPage() {
             ))}
           </tbody>
         </table>
+        {/* ADR-0053: add a co-applicant after creation (deduped on add). Only while the case is open. */}
+        {canCreate && (data.status === 'NEW' || data.status === 'IN_PROGRESS') && (
+          <div className="border-t border-border p-3">
+            <AddApplicantForm caseId={id} />
+          </div>
+        )}
       </div>
 
       {/* The work: documents / tasks (create → assign → execute → per-task result); "+ Add Tasks"
@@ -245,6 +254,142 @@ export function CaseDetailPage() {
 /** Case verdict history (ADR-0033): every finalize (who/when/what), newest first. Surfaces the
  *  before/after when a revisit re-opened the case and the office re-finalized. Hidden until the case
  *  has been finalized at least once (no events → nothing to show). */
+/** ADR-0053: add a co-applicant to an OPEN case, with its own advisory dedupe-on-add. Mirrors the
+ *  create-case dedupe gate for one applicant; on success the case query refetches and the row appears. */
+function AddApplicantForm({ caseId }: { caseId: string }) {
+  const qc = useQueryClient();
+  const [name, setName] = useState('');
+  const [mobile, setMobile] = useState('');
+  const [pan, setPan] = useState('');
+  const [companyName, setCompanyName] = useState('');
+  const [rationale, setRationale] = useState('');
+  const [searched, setSearched] = useState(false);
+
+  const reArm = () => setSearched(false); // editing identity → must re-check duplicates
+  const onlyDigits = (v: string) => v.replace(/\D/g, '');
+  const phoneOk = mobile.trim() === '' || PHONE_REGEX.test(mobile.trim());
+  const panOk = pan.trim() === '' || PAN_REGEX.test(pan.trim());
+  const canSearch = Boolean(name.trim() || mobile.trim() || pan.trim());
+
+  const dedupe = useMutation({
+    mutationFn: () =>
+      api<DuplicateMatch[]>('POST', '/api/v2/cases/dedupe', {
+        ...(name.trim() ? { name: name.trim() } : {}),
+        ...(mobile.trim() ? { mobile: mobile.trim() } : {}),
+        ...(pan.trim() ? { pan: pan.trim().toUpperCase() } : {}),
+      }),
+    onSuccess: () => setSearched(true),
+  });
+  const matches = dedupe.data ?? [];
+  const hasMatches = searched && matches.length > 0;
+
+  const add = useMutation({
+    mutationFn: () =>
+      api<CaseDetail['applicants'][number]>('POST', `/api/v2/cases/${caseId}/applicants`, {
+        name: name.trim(),
+        ...(mobile.trim() ? { mobile: mobile.trim() } : {}),
+        ...(pan.trim() ? { pan: pan.trim().toUpperCase() } : {}),
+        ...(companyName.trim() ? { companyName: companyName.trim() } : {}),
+        dedupeDecision: hasMatches ? 'CREATE_NEW' : 'NO_DUPLICATES_FOUND',
+        ...(hasMatches
+          ? { dedupeRationale: rationale.trim(), dedupeMatches: matches.map((m) => m.caseNumber) }
+          : {}),
+      }),
+    onSuccess: () => {
+      toast.success('Co-applicant added');
+      void qc.invalidateQueries({ queryKey: ['case', caseId] });
+      setName('');
+      setMobile('');
+      setPan('');
+      setCompanyName('');
+      setRationale('');
+      setSearched(false);
+    },
+    onError: () => toast.error('Could not add applicant'),
+  });
+
+  const rationaleOk = !hasMatches || rationale.trim().length >= 5;
+  const canAdd = Boolean(name.trim()) && phoneOk && panOk && searched && rationaleOk && !add.isPending;
+
+  return (
+    <div className="space-y-2">
+      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        Add co-applicant
+      </div>
+      <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
+        <input
+          className="input"
+          value={name}
+          placeholder="Name"
+          onChange={(e) => {
+            reArm();
+            setName(e.target.value);
+          }}
+        />
+        <input
+          className="input"
+          inputMode="numeric"
+          maxLength={15}
+          value={mobile}
+          placeholder="Mobile (10–15 digits)"
+          onChange={(e) => {
+            reArm();
+            setMobile(onlyDigits(e.target.value));
+          }}
+        />
+        <input
+          className="input"
+          maxLength={10}
+          value={pan}
+          placeholder="PAN (ABCDE1234F)"
+          onChange={(e) => {
+            reArm();
+            setPan(e.target.value.toUpperCase());
+          }}
+        />
+        <input
+          className="input"
+          maxLength={200}
+          value={companyName}
+          placeholder="Company"
+          onChange={(e) => setCompanyName(e.target.value)}
+        />
+      </div>
+      {/* Reserve the message line so validation toggles in place (no layout shift). */}
+      <div className="block min-h-[1rem] text-xs text-destructive">
+        {!phoneOk ? 'Mobile must be 10–15 digits.' : !panOk ? 'PAN format: ABCDE1234F.' : ''}
+      </div>
+      {searched && (
+        <div className="text-xs text-muted-foreground">
+          {hasMatches
+            ? `${matches.length} possible duplicate(s): ${matches.map((m) => m.caseNumber).join(', ')}`
+            : 'No duplicates found.'}
+        </div>
+      )}
+      {hasMatches && (
+        <textarea
+          className="input min-h-[3rem]"
+          value={rationale}
+          placeholder="Why add despite duplicates? (min 5 chars)"
+          onChange={(e) => setRationale(e.target.value)}
+        />
+      )}
+      <div className="flex items-center gap-2">
+        <button
+          className="btn-ghost"
+          disabled={!canSearch || dedupe.isPending}
+          onClick={() => dedupe.mutate()}
+        >
+          {dedupe.isPending ? 'Checking…' : 'Check duplicates'}
+        </button>
+        <button className="btn" disabled={!canAdd} onClick={() => add.mutate()}>
+          {add.isPending ? 'Adding…' : 'Add applicant'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function VerdictHistory({ caseId }: { caseId: string }) {
   const { data } = useQuery({
     queryKey: ['case-verdict-history', caseId],
