@@ -174,9 +174,10 @@ export function CaseCreatePage() {
                 onChange={(e) => setBackendContactNumber(onlyDigits(e.target.value))}
                 placeholder="Office number the field agent calls"
               />
-              {backendContactNumber.trim() !== '' && !contactOk && (
-                <span className="mt-1 block text-xs text-destructive">Enter 10–15 digits.</span>
-              )}
+              {/* Always reserve the message line so validation toggles in place (no layout shift). */}
+              <span className="mt-1 block min-h-[1rem] text-xs text-destructive">
+                {backendContactNumber.trim() !== '' && !contactOk ? 'Enter 10–15 digits.' : ''}
+              </span>
             </Field>
             <Field label="Date">
               <input className="input" value={new Date().toLocaleString()} disabled readOnly />
@@ -187,7 +188,7 @@ export function CaseCreatePage() {
             {applicants.map((a, i) => (
               <div
                 key={i}
-                className="grid grid-cols-1 items-end gap-2 md:grid-cols-[1.5fr_1fr_1fr_1.5fr_auto]"
+                className="grid grid-cols-1 items-start gap-2 md:grid-cols-[1.5fr_1fr_1fr_1.5fr_auto]"
               >
                 <Field label={i === 0 ? 'Applicant Name' : `Co-applicant ${i} Name`}>
                   <input
@@ -206,9 +207,9 @@ export function CaseCreatePage() {
                     onChange={(e) => setApplicant(i, { mobile: onlyDigits(e.target.value) })}
                     placeholder="10–15 digits"
                   />
-                  {!phoneOk(a.mobile) && (
-                    <span className="mt-1 block text-xs text-destructive">Enter 10–15 digits.</span>
-                  )}
+                  <span className="mt-1 block min-h-[1rem] text-xs text-destructive">
+                    {!phoneOk(a.mobile) ? 'Enter 10–15 digits.' : ''}
+                  </span>
                 </Field>
                 <Field label="PAN No">
                   <input
@@ -218,9 +219,9 @@ export function CaseCreatePage() {
                     onChange={(e) => setApplicant(i, { pan: e.target.value.toUpperCase() })}
                     placeholder="ABCDE1234F"
                   />
-                  {!panOk(a.pan) && (
-                    <span className="mt-1 block text-xs text-destructive">Format: ABCDE1234F.</span>
-                  )}
+                  <span className="mt-1 block min-h-[1rem] text-xs text-destructive">
+                    {!panOk(a.pan) ? 'Format: ABCDE1234F.' : ''}
+                  </span>
                 </Field>
                 <Field label="Company Name">
                   <input
@@ -231,16 +232,25 @@ export function CaseCreatePage() {
                     placeholder="Company / employer"
                   />
                 </Field>
-                {i === 0 ? (
-                  <span className="pb-2 text-xs text-muted-foreground">Primary</span>
-                ) : (
-                  <button
-                    className="pb-2 text-sm text-destructive hover:underline"
-                    onClick={() => setApplicants((rows) => rows.filter((_, idx) => idx !== i))}
-                  >
-                    Remove
-                  </button>
-                )}
+                {/* Mirror a field's [label][input] stack so Primary/Remove line up with the inputs now
+                    that the row is top-aligned: an invisible label-height spacer + an input-height row. */}
+                <div className="flex flex-col">
+                  <span className="mb-1 block text-xs font-medium invisible select-none" aria-hidden>
+                    .
+                  </span>
+                  <div className="flex h-9 items-center">
+                    {i === 0 ? (
+                      <span className="text-xs text-muted-foreground">Primary</span>
+                    ) : (
+                      <button
+                        className="text-sm text-destructive hover:underline"
+                        onClick={() => setApplicants((rows) => rows.filter((_, idx) => idx !== i))}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
             ))}
             <button
