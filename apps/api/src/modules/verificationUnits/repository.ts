@@ -8,12 +8,21 @@ const SELECT_COLS = `
   id, code, name, description, version, category, kind, worker_role, assignment_method,
   required_form_code, required_photos, required_gps, required_attachments, result_set,
   review_required, billing_profile, commission_profile, report_template_type,
-  reverification_rule, pii_sensitive, is_active, effective_from, sort_order, created_by, updated_by,
-  created_at, updated_at`;
+  reverification_rule, pii_sensitive, is_active, is_system, effective_from, sort_order, created_by,
+  updated_by, created_at, updated_at`;
 
 type WriteInput = Omit<
   VerificationUnit,
-  'id' | 'version' | 'isActive' | 'effectiveFrom' | 'createdBy' | 'updatedBy' | 'createdAt' | 'updatedAt'
+  // `isSystem` is set only by the seed/migration (the 9 mobile-hardcoded units) — never via create/update.
+  | 'id'
+  | 'version'
+  | 'isActive'
+  | 'isSystem'
+  | 'effectiveFrom'
+  | 'createdBy'
+  | 'updatedBy'
+  | 'createdAt'
+  | 'updatedAt'
 > & { effectiveFrom?: string | undefined };
 
 const isUniqueViolation = (e: unknown): boolean =>
@@ -254,6 +263,13 @@ export const verificationUnitRepository = {
         [id],
       );
       if (!before) throw AppError.notFound('UNIT_NOT_FOUND');
+      // A system unit (the mobile-hardcoded field-visit types) must stay active — block deactivation
+      // (ADR: the field app's per-type form endpoints are keyed to these codes). Activation is allowed.
+      if (!isActive && before.isSystem)
+        throw AppError.conflict(
+          'SYSTEM_UNIT_LOCKED',
+          'this verification unit is linked to the mobile app and cannot be deactivated',
+        );
       const [row] = await q<VerificationUnit>(
         `UPDATE verification_units SET is_active=$2, version=version+1, updated_by=$3, updated_at=now()
          WHERE id=$1 AND version=$4 RETURNING ${SELECT_COLS}`,

@@ -156,6 +156,56 @@ describe.skipIf(!RUN)('verification-units API', () => {
     expect((await request(app).get('/api/v2/verification-units/999999').set(SA)).status).toBe(404);
   });
 
+  // ── System (mobile-hardcoded) units are read-only (0086) ──────────────────────────────────
+  it('a system unit cannot be edited or deactivated (409 SYSTEM_UNIT_LOCKED); activate still allowed', async () => {
+    const created = (
+      await request(app)
+        .post('/api/v2/verification-units')
+        .set(SA)
+        .send(verificationUnitFactory({ code: 'RESIDENCE' }))
+    ).body;
+    // Mark it system (the migration/seed does this for the 9 mobile-hardcoded field-visit codes).
+    await db!.pool.query(`UPDATE verification_units SET is_system = true WHERE id = $1`, [created.id]);
+
+    const detail = await request(app).get(`/api/v2/verification-units/${created.id}`).set(SA);
+    expect(detail.body.isSystem).toBe(true);
+
+    const upd = await request(app)
+      .put(`/api/v2/verification-units/${created.id}`)
+      .set(SA)
+      .send({ name: 'Renamed', version: created.version });
+    expect(upd.status).toBe(409);
+    expect(upd.body.error).toBe('SYSTEM_UNIT_LOCKED');
+
+    const off = await request(app)
+      .post(`/api/v2/verification-units/${created.id}/deactivate`)
+      .set(SA)
+      .send({ version: created.version });
+    expect(off.status).toBe(409);
+    expect(off.body.error).toBe('SYSTEM_UNIT_LOCKED');
+
+    // re-activating a (still-active) system unit is allowed — it must stay usable for the field app.
+    const on = await request(app)
+      .post(`/api/v2/verification-units/${created.id}/activate`)
+      .set(SA)
+      .send({ version: created.version });
+    expect(on.status).toBe(200);
+
+    // a non-system unit is unaffected — still fully editable.
+    const normal = (
+      await request(app)
+        .post('/api/v2/verification-units')
+        .set(SA)
+        .send(verificationUnitFactory({ code: 'OFFICE' }))
+    ).body;
+    expect(normal.isSystem).toBe(false);
+    const ok = await request(app)
+      .put(`/api/v2/verification-units/${normal.id}`)
+      .set(SA)
+      .send({ name: 'Office v2', version: normal.version });
+    expect(ok.status).toBe(200);
+  });
+
   // ── B-22 options endpoint (unpaginated USABLE feed for dropdowns) ──
   it('GET /options returns USABLE units only as a flat {id,code,name} array (B-22)', async () => {
     await request(app)

@@ -246,6 +246,13 @@ export const verificationUnitService = {
     const expectedVersion = requireVersion(patch); // OCC token (400 VERSION_REQUIRED)
     const existing = await repo.findById(id);
     if (!existing) throw AppError.notFound('UNIT_NOT_FOUND');
+    // System units (the 9 mobile-hardcoded field-visit types) are read-only — the field app keys its
+    // per-type form endpoints to these codes, so a rename/reconfigure would silently break submission.
+    if (existing.isSystem)
+      throw AppError.conflict(
+        'SYSTEM_UNIT_LOCKED',
+        'this verification unit is linked to the mobile app and cannot be edited',
+      );
     // ADR-0020: code is correctable only while the unit is unreferenced; locked once in use.
     const codeChanged = patch['code'] !== undefined && patch['code'] !== existing.code;
     if (codeChanged && (await repo.hasDependents(id)))

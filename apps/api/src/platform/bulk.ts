@@ -71,7 +71,9 @@ export async function applyBulkOcc(
       results.push({ id: String(it.id), status: 'OK' });
       okCount += 1;
     } catch (e) {
-      if (e instanceof AppError && e.code === 'STALE_UPDATE') {
+      // A stale row (409 STALE_UPDATE) or a row the resource refuses to change (e.g. a SYSTEM_UNIT_LOCKED
+      // verification unit) → CONFLICT for that row; the rest of the batch still applies (never a 500).
+      if (e instanceof AppError && (e.code === 'STALE_UPDATE' || e.code === 'SYSTEM_UNIT_LOCKED')) {
         results.push({ id: String(it.id), status: 'CONFLICT' });
         conflictCount += 1;
       } else if (e instanceof AppError && e.status === HTTP_STATUS.NOT_FOUND) {

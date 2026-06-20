@@ -48,6 +48,9 @@ export interface VerificationUnit {
   reverificationRule: (typeof REVERIFICATION_RULES)[number];
   piiSensitive: boolean;
   isActive: boolean;
+  /** SYSTEM unit (the 9 mobile-hardcoded field-visit types): read-only — the API rejects edit/deactivate
+   *  and the admin UI hides those controls, since the field app's form endpoints are keyed to these codes. */
+  isSystem: boolean;
   /** when the unit becomes usable (ADR-0017); usable ⇔ isActive AND effectiveFrom <= now(). */
   effectiveFrom: string;
   sortOrder: number;

@@ -110,6 +110,16 @@ FROM (VALUES
 ) AS v(code, name, category)
 ON CONFLICT (code) DO NOTHING;
 
+-- Lock the 9 mobile-hardcoded field-visit units as SYSTEM (not editable in the admin UI; the field app's
+-- per-type form endpoints/renderers are keyed to these codes). Re-asserted every deploy after the rows
+-- exist; KYC document units stay editable. Mirrors migration 0086 (the back-fill for an already-seeded
+-- prod). `is_system` is added by 0086, which runs before this seed.
+UPDATE verification_units SET is_system = true
+WHERE NOT is_system
+  AND kind = 'FIELD_VISIT'
+  AND code IN ('RESIDENCE', 'OFFICE', 'RESIDENCE_CUM_OFFICE', 'BUSINESS', 'BUILDER', 'NOC',
+               'DSA_CONNECTOR', 'PROPERTY_APF', 'PROPERTY_INDIVIDUAL');
+
 COMMIT;
 
 -- Sanity (run after seed):

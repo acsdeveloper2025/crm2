@@ -134,19 +134,39 @@ export function VerificationUnitsPage() {
         id: 'actions',
         header: 'Actions',
         align: 'right',
-        cell: (u) => (
-          <>
-            <button className="mr-3 font-medium text-primary hover:underline" onClick={() => setEditing(u)}>
-              Edit
-            </button>
-            <button
-              className="font-medium text-muted-foreground hover:text-foreground hover:underline"
-              onClick={() => toggle.mutate(u)}
+        cell: (u) =>
+          u.isSystem ? (
+            <span
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+              title="Linked to the mobile app — locked. These field-visit types cannot be edited or deactivated."
             >
-              {u.isActive ? 'Deactivate' : 'Activate'}
-            </button>
-          </>
-        ),
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                aria-hidden="true"
+              >
+                <rect x="5" y="11" width="14" height="10" rx="2" />
+                <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+              </svg>
+              System
+            </span>
+          ) : (
+            <>
+              <button className="mr-3 font-medium text-primary hover:underline" onClick={() => setEditing(u)}>
+                Edit
+              </button>
+              <button
+                className="font-medium text-muted-foreground hover:text-foreground hover:underline"
+                onClick={() => toggle.mutate(u)}
+              >
+                {u.isActive ? 'Deactivate' : 'Activate'}
+              </button>
+            </>
+          ),
       },
     ],
     [toggle],
