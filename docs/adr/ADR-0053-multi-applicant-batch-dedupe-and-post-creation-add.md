@@ -1,12 +1,14 @@
 # ADR-0053: Multi-applicant batch dedupe + post-creation applicant add
 
-- **Status:** **Accepted** — owner-directed 2026-06-20 (owner + CTO). Additive to the case-creation flow
-  ([ADR-0023]); does not change a frozen decision. ADR number **0053** is used (not 0051/0052, which are
-  reserved for the parked `design-audit-wip` inline-grid / button-affordance ADRs) to avoid a number
-  collision on merge.
+- **Status:** **Accepted — Shipped to prod 2026-06-20** (owner-directed, owner + CTO). Additive to the
+  case-creation flow ([ADR-0023]); does not change a frozen decision. ADR number **0053** is used (not
+  0051/0052, which are reserved for the parked `design-audit-wip` inline-grid / button-affordance ADRs)
+  to avoid a number collision on merge.
 - **Date:** 2026-06-20
 - **Migration:** `0087_case_applicant_dedupe.sql` — additive, idempotent (`ADD COLUMN IF NOT EXISTS`),
   re-run-safe (no DROP/ADD CHECK, so it cannot become a migrate-rerun deploy blocker like the 0037/0083 traps).
+- **Commits:** `62d0ad3..40fa1fb` (origin/main) — db mig · sdk · api · web · docs · the review-gate fix
+  (`40fa1fb`). Full `pnpm verify` green; 4-agent review gate clean after two fixes (see Implementation notes).
 
 ## Context
 
@@ -140,6 +142,34 @@ dedupe that was recorded for it. If needed later, they warrant their own ADR.
   the existing endpoint is more additive.
 - **Include company as a dedupe search key** — rejected (owner): weak identity; an OR-match floods
   results with unrelated same-employer cases.
+
+## Implementation notes (as shipped 2026-06-20)
+
+Delivered exactly as decided above. Key files: mig `0087`; SDK `AddApplicantSchema` + `cases.addApplicant`
++ optional `CaseApplicant.dedupe*` read fields; API `cases` module (`caseStatusOf` + `addApplicant` +
+`POST /:id/applicants`, guard `CASE_CREATE`) with 6 integration tests; web `dedupeBatch.ts` (`summarizeDedupe`)
++ `CaseCreatePage` batch search + `CaseDetailPage` inline `AddApplicantForm`. Plan:
+[docs/plans/2026-06-20-adr-0053-multi-applicant-dedupe.md](../plans/2026-06-20-adr-0053-multi-applicant-dedupe.md).
+
+**Two corrections the review gate caught and that shipped in `40fa1fb`:**
+1. `caseRepository.findById`'s applicants `SELECT` initially omitted the three new columns, so the
+   per-applicant verdict was write-only (never returned by `GET /cases/:id`). Fixed — the SELECT returns
+   `dedupe_decision, dedupe_rationale, dedupe_matched_case_numbers`, locked by a GET round-trip test.
+2. The create-page `+ Add co-applicant` and `Remove` buttons called `setApplicants` directly, bypassing
+   the gate re-arm — a co-applicant added after a search could reach Create un-deduped. Fixed — both call
+   `armSearch()`, so any change to the applicant set forces a re-Search before Create.
+
+**DON'T-REGRESS:**
+- **Every mutation of the create-page applicant set must re-arm the dedupe gate** (`armSearch()`): field
+  edits (`setApplicant`), add, and remove. A new applicant must never reach Create un-deduped.
+- **Any read path that returns `CaseApplicant` must SELECT the three `dedupe_*` columns** — and have a GET
+  round-trip test — or the per-applicant verdict silently never surfaces. Today the sole path is `findById`.
+- The add-applicant INSERT **hardcodes** `applicant_type='CO_APPLICANT'` and `is_primary=false` (never from
+  the body) — preserves the one-primary invariant (`uq_case_one_primary`) and is IDOR-safe.
+- Add is allowed only for status ∈ {`NEW`,`IN_PROGRESS`} → `409 CASE_NOT_OPEN`; unknown case → `404`.
+- Company stays **out** of the dedupe search keys (name/mobile/pan only) at both call sites.
+- mig `0087` CHECK is added via a **guarded** `DO`-block (no `IF NOT EXISTS` for CHECK in PG); pre-existing
+  rows are NULL so it never rejects on re-run. Edit/remove of applicants remains **out of scope**.
 
 ## Related ADRs
 
