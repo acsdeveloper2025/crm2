@@ -32,7 +32,8 @@ export interface BillingTaskLine {
   /** task_origin — ORIGINAL | REVISIT (both bill; label only). */
   billingClass: string;
   visitType: string | null;
-  rateType: string | null;
+  /** CLIENT rate type (LOCAL/OGL) of the resolved billing rate (Rate Management). */
+  clientRateType: string | null;
   /** client bill amount; null when the CPV has no active rate. */
   billAmount: number | null;
   /** agent commission; null when the assignee has no matching commission_rate. */

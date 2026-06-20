@@ -74,7 +74,7 @@ const TASK_SELECT_BASE = `
          p.name AS product_name, pa.name AS primary_name,
          ct.verification_unit_id, vu.code AS unit_code, vu.name AS unit_name, vu.kind AS unit_kind,
          ct.status, ct.assigned_to, au.name AS assigned_to_name,
-         ct.visit_type, ct.distance_band, ct.bill_count, ct.assigned_at,
+         ct.visit_type, ct.field_rate_type, ct.bill_count, ct.assigned_at,
          ct.version, ct.created_at, ct.updated_at,
          ct.tat_hours AS tat_hours,
          (ct.assigned_at + (ct.tat_hours * interval '1 hour')) AS due_at,
@@ -88,7 +88,9 @@ const TASK_SELECT_BASE = `
          (ct.status = 'COMPLETED') AS billable`;
 
 /** Amount columns — resolved via the laterals when billing-visible, else nulled (laterals skipped). */
-const BILLING_AMOUNT_COLS = `, rt.bill_amount, com.commission_amount`;
+// COALESCE the frozen snapshot (ct.commission_amount) over the live lateral so the pipeline resolves
+// the SAME commission as billing & MIS (ADR-0047/0050; audit H-1 — do NOT read live-only here).
+const BILLING_AMOUNT_COLS = `, rt.bill_amount, COALESCE(ct.commission_amount, com.commission_amount) AS commission_amount`;
 const NULL_AMOUNT_COLS = `, NULL::float8 AS bill_amount, NULL::float8 AS commission_amount`;
 
 /** Shared WHERE builder — list, COUNT, stats and export all run the SAME conditions. */

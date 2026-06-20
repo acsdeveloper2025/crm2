@@ -8,7 +8,7 @@ import {
   authHeaderForRole,
 } from '@crm2/test-utils';
 import { createApp } from '../../../http/app.js';
-import { setPool } from '../../../platform/db.js';
+import { setPool, query } from '../../../platform/db.js';
 
 const RUN = !!process.env['DATABASE_URL'];
 const db = RUN ? createTestDb() : null;
@@ -120,10 +120,24 @@ async function seedMisLayout(clientId: number, productId: number): Promise<void>
   expect(res.status).toBe(201);
 }
 
+/** Seed a `locations` row (an area within a pincode); returns its id (ADR-0050 commission key).
+ *  Unique 6-digit pincode per call so vitest retries / cross-test re-seeds never hit LOCATION_EXISTS. */
+let locPincodeSeq = 400100;
+async function seedLocation(tag: string): Promise<number> {
+  locPincodeSeq += 1;
+  const res = await request(app)
+    .post('/api/v2/locations')
+    .set(SA)
+    .send({ pincode: String(locPincodeSeq), area: `MIS_${tag}`, city: 'Mumbai', state: 'MH' });
+  return seeded<{ id: number }>(res).id;
+}
+
 async function seedCompletedTask(
   ctx: { clientId: number; productId: number; unitId: number },
   fa: string,
   name: string,
+  // ADR-0050: stamp the task's location (area=pincode=locationId) so a location-keyed commission resolves.
+  locationId?: number,
 ): Promise<{ caseId: string; caseNumber: string; taskId: string }> {
   const created = seeded<{ id: string; caseNumber: string }>(
     await request(app)
@@ -154,13 +168,18 @@ async function seedCompletedTask(
       await request(app)
         .post(`/api/v2/cases/${created.id}/tasks/${taskId}/assign`)
         .set(SA)
-        .send({ assignedTo: fa, visitType: 'FIELD', distanceBand: 'LOCAL', billCount: 1, version: 1 })
+        .send({ assignedTo: fa, visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 1, version: 1 })
     ).status,
   ).toBe(200);
   expect(
     (await request(app).post(`/api/v2/verification-tasks/${taskId}/start`).set(hdr('FIELD_AGENT', fa)))
       .status,
   ).toBe(200);
+  // ADR-0050: stamp the task's location AFTER assign (a located task would fail FIELD territory
+  // eligibility) but BEFORE submit, so the commission freeze captures the location-keyed rate.
+  if (locationId !== undefined) {
+    await query('UPDATE case_tasks SET area_id = $2, pincode_id = $2 WHERE id = $1', [taskId, locationId]);
+  }
   // ADR-0047: the device /complete transitions the task to SUBMITTED (field done, commission frozen),
   // NOT COMPLETED — office-complete is a separate step. The MIS read-model includes SUBMITTED tasks
   // (mirrors the billing read-model), so this submitted task appears in the MIS below.
@@ -195,6 +214,7 @@ describe.skipIf(!RUN)('MIS API (ADR-0037)', () => {
       'clients',
       'products',
       'users',
+      'locations',
     );
   });
 
@@ -208,18 +228,20 @@ describe.skipIf(!RUN)('MIS API (ADR-0037)', () => {
         clientId: ctx.clientId,
         productId: ctx.productId,
         verificationUnitId: ctx.unitId,
-        rateType: 'LOCAL',
+        clientRateType: 'LOCAL',
         amount: 100,
       }),
     );
+    const loc = await seedLocation('FULL');
     seeded(
       await request(app)
         .post('/api/v2/commission-rates')
         .set(SA)
-        .send({ userId: fa, rateType: 'LOCAL', amount: 30 }),
+        // ADR-0050: user + location + fieldRateType are required keys; client/product/unit/TAT = Universal.
+        .send({ userId: fa, locationId: loc, fieldRateType: 'LOCAL', amount: 30 }),
     );
     await seedMisLayout(ctx.clientId, ctx.productId);
-    const task = await seedCompletedTask(ctx, fa, 'FULL APP');
+    const task = await seedCompletedTask(ctx, fa, 'FULL APP', loc);
 
     const res = await request(app)
       .get(`/api/v2/mis/rows?clientId=${ctx.clientId}&productId=${ctx.productId}`)
@@ -261,7 +283,7 @@ describe.skipIf(!RUN)('MIS API (ADR-0037)', () => {
         clientId: ctx.clientId,
         productId: ctx.productId,
         verificationUnitId: ctx.unitId,
-        rateType: 'LOCAL',
+        clientRateType: 'LOCAL',
         amount: 100,
       }),
     );
@@ -353,7 +375,7 @@ describe.skipIf(!RUN)('MIS API (ADR-0037)', () => {
         clientId: ctx.clientId,
         productId: ctx.productId,
         verificationUnitId: ctx.unitId,
-        rateType: 'LOCAL',
+        clientRateType: 'LOCAL',
         amount: 100,
       }),
     );

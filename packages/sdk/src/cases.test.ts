@@ -8,7 +8,7 @@ import {
   CASE_TASK_STATUSES,
   DEDUPE_DECISIONS,
   VISIT_TYPES,
-  DISTANCE_BANDS,
+  FIELD_RATE_TYPES,
   TASK_ORIGINS,
   ReassignTaskSchema,
 } from './cases.js';
@@ -99,12 +99,22 @@ describe('Case contract', () => {
     expect(TASK_ORIGINS).toEqual(['ORIGINAL', 'REVISIT']);
   });
 
-  it('reassign-after-revoke requires a uuid assignee + visit type + non-negative bill; reason optional', () => {
-    const ok = { assignedTo: '00000000-0000-0000-0000-000000000001', visitType: 'OFFICE', billCount: 1 };
+  it('reassign-after-revoke requires a uuid assignee + visit type + non-negative bill; distance band + reason optional', () => {
+    const ok = {
+      assignedTo: '00000000-0000-0000-0000-000000000001',
+      visitType: 'OFFICE',
+      fieldRateType: 'LOCAL',
+      billCount: 1,
+    };
     expect(ReassignTaskSchema.safeParse(ok).success).toBe(true);
     expect(ReassignTaskSchema.safeParse({ ...ok, reason: 'redispatch' }).success).toBe(true);
     expect(ReassignTaskSchema.safeParse({ ...ok, assignedTo: 'nope' }).success).toBe(false);
     expect(ReassignTaskSchema.safeParse({ ...ok, visitType: 'DRONE' }).success).toBe(false);
+    // ADR-0050: fieldRateType is the commission resolution key but OPTIONAL — a bad value is rejected,
+    // omitting it is allowed (the task just resolves no commission).
+    expect(ReassignTaskSchema.safeParse({ ...ok, fieldRateType: 'FAR' }).success).toBe(false);
+    const { fieldRateType: _omit, ...noBand } = ok;
+    expect(ReassignTaskSchema.safeParse(noBand).success).toBe(true);
     expect(ReassignTaskSchema.safeParse({ ...ok, billCount: -1 }).success).toBe(false);
   });
 
@@ -112,15 +122,15 @@ describe('Case contract', () => {
     const ok = {
       assignedTo: '00000000-0000-0000-0000-000000000001',
       visitType: 'FIELD',
-      distanceBand: 'LOCAL',
+      fieldRateType: 'LOCAL',
       billCount: 1,
     };
     expect(AssignTaskSchema.safeParse(ok).success).toBe(true);
     expect(AssignTaskSchema.safeParse({ ...ok, assignedTo: 'not-a-uuid' }).success).toBe(false);
     expect(AssignTaskSchema.safeParse({ ...ok, visitType: 'DRONE' }).success).toBe(false);
-    expect(AssignTaskSchema.safeParse({ ...ok, distanceBand: 'FAR' }).success).toBe(false);
+    expect(AssignTaskSchema.safeParse({ ...ok, fieldRateType: 'FAR' }).success).toBe(false);
     expect(AssignTaskSchema.safeParse({ ...ok, billCount: -1 }).success).toBe(false);
     expect(VISIT_TYPES).toEqual(['FIELD', 'OFFICE']);
-    expect(DISTANCE_BANDS).toEqual(['LOCAL', 'OGL']);
+    expect(FIELD_RATE_TYPES).toEqual(['LOCAL', 'OGL']);
   });
 });

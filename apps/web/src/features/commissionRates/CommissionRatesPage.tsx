@@ -3,9 +3,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   pageQueryToParams,
   exportQueryToParams,
+  COMMISSION_RATE_TYPES,
   type Option,
   type UserOption,
-  type RateType,
   type VerificationUnitOption,
   type Location,
   type TatPolicy,
@@ -32,7 +32,7 @@ function CommissionRateDialog({ row, onClose }: { row: CommissionRateView | null
   const qc = useQueryClient();
   const isRevise = !!row;
   const [userId, setUserId] = useState(row?.userId ?? '');
-  const [rateType, setRateType] = useState(row?.rateType ?? '');
+  const [fieldRateType, setRateType] = useState(row?.fieldRateType ?? '');
   const [clientId, setClientId] = useState(row?.clientId ? String(row.clientId) : '');
   const [productId, setProductId] = useState(row?.productId ? String(row.productId) : '');
   const [unitId, setUnitId] = useState(row?.verificationUnitId ? String(row.verificationUnitId) : '');
@@ -47,10 +47,6 @@ function CommissionRateDialog({ row, onClose }: { row: CommissionRateView | null
   const users = useQuery({
     queryKey: ['user-options'],
     queryFn: () => api<UserOption[]>('GET', '/api/v2/users/options'),
-  });
-  const rateTypes = useQuery({
-    queryKey: ['rate-types'],
-    queryFn: () => api<RateType[]>('GET', '/api/v2/rate-types?active=true'),
   });
   const clients = useQuery({
     queryKey: ['client-options'],
@@ -92,11 +88,12 @@ function CommissionRateDialog({ row, onClose }: { row: CommissionRateView | null
           })
         : api<CommissionRate>('POST', '/api/v2/commission-rates', {
             userId,
-            rateType: rateType || null,
+            locationId: locationId ? Number(locationId) : null, // required for LOCAL/OGL; null for OFFICE
+            fieldRateType, // LOCAL/OGL (field) or OFFICE (desk)
+            // Universal-able: blank ⇒ null ⇒ matches any (ADR-0050).
             clientId: clientId ? Number(clientId) : null,
             productId: productId ? Number(productId) : null,
             verificationUnitId: unitId ? Number(unitId) : null,
-            locationId: locationId ? Number(locationId) : null,
             tatBand: tatBand === '' ? null : Number(tatBand),
             amount: Number(amount),
             effectiveFrom: toIsoDate(effectiveFrom),
@@ -115,7 +112,12 @@ function CommissionRateDialog({ row, onClose }: { row: CommissionRateView | null
       ),
   });
 
-  const valid = isRevise ? amount !== '' : !!userId && amount !== '';
+  // ADR-0050: required-specific dims = user + location (area) + rate type; client/product/unit/tat band
+  // are Universal-able (blank ⇒ matches any), so they don't gate Save.
+  // ADR-0050: location required for LOCAL/OGL; OFFICE rates are location-less (flat office commission).
+  const valid = isRevise
+    ? amount !== ''
+    : !!userId && !!fieldRateType && (fieldRateType === 'OFFICE' || !!locationId) && amount !== '';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40">
@@ -144,44 +146,27 @@ function CommissionRateDialog({ row, onClose }: { row: CommissionRateView | null
               ))}
             </select>
           </label>
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-foreground">Classification (optional)</span>
-            <select
-              className="input"
-              value={rateType}
-              disabled={isRevise}
-              onChange={(e) => setRateType(e.target.value)}
-            >
-              <option value="">None — descriptive label, not a resolution key</option>
-              {(rateTypes.data ?? []).map((rt) => (
-                <option key={rt.id} value={rt.code}>
-                  {rt.code}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-foreground">Client (blank = universal)</span>
-            <select
-              className="input"
-              value={clientId}
-              disabled={isRevise}
-              onChange={(e) => setClientId(e.target.value)}
-            >
-              <option value="">Universal (all clients)</option>
-              {(clients.data ?? []).map((c) => (
-                <option key={c.id} value={String(c.id)}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
           {!isRevise && (
             <>
               <label className="block">
-                <span className="mb-1 block text-xs font-medium text-foreground">Product (blank = any)</span>
+                <span className="mb-1 block text-xs font-medium text-foreground">
+                  Client (blank = Universal)
+                </span>
+                <select className="input" value={clientId} onChange={(e) => setClientId(e.target.value)}>
+                  <option value="">Universal (all clients)</option>
+                  {(clients.data ?? []).map((c) => (
+                    <option key={c.id} value={String(c.id)}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-foreground">
+                  Product (blank = Universal)
+                </span>
                 <select className="input" value={productId} onChange={(e) => setProductId(e.target.value)}>
-                  <option value="">Any product</option>
+                  <option value="">Universal (all products)</option>
                   {(products.data ?? []).map((p) => (
                     <option key={p.id} value={String(p.id)}>
                       {p.code} — {p.name}
@@ -191,10 +176,10 @@ function CommissionRateDialog({ row, onClose }: { row: CommissionRateView | null
               </label>
               <label className="block">
                 <span className="mb-1 block text-xs font-medium text-foreground">
-                  Verification Unit (blank = any)
+                  Verification Unit (blank = Universal)
                 </span>
                 <select className="input" value={unitId} onChange={(e) => setUnitId(e.target.value)}>
-                  <option value="">Any unit</option>
+                  <option value="">Universal (all units)</option>
                   {(units.data ?? []).map((u) => (
                     <option key={u.id} value={String(u.id)}>
                       {u.code} — {u.name}
@@ -203,9 +188,7 @@ function CommissionRateDialog({ row, onClose }: { row: CommissionRateView | null
                 </select>
               </label>
               <label className="block">
-                <span className="mb-1 block text-xs font-medium text-foreground">
-                  Pincode (blank = any location)
-                </span>
+                <span className="mb-1 block text-xs font-medium text-foreground">Pincode</span>
                 <input
                   className="input"
                   list="commission-pincodes"
@@ -241,9 +224,22 @@ function CommissionRateDialog({ row, onClose }: { row: CommissionRateView | null
                 </select>
               </label>
               <label className="block">
-                <span className="mb-1 block text-xs font-medium text-foreground">TAT Band (blank = any)</span>
+                <span className="mb-1 block text-xs font-medium text-foreground">Rate Type</span>
+                <select className="input" value={fieldRateType} onChange={(e) => setRateType(e.target.value)}>
+                  <option value="">Select a rate type…</option>
+                  {COMMISSION_RATE_TYPES.map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-foreground">
+                  TAT Band (blank = Universal)
+                </span>
                 <select className="input" value={tatBand} onChange={(e) => setTatBand(e.target.value)}>
-                  <option value="">Any band</option>
+                  <option value="">Universal (all bands)</option>
                   {(tatPolicies.data ?? []).map((tp) => (
                     <option key={tp.id} value={String(tp.tatHours)}>
                       {tp.label}
@@ -335,12 +331,12 @@ export function CommissionRatesPage() {
         cell: (r) => r.clientName ?? <span className="text-muted-foreground">Universal</span>,
       },
       {
-        id: 'rateType',
-        header: 'Classification',
+        id: 'fieldRateType',
+        header: 'Rate Type',
         sortable: true,
         cell: (r) =>
-          r.rateType ? (
-            <span className="text-xs uppercase">{r.rateType}</span>
+          r.fieldRateType ? (
+            <span className="text-xs uppercase">{r.fieldRateType}</span>
           ) : (
             <span className="text-muted-foreground">—</span>
           ),
@@ -439,8 +435,9 @@ export function CommissionRatesPage() {
         <div className="min-w-0">
           <h1 className="text-xl font-bold tracking-tight">Commission Rates</h1>
           <p className="text-sm text-muted-foreground">
-            Per-executive commission by location (pincode/area), client, product, unit &amp; completed-in TAT
-            band — decoupled from the client rate. The amount source for the Billing &amp; Commission view.
+            Per-executive commission tariff. Required: user, location (pincode/area) &amp; rate type
+            (LOCAL/OGL). Client, product, unit &amp; TAT band can be Universal (matches any). Most-specific
+            row wins. The amount source for the Billing &amp; Commission view.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

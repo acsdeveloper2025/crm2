@@ -71,6 +71,27 @@ export const caseController = {
     }
   },
 
+  async ratePreview(req: Request, res: Response, next: NextFunction) {
+    try {
+      const clientId = parsePositiveInt(req.query['clientId']);
+      const productId = parsePositiveInt(req.query['productId']);
+      const verificationUnitId = parsePositiveInt(req.query['verificationUnitId']);
+      const locationId = parsePositiveInt(req.query['locationId']);
+      if (
+        clientId === undefined ||
+        productId === undefined ||
+        verificationUnitId === undefined ||
+        locationId === undefined
+      )
+        throw AppError.badRequest('BAD_REQUEST', {
+          param: 'clientId, productId, verificationUnitId, locationId',
+        });
+      res.json(await svc.ratePreview(clientId, productId, verificationUnitId, locationId));
+    } catch (e) {
+      next(e);
+    }
+  },
+
   async create(req: Request, res: Response, next: NextFunction) {
     try {
       res.status(HTTP_STATUS.CREATED).json(await svc.create(req.body, userId(req)));

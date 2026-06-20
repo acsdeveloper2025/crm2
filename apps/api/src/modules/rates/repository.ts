@@ -9,7 +9,7 @@ const FK_VIOLATION = '23503';
 const EXCLUSION_VIOLATION = '23P01'; // rates_no_overlap GiST exclusion (overlapping active period)
 
 // amount is numeric(10,2); cast to float8 so pg returns a JS number, not a string.
-const COLS = `id, client_id, product_id, verification_unit_id, location_id, rate_type,
+const COLS = `id, client_id, product_id, verification_unit_id, location_id, client_rate_type,
   amount::float8 AS amount, currency, is_active, effective_from, effective_to,
   version, created_by, updated_by, created_at, updated_at`;
 
@@ -62,7 +62,7 @@ export const rateRepository = {
       params.push(likeContains(o.search));
       const n = params.length;
       where.push(
-        `(c.name ILIKE $${n} OR c.code ILIKE $${n} OR p.name ILIKE $${n} OR p.code ILIKE $${n} OR vu.name ILIKE $${n} OR l.pincode ILIKE $${n} OR l.area ILIKE $${n} OR r.rate_type ILIKE $${n})`,
+        `(c.name ILIKE $${n} OR c.code ILIKE $${n} OR p.name ILIKE $${n} OR p.code ILIKE $${n} OR vu.name ILIKE $${n} OR l.pincode ILIKE $${n} OR l.area ILIKE $${n} OR r.client_rate_type ILIKE $${n})`,
       );
     }
     // Per-column filters (§6/§7/§8) combine with AND; whitelisted columns, bound values.
@@ -82,7 +82,7 @@ export const rateRepository = {
     const totalCount = countRow?.count ?? 0;
     // sortColumn is whitelisted in the service (PageSpec.sortMap) → safe to interpolate.
     const items = await query<RateView>(
-      `SELECT r.id, r.client_id, r.product_id, r.verification_unit_id, r.location_id, r.rate_type,
+      `SELECT r.id, r.client_id, r.product_id, r.verification_unit_id, r.location_id, r.client_rate_type,
               r.amount::float8 AS amount, r.currency, r.is_active, r.effective_from, r.effective_to,
               r.version, r.created_by, r.updated_by, r.created_at, r.updated_at,
               c.code AS client_code, c.name AS client_name,
@@ -108,7 +108,7 @@ export const rateRepository = {
       return await withTransaction(async (q) => {
         const [row] = await q<Rate>(
           `INSERT INTO rates
-             (client_id, product_id, verification_unit_id, location_id, rate_type, amount, currency, effective_from, created_by, updated_by)
+             (client_id, product_id, verification_unit_id, location_id, client_rate_type, amount, currency, effective_from, created_by, updated_by)
            VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8::timestamptz, now()), $9, $9)
            RETURNING ${COLS}`,
           [
@@ -116,7 +116,7 @@ export const rateRepository = {
             input.productId,
             input.verificationUnitId,
             input.locationId ?? null,
-            input.rateType ?? null,
+            input.clientRateType ?? null,
             input.amount,
             input.currency ?? 'INR',
             input.effectiveFrom ?? null,
@@ -159,7 +159,7 @@ export const rateRepository = {
         );
         const [next] = await q<Rate>(
           `INSERT INTO rates
-             (client_id, product_id, verification_unit_id, location_id, rate_type, amount, currency, effective_from, created_by, updated_by)
+             (client_id, product_id, verification_unit_id, location_id, client_rate_type, amount, currency, effective_from, created_by, updated_by)
            VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8::timestamptz, now()), $9, $9)
            RETURNING ${COLS}`,
           [
@@ -167,7 +167,7 @@ export const rateRepository = {
             cur.productId,
             cur.verificationUnitId,
             cur.locationId,
-            cur.rateType,
+            cur.clientRateType,
             amount,
             cur.currency,
             effectiveFrom,
@@ -226,7 +226,7 @@ export const rateRepository = {
     }
   },
 
-  /** Full revision trail for the rate's (client, product, VU, location, rate_type) line. */
+  /** Full revision trail for the rate's (client, product, VU, location, client_rate_type) line. */
   async history(id: number): Promise<RateHistory[]> {
     return query<RateHistory>(
       `SELECT h.id, h.rate_id, h.action,
@@ -235,9 +235,9 @@ export const rateRepository = {
        FROM rate_history h
        JOIN rates r ON r.id = h.rate_id
        WHERE (r.client_id, r.product_id, r.verification_unit_id,
-              COALESCE(r.location_id, -1), COALESCE(r.rate_type, '')) = (
+              COALESCE(r.location_id, -1), COALESCE(r.client_rate_type, '')) = (
          SELECT k.client_id, k.product_id, k.verification_unit_id,
-                COALESCE(k.location_id, -1), COALESCE(k.rate_type, '')
+                COALESCE(k.location_id, -1), COALESCE(k.client_rate_type, '')
          FROM rates k WHERE k.id = $1
        )
        ORDER BY h.changed_at DESC, h.id DESC`,

@@ -146,7 +146,7 @@ export const billingRepository = {
   async caseTasks(caseId: string): Promise<BillingTaskLine[]> {
     return query<BillingTaskLine>(
       `SELECT ct.id AS task_id, ct.task_number, vu.name AS unit_name, au.name AS assignee_name,
-              ct.task_origin AS billing_class, ct.visit_type, rt.rate_type,
+              ct.task_origin AS billing_class, ct.visit_type, rt.client_rate_type,
               CASE WHEN ct.status = 'COMPLETED' THEN rt.bill_amount END AS bill_amount,
               COALESCE(ct.commission_amount, com.commission_amount) AS commission_amount,
               ct.bill_count, ${COMPLETED_BAND} AS tat_band,

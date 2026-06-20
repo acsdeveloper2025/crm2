@@ -162,8 +162,8 @@ const TASK_VIEW_COLS = `ct.id, ct.case_id, cs.case_number, ct.verification_unit_
          ct.task_number, ct.task_origin, ct.parent_task_id, ct.applicant_id, ap.name AS applicant_name,
          ct.address, ct.trigger, ct.priority,
          ct.status, ct.assigned_to, au.name AS assigned_to_name,
-         ct.visit_type, ct.distance_band, ct.bill_count, ct.pincode_id, ct.area_id,
-         (SELECT r.rate_type FROM rates r
+         ct.visit_type, ct.field_rate_type, ct.bill_count, ct.pincode_id, ct.area_id,
+         (SELECT r.client_rate_type FROM rates r
             WHERE r.client_id = cs.client_id AND r.product_id = cs.product_id
               AND r.verification_unit_id = ct.verification_unit_id AND r.is_active
               AND r.effective_from <= now() AND (r.effective_to IS NULL OR r.effective_to > now())
@@ -174,8 +174,8 @@ const TASK_VIEW_COLS = `ct.id, ct.case_id, cs.case_number, ct.verification_unit_
                        WHEN r.location_id = cs.pincode_id THEN 2
                        WHEN r.location_id IS NULL         THEN 1
                        ELSE 0 END) DESC,
-                     r.location_id
-            LIMIT 1) AS rate_type,
+                     r.location_id, r.id DESC
+            LIMIT 1) AS client_rate_type,
          -- ⚠ location rank mirrors RATE_LATERAL (ADR-0048, §G-8): a CASE rank so the location-less
          -- default outranks a non-matching scoped rate. Keep in sync with platform/billing/laterals.ts.
          ct.assigned_at,
@@ -387,6 +387,43 @@ export const caseRepository = {
     );
   },
 
+  /** Rate-type preview during task creation (ADR-0050): the CLIENT rate type mapped in Rate Management
+   *  for this client+product+unit at the chosen location (most-specific: exact location > location-less
+   *  default), and the distinct FIELD rate types configured in active Commission Management rows at that
+   *  location (client/product/unit Universal-aware). Types only — no amounts, no per-user resolution. */
+  async ratePreview(
+    clientId: number,
+    productId: number,
+    verificationUnitId: number,
+    locationId: number,
+  ): Promise<{ clientRateType: string | null; fieldRateTypes: string[] }> {
+    const [clientRow] = await query<{ clientRateType: string | null }>(
+      `SELECT r.client_rate_type
+         FROM rates r
+        WHERE r.client_id = $1 AND r.product_id = $2 AND r.verification_unit_id = $3 AND r.is_active
+          AND r.effective_from <= now() AND (r.effective_to IS NULL OR r.effective_to > now())
+        ORDER BY (CASE WHEN r.location_id = $4 THEN 2 WHEN r.location_id IS NULL THEN 1 ELSE 0 END) DESC,
+                 r.location_id, r.id DESC
+        LIMIT 1`,
+      [clientId, productId, verificationUnitId, locationId],
+    );
+    const fieldRows = await query<{ fieldRateType: string }>(
+      `SELECT DISTINCT cmr.field_rate_type
+         FROM commission_rates cmr
+        WHERE cmr.is_active AND cmr.location_id = $4 AND cmr.field_rate_type IS NOT NULL
+          AND cmr.effective_from <= now() AND (cmr.effective_to IS NULL OR cmr.effective_to > now())
+          AND (cmr.client_id IS NULL OR cmr.client_id = $1)
+          AND (cmr.product_id IS NULL OR cmr.product_id = $2)
+          AND (cmr.verification_unit_id IS NULL OR cmr.verification_unit_id = $3)
+        ORDER BY cmr.field_rate_type`,
+      [clientId, productId, verificationUnitId, locationId],
+    );
+    return {
+      clientRateType: clientRow?.clientRateType ?? null,
+      fieldRateTypes: fieldRows.map((r) => r.fieldRateType),
+    };
+  },
+
   /** True only if every unit id is CPV-enabled for the client+product. */
   async allUnitsEnabled(clientId: number, productId: number, unitIds: number[]): Promise<boolean> {
     const rows = await query<{ n: number }>(
@@ -429,6 +466,8 @@ export const caseRepository = {
       // ADR-0024 assign-at-create (service has re-checked eligibility): when assigneeId is set the
       // task is born ASSIGNED with its pool (visitType) + location; otherwise it stays PENDING.
       visitType?: string | undefined;
+      // ADR-0050: trip distance band stamped on assign-at-create (commission resolution key).
+      fieldRateType?: string | undefined;
       pincodeId?: number | undefined;
       areaId?: number | undefined;
       assigneeId?: string | undefined;
@@ -449,11 +488,15 @@ export const caseRepository = {
           const [inserted] = await q<{ id: string }>(
             `INSERT INTO case_tasks
                (case_id, verification_unit_id, applicant_id, address, trigger, priority,
-                visit_type, pincode_id, area_id, assigned_to,
+                visit_type, field_rate_type, pincode_id, area_id, assigned_to,
                 assigned_by, assigned_at, status,
                 task_number, created_by, updated_by, latitude, longitude, tat_hours)
              VALUES ($1, $2, $3, $4, $5, $6,
-                     $7, $8, $9, $10,
+                     -- ADR-0050: an OFFICE task's field_rate_type is auto-stamped 'OFFICE' (desk work
+                     -- has no LOCAL/OGL trip band); FIELD uses the picked $16 (LOCAL/OGL).
+                     -- $7::varchar: $7 also feeds the varchar visit_type col above, so the literal
+                     -- compare must not re-deduce it as text (else inconsistent types for parameter $7).
+                     $7, CASE WHEN $7::varchar = 'OFFICE' THEN 'OFFICE' ELSE $16 END, $8, $9, $10,
                      CASE WHEN $10::uuid IS NULL THEN NULL ELSE $11::uuid END,
                      CASE WHEN $10::uuid IS NULL THEN NULL ELSE now() END,
                      CASE WHEN $10::uuid IS NULL THEN 'PENDING' ELSE 'ASSIGNED' END,
@@ -481,6 +524,7 @@ export const caseRepository = {
               t.latitude ?? null,
               t.longitude ?? null,
               t.tatHours ?? null,
+              t.fieldRateType ?? null,
             ],
           );
           // Append-only assignment history for a task assigned at creation (first event = ASSIGNED).
@@ -663,7 +707,11 @@ export const caseRepository = {
       return await withTransaction(async (q) => {
         const [updated] = await q<{ id: string; previousAssignedTo: string | null }>(
           `UPDATE case_tasks
-           SET assigned_to = $3, status = 'ASSIGNED', visit_type = $4, distance_band = $5,
+           SET assigned_to = $3, status = 'ASSIGNED', visit_type = $4,
+               -- ADR-0050: OFFICE auto-stamps 'OFFICE' (desk work has no LOCAL/OGL); FIELD uses $5.
+               -- $4::varchar: $4 also feeds the varchar visit_type col, so the literal compare must
+               -- not re-deduce it as text (else inconsistent types for parameter $4).
+               field_rate_type = CASE WHEN $4::varchar = 'OFFICE' THEN 'OFFICE' ELSE $5 END,
                bill_count = $6, assigned_by = $7, assigned_at = now(),
                version = version + 1, updated_by = $7, updated_at = now()
            FROM (SELECT id, assigned_to AS prev FROM case_tasks WHERE id = $1 AND case_id = $2) p
@@ -674,7 +722,7 @@ export const caseRepository = {
             caseId,
             input.assignedTo,
             input.visitType,
-            input.distanceBand ?? null,
+            input.fieldRateType ?? null,
             input.billCount,
             actorId,
             expectedVersion,
@@ -688,7 +736,7 @@ export const caseRepository = {
         await q(
           `INSERT INTO task_assignment_history
              (task_id, case_id, action, assigned_to, previous_assigned_to,
-              visit_type, distance_band, bill_count, assigned_by)
+              visit_type, field_rate_type, bill_count, assigned_by)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
           [
             taskId,
@@ -697,7 +745,7 @@ export const caseRepository = {
             input.assignedTo,
             updated.previousAssignedTo,
             input.visitType,
-            input.distanceBand ?? null,
+            input.fieldRateType ?? null,
             input.billCount,
             actorId,
           ],
@@ -723,7 +771,7 @@ export const caseRepository = {
     return withTransaction(async (q) => {
       const [updated] = await q<{ id: string; previousAssignedTo: string | null }>(
         `UPDATE case_tasks
-         SET assigned_to = NULL, status = 'PENDING', visit_type = NULL, distance_band = NULL,
+         SET assigned_to = NULL, status = 'PENDING', visit_type = NULL, field_rate_type = NULL,
              bill_count = 1, assigned_by = NULL, assigned_at = NULL,
              version = version + 1, updated_by = $3, updated_at = now()
          FROM (SELECT id, assigned_to AS prev FROM case_tasks WHERE id = $1 AND case_id = $2) p
@@ -1022,11 +1070,13 @@ export const caseRepository = {
         const [inserted] = await q<{ id: string }>(
           `INSERT INTO case_tasks
              (case_id, verification_unit_id, applicant_id, address, trigger, priority,
-              visit_type, pincode_id, area_id, distance_band, bill_count, assigned_to,
+              visit_type, pincode_id, area_id, field_rate_type, bill_count, assigned_to,
               assigned_by, assigned_at, status,
               task_number, parent_task_id, task_origin, created_by, updated_by)
            SELECT p.case_id, p.verification_unit_id, p.applicant_id, p.address, p.trigger, p.priority,
-                  $3, p.pincode_id, p.area_id, $4, $5, $6,
+                  -- ADR-0050: a reassigned OFFICE task also auto-stamps field_rate_type 'OFFICE' (else
+                  -- its desk commission can't resolve). $3::varchar guards the SELECT-list/compare reuse.
+                  $3, p.pincode_id, p.area_id, CASE WHEN $3::varchar = 'OFFICE' THEN 'OFFICE' ELSE $4 END, $5, $6,
                   $7, now(), 'ASSIGNED',
                   (SELECT case_number FROM cases WHERE id = $1) || '-' || $8::text,
                   p.id, p.task_origin, $7, $7
@@ -1037,7 +1087,7 @@ export const caseRepository = {
             caseId,
             revokedTaskId,
             input.visitType,
-            input.distanceBand ?? null,
+            input.fieldRateType ?? null,
             input.billCount,
             input.assignedTo,
             actorId,
@@ -1048,7 +1098,7 @@ export const caseRepository = {
         await q(
           `INSERT INTO task_assignment_history
              (task_id, case_id, action, assigned_to, previous_assigned_to,
-              visit_type, distance_band, bill_count, assigned_by)
+              visit_type, field_rate_type, bill_count, assigned_by)
            VALUES ($1, $2, 'ASSIGNED', $3, $4, $5, $6, $7, $8)`,
           [
             inserted.id,
@@ -1056,7 +1106,7 @@ export const caseRepository = {
             input.assignedTo,
             parent.assignedTo,
             input.visitType,
-            input.distanceBand ?? null,
+            input.fieldRateType ?? null,
             input.billCount,
             actorId,
           ],

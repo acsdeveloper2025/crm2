@@ -627,13 +627,13 @@ describe.skipIf(!RUN)('cases API', () => {
     const res = await request(app)
       .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
       .set(SA)
-      .send({ assignedTo: agent, visitType: 'FIELD', distanceBand: 'LOCAL', billCount: 2, version: 1 });
+      .send({ assignedTo: agent, visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 2, version: 1 });
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('ASSIGNED');
     expect(res.body.assignedTo).toBe(agent);
     expect(res.body.assignedToName).toBe('FIELD ONE');
     expect(res.body.visitType).toBe('FIELD');
-    expect(res.body.distanceBand).toBe('LOCAL');
+    expect(res.body.fieldRateType).toBe('LOCAL');
     expect(res.body.billCount).toBe(2);
     expect(res.body.assignedAt).toBeTruthy();
 
@@ -657,18 +657,18 @@ describe.skipIf(!RUN)('cases API', () => {
   it('reassigns to a different executive, then unassigns back to PENDING', async () => {
     const { caseId, taskId } = await seedCaseWithTask('AS2');
     // ADR-0024: the pool follows the chosen visit type. Reassign across pools — a FIELD agent first,
-    // then re-pool to OFFICE and a KYC verifier (the task is unlocated → no territory gate).
+    // then re-pool to OFFICE and a backend user (the task is unlocated → no territory gate).
     const a1 = await createUser({ username: 'fa_as2a', name: 'AGENT A', role: 'FIELD_AGENT' });
     const a2 = await createUser({ username: 'kyc_as2b', name: 'OFFICE B', role: 'KYC_VERIFIER' });
 
     await request(app)
       .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
       .set(SA)
-      .send({ assignedTo: a1, visitType: 'FIELD', distanceBand: 'LOCAL', billCount: 1, version: 1 });
+      .send({ assignedTo: a1, visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 1, version: 1 });
     const reassign = await request(app)
       .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
       .set(SA)
-      .send({ assignedTo: a2, visitType: 'OFFICE', distanceBand: 'OGL', billCount: 1, version: 2 });
+      .send({ assignedTo: a2, visitType: 'OFFICE', fieldRateType: 'OGL', billCount: 1, version: 2 });
     expect(reassign.status).toBe(200);
     expect(reassign.body.assignedTo).toBe(a2);
     expect(reassign.body.visitType).toBe('OFFICE');
@@ -690,7 +690,7 @@ describe.skipIf(!RUN)('cases API', () => {
     const res = await request(app)
       .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
       .set(SA)
-      .send({ assignedTo: backend, visitType: 'FIELD', distanceBand: 'LOCAL', billCount: 1, version: 1 });
+      .send({ assignedTo: backend, visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 1, version: 1 });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('INVALID_ASSIGNEE');
   });
@@ -710,7 +710,7 @@ describe.skipIf(!RUN)('cases API', () => {
     const res = await request(app)
       .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
       .set(SA)
-      .send({ assignedTo: agent, visitType: 'FIELD', distanceBand: 'LOCAL', billCount: 1, version: 1 });
+      .send({ assignedTo: agent, visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 1, version: 1 });
     expect(res.status).toBe(409);
     expect(res.body.error).toBe('TASK_NOT_ASSIGNABLE');
   });
@@ -719,7 +719,7 @@ describe.skipIf(!RUN)('cases API', () => {
     const { caseId, taskId } = await seedCaseWithTask('CP1');
     const verifier = await createUser({ username: 'kyc_cp1', name: 'DESK V', role: 'KYC_VERIFIER' });
     const be = await createUser({ username: 'be_cp1', name: 'BACKEND BOB', role: 'BACKEND_USER' });
-    // a desk (OFFICE) task assigned to the read-only verifier (version 1 → 2)
+    // a desk (OFFICE) task assigned to the desk pool user (version 1 → 2)
     expect(
       (
         await request(app)
@@ -764,14 +764,15 @@ describe.skipIf(!RUN)('cases API', () => {
 
   it('finalize guards: read-only verifier 403, out-of-scope 404, remark required 400, stale + terminal 409', async () => {
     const { caseId, taskId } = await seedCaseWithTask('CP2');
-    const verifier = await createUser({ username: 'kyc_cp2', name: 'DESK V2', role: 'KYC_VERIFIER' });
+    const desk = await createUser({ username: 'kyc_cp2_desk', name: 'DESK V2', role: 'KYC_VERIFIER' });
+    const verifier = await createUser({ username: 'kyc_cp2', name: 'RO V2', role: 'KYC_VERIFIER' });
     const outsider = await createUser({ username: 'be_cp2_out', name: 'BE OUT', role: 'BACKEND_USER' });
     expect(
       (
         await request(app)
           .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
           .set(SA)
-          .send({ assignedTo: verifier, visitType: 'OFFICE', billCount: 1, version: 1 })
+          .send({ assignedTo: desk, visitType: 'OFFICE', billCount: 1, version: 1 })
       ).status,
     ).toBe(200);
     const url = `/api/v2/cases/${caseId}/tasks/${taskId}/complete`;
@@ -870,8 +871,9 @@ describe.skipIf(!RUN)('cases API', () => {
     }
 
     // Drive the case's single task ASSIGNED → COMPLETED so the rollup parks the case in
-    // AWAITING_COMPLETION. OFFICE pool ⇒ a KYC verifier holds the task; SA (field_review.complete via
-    // grants_all) records the per-task result. Returns the case's current OCC version (from the API).
+    // AWAITING_COMPLETION. OFFICE pool ⇒ a KYC verifier (office exec) holds the task; SA
+    // (field_review.complete via grants_all) records the per-task result — the office exec relays
+    // only, it does not complete (ADR-0050). Returns the case's current OCC version (from the API).
     async function driveToAwaitingCompletion(caseId: string, taskId: string, tag: string): Promise<number> {
       const verifier = await createUser({
         username: `kyc_drv_${tag.toLowerCase()}`,
@@ -1049,6 +1051,34 @@ describe.skipIf(!RUN)('cases API', () => {
         ).status,
       ).toBe(409);
     });
+
+    it('ADR-0050: a MANAGER can close (complete) a desk task — granted field_review.complete (owner 2026-06-20)', async () => {
+      const { caseId, taskId } = await seedCaseWithTask('MGRC');
+      const manager = await createUser({ username: 'mgr_mgrc', name: 'MGR C', role: 'MANAGER' });
+      // the office exec reports to the manager → the case is in the manager's SUBTREE scope.
+      const officeExec = await createUser({
+        username: 'kyc_mgrc',
+        name: 'OFFICE EXEC',
+        role: 'KYC_VERIFIER',
+        reportsTo: manager,
+      });
+      // the desk task is assigned to the office exec (the OFFICE pool); the office exec relays only.
+      expect(
+        (
+          await request(app)
+            .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
+            .set(SA)
+            .send({ assignedTo: officeExec, visitType: 'OFFICE', billCount: 1, version: 1 })
+        ).status,
+      ).toBe(200);
+      // a MANAGER (NOT the assignee) records the result + closes — permission + scope, not ownership.
+      const res = await request(app)
+        .post(`/api/v2/cases/${caseId}/tasks/${taskId}/complete`)
+        .set(hdr('MANAGER', manager))
+        .send({ result: 'POSITIVE', remark: 'manager closed', version: 2 });
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('COMPLETED');
+    });
   });
 
   describe('office task intervention: revisit + reassign-after-revoke (ADR-0033, slice 3)', () => {
@@ -1172,7 +1202,7 @@ describe.skipIf(!RUN)('cases API', () => {
 
       await db!.pool.query(`UPDATE case_tasks SET status = 'REVOKED' WHERE id = $1`, [taskId]);
 
-      // a BACKEND_USER is not in the OFFICE pool → 400 INVALID_ASSIGNEE
+      // a BACKEND_USER is not in the OFFICE pool (ADR-0050: desk pool = KYC_VERIFIER) → 400 INVALID_ASSIGNEE
       const notDesk = await createUser({ username: 'be_ra2', name: 'BE', role: 'BACKEND_USER' });
       const bad = await request(app)
         .post(url)
@@ -1356,17 +1386,33 @@ describe.skipIf(!RUN)('cases API', () => {
       expect(bad.body.error).toBe('UNSUPPORTED_FILE_TYPE');
     });
 
-    it('scope + RBAC: the assigned read-only verifier reads; an outsider 404; case.view-only cannot upload (403)', async () => {
+    it('scope + RBAC: the assigned desk user reads; an outsider 404; case.view-only cannot upload (403)', async () => {
       const { caseId, taskId } = await seedCaseWithTask('AT3');
       const verifier = await createUser({ username: 'kyc_at3', name: 'DESK A', role: 'KYC_VERIFIER' });
       await request(app)
         .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
         .set(SA)
         .send({ assignedTo: verifier, visitType: 'OFFICE', billCount: 1, version: 1 });
+      // grant the case's client+product portfolio so the assigned desk user is in the case's scope
+      // (reads its own assigned task's documents).
+      const { client_id, product_id } = (
+        await db!.pool.query<{ client_id: number; product_id: number }>(
+          `SELECT client_id, product_id FROM cases WHERE id = $1`,
+          [caseId],
+        )
+      ).rows[0]!;
+      await request(app)
+        .post(`/api/v2/users/${verifier}/scope-assignments`)
+        .set(SA)
+        .send({ dimension: 'CLIENT', entityIds: [client_id] });
+      await request(app)
+        .post(`/api/v2/users/${verifier}/scope-assignments`)
+        .set(SA)
+        .send({ dimension: 'PRODUCT', entityIds: [product_id] });
       const att = await upload(caseId, PDF_BYTES, 'kyc.pdf', taskId);
       expect(att.status).toBe(201);
 
-      // the assigned read-only verifier (case.view) sees + signs their task's document
+      // the assigned desk user (case.view) sees + signs their task's document
       const vList = await request(app)
         .get(`/api/v2/cases/${caseId}/attachments`)
         .set(hdr('KYC_VERIFIER', verifier));
@@ -1479,7 +1525,7 @@ describe.skipIf(!RUN)('cases API', () => {
     const assign = await request(app)
       .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
       .set(FA)
-      .send({ assignedTo: agent, visitType: 'FIELD', distanceBand: 'LOCAL', billCount: 1, version: 1 });
+      .send({ assignedTo: agent, visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 1, version: 1 });
     expect(assign.status).toBe(403);
     expect((await request(app).get(`/api/v2/cases/${caseId}/assignable-users`)).status).toBe(401);
   });
@@ -1493,7 +1539,7 @@ describe.skipIf(!RUN)('cases API', () => {
     it('assign without version → 400 VERSION_REQUIRED; stale version → 409 STALE_UPDATE + current', async () => {
       const { caseId, taskId } = await seedCaseWithTask('OCC1');
       const agent = await createUser({ username: 'fa_occ1', name: 'OCC FA', role: 'FIELD_AGENT' });
-      const body = { assignedTo: agent, visitType: 'FIELD', distanceBand: 'LOCAL', billCount: 1 };
+      const body = { assignedTo: agent, visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 1 };
 
       const noVersion = await request(app)
         .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
@@ -1526,7 +1572,7 @@ describe.skipIf(!RUN)('cases API', () => {
       const a2 = await createUser({ username: 'fa_h2', name: 'HIST B', role: 'FIELD_AGENT' });
       const post = (path: string, body: object) =>
         request(app).post(`/api/v2/cases/${caseId}/tasks/${taskId}/${path}`).set(SA).send(body);
-      const attrs = { visitType: 'FIELD', distanceBand: 'LOCAL', billCount: 1 };
+      const attrs = { visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 1 };
       expect((await post('assign', { ...attrs, assignedTo: a1, version: 1 })).status).toBe(200);
       expect((await post('assign', { ...attrs, assignedTo: a2, version: 2 })).status).toBe(200);
       expect((await post('unassign', { version: 3 })).status).toBe(200);
@@ -1558,7 +1604,7 @@ describe.skipIf(!RUN)('cases API', () => {
       const res = await request(app).post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`).set(SA).send({
         assignedTo: kyc,
         visitType: 'FIELD',
-        distanceBand: 'LOCAL',
+        fieldRateType: 'LOCAL',
         billCount: 1,
         version: 1,
       });
@@ -1608,7 +1654,7 @@ describe.skipIf(!RUN)('cases API', () => {
       );
       const taskId = tasks[0]!.id;
       const fa = await createUser({ username: 'fa_te', name: 'TE FA', role: 'FIELD_AGENT' });
-      const body = { assignedTo: fa, visitType: 'FIELD', distanceBand: 'LOCAL', billCount: 1, version: 1 };
+      const body = { assignedTo: fa, visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 1, version: 1 };
 
       // The task is located → the FIELD agent must COVER that pincode/area; with zero assignments
       // they are excluded (fail-closed).
@@ -1644,7 +1690,7 @@ describe.skipIf(!RUN)('cases API', () => {
       const res = await request(app)
         .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
         .set(hdr2('TEAM_LEADER', tl))
-        .send({ assignedTo: fa, visitType: 'FIELD', distanceBand: 'LOCAL', billCount: 1, version: 1 });
+        .send({ assignedTo: fa, visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 1, version: 1 });
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('TASK_NOT_FOUND');
     });
@@ -1687,7 +1733,7 @@ describe.skipIf(!RUN)('cases API', () => {
     it('eligible-assignees: FIELD needs the territory; OFFICE returns the desk pool', async () => {
       const { loc, caseId } = await locatedCase('PEF');
       const fa = await createUser({ username: 'fa_pef', name: 'PEF FA', role: 'FIELD_AGENT' });
-      const kyc = await createUser({ username: 'kyc_pef', name: 'PEF KYC', role: 'KYC_VERIFIER' });
+      const desk = await createUser({ username: 'kyc_pef', name: 'PEF DESK', role: 'KYC_VERIFIER' });
       const fieldUrl = `/api/v2/cases/${caseId}/eligible-assignees?visitType=FIELD&areaId=${loc}&pincodeId=${loc}`;
 
       // FIELD: the agent does not yet cover the location → excluded (fail-closed).
@@ -1701,14 +1747,14 @@ describe.skipIf(!RUN)('cases API', () => {
       const field = await request(app).get(fieldUrl).set(SA);
       expect(field.status).toBe(200);
       expect(ids(field.body)).toContain(fa);
-      expect(ids(field.body)).not.toContain(kyc); // wrong pool for FIELD
+      expect(ids(field.body)).not.toContain(desk); // wrong pool for FIELD
 
-      // OFFICE: the KYC desk pool, no territory needed; field agents excluded.
+      // OFFICE: the backend desk pool, no territory needed; field agents excluded.
       const office = await request(app)
         .get(`/api/v2/cases/${caseId}/eligible-assignees?visitType=OFFICE`)
         .set(SA);
       expect(office.status).toBe(200);
-      expect(ids(office.body)).toContain(kyc);
+      expect(ids(office.body)).toContain(desk);
       expect(ids(office.body)).not.toContain(fa);
     });
 
@@ -1720,6 +1766,7 @@ describe.skipIf(!RUN)('cases API', () => {
         applicantId,
         address: ADDR,
         visitType: 'FIELD',
+        fieldRateType: 'LOCAL', // ADR-0050: FIELD assignment requires a field-rate-type
         pincodeId: loc,
         areaId: loc,
         assigneeId: fa,
@@ -1760,7 +1807,7 @@ describe.skipIf(!RUN)('cases API', () => {
       const { ctx, loc, caseId, applicantId } = await locatedCase('RT');
       // a location-specific LOCAL rate + a default (location-less) OGL rate → the specific one wins.
       await db!.pool.query(
-        `INSERT INTO rates (client_id, product_id, verification_unit_id, location_id, rate_type, amount)
+        `INSERT INTO rates (client_id, product_id, verification_unit_id, location_id, client_rate_type, amount)
          VALUES ($1, $2, $3, NULL, 'OGL', 250), ($1, $2, $3, $4, 'LOCAL', 100)`,
         [ctx.clientId, ctx.productId, ctx.enabledUnitId, loc],
       );
@@ -1780,10 +1827,10 @@ describe.skipIf(!RUN)('cases API', () => {
         });
       expect(add.status).toBe(201);
       const detail = await request(app).get(`/api/v2/cases/${caseId}`).set(SA);
-      const t = (detail.body.tasks as Array<{ areaId: number | null; rateType: string | null }>).find(
+      const t = (detail.body.tasks as Array<{ areaId: number | null; clientRateType: string | null }>).find(
         (x) => x.areaId === loc,
       );
-      expect(t?.rateType).toBe('LOCAL');
+      expect(t?.clientRateType).toBe('LOCAL');
     });
 
     it('rate type falls back to the CPV rate when the task has NO location', async () => {
@@ -1810,7 +1857,7 @@ describe.skipIf(!RUN)('cases API', () => {
         )
       ).rows[0]!.id;
       await db!.pool.query(
-        `INSERT INTO rates (client_id, product_id, verification_unit_id, location_id, rate_type, amount)
+        `INSERT INTO rates (client_id, product_id, verification_unit_id, location_id, client_rate_type, amount)
          VALUES ($1, $2, $3, $4, 'OUTSTATION', 400)`,
         [ctx.clientId, ctx.productId, ctx.enabledUnitId, someLoc],
       );
@@ -1821,8 +1868,8 @@ describe.skipIf(!RUN)('cases API', () => {
           .send({ tasks: [{ verificationUnitId: ctx.enabledUnitId, applicantId, address: ADDR }] }),
       );
       const detail = await request(app).get(`/api/v2/cases/${caseId}`).set(SA);
-      const t = (detail.body.tasks as Array<{ rateType: string | null }>)[0];
-      expect(t?.rateType).toBe('OUTSTATION');
+      const t = (detail.body.tasks as Array<{ clientRateType: string | null }>)[0];
+      expect(t?.clientRateType).toBe('OUTSTATION');
     });
   });
 
@@ -1851,7 +1898,7 @@ describe.skipIf(!RUN)('cases API', () => {
       const asg = await request(app)
         .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
         .set(SA)
-        .send({ assignedTo: fa1, visitType: 'FIELD', distanceBand: 'LOCAL', billCount: 1, version: 1 });
+        .send({ assignedTo: fa1, visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 1, version: 1 });
       expect(asg.status).toBe(200);
 
       expect(await visibleIds(hdr('FIELD_AGENT', fa1))).toContain(caseId); // the assignee
@@ -1879,7 +1926,7 @@ describe.skipIf(!RUN)('cases API', () => {
       await request(app)
         .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
         .set(SA)
-        .send({ assignedTo: fa1, visitType: 'FIELD', distanceBand: 'LOCAL', billCount: 1, version: 1 });
+        .send({ assignedTo: fa1, visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 1, version: 1 });
 
       expect((await request(app).get(`/api/v2/cases/${caseId}`).set(hdr('FIELD_AGENT', fa1))).status).toBe(
         200,

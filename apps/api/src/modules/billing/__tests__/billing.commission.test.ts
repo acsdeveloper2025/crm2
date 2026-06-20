@@ -103,26 +103,47 @@ async function seedRate(
       productId: ctx.productId,
       verificationUnitId: ctx.unitId,
       locationId,
-      rateType: 'LOCAL',
+      clientRateType: 'LOCAL',
       amount,
     }),
   );
 }
 
 /**
- * Create a commission_rates row directly (the create endpoint does not carry the new dimensions
- * until Task 6). Returns the row id. `locationId`/`tatBand` default to NULL (= applies generally).
+ * Create a commission_rates row directly as a FULLY-SPECIFIED tariff line (ADR-0050): the resolver
+ * now matches EXACTLY on user + client + product + verification unit + rate_type (= the task's
+ * field_rate_type) + tat_band + location (one of the task/case locations — no location-less default).
+ * Defaults: `fieldRateType` LOCAL, `tatBand` 4 — these tasks submit within ~1 minute of assignment, so the
+ * submit-in band resolves to the smallest active `tat_policies` band (the migration seeds 4/6/8/12/24/48
+ * hours, and CEIL(1 min / 60) = 1h → the 4-hour band). Returns the row id.
  */
+const DEFAULT_TAT_BAND = 4; // smallest active migration-seeded tat_policy ≥ a sub-minute submit
 async function seedCommissionRate(o: {
   userId: string;
-  locationId?: number;
+  clientId: number;
+  productId: number;
+  verificationUnitId: number;
+  locationId: number;
+  fieldRateType?: 'LOCAL' | 'OGL';
+  tatBand?: number;
   amount: number;
 }): Promise<number> {
   const [row] = await query<{ id: number }>(
-    `INSERT INTO commission_rates (user_id, location_id, amount, currency, effective_from)
-     VALUES ($1, $2, $3, 'INR', now() - interval '2 days')
+    `INSERT INTO commission_rates
+       (user_id, client_id, product_id, verification_unit_id, location_id, field_rate_type, tat_band,
+        amount, currency, effective_from)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'INR', now() - interval '2 days')
      RETURNING id`,
-    [o.userId, o.locationId ?? null, o.amount],
+    [
+      o.userId,
+      o.clientId,
+      o.productId,
+      o.verificationUnitId,
+      o.locationId,
+      o.fieldRateType ?? 'LOCAL',
+      o.tatBand ?? DEFAULT_TAT_BAND,
+      o.amount,
+    ],
   );
   return row!.id;
 }
@@ -164,13 +185,14 @@ async function driveToCompleted(
   taskId: string,
   fa: string,
   locationId?: number,
+  fieldRateType: 'LOCAL' | 'OGL' = 'LOCAL',
 ): Promise<void> {
   expect(
     (
       await request(app)
         .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
         .set(SA)
-        .send({ assignedTo: fa, visitType: 'FIELD', distanceBand: 'LOCAL', billCount: 1, version: 1 })
+        .send({ assignedTo: fa, visitType: 'FIELD', fieldRateType, billCount: 1, version: 1 })
     ).status,
   ).toBe(200);
   expect(
@@ -201,13 +223,14 @@ async function driveToSubmitted(
   taskId: string,
   fa: string,
   locationId?: number,
+  fieldRateType: 'LOCAL' | 'OGL' = 'LOCAL',
 ): Promise<void> {
   expect(
     (
       await request(app)
         .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
         .set(SA)
-        .send({ assignedTo: fa, visitType: 'FIELD', distanceBand: 'LOCAL', billCount: 1, version: 1 })
+        .send({ assignedTo: fa, visitType: 'FIELD', fieldRateType, billCount: 1, version: 1 })
     ).status,
   ).toBe(200);
   expect(
@@ -280,13 +303,30 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
     await seedRate(ctx, l1, 350);
     await seedRate(ctx, l2, 500);
 
-    // Commission for agent U: CR-base ₹50 as the all-NULL universal default + CR-L2 ₹90 scoped to L2.
-    // Neither carries a rate_type — the per-location resolution proves the decoupling. T1 (@L1) has no
-    // L1-specific row so it resolves the location-less default (₹50); T2 (@L2) resolves CR-L2 (₹90).
-    // Task 6's `revise` carries dimensions forward, so revising CR-L2 keeps location=L2 and never
-    // collides with the all-NULL base under the no-overlap EXCLUDE.
-    await seedCommissionRate({ userId: fa, amount: 50 });
-    crL2Id = await seedCommissionRate({ userId: fa, locationId: l2, amount: 90 });
+    // Commission for agent U (ADR-0050 — fully-specified exact-match tariff lines; tat_band defaults to
+    // the 4-hour band these ~1-min submits resolve to): CR-L1 (LOCAL @ L1, ₹50) + CR-L2 (OGL @ L2, ₹90).
+    // T1 is assigned LOCAL @ L1
+    // and resolves CR-L1 (₹50); T2 is assigned OGL @ L2 and resolves CR-L2 (₹90) — a different amount for
+    // the same executive when the location AND distance band differ. (The dedicated same-location §E test
+    // below isolates the LOCAL-vs-OGL pricing on its own.)
+    await seedCommissionRate({
+      userId: fa,
+      clientId: ctx.clientId,
+      productId: ctx.productId,
+      verificationUnitId: ctx.unitId,
+      locationId: l1,
+      fieldRateType: 'LOCAL',
+      amount: 50,
+    });
+    crL2Id = await seedCommissionRate({
+      userId: fa,
+      clientId: ctx.clientId,
+      productId: ctx.productId,
+      verificationUnitId: ctx.unitId,
+      locationId: l2,
+      fieldRateType: 'OGL',
+      amount: 90,
+    });
 
     // One case with two applicants → two tasks (T1 @ L1, T2 @ L2), same assignee U.
     const created = seeded<{ id: string }>(
@@ -315,11 +355,12 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
     ]);
     const t1Id = byApplicant.get(applicants[0]!.id)!;
     const t2Id = byApplicant.get(applicants[1]!.id)!;
-    // Each task's location (area=pincode) is set inside driveToCompleted — after start, before complete
-    // — so the commission snapshot (stamped at completion, ADR-0046 §4) resolves the correct per-location
-    // rate. (It cannot be set before assign: assign validates the assignee's territory eligibility.)
-    await driveToCompleted(caseId, t1Id, fa, l1); // stamps commission_amount: T1 @ L1 → 50
-    await driveToCompleted(caseId, t2Id, fa, l2); // → 90
+    // Each task's location (area=pincode) is set inside driveToCompleted — after start, before submit —
+    // so the commission snapshot (frozen at SUBMIT, ADR-0047) resolves the correct tariff line. (It can't
+    // be set before assign: assign validates the assignee's territory eligibility.) T1 → LOCAL @ L1 (CR-L1
+    // ₹50); T2 → OGL @ L2 (CR-L2 ₹90).
+    await driveToCompleted(caseId, t1Id, fa, l1, 'LOCAL'); // stamps commission_amount: T1 LOCAL @ L1 → 50
+    await driveToCompleted(caseId, t2Id, fa, l2, 'OGL'); // → 90
 
     // Pin a PAST completion instant + a small completed-in band so the as-of-completed_at reads + the
     // band derivation stay deterministic. The snapshot was already stamped at the live completion above.
@@ -338,21 +379,157 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
     t2Number = nums.find((n) => n.id === t2Id)!.taskNumber;
   });
 
-  it('§E: commission differs per-location for the same executive (decoupled from rate_type)', async () => {
+  it('§E: commission resolves the exact-match tariff line per task (ADR-0050)', async () => {
     const lines = await billingRepository.caseTasks(caseId);
     const t1 = lines.find((l) => l.taskNumber === t1Number)!;
     const t2 = lines.find((l) => l.taskNumber === t2Number)!;
-    expect(t1.commissionAmount).toBe(50); // CR-base @ L1
-    expect(t2.commissionAmount).toBe(90); // CR-L2 @ L2 — different amount, same executive, only location differs
-    // sanity: the client bill is the per-location rate (unchanged RATE_LATERAL)
+    expect(t1.commissionAmount).toBe(50); // CR-L1 (LOCAL @ L1)
+    expect(t2.commissionAmount).toBe(90); // CR-L2 (OGL @ L2) — different exact-match line, same executive
+    // sanity: the client bill is the per-location rate (unchanged RATE_LATERAL — independent of distance band)
     expect(t1.billAmount).toBe(350);
     expect(t2.billAmount).toBe(500);
 
     const { items } = await billingRepository.listCases(baseOpts);
     const c = items.find((i) => i.caseId === caseId)!;
-    expect(c.commissionTotal).toBe(140); // 50 + 90 (was 100 when coupled to rate_type)
+    expect(c.commissionTotal).toBe(140); // 50 + 90
     expect(c.billTotal).toBe(850); // 350 + 500
     expect(c.completedTaskCount).toBe(2);
+  });
+
+  it('§E (ADR-0050): LOCAL and OGL price differently for the SAME exec+client+product+unit+location+band', async () => {
+    // Isolate the distance-band dimension: two tasks at the SAME location, same client/product/unit/band,
+    // assigned LOCAL vs OGL. Two commission rows identical on every dimension EXCEPT rate_type
+    // (LOCAL=₹50, OGL=₹90) — proving rate_type is a resolution key (re-coupled) so the bands can carry
+    // different amounts. This was impossible under ADR-0046 (rate_type decoupled → the two rows collided).
+    const ctx = await seedCpvUnit('LO');
+    const fa = await createUser({ username: 'lo_fa', name: 'LO FA', role: 'FIELD_AGENT' });
+    const loc = await seedLocation('400077', 'LOAREA'); // ONE shared location for both tasks
+    await seedRate(ctx, loc, 200); // client bill rate (location-only; same for both)
+    // Two tariff lines differing ONLY in rate_type.
+    await seedCommissionRate({
+      userId: fa,
+      clientId: ctx.clientId,
+      productId: ctx.productId,
+      verificationUnitId: ctx.unitId,
+      locationId: loc,
+      fieldRateType: 'LOCAL',
+      amount: 50,
+    });
+    await seedCommissionRate({
+      userId: fa,
+      clientId: ctx.clientId,
+      productId: ctx.productId,
+      verificationUnitId: ctx.unitId,
+      locationId: loc,
+      fieldRateType: 'OGL',
+      amount: 90,
+    });
+
+    const created = seeded<{ id: string }>(
+      await request(app)
+        .post('/api/v2/cases')
+        .set(SA)
+        .send({
+          clientId: ctx.clientId,
+          productId: ctx.productId,
+          backendContactNumber: BC,
+          applicants: [
+            { name: 'LO A1', mobile: '9000012345' },
+            { name: 'LO A2', mobile: '9000012346' },
+          ],
+          dedupeDecision: 'NO_DUPLICATES_FOUND',
+        }),
+    );
+    const applicants = seeded<{ applicants: { id: string }[] }>(
+      await request(app).get(`/api/v2/cases/${created.id}`).set(SA),
+    ).applicants;
+    const byApplicant = await addTasks(created.id, ctx.unitId, [
+      { applicantId: applicants[0]!.id, address: '1 LO ROAD' },
+      { applicantId: applicants[1]!.id, address: '2 LO ROAD' },
+    ]);
+    const localTaskId = byApplicant.get(applicants[0]!.id)!;
+    const oglTaskId = byApplicant.get(applicants[1]!.id)!;
+    await driveToCompleted(created.id, localTaskId, fa, loc, 'LOCAL'); // → CR LOCAL ₹50
+    await driveToCompleted(created.id, oglTaskId, fa, loc, 'OGL'); // → CR OGL ₹90
+
+    const lines = await billingRepository.caseTasks(created.id);
+    expect(lines.find((l) => l.taskId === localTaskId)!.commissionAmount).toBe(50); // LOCAL
+    expect(lines.find((l) => l.taskId === oglTaskId)!.commissionAmount).toBe(90); // OGL — same context, different band
+
+    const { items } = await billingRepository.listCases(baseOpts);
+    const c = items.find((i) => i.caseId === created.id)!;
+    expect(c.commissionTotal).toBe(140); // 50 (LOCAL) + 90 (OGL)
+    expect(c.billTotal).toBe(400); // 200 + 200 — client bill is location-only, identical for both
+  });
+
+  it('§4 office (ADR-0050): a flat OFFICE commission resolves for a desk task — auto-stamped field_rate_type=OFFICE, location-less', async () => {
+    const ctx = await seedCpvUnit('OFF');
+    // the office executive = the OFFICE assignment pool (relays the task; never completes it).
+    const officeExec = await createUser({ username: 'off_kyc', name: 'OFF DESK', role: 'KYC_VERIFIER' });
+    // A location-less client rate (the desk task has no trip/location) so the bill resolves, and a FLAT
+    // OFFICE commission row (Universal client/product/unit/band, location-less) — e.g. "PAN desk = ₹20".
+    await query(
+      `INSERT INTO rates (client_id, product_id, verification_unit_id, location_id, client_rate_type,
+                          amount, currency, effective_from)
+       VALUES ($1, $2, $3, NULL, 'LOCAL', 300, 'INR', now() - interval '2 days')`,
+      [ctx.clientId, ctx.productId, ctx.unitId],
+    );
+    await query(
+      `INSERT INTO commission_rates (user_id, client_id, product_id, verification_unit_id, location_id,
+                                     field_rate_type, tat_band, amount, currency, effective_from)
+       VALUES ($1, NULL, NULL, NULL, NULL, 'OFFICE', NULL, 20, 'INR', now() - interval '2 days')`,
+      [officeExec],
+    );
+
+    const created = seeded<{ id: string }>(
+      await request(app)
+        .post('/api/v2/cases')
+        .set(SA)
+        .send({
+          clientId: ctx.clientId,
+          productId: ctx.productId,
+          backendContactNumber: BC,
+          applicants: [{ name: 'OFF APP', mobile: '9000099999' }],
+          dedupeDecision: 'NO_DUPLICATES_FOUND',
+        }),
+    );
+    const applicantId = seeded<{ applicants: { id: string }[] }>(
+      await request(app).get(`/api/v2/cases/${created.id}`).set(SA),
+    ).applicants[0]!.id;
+    const taskId = (await addTasks(created.id, ctx.unitId, [{ applicantId, address: '9 DESK LANE' }])).get(
+      applicantId,
+    )!;
+
+    // Assign OFFICE → the server auto-stamps field_rate_type='OFFICE' (no LOCAL/OGL picker, no location).
+    expect(
+      (
+        await request(app)
+          .post(`/api/v2/cases/${created.id}/tasks/${taskId}/assign`)
+          .set(SA)
+          .send({ assignedTo: officeExec, visitType: 'OFFICE', billCount: 1, version: 1 })
+      ).status,
+    ).toBe(200);
+    const [stamped] = await query<{ fieldRateType: string }>(
+      `SELECT field_rate_type FROM case_tasks WHERE id = $1`,
+      [taskId],
+    );
+    expect(stamped!.fieldRateType).toBe('OFFICE'); // desk auto-stamp
+
+    // The closer (SA here; in production BACKEND_USER / MANAGER / TEAM_LEADER) completes → COMPLETED,
+    // which freezes the flat OFFICE commission via stampCommissionSnapshot.
+    expect(
+      (
+        await request(app)
+          .post(`/api/v2/cases/${created.id}/tasks/${taskId}/complete`)
+          .set(SA)
+          .send({ result: 'POSITIVE', remark: 'desk verified', version: 2 })
+      ).status,
+    ).toBe(200);
+
+    const lines = await billingRepository.caseTasks(created.id);
+    const line = lines.find((l) => l.taskId === taskId)!;
+    expect(line.commissionAmount).toBe(20); // flat OFFICE row (location-less commission branch)
+    expect(line.billAmount).toBe(300); // location-less client rate
   });
 
   it('§4: revising a commission rate after completion does NOT rewrite historical commission', async () => {
@@ -412,7 +589,7 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
       [ctxShared.clientId, ctxShared.productId, ctxShared.unitId, l1Id],
     );
     await query(
-      `INSERT INTO rates (client_id, product_id, verification_unit_id, location_id, rate_type, amount, effective_from)
+      `INSERT INTO rates (client_id, product_id, verification_unit_id, location_id, client_rate_type, amount, effective_from)
        VALUES ($1, $2, $3, NULL, 'LOCAL', 100, now() - interval '2 days')`,
       [ctxShared.clientId, ctxShared.productId, ctxShared.unitId],
     );
@@ -441,7 +618,16 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
     const fa = await createUser({ username: 'sb_fa', name: 'SB FA', role: 'FIELD_AGENT' });
     const loc = await seedLocation('500001', 'SBAREA');
     await seedRate(ctx, loc, 350); // client bill rate
-    await seedCommissionRate({ userId: fa, amount: 50 }); // universal field commission
+    // Field commission as a fully-specified LOCAL tariff line @ loc, tat_band -1 (no tat_policies seeded).
+    await seedCommissionRate({
+      userId: fa,
+      clientId: ctx.clientId,
+      productId: ctx.productId,
+      verificationUnitId: ctx.unitId,
+      locationId: loc,
+      fieldRateType: 'LOCAL',
+      amount: 50,
+    });
 
     const created = seeded<{ id: string }>(
       await request(app)

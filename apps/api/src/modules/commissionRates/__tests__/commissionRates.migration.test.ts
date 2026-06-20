@@ -32,10 +32,10 @@ describe.skipIf(!RUN)('0079 commission_rates dimensions', () => {
     expect(cols.every((c) => c.isNullable === 'YES')).toBe(true);
   });
 
-  it('rate_type is now nullable', async () => {
+  it('field_rate_type is now nullable', async () => {
     const [rt] = await query<{ isNullable: string }>(
       `SELECT is_nullable FROM information_schema.columns
-       WHERE table_name = 'commission_rates' AND column_name = 'rate_type'`,
+       WHERE table_name = 'commission_rates' AND column_name = 'field_rate_type'`,
     );
     expect(rt?.isNullable).toBe('YES');
   });

@@ -119,7 +119,7 @@ const assign = (caseId: string, taskId: string, assignedTo: string) =>
   request(app)
     .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
     .set(SA)
-    .send({ assignedTo, visitType: 'FIELD', distanceBand: 'LOCAL', billCount: 1, version: 1 });
+    .send({ assignedTo, visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 1, version: 1 });
 
 describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
   beforeAll(async () => {
@@ -320,7 +320,7 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
     const reassign = await request(app)
       .post(`/api/v2/cases/${t.caseId}/tasks/${t.taskId}/assign`)
       .set(SA)
-      .send({ assignedTo: fa2, visitType: 'FIELD', distanceBand: 'LOCAL', billCount: 1, version: 2 });
+      .send({ assignedTo: fa2, visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 1, version: 2 });
     expect(reassign.status).toBe(200);
 
     const seenBy1 = await request(app).get('/api/v2/sync/download').set(hdr('FIELD_AGENT', fa1));
@@ -378,7 +378,7 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
     const reassign = await request(app)
       .post(`/api/v2/cases/${t.caseId}/tasks/${t.taskId}/reassign`)
       .set(SA)
-      .send({ assignedTo: fa2, visitType: 'FIELD', distanceBand: 'LOCAL', billCount: 1 });
+      .send({ assignedTo: fa2, visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 1 });
     expect(reassign.status).toBe(201);
     const replacementId = reassign.body.id as string;
 
@@ -484,7 +484,7 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
         await request(app)
           .post(`/api/v2/cases/${t.caseId}/tasks/${t.taskId}/assign`)
           .set(SA)
-          .send({ assignedTo: fa2, visitType: 'FIELD', distanceBand: 'LOCAL', billCount: 1, version: 2 })
+          .send({ assignedTo: fa2, visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 1, version: 2 })
       ).status,
     ).toBe(200);
 

@@ -7,10 +7,26 @@
 
 ALTER TABLE case_tasks
   ADD COLUMN IF NOT EXISTS visit_type     varchar(20),
-  ADD COLUMN IF NOT EXISTS distance_band  varchar(10),
   ADD COLUMN IF NOT EXISTS bill_count     integer NOT NULL DEFAULT 1,
   ADD COLUMN IF NOT EXISTS assigned_by    uuid,
   ADD COLUMN IF NOT EXISTS assigned_at    timestamptz;
+
+-- `distance_band` is renamed to `field_rate_type` by 0083; prod RE-RUNS every migration on each deploy,
+-- so guard the column + its CHECK on the pre-rename state (a bare re-run would resurrect an empty
+-- `distance_band` column + the stale `chk_case_task_distance_band` CHECK). Runs on a fresh DB / first
+-- deploy; no-ops after the rename.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name = 'case_tasks' AND column_name = 'field_rate_type') THEN
+    ALTER TABLE case_tasks ADD COLUMN IF NOT EXISTS distance_band varchar(10);
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_case_task_distance_band') THEN
+      ALTER TABLE case_tasks
+        ADD CONSTRAINT chk_case_task_distance_band
+        CHECK (distance_band IS NULL OR distance_band IN ('LOCAL', 'OGL'));
+    END IF;
+  END IF;
+END $$;
 
 DO $$
 BEGIN
@@ -18,11 +34,6 @@ BEGIN
     ALTER TABLE case_tasks
       ADD CONSTRAINT chk_case_task_visit_type
       CHECK (visit_type IS NULL OR visit_type IN ('SITE', 'NO_VISIT'));
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_case_task_distance_band') THEN
-    ALTER TABLE case_tasks
-      ADD CONSTRAINT chk_case_task_distance_band
-      CHECK (distance_band IS NULL OR distance_band IN ('LOCAL', 'OGL'));
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_case_task_bill_count') THEN
     ALTER TABLE case_tasks

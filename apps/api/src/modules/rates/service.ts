@@ -32,7 +32,7 @@ const RATE_PAGE_SPEC: PageSpec = {
     unit: 'vu.name',
     pincode: 'l.pincode',
     area: 'l.area',
-    rateType: 'r.rate_type',
+    clientRateType: 'r.client_rate_type',
     amount: 'r.amount',
     effectiveFrom: 'r.effective_from',
     status: 'r.is_active',
@@ -44,7 +44,7 @@ const RATE_PAGE_SPEC: PageSpec = {
     unit: { column: 'vu.name', kind: 'text' },
     pincode: { column: 'l.pincode', kind: 'text' },
     area: { column: 'l.area', kind: 'text' },
-    rateType: { column: 'r.rate_type', kind: 'text' },
+    clientRateType: { column: 'r.client_rate_type', kind: 'text' },
     createdAt: { column: 'r.created_at', kind: 'date' },
     effectiveFrom: { column: 'r.effective_from', kind: 'date' },
   },
@@ -70,7 +70,7 @@ const RATE_EXPORT_COLUMNS: ExportColumn<RateView>[] = [
   { id: 'unit', header: 'Verification Unit', value: (r) => r.unitName },
   { id: 'pincode', header: 'Pincode', value: (r) => r.pincode },
   { id: 'area', header: 'Area', value: (r) => r.area },
-  { id: 'rateType', header: 'Rate Type', value: (r) => r.rateType },
+  { id: 'clientRateType', header: 'Rate Type', value: (r) => r.clientRateType },
   { id: 'amount', header: 'Rate', value: (r) => r.amount },
   { id: 'effectiveFrom', header: 'Effective From', value: (r) => r.effectiveFrom },
   { id: 'createdAt', header: 'Created', value: (r) => r.createdAt },
@@ -80,7 +80,7 @@ const RATE_EXPORT_COLUMNS: ExportColumn<RateView>[] = [
 
 /**
  * Rate service (ADR-0016) — the billing authority for a verification unit under a client+product.
- *  - create: optional rate_type (KYC VUs leave it null); eligibility + no-overlap enforced by the DB
+ *  - create: optional client_rate_type (KYC VUs leave it null); eligibility + no-overlap enforced by the DB
  *  - revise: effective-dated — a new version row; the prior is end-dated, never overwritten
  *  - update: legacy flat amount edit (overwrite) for the pre-workspace screen
  */

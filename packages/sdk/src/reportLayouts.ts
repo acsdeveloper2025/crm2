@@ -67,7 +67,7 @@ export const SOURCE_CATALOG: Record<
       { key: 'task_number', label: 'Task Number', dataType: 'TEXT' },
       { key: 'status', label: 'Status', dataType: 'TEXT' },
       { key: 'visit_type', label: 'Visit Type', dataType: 'TEXT' },
-      { key: 'distance_band', label: 'Distance Band', dataType: 'TEXT' },
+      { key: 'field_rate_type', label: 'Distance Band', dataType: 'TEXT' },
       { key: 'bill_count', label: 'Bill Count', dataType: 'NUMBER' },
       { key: 'verification_outcome', label: 'Verification Outcome', dataType: 'TEXT' },
       { key: 'remark', label: 'Remark', dataType: 'TEXT' },

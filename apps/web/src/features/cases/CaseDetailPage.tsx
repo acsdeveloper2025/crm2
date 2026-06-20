@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   VISIT_TYPES,
   VISIT_TYPE_LABELS,
+  FIELD_RATE_TYPES,
   KYC_RESULTS,
   KYC_RESULT_LABELS,
   TASK_ORIGIN_LABELS,
@@ -15,6 +16,7 @@ import {
   type AssignTaskInput,
   type CompleteTaskInput,
   type CaseFinalizeInput,
+  type FieldRateType,
   type KycResult,
   type VisitType,
   type CaseAttachment,
@@ -522,7 +524,7 @@ function TasksSection({
                     {t.visitType ? VISIT_TYPE_LABELS[t.visitType] : '—'}
                   </td>
                   <td className="px-3 py-2" data-label="Rate Type">
-                    {t.rateType ?? '—'}
+                    {t.clientRateType ?? '—'}
                   </td>
                   <td className="px-3 py-2 tabular-nums" data-label="Bill">
                     {t.billCount}
@@ -761,6 +763,9 @@ function AssignForm({
 }) {
   const [assignedTo, setAssignedTo] = useState(task.assignedTo ?? '');
   const [visitType, setVisitType] = useState<VisitType>(task.visitType ?? 'FIELD');
+  // ADR-0050: the trip distance band is the executive-commission resolution key — REQUIRED (no default,
+  // a conscious LOCAL/OGL choice). Pre-fill from the task if it already carries one.
+  const [fieldRateType, setFieldRateType] = useState<FieldRateType | ''>(task.fieldRateType ?? '');
   const [billCount, setBillCount] = useState(task.billCount || 1);
 
   // ADR-0024: the pool is the chosen visit-type pool ∩ (FIELD) the task's OWN territory — the same
@@ -782,7 +787,8 @@ function AssignForm({
 
   const submit = () => {
     if (!assignedTo) return;
-    onSubmit({ assignedTo, visitType, billCount });
+    // fieldRateType is OPTIONAL (ADR-0050 commission key) — send it only when chosen.
+    onSubmit({ assignedTo, visitType, billCount, ...(fieldRateType ? { fieldRateType } : {}) });
   };
 
   return (
@@ -792,8 +798,10 @@ function AssignForm({
           className="h-9 w-36 rounded-md border border-border bg-background px-2 text-sm"
           value={visitType}
           onChange={(e) => {
-            setVisitType(e.target.value as VisitType);
+            const next = e.target.value as VisitType;
+            setVisitType(next);
             setAssignedTo(''); // pool changes with the visit type
+            if (next !== 'FIELD') setFieldRateType(''); // OFFICE has no trip band (auto-stamped server-side)
           }}
         >
           {VISIT_TYPES.map((v) => (
@@ -803,6 +811,23 @@ function AssignForm({
           ))}
         </select>
       </Field>
+      {/* ADR-0050: the field-rate-type (trip band) applies to FIELD only; OFFICE auto-stamps 'OFFICE'. */}
+      {visitType === 'FIELD' && (
+        <Field label="Distance band">
+          <select
+            className="h-9 w-36 rounded-md border border-border bg-background px-2 text-sm"
+            value={fieldRateType}
+            onChange={(e) => setFieldRateType(e.target.value as FieldRateType | '')}
+          >
+            <option value="">Select…</option>
+            {FIELD_RATE_TYPES.map((b) => (
+              <option key={b} value={b}>
+                {b}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
       <Field label="Executive">
         <select
           className="h-9 w-56 rounded-md border border-border bg-background px-2 text-sm"

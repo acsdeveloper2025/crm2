@@ -16,6 +16,7 @@ caseRoutes.post('/dedupe', authorize(PERMISSIONS.CASE_VIEW), c.dedupe);
 caseRoutes.get('/dedupe-search/export', authorize(PERMISSIONS.DATA_EXPORT), c.dedupeSearchExport);
 caseRoutes.get('/dedupe-search', authorize(PERMISSIONS.DEDUPE_VIEW), c.dedupeSearch);
 caseRoutes.get('/available-units', authorize(PERMISSIONS.CASE_CREATE), c.availableUnits);
+caseRoutes.get('/rate-preview', authorize(PERMISSIONS.CASE_CREATE), c.ratePreview);
 caseRoutes.post('/', authorize(PERMISSIONS.CASE_CREATE), c.create);
 caseRoutes.post('/:id/tasks', authorize(PERMISSIONS.CASE_CREATE), c.addTasks);
 caseRoutes.post('/:id/tasks/:taskId/assign', authorize(PERMISSIONS.CASE_ASSIGN), c.assignTask);

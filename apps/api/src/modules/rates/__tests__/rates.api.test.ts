@@ -203,7 +203,7 @@ describe.skipIf(!RUN)('rates API', () => {
     expect(on.body.version).toBe(3);
   });
 
-  // ── flat model (0013): free-text rate_type + location + effective-dated versioning ─────────
+  // ── flat model (0013): free-text client_rate_type + location + effective-dated versioning ─────────
   const newLocation = async (area: string) =>
     (
       await request(app)
@@ -219,16 +219,16 @@ describe.skipIf(!RUN)('rates API', () => {
     const ok = await request(app)
       .post('/api/v2/rates')
       .set(SA)
-      .send({ ...key, locationId, rateType: 'OGL', amount: 350 });
+      .send({ ...key, locationId, clientRateType: 'OGL', amount: 350 });
     expect(ok.status).toBe(201);
-    expect(ok.body.rateType).toBe('OGL');
+    expect(ok.body.clientRateType).toBe('OGL');
     expect(ok.body.locationId).toBe(locationId);
 
     const list = await request(app).get(`/api/v2/rates?clientId=${key.clientId}`).set(SA);
     expect(list.body.items).toHaveLength(1);
     expect(list.body.items[0].pincode).toBe('400001');
     expect(list.body.items[0].area).toBe('Andheri_R8');
-    expect(list.body.items[0].rateType).toBe('OGL');
+    expect(list.body.items[0].clientRateType).toBe('OGL');
 
     // a KYC-style row: same unit, no location, no rate type → distinct from the OGL row (no overlap)
     const flat = await request(app)
@@ -236,14 +236,14 @@ describe.skipIf(!RUN)('rates API', () => {
       .set(SA)
       .send({ ...key, amount: 150 });
     expect(flat.status).toBe(201);
-    expect(flat.body.rateType).toBeNull();
+    expect(flat.body.clientRateType).toBeNull();
     expect(flat.body.locationId).toBeNull();
   });
 
   it('409 when an active rate already overlaps the same scope + period', async () => {
     const key = await seedKey('R8B');
     const locationId = await newLocation('BANDRA_R8B');
-    const body = { ...key, locationId, rateType: 'LOCAL', amount: 300 };
+    const body = { ...key, locationId, clientRateType: 'LOCAL', amount: 300 };
     expect((await request(app).post('/api/v2/rates').set(SA).send(body)).status).toBe(201);
     const dup = await request(app)
       .post('/api/v2/rates')

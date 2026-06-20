@@ -3,7 +3,7 @@ import { z } from 'zod';
 /**
  * @crm2/sdk — the Rate contract (ADR-0016, flattened per owner direction). A rate IS a
  * service-zone rate: one row = (client, product, verification_unit, location[pincode+area],
- * free-text rate_type, amount). `location` is null for KYC units; `rateType` is free text the
+ * free-text client_rate_type, amount). `location` is null for KYC units; `clientRateType` is free text the
  * user adds. Effective-dated: a revision inserts a new dated row; the prior is end-dated, never
  * overwritten. Mirrors migrations 0003 + 0012 + 0013 `rates`.
  */
@@ -13,7 +13,7 @@ export interface Rate {
   productId: number;
   verificationUnitId: number;
   locationId: number | null;
-  rateType: string | null;
+  clientRateType: string | null;
   amount: number;
   currency: string;
   isActive: boolean;
@@ -56,7 +56,7 @@ export interface RateHistory {
 const positiveInt = z.number().int().positive();
 const money = z.number().nonnegative().max(99999999.99);
 const isoDate = z.string().datetime();
-const rateType = z.string().trim().min(1).max(60);
+const clientRateType = z.string().trim().min(1).max(60);
 
 export const CreateRateSchema = z.object({
   clientId: positiveInt,
@@ -65,7 +65,7 @@ export const CreateRateSchema = z.object({
   /** geography (a `locations` row = pincode+area); null/absent ⇒ no geography (e.g. KYC). */
   locationId: positiveInt.nullish(),
   /** free-text tier label the user types (Local, OGL, Outstation…); null/absent ⇒ none. */
-  rateType: rateType.nullish(),
+  clientRateType: clientRateType.nullish(),
   amount: money,
   currency: z.string().length(3).default('INR'),
   /** when the rate takes effect; defaults to now server-side. */

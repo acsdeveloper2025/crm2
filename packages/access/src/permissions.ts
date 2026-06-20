@@ -31,7 +31,8 @@ export const PERMISSIONS = {
   CASE_VIEW: 'case.view',
   CASE_CREATE: 'case.create',
   CASE_ASSIGN: 'case.assign',
-  // record the ONE final case verdict + close the case (ADR-0032 two-track model). BACKEND_USER/SA.
+  // record the ONE final case verdict + close the case (ADR-0032 two-track model). BACKEND_USER/SA
+  // + MANAGER/TEAM_LEADER (ADR-0050, owner 2026-06-20: supervisors may also close desk work).
   CASE_FINALIZE: 'case.finalize',
   // field-execution: the field agent drives their OWN assigned task on the device (start/submit/
   // complete/revoke/priority via /api/v2/verification-tasks). FIELD_AGENT only (+ SA grants_all);
@@ -49,6 +50,9 @@ export const PERMISSIONS = {
   // read-only cross-case duplicate lookup (standalone Dedupe Check page). Deliberately SEPARATE
   // from case.view: dedupe-search scans ALL cases regardless of the actor's case scope.
   DEDUPE_VIEW: 'dedupe.view',
+  // close (complete) a desk/field task — record the report and finish it (ADR-0032 backend track).
+  // BACKEND_USER/SA + MANAGER/TEAM_LEADER (ADR-0050, owner 2026-06-20). NOT the office relay
+  // role (KYC_VERIFIER), whose job is the external email loop only — it never completes.
   FIELD_REVIEW_COMPLETE: 'field_review.complete',
   // office data-entry (ADR-0037, MIS engine) — an office operator keys the structured MIS fields for
   // a task against its CPV's active DATA_ENTRY layout. Office roles (MANAGER + BACKEND_USER + SA).
@@ -93,6 +97,9 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     PERMISSIONS.CASE_VIEW,
     PERMISSIONS.CASE_CREATE,
     PERMISSIONS.CASE_ASSIGN,
+    // ADR-0050: MANAGER + TEAM_LEADER may also close/finalize desk work (owner 2026-06-20).
+    PERMISSIONS.FIELD_REVIEW_COMPLETE,
+    PERMISSIONS.CASE_FINALIZE,
     PERMISSIONS.TASK_REVOKE,
     PERMISSIONS.TASK_REWORK,
     PERMISSIONS.DEDUPE_VIEW,
@@ -108,6 +115,9 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     PERMISSIONS.MASTERDATA_VIEW,
     PERMISSIONS.CASE_VIEW,
     PERMISSIONS.CASE_ASSIGN,
+    // ADR-0050: MANAGER + TEAM_LEADER may also close/finalize desk work (owner 2026-06-20).
+    PERMISSIONS.FIELD_REVIEW_COMPLETE,
+    PERMISSIONS.CASE_FINALIZE,
     PERMISSIONS.DEDUPE_VIEW,
     PERMISSIONS.FIELD_MONITORING_VIEW,
     PERMISSIONS.DASHBOARD_VIEW,

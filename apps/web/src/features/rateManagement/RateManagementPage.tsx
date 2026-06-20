@@ -205,11 +205,11 @@ export function RateManagementPage() {
       },
       { id: 'area', header: 'Area', sortable: true, filterable: true, cell: (r) => r.area ?? '—' },
       {
-        id: 'rateType',
+        id: 'clientRateType',
         header: 'Rate Type',
         sortable: true,
         filterable: true,
-        cell: (r) => r.rateType ?? '—',
+        cell: (r) => r.clientRateType ?? '—',
       },
       {
         id: 'amount',
@@ -395,7 +395,7 @@ function AddRateForm({
   const [pincode, setPincode] = useState('');
   const [pincodeSearch, setPincodeSearch] = useState('');
   const [locationId, setLocationId] = useState('');
-  const [rateType, setRateType] = useState('');
+  const [clientRateType, setRateType] = useState('');
   const [amount, setAmount] = useState('');
   const [effectiveFrom, setEffectiveFrom] = useState('');
 
@@ -409,7 +409,7 @@ function AddRateForm({
     setRateType('');
   };
 
-  const rateTypes = useQuery({
+  const clientRateTypes = useQuery({
     queryKey: ['rate-types'],
     queryFn: () => api<RateType[]>('GET', '/api/v2/rate-types?active=true'),
   });
@@ -432,7 +432,7 @@ function AddRateForm({
         productId: Number(productId),
         verificationUnitId: Number(unitId),
         locationId: isKyc || !locationId ? null : Number(locationId),
-        rateType: isKyc ? null : rateType || null,
+        clientRateType: isKyc ? null : clientRateType || null,
         amount: Number(amount),
         effectiveFrom: isoOrUndefined(effectiveFrom),
       }),
@@ -449,7 +449,10 @@ function AddRateForm({
   ];
   const pincodeOpts: Opt[] = (pincodes.data ?? []).map((p) => ({ value: p, label: p }));
   const areaOpts: Opt[] = (areas.data ?? []).map((l) => ({ value: String(l.id), label: l.area }));
-  const rateTypeOpts: Opt[] = (rateTypes.data ?? []).map((rt) => ({ value: rt.code, label: rt.code }));
+  const clientRateTypeOpts: Opt[] = (clientRateTypes.data ?? []).map((rt) => ({
+    value: rt.code,
+    label: rt.code,
+  }));
 
   return (
     <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-card p-3 shadow-sm">
@@ -501,9 +504,9 @@ function AddRateForm({
       </Field>
       <Field label="Rate type">
         <SearchableSelect
-          value={rateType}
+          value={clientRateType}
           onChange={setRateType}
-          options={rateTypeOpts}
+          options={clientRateTypeOpts}
           disabled={isKyc}
           placeholder={isKyc ? 'n/a for KYC' : 'Search…'}
           width="min-w-[9rem]"
@@ -534,7 +537,7 @@ function AddRateForm({
           !productId ||
           !unitId ||
           !amount ||
-          (!isKyc && (!locationId || !rateType)) ||
+          (!isKyc && (!locationId || !clientRateType)) ||
           create.isPending
         }
         onClick={() => create.mutate()}
@@ -590,7 +593,7 @@ function ReviseDialog({
         </h2>
         <p className="mb-4 text-xs text-muted-foreground">
           New version of <b>{rate.unitName}</b>
-          {rate.rateType ? ` · ${rate.rateType}` : ''}
+          {rate.clientRateType ? ` · ${rate.clientRateType}` : ''}
           {rate.pincode ? ` · ${rate.pincode}` : ''} (current {money(rate.amount)}). The current row is
           end-dated, never overwritten.
         </p>
@@ -662,7 +665,7 @@ function HistoryDialog({ rate, onClose }: { rate: RateView; onClose: () => void 
         </h2>
         <p className="mb-4 text-xs text-muted-foreground">
           {rate.unitName}
-          {rate.rateType ? ` · ${rate.rateType}` : ''}
+          {rate.clientRateType ? ` · ${rate.clientRateType}` : ''}
           {rate.pincode ? ` · ${rate.pincode}` : ''}
         </p>
         {history.isLoading ? (

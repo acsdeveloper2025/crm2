@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { CreateCommissionRateInput } from '@crm2/sdk';
+import { COMMISSION_RATE_TYPES, type CreateCommissionRateInput } from '@crm2/sdk';
 import type { ImportColumn, ImportSpec, ResolveResult } from '../../platform/import/index.js';
 import { parseInteger, parseIsoDate, parseNumber } from '../../platform/import/parsers.js';
 import { clientService } from '../clients/service.js';
@@ -18,10 +18,12 @@ import { userService } from '../users/service.js';
  */
 const CommissionRateImportFileSchema = z.object({
   username: z.string().min(1),
-  rateType: z.string().optional(),
-  clientCode: z.string().optional(),
+  // ADR-0050: fieldRateType (LOCAL/OGL/OFFICE) is required. Location (pincode+area) is required for
+  // LOCAL/OGL but OPTIONAL for OFFICE (flat office rate). client/product/unit/tatBand are Universal-when-blank.
+  fieldRateType: z.enum(COMMISSION_RATE_TYPES),
   pincode: z.string().optional(),
   area: z.string().optional(),
+  clientCode: z.string().optional(),
   productCode: z.string().optional(),
   unitCode: z.string().optional(),
   tatBand: z.number().int().optional(),
@@ -33,8 +35,8 @@ type CommissionRateImportFile = z.infer<typeof CommissionRateImportFileSchema>;
 
 const COMMISSION_RATE_IMPORT_COLUMNS: ImportColumn[] = [
   { id: 'username', header: 'Username', required: true },
-  // 'Rate Type' header retained (existing import files) — now an OPTIONAL classification label (ADR-0046).
-  { id: 'rateType', header: 'Rate Type' },
+  // ADR-0050: rate type (LOCAL/OGL) + location (pincode+area) are required keys; the rest = Universal when blank.
+  { id: 'fieldRateType', header: 'Rate Type', required: true },
   { id: 'clientCode', header: 'Client Code' },
   { id: 'pincode', header: 'Location Pincode' },
   { id: 'area', header: 'Area' },
@@ -48,7 +50,7 @@ const COMMISSION_RATE_IMPORT_COLUMNS: ImportColumn[] = [
 
 const COMMISSION_RATE_IMPORT_SAMPLE: Record<string, string> = {
   username: 'ravi_field',
-  rateType: 'LOCAL',
+  fieldRateType: 'LOCAL',
   clientCode: 'HDFC',
   pincode: '400001',
   area: 'Fort',
@@ -135,15 +137,22 @@ export async function buildCommissionRateSpec(): Promise<
         message: 'provide both Location Pincode and Area, or neither',
       });
     }
+    // ADR-0050: LOCAL/OGL rows require a location; OFFICE rows are location-less (flat office rate).
+    if (input.fieldRateType !== 'OFFICE' && locationId === undefined)
+      errors.push({
+        column: 'Location Pincode',
+        message: 'a LOCAL/OGL commission rate requires a location (pincode + area)',
+      });
 
     if (errors.length > 0) return { ok: false, errors };
     return {
       ok: true,
       value: {
         userId: userId!,
-        ...(input.rateType ? { rateType: input.rateType } : {}),
+        ...(locationId !== undefined ? { locationId } : {}), // required for LOCAL/OGL; omitted for OFFICE
+        fieldRateType: input.fieldRateType, // LOCAL/OGL (field) or OFFICE (desk)
+        // Universal-able dims: omit when blank ⇒ null ⇒ matches any (ADR-0050).
         ...(clientId !== undefined ? { clientId } : {}),
-        ...(locationId !== undefined ? { locationId } : {}),
         ...(productId !== undefined ? { productId } : {}),
         ...(verificationUnitId !== undefined ? { verificationUnitId } : {}),
         ...(input.tatBand !== undefined ? { tatBand: input.tatBand } : {}),

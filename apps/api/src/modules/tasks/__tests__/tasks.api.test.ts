@@ -9,7 +9,7 @@ import {
 } from '@crm2/test-utils';
 import type { TaskStats, TaskView } from '@crm2/sdk';
 import { createApp } from '../../../http/app.js';
-import { setPool } from '../../../platform/db.js';
+import { setPool, query } from '../../../platform/db.js';
 import { invalidateRoleCache } from '../../../platform/access/index.js';
 
 const RUN = !!process.env['DATABASE_URL'];
@@ -133,7 +133,7 @@ const assign = (caseId: string, taskId: string, assignedTo: string) =>
   request(app)
     .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
     .set(SA)
-    .send({ assignedTo, visitType: 'FIELD', distanceBand: 'LOCAL', billCount: 1, version: 1 });
+    .send({ assignedTo, visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 1, version: 1 });
 
 const hdr = (role: string, id: string): Record<string, string> => ({ 'x-test-auth': `${role}:${id}` });
 
@@ -354,6 +354,7 @@ describe.skipIf(!RUN)('tasks API (Pipeline)', () => {
       pending: 1,
       assigned: 1,
       inProgress: 0,
+      submitted: 0,
       completed: 0,
       revoked: 0,
       overdue: 0, // both tasks just created → within TAT
@@ -364,6 +365,19 @@ describe.skipIf(!RUN)('tasks API (Pipeline)', () => {
     const mine = await request(app).get('/api/v2/tasks/stats').set(hdr('FIELD_AGENT', agent));
     expect(mine.body.assigned).toBe(1);
     expect(mine.body.total).toBe(1);
+
+    // ADR-0047: device submit moves the task ASSIGNED → SUBMITTED → counted in the `submitted` bucket
+    const fh = hdr('FIELD_AGENT', agent);
+    expect(
+      (await request(app).post(`/api/v2/verification-tasks/${c.taskIds[0]!}/start`).set(fh)).status,
+    ).toBe(200);
+    expect(
+      (await request(app).post(`/api/v2/verification-tasks/${c.taskIds[0]!}/complete`).set(fh)).status,
+    ).toBe(200);
+    const afterSubmit = (await request(app).get('/api/v2/tasks/stats').set(SA)).body as TaskStats;
+    expect(afterSubmit.submitted).toBe(1);
+    expect(afterSubmit.assigned).toBe(0); // it left the assigned bucket
+    expect(afterSubmit.completed).toBe(0); // not the office terminal yet
   });
 
   it('Out of TAT (ADR-0044): an OPEN task past its tat_hours since assigned_at is counted, filtered by overdue=1, flagged + with due_at/tatHours on the row', async () => {
@@ -563,7 +577,7 @@ describe.skipIf(!RUN)('tasks API (Pipeline)', () => {
           ],
           assignedTo: fa,
           visitType: 'FIELD',
-          distanceBand: 'LOCAL',
+          fieldRateType: 'LOCAL',
           billCount: 1,
         });
       expect(res.status).toBe(200);
@@ -607,7 +621,7 @@ describe.skipIf(!RUN)('tasks API (Pipeline)', () => {
           items: [{ id: c.taskIds[0], version: 1 }],
           assignedTo: kyc,
           visitType: 'FIELD',
-          distanceBand: 'LOCAL',
+          fieldRateType: 'LOCAL',
           billCount: 1,
         });
       expect(res.status).toBe(200);
@@ -621,7 +635,7 @@ describe.skipIf(!RUN)('tasks API (Pipeline)', () => {
           items: [{ id: c.taskIds[0], version: 1 }],
           assignedTo: kyc,
           visitType: 'FIELD',
-          distanceBand: 'LOCAL',
+          fieldRateType: 'LOCAL',
           billCount: 1,
         });
       expect(denied.status).toBe(403);
@@ -708,14 +722,47 @@ describe.skipIf(!RUN)('tasks API (Pipeline)', () => {
   // ADR-0036 slice 5d — billing VIEW on the Pipeline: derived per-task bill/commission amounts,
   // a `billable` flag (=COMPLETED), and the Commissionable bucket. Reuses the shared billing laterals.
   describe('billing view (5d)', () => {
-    const seedCommission = (userId: string, amount: number) =>
-      request(app).post('/api/v2/commission-rates').set(SA).send({ userId, rateType: 'LOCAL', amount });
-    async function complete(caseId: string, taskId: string, fa: string) {
+    // ADR-0050: commission is a fully-specified exact-match tariff line (no wildcards) — it must carry
+    // the case's client/product, the completed task's verification unit, the task/case location, the
+    // distance band (LOCAL — `assign` uses LOCAL), and the submit-in TAT band (4h — these tasks submit
+    // within ~1 min, and the smallest active migration-seeded `tat_policies` band ≥ that is 4).
+    const seedCommission = (
+      userId: string,
+      amount: number,
+      d: { clientId: number; productId: number; verificationUnitId: number; locationId: number },
+    ) =>
+      request(app).post('/api/v2/commission-rates').set(SA).send({
+        userId,
+        clientId: d.clientId,
+        productId: d.productId,
+        verificationUnitId: d.verificationUnitId,
+        locationId: d.locationId,
+        fieldRateType: 'LOCAL',
+        tatBand: 4,
+        amount,
+      });
+    /** Seed a `locations` row (pincode + area) and return its id. */
+    const seedLoc = async (pincode: string): Promise<number> =>
+      seeded<{ id: number }>(
+        await request(app)
+          .post('/api/v2/locations')
+          .set(SA)
+          .send({ pincode, area: `A_${pincode}`, city: 'Mumbai', state: 'MH' }),
+      ).id;
+    async function complete(caseId: string, taskId: string, fa: string, locationId?: number) {
       expect((await assign(caseId, taskId, fa)).status).toBe(200);
       expect(
         (await request(app).post(`/api/v2/verification-tasks/${taskId}/start`).set(hdr('FIELD_AGENT', fa)))
           .status,
       ).toBe(200);
+      // Stamp the task location AFTER start, BEFORE submit (ADR-0050 commission matches on the task's
+      // location; it cannot be set before assign, which validates assignee territory eligibility).
+      if (locationId !== undefined) {
+        await query(`UPDATE case_tasks SET area_id = $2, pincode_id = $2 WHERE id = $1`, [
+          taskId,
+          locationId,
+        ]);
+      }
       // ADR-0047: device submits → SUBMITTED; the office records the result → COMPLETED (billable)
       const submit = await request(app)
         .post(`/api/v2/verification-tasks/${taskId}/complete`)
@@ -734,18 +781,28 @@ describe.skipIf(!RUN)('tasks API (Pipeline)', () => {
     it('a completed task exposes billable + derived bill/commission amounts; a pending sibling does not bill', async () => {
       const ctx = await seedCpv('5DA');
       const fa = await createUser({ username: 'fa_5da', name: 'FA 5DA', role: 'FIELD_AGENT' });
+      const loc = await seedLoc('400031');
       seeded(
         await request(app).post('/api/v2/rates').set(SA).send({
           clientId: ctx.clientId,
           productId: ctx.productId,
           verificationUnitId: ctx.unitAId,
-          rateType: 'LOCAL',
+          clientRateType: 'LOCAL',
           amount: 150,
         }),
       );
-      expect((await seedCommission(fa, 40)).status).toBe(201);
+      expect(
+        (
+          await seedCommission(fa, 40, {
+            clientId: ctx.clientId,
+            productId: ctx.productId,
+            verificationUnitId: ctx.unitAId,
+            locationId: loc,
+          })
+        ).status,
+      ).toBe(201);
       const c = await seedCaseTasks(ctx, { name: '5DA APP', unitIds: [ctx.unitAId, ctx.unitBId] });
-      await complete(c.caseId, c.taskIds[0]!, fa); // unit A completed; unit B left PENDING
+      await complete(c.caseId, c.taskIds[0]!, fa, loc); // unit A completed @ loc; unit B left PENDING
 
       const items = (await request(app).get('/api/v2/tasks?limit=25').set(SA)).body.items as TaskView[];
       const done = items.find((t) => t.status === 'COMPLETED')!;
@@ -765,7 +822,7 @@ describe.skipIf(!RUN)('tasks API (Pipeline)', () => {
           clientId: ctx.clientId,
           productId: ctx.productId,
           verificationUnitId: ctx.unitAId,
-          rateType: 'LOCAL',
+          clientRateType: 'LOCAL',
           amount: 100,
         }),
       );
@@ -774,15 +831,26 @@ describe.skipIf(!RUN)('tasks API (Pipeline)', () => {
           clientId: ctx.clientId,
           productId: ctx.productId,
           verificationUnitId: ctx.unitBId,
-          rateType: 'LOCAL',
+          clientRateType: 'LOCAL',
           amount: 100,
         }),
       );
-      expect((await seedCommission(paid, 25)).status).toBe(201); // only `paid` has a commission rate
+      const loc = await seedLoc('400032');
+      // only `paid` has a commission rate (fully-specified for unit A @ loc)
+      expect(
+        (
+          await seedCommission(paid, 25, {
+            clientId: ctx.clientId,
+            productId: ctx.productId,
+            verificationUnitId: ctx.unitAId,
+            locationId: loc,
+          })
+        ).status,
+      ).toBe(201);
       const a = await seedCaseTasks(ctx, { name: '5DB PAID', unitIds: [ctx.unitAId] });
       const b = await seedCaseTasks(ctx, { name: '5DB UNPAID', unitIds: [ctx.unitBId] });
-      await complete(a.caseId, a.taskIds[0]!, paid);
-      await complete(b.caseId, b.taskIds[0]!, unpaid);
+      await complete(a.caseId, a.taskIds[0]!, paid, loc);
+      await complete(b.caseId, b.taskIds[0]!, unpaid, loc);
 
       const stats = (await request(app).get('/api/v2/tasks/stats').set(SA)).body as TaskStats;
       expect(stats.completed).toBe(2);
@@ -805,18 +873,28 @@ describe.skipIf(!RUN)('tasks API (Pipeline)', () => {
     it('₹ amounts are billing.view-gated: a case.view-only role sees billable but null amounts + a 0 commissionable bucket', async () => {
       const ctx = await seedCpv('5DG');
       const fa = await createUser({ username: 'fa_5dg', name: 'FA 5DG', role: 'FIELD_AGENT' });
+      const loc = await seedLoc('400033');
       seeded(
         await request(app).post('/api/v2/rates').set(SA).send({
           clientId: ctx.clientId,
           productId: ctx.productId,
           verificationUnitId: ctx.unitAId,
-          rateType: 'LOCAL',
+          clientRateType: 'LOCAL',
           amount: 150,
         }),
       );
-      expect((await seedCommission(fa, 40)).status).toBe(201);
+      expect(
+        (
+          await seedCommission(fa, 40, {
+            clientId: ctx.clientId,
+            productId: ctx.productId,
+            verificationUnitId: ctx.unitAId,
+            locationId: loc,
+          })
+        ).status,
+      ).toBe(201);
       const c = await seedCaseTasks(ctx, { name: '5DG APP', unitIds: [ctx.unitAId] });
-      await complete(c.caseId, c.taskIds[0]!, fa);
+      await complete(c.caseId, c.taskIds[0]!, fa, loc);
 
       // SA (grants_all) sees the comp amounts...
       const saRow = (

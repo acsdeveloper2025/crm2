@@ -8,7 +8,7 @@ import {
   authHeaderForRole,
 } from '@crm2/test-utils';
 import { createApp } from '../../../http/app.js';
-import { setPool } from '../../../platform/db.js';
+import { setPool, query } from '../../../platform/db.js';
 
 const RUN = !!process.env['DATABASE_URL'];
 const db = RUN ? createTestDb() : null;
@@ -70,6 +70,7 @@ async function seedCompletedTask(
   ctx: { clientId: number; productId: number; unitId: number },
   fa: string,
   name: string,
+  locationId?: number,
 ): Promise<{ caseId: string; caseNumber: string; taskId: string }> {
   const created = seeded<{ id: string; caseNumber: string }>(
     await request(app)
@@ -100,13 +101,18 @@ async function seedCompletedTask(
       await request(app)
         .post(`/api/v2/cases/${created.id}/tasks/${taskId}/assign`)
         .set(SA)
-        .send({ assignedTo: fa, visitType: 'FIELD', distanceBand: 'LOCAL', billCount: 1, version: 1 })
+        .send({ assignedTo: fa, visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 1, version: 1 })
     ).status,
   ).toBe(200);
   expect(
     (await request(app).post(`/api/v2/verification-tasks/${taskId}/start`).set(hdr('FIELD_AGENT', fa)))
       .status,
   ).toBe(200);
+  // Stamp the task location AFTER start, BEFORE submit (ADR-0050: the commission lateral matches on the
+  // task's location; it can't be set before assign, which validates assignee territory eligibility).
+  if (locationId !== undefined) {
+    await query(`UPDATE case_tasks SET area_id = $2, pincode_id = $2 WHERE id = $1`, [taskId, locationId]);
+  }
   // ADR-0047: device complete now SUBMITS; the office records the result → COMPLETED (billable)
   const submit = await request(app)
     .post(`/api/v2/verification-tasks/${taskId}/complete`)
@@ -144,6 +150,7 @@ describe.skipIf(!RUN)('billing API (ADR-0036 slice 5b)', () => {
       'verification_units',
       'clients',
       'products',
+      'locations',
       'users',
     );
   });
@@ -151,23 +158,37 @@ describe.skipIf(!RUN)('billing API (ADR-0036 slice 5b)', () => {
   it('rolls up a completed task into per-case bill + commission totals', async () => {
     const ctx = await seedCpvUnit('ROLL');
     const fa = await createUser({ username: 'bil_fa', name: 'BILL FA', role: 'FIELD_AGENT' });
-    // a LOCAL rate ₹100 for the CPV (location-less default) + a LOCAL commission ₹30 for the agent
+    const loc = seeded<{ id: number }>(
+      await request(app)
+        .post('/api/v2/locations')
+        .set(SA)
+        .send({ pincode: '400061', area: 'ROLLAREA', city: 'Mumbai', state: 'MH' }),
+    ).id;
+    // a LOCAL rate ₹100 for the CPV (location-less default) + a fully-specified LOCAL commission ₹30
+    // (ADR-0050: exact-match on the agent + client + product + unit + location + LOCAL band + the 4-hour
+    // submit-in TAT band) for the agent.
     seeded(
       await request(app).post('/api/v2/rates').set(SA).send({
         clientId: ctx.clientId,
         productId: ctx.productId,
         verificationUnitId: ctx.unitId,
-        rateType: 'LOCAL',
+        clientRateType: 'LOCAL',
         amount: 100,
       }),
     );
     seeded(
-      await request(app)
-        .post('/api/v2/commission-rates')
-        .set(SA)
-        .send({ userId: fa, rateType: 'LOCAL', amount: 30 }),
+      await request(app).post('/api/v2/commission-rates').set(SA).send({
+        userId: fa,
+        clientId: ctx.clientId,
+        productId: ctx.productId,
+        verificationUnitId: ctx.unitId,
+        locationId: loc,
+        fieldRateType: 'LOCAL',
+        tatBand: 4,
+        amount: 30,
+      }),
     );
-    const c = await seedCompletedTask(ctx, fa, 'ROLL APP');
+    const c = await seedCompletedTask(ctx, fa, 'ROLL APP', loc);
 
     const list = await request(app).get('/api/v2/billing/cases').set(SA);
     expect(list.status).toBe(200);
@@ -186,7 +207,7 @@ describe.skipIf(!RUN)('billing API (ADR-0036 slice 5b)', () => {
     expect(lines.body[0]).toMatchObject({
       taskNumber: `${c.caseNumber}-1`,
       billingClass: 'ORIGINAL',
-      rateType: 'LOCAL',
+      clientRateType: 'LOCAL',
       billAmount: 100,
       commissionAmount: 30,
     });
@@ -200,7 +221,7 @@ describe.skipIf(!RUN)('billing API (ADR-0036 slice 5b)', () => {
         clientId: ctx.clientId,
         productId: ctx.productId,
         verificationUnitId: ctx.unitId,
-        rateType: 'LOCAL',
+        clientRateType: 'LOCAL',
         amount: 100,
       }),
     );

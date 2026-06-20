@@ -1,6 +1,11 @@
 # ADR-0046: Field-executive commission gains location, client/product/VU, and TAT-band dimensions (decoupled from the client rate)
 
-- **Status:** **Accepted** — domain-owner sign-off 2026-06-18 (CTO + domain-owner). Build spec + plan
+> ⚠ **SUPERSEDED by [ADR-0050](./ADR-0050-commission-exact-match-rate-type-key.md)** (2026-06-20): the
+> commission resolution model changed — `rate_type` is **re-coupled** as a key (renamed
+> `field_rate_type`, the executive trip band) and the client's `rate_type` (renamed `client_rate_type`)
+> is a billing **label**, not a key. Read ADR-0050 for the current model; this ADR is historical.
+
+- **Status:** **Superseded by ADR-0050.** (Was: Accepted — domain-owner sign-off 2026-06-18, CTO + domain-owner.) Build spec + plan
   to follow; **build order: TAT (ADR-0044) → commission (this ADR).** **Supersedes ADR-0036 §1–§3**
   (the commission resolution model) and partially restates ADR-0036 §4–§5. Supersedes a FROZEN
   decision — see [docs/governance/LONG_TERM_PROTECTION.md](../governance/LONG_TERM_PROTECTION.md).

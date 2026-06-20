@@ -71,7 +71,7 @@ function BillingCaseLines({ caseId }: { caseId: string }) {
               {l.billingClass}
             </td>
             <td data-label="Rate Type" className="py-1 text-xs uppercase">
-              {l.rateType ?? '—'}
+              {l.clientRateType ?? '—'}
             </td>
             <td data-label="TAT Band" className="py-1 text-right">
               {bandLabel(l.tatBand)}

@@ -8,7 +8,7 @@ const base = {
   items: [{ id: TASK, version: 1 }],
   assignedTo: USER,
   visitType: 'FIELD' as const,
-  distanceBand: 'LOCAL' as const,
+  fieldRateType: 'LOCAL' as const,
   billCount: 1,
 };
 
@@ -30,7 +30,7 @@ describe('Pipeline bulk-assign contract', () => {
   });
   it('rejects an invalid visit type / distance band / bill count', () => {
     expect(BulkAssignSchema.safeParse({ ...base, visitType: 'TELEPATHY' }).success).toBe(false);
-    expect(BulkAssignSchema.safeParse({ ...base, distanceBand: 'ORBITAL' }).success).toBe(false);
+    expect(BulkAssignSchema.safeParse({ ...base, fieldRateType: 'ORBITAL' }).success).toBe(false);
     expect(BulkAssignSchema.safeParse({ ...base, billCount: 51 }).success).toBe(false);
   });
 });

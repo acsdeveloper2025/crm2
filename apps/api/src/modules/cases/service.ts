@@ -178,6 +178,15 @@ export const caseService = {
     return repo.availableUnits(clientId, productId);
   },
 
+  ratePreview(
+    clientId: number,
+    productId: number,
+    verificationUnitId: number,
+    locationId: number,
+  ): Promise<{ clientRateType: string | null; fieldRateTypes: string[] }> {
+    return repo.ratePreview(clientId, productId, verificationUnitId, locationId);
+  },
+
   async addTasks(caseId: string, input: unknown, actor: Actor): Promise<CaseTaskView[]> {
     const cp = await repo.clientProductOf(caseId);
     if (!cp) throw AppError.notFound('CASE_NOT_FOUND');

@@ -32,9 +32,22 @@ async function createUser(o: { username: string; name: string; role: string }): 
   return res.body.id as string;
 }
 
+// Unique 6-digit numeric pincode per seeded location (pincode regex = ^[1-9][0-9]{5}$).
+let vtPincodeSeq = 500000;
+
 /** Seed a case with one task ASSIGNED to a fresh FIELD_AGENT (assigned directly via SQL — this
- *  suite tests the device lifecycle, not assignment eligibility). */
-async function seedAssignedTask(tag: string): Promise<{ caseId: string; taskId: string; agent: string }> {
+ *  suite tests the device lifecycle, not assignment eligibility). The task is stamped with a LOCAL
+ *  distance band + a real location so the ADR-0050 exact-match commission lateral can resolve when a
+ *  test seeds a matching commission row; the returned dims let those tests build the row. */
+async function seedAssignedTask(tag: string): Promise<{
+  caseId: string;
+  taskId: string;
+  agent: string;
+  clientId: number;
+  productId: number;
+  unitId: number;
+  locationId: number;
+}> {
   const clientId = seeded<{ id: number }>(
     await request(app)
       .post('/api/v2/clients')
@@ -52,6 +65,12 @@ async function seedAssignedTask(tag: string): Promise<{ caseId: string; taskId: 
       .post('/api/v2/verification-units')
       .set(SA)
       .send(verificationUnitFactory({ code: `U_${tag}` })),
+  ).id;
+  const locationId = seeded<{ id: number }>(
+    await request(app)
+      .post('/api/v2/locations')
+      .set(SA)
+      .send({ pincode: String(++vtPincodeSeq), area: `A_${tag}`, city: 'Mumbai', state: 'MH' }),
   ).id;
   const cpId = seeded<{ id: number }>(
     await request(app)
@@ -94,10 +113,13 @@ async function seedAssignedTask(tag: string): Promise<{ caseId: string; taskId: 
     role: 'FIELD_AGENT',
   });
   await db!.pool.query(
-    `UPDATE case_tasks SET assigned_to = $1::uuid, status = 'ASSIGNED', version = version + 1 WHERE id = $2`,
-    [agent, taskId],
+    `UPDATE case_tasks
+       SET assigned_to = $1::uuid, status = 'ASSIGNED', field_rate_type = 'LOCAL',
+           area_id = $3, pincode_id = $3, version = version + 1
+     WHERE id = $2`,
+    [agent, taskId, locationId],
   );
-  return { caseId, taskId, agent };
+  return { caseId, taskId, agent, clientId, productId, unitId, locationId };
 }
 
 const caseStatus = async (caseId: string): Promise<string> =>
@@ -114,6 +136,7 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
   beforeEach(async () => {
     await db!.truncate(
       'user_scope_assignments',
+      'commission_rates',
       'case_attachments',
       'case_tasks',
       'case_applicants',
@@ -123,6 +146,7 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
       'verification_units',
       'clients',
       'products',
+      'locations',
       'users',
     );
   });
@@ -177,12 +201,16 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
   });
 
   it('device submit → SUBMITTED freezes field commission; office complete → COMPLETED does NOT re-stamp (ADR-0047)', async () => {
-    const { caseId, taskId, agent } = await seedAssignedTask('SUB');
-    // a universal commission rate for the agent so the at-submit snapshot resolves non-null
+    const { caseId, taskId, agent, clientId, productId, unitId, locationId } = await seedAssignedTask('SUB');
+    // A fully-specified exact-match commission rate (ADR-0050) so the at-submit snapshot resolves non-null:
+    // it must match the task's client/product/unit, its LOCAL distance band, the location, and the
+    // submit-in TAT band (4h — submitted within ~1 min, smallest active migration-seeded band).
     await db!.pool.query(
-      `INSERT INTO commission_rates (user_id, location_id, amount, currency, effective_from)
-       VALUES ($1::uuid, NULL, 50, 'INR', now() - interval '1 day')`,
-      [agent],
+      `INSERT INTO commission_rates
+         (user_id, client_id, product_id, verification_unit_id, location_id, field_rate_type, tat_band,
+          amount, currency, effective_from)
+       VALUES ($1::uuid, $2, $3, $4, $5, 'LOCAL', 4, 50, 'INR', now() - interval '1 day')`,
+      [agent, clientId, productId, unitId, locationId],
     );
     const h = hdr('FIELD_AGENT', agent);
     await request(app).post(`/api/v2/verification-tasks/${taskId}/start`).set(h);
@@ -222,16 +250,18 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
     expect(Number(r2.commission_amount)).toBe(50); // unchanged — frozen at submit, not re-stamped
   });
 
-  it('field commission resolves the SUBMIT-in TAT band at submit (ADR-0047 × ADR-0046 band dim)', async () => {
-    const { taskId, agent } = await seedAssignedTask('BND');
+  it('field commission resolves the SUBMIT-in TAT band at submit (ADR-0047 × ADR-0050 band dim)', async () => {
+    const { taskId, agent, clientId, productId, unitId, locationId } = await seedAssignedTask('BND');
     // a single 24h TAT band (clear any seeded policies so the submit-in band is deterministically 24h)
-    // + a band-specific commission rate for that band (universal location)
+    // + a fully-specified (ADR-0050) commission rate keyed on that band for the task's exact dimensions.
     await db!.pool.query(`DELETE FROM tat_policies`);
     await db!.pool.query(`INSERT INTO tat_policies (tat_hours, label) VALUES (24, '24h')`);
     await db!.pool.query(
-      `INSERT INTO commission_rates (user_id, location_id, tat_band, amount, currency, effective_from)
-       VALUES ($1::uuid, NULL, 24, 88, 'INR', now() - interval '1 day')`,
-      [agent],
+      `INSERT INTO commission_rates
+         (user_id, client_id, product_id, verification_unit_id, location_id, field_rate_type, tat_band,
+          amount, currency, effective_from)
+       VALUES ($1::uuid, $2, $3, $4, $5, 'LOCAL', 24, 88, 'INR', now() - interval '1 day')`,
+      [agent, clientId, productId, unitId, locationId],
     );
     const h = hdr('FIELD_AGENT', agent);
     await request(app).post(`/api/v2/verification-tasks/${taskId}/start`).set(h);

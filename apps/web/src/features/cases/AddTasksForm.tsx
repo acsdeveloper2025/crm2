@@ -4,10 +4,13 @@ import {
   PRIORITIES,
   VISIT_TYPES,
   VISIT_TYPE_LABELS,
+  FIELD_RATE_TYPES,
   type AvailableUnit,
+  type RatePreview,
   type AssignableUser,
   type CaseApplicant,
   type CaseTaskView,
+  type FieldRateType,
   type Location,
   type Paginated,
   type Priority,
@@ -23,6 +26,9 @@ interface TaskRow {
   priority: Priority;
   // ADR-0024 assign-at-create (only when canAssign): the pool, the FIELD location, and the executive.
   visitType: VisitType | '';
+  // ADR-0050: the trip distance band (LOCAL/OGL) — required whenever this row is assigned (assigneeId
+  // set), as it is the executive-commission resolution key.
+  fieldRateType: FieldRateType | '';
   pincodeQuery: string;
   /** A `locations` (pincode, area) row id — the FIELD task's verification location (= area = pincode). */
   locationId: string;
@@ -37,6 +43,7 @@ const emptyTask = (): TaskRow => ({
   trigger: '',
   priority: 'MEDIUM',
   visitType: '',
+  fieldRateType: '',
   pincodeQuery: '',
   locationId: '',
   assigneeId: '',
@@ -85,7 +92,11 @@ export function AddTasksForm({
   const setRow = (i: number, patch: Partial<TaskRow>) =>
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
 
-  const valid = rows.filter((r) => r.verificationUnitId && r.applicantId && r.address.trim());
+  // A row is submittable with its core fields. Address is required for a visit but NOT for OFFICE/desk
+  // (incl. KYC document) tasks. fieldRateType is the FIELD commission key (sent only when chosen).
+  const valid = rows.filter(
+    (r) => r.verificationUnitId && r.applicantId && (r.visitType === 'OFFICE' || r.address.trim()),
+  );
 
   const add = useMutation({
     mutationFn: async () => {
@@ -104,6 +115,11 @@ export function AddTasksForm({
             // A FIELD task carries its location (= area = pincode row); OFFICE has none.
             ...(assigning && r.visitType === 'FIELD' && locationId
               ? { pincodeId: locationId, areaId: locationId }
+              : {}),
+            // ADR-0050: send the distance band whenever this row is being assigned (assigneeId set) —
+            // the schema requires it, and it is the executive-commission resolution key.
+            ...(assigning && r.assigneeId && r.fieldRateType
+              ? { fieldRateType: r.fieldRateType as FieldRateType }
               : {}),
             ...(assigning && r.assigneeId ? { assigneeId: r.assigneeId } : {}),
           };
@@ -138,6 +154,8 @@ export function AddTasksForm({
           key={i}
           index={i}
           caseId={caseId}
+          clientId={clientId}
+          productId={productId}
           row={r}
           units={units ?? []}
           applicants={applicants}
@@ -180,6 +198,8 @@ export function AddTasksForm({
 function TaskRowEditor({
   index,
   caseId,
+  clientId,
+  productId,
   row,
   units,
   applicants,
@@ -189,6 +209,8 @@ function TaskRowEditor({
 }: {
   index: number;
   caseId: string;
+  clientId: number;
+  productId: number;
   row: TaskRow;
   units: AvailableUnit[];
   applicants: Pick<CaseApplicant, 'id' | 'name' | 'applicantType'>[];
@@ -197,6 +219,20 @@ function TaskRowEditor({
   onRemove?: () => void;
 }) {
   const isField = row.visitType === 'FIELD';
+  // OFFICE/desk (incl. KYC document) tasks have no visit address and no LOCAL/OGL field rate type.
+  const isOffice = row.visitType === 'OFFICE';
+
+  // ADR-0050 rate-type preview: once a unit + location (area) are picked, show the CLIENT rate type
+  // (Rate Management) and the FIELD rate type(s) (Commission Management) mapped to that pincode/area.
+  const { data: ratePreview } = useQuery({
+    queryKey: ['rate-preview', clientId, productId, row.verificationUnitId, row.locationId],
+    queryFn: () =>
+      api<RatePreview>(
+        'GET',
+        `/api/v2/cases/rate-preview?clientId=${clientId}&productId=${productId}&verificationUnitId=${row.verificationUnitId}&locationId=${row.locationId}`,
+      ),
+    enabled: !!row.verificationUnitId && !!row.locationId,
+  });
 
   // FIELD only: search the pincode → the area picker lists that pincode's (pincode, area) rows.
   const { data: areaMatches } = useQuery({
@@ -289,15 +325,19 @@ function TaskRowEditor({
             <select
               className="input"
               value={row.visitType}
-              onChange={(e) =>
-                // changing the pool clears the dependent location + assignee picks
+              onChange={(e) => {
+                // changing the pool clears the dependent location + assignee + field-rate-type picks;
+                // OFFICE also clears the address (office/desk tasks have no visit address).
+                const nv = e.target.value as VisitType | '';
                 onChange({
-                  visitType: e.target.value as VisitType | '',
+                  visitType: nv,
+                  fieldRateType: '',
                   pincodeQuery: '',
                   locationId: '',
                   assigneeId: '',
-                })
-              }
+                  ...(nv === 'OFFICE' ? { address: '' } : {}),
+                });
+              }}
             >
               <option value="">— Assign later —</option>
               {VISIT_TYPES.map((v) => (
@@ -311,15 +351,18 @@ function TaskRowEditor({
           <span className="hidden lg:block" aria-hidden />
         )}
 
-        {/* Address + Trigger are free text — give them more room (half-width each on large). */}
-        <FieldLabel label="Address" className="sm:col-span-2">
-          <input
-            className="input"
-            value={row.address}
-            onChange={(e) => onChange({ address: e.target.value })}
-            placeholder="Where the agent verifies"
-          />
-        </FieldLabel>
+        {/* Address + Trigger are free text — give them more room (half-width each on large).
+            Address is hidden for OFFICE/desk tasks (no visit location). */}
+        {!isOffice && (
+          <FieldLabel label="Address" className="sm:col-span-2">
+            <input
+              className="input"
+              value={row.address}
+              onChange={(e) => onChange({ address: e.target.value })}
+              placeholder="Where the agent verifies"
+            />
+          </FieldLabel>
+        )}
         <FieldLabel label="Trigger (instruction)" className="sm:col-span-2">
           <input
             className="input"
@@ -362,6 +405,37 @@ function TaskRowEditor({
               </select>
             </FieldLabel>
           </>
+        )}
+        {/* ADR-0050 rate-type preview — the rate types mapped to the chosen pincode/area: CLIENT (Rate
+            Management → bill) and FIELD (Commission Management → commission). Read-only, types only. */}
+        {ratePreview && (
+          <div className="rounded-md border border-border bg-surface-muted px-3 py-2 text-xs sm:col-span-2 lg:col-span-4">
+            <span className="font-medium text-foreground">Rate types at this location:</span>{' '}
+            <span className="text-muted-foreground">Client</span>{' '}
+            <span className="font-mono uppercase">{ratePreview.clientRateType ?? '—'}</span>
+            <span className="mx-2 text-border">·</span>
+            <span className="text-muted-foreground">Field</span>{' '}
+            <span className="font-mono uppercase">
+              {ratePreview.fieldRateTypes.length ? ratePreview.fieldRateTypes.join(' / ') : '—'}
+            </span>
+          </div>
+        )}
+        {/* Field Rate Type (LOCAL/OGL) — FIELD only; the executive-commission key. OFFICE has none. */}
+        {canAssign && isField && (
+          <FieldLabel label="Field Rate Type">
+            <select
+              className="input"
+              value={row.fieldRateType}
+              onChange={(e) => onChange({ fieldRateType: e.target.value as FieldRateType | '' })}
+            >
+              <option value="">Select…</option>
+              {FIELD_RATE_TYPES.map((b) => (
+                <option key={b} value={b}>
+                  {b}
+                </option>
+              ))}
+            </select>
+          </FieldLabel>
         )}
         {canAssign && row.visitType && (
           <FieldLabel label={`Executive (${VISIT_TYPE_LABELS[row.visitType]})`}>

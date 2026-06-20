@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { VISIT_TYPES, DISTANCE_BANDS } from './cases.js';
-import type { CaseTaskStatus, DistanceBand, VisitType } from './cases.js';
+import { VISIT_TYPES, FIELD_RATE_TYPES } from './cases.js';
+import type { CaseTaskStatus, FieldRateType, VisitType } from './cases.js';
 import type { KINDS } from './verificationUnit.js';
 
 /**
@@ -27,7 +27,7 @@ export interface TaskView {
   assignedTo: string | null;
   assignedToName: string | null;
   visitType: VisitType | null;
-  distanceBand: DistanceBand | null;
+  fieldRateType: FieldRateType | null;
   billCount: number;
   assignedAt: string | null;
   /** OCC token — bulk-assign sends it per row; a changed row comes back CONFLICT. */
@@ -81,18 +81,23 @@ const MAX_BILL_COUNT = 50;
  * distance/bill attributes. Per-row OCC (`version`) + per-row outcome — a failed row never
  * aborts the batch (B-23 precedent).
  */
-export const BulkAssignSchema = z.object({
-  items: z
-    .array(z.object({ id: uuid, version: z.number().int().min(0) }))
-    .min(1)
-    .max(MAX_BULK_ASSIGN_ITEMS),
-  assignedTo: uuid,
-  visitType: z.enum(VISIT_TYPES),
-  // ADR-0050: optional — the trip distance band (LOCAL/OGL) is the executive-commission resolution key
-  // when set; a bulk assignment may omit it (those tasks just resolve no commission until set).
-  distanceBand: z.enum(DISTANCE_BANDS).optional(),
-  billCount: z.number().int().min(0).max(MAX_BILL_COUNT),
-});
+export const BulkAssignSchema = z
+  .object({
+    items: z
+      .array(z.object({ id: uuid, version: z.number().int().min(0) }))
+      .min(1)
+      .max(MAX_BULK_ASSIGN_ITEMS),
+    assignedTo: uuid,
+    visitType: z.enum(VISIT_TYPES),
+    // ADR-0050: the field rate type (LOCAL/OGL) is the executive-commission resolution key; REQUIRED for
+    // a FIELD bulk assignment (else those tasks resolve no commission), optional for OFFICE.
+    fieldRateType: z.enum(FIELD_RATE_TYPES).optional(),
+    billCount: z.number().int().min(0).max(MAX_BILL_COUNT),
+  })
+  .refine((v) => v.visitType !== 'FIELD' || !!v.fieldRateType, {
+    message: 'fieldRateType (LOCAL/OGL) is required for a FIELD assignment',
+    path: ['fieldRateType'],
+  });
 export type BulkAssignInput = z.infer<typeof BulkAssignSchema>;
 
 export type BulkAssignRowStatus = 'OK' | 'CONFLICT' | 'NOT_FOUND' | 'NOT_ASSIGNABLE' | 'INELIGIBLE_ASSIGNEE';

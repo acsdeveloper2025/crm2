@@ -96,7 +96,14 @@ async function seedAssignedTask(
   const assigned = await request(app)
     .post(`/api/v2/cases/${created.id}/tasks/${tasks[0]!.id}/assign`)
     .set(SA)
-    .send({ assignedTo: assigneeId, visitType, billCount: 1, version: 1 });
+    // ADR-0050: FIELD requires a field-rate-type; OFFICE auto-stamps it (exempt).
+    .send({
+      assignedTo: assigneeId,
+      visitType,
+      ...(visitType === 'FIELD' ? { fieldRateType: 'LOCAL' } : {}),
+      billCount: 1,
+      version: 1,
+    });
   expect(assigned.status).toBe(200);
 }
 

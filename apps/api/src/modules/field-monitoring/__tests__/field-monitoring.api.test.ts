@@ -95,7 +95,7 @@ async function seedAssignedTask(
   const assigned = await request(app)
     .post(`/api/v2/cases/${created.id}/tasks/${taskId}/assign`)
     .set(SA)
-    .send({ assignedTo: agentId, visitType: 'FIELD', billCount: 1, version: 1 });
+    .send({ assignedTo: agentId, visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 1, version: 1 });
   expect(assigned.status).toBe(200);
 }
 

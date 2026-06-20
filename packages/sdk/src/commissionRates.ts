@@ -1,8 +1,9 @@
 import { z } from 'zod';
+import { COMMISSION_RATE_TYPES } from './cases.js';
 
 /**
  * @crm2/sdk — the Commission Rate contract (ADR-0036, billing slice 5a). One row =
- * (user, rate_type, client[nullable = universal], amount) — the per-user agent-commission amount
+ * (user, field_rate_type, client[nullable = universal], amount) — the per-user agent-commission amount
  * source for the unified Billing & Commission view. v1-parity with field_user_commission_assignments,
  * but ANY user may hold rates (the gate is "any COMPLETED task earns if its assignee has a matching
  * rate"). Resolution is most-specific-client-wins (a client-scoped row beats a universal one) +
@@ -16,7 +17,7 @@ export interface CommissionRate {
    * Optional executive classification label (LOCAL/OGL/OUTSTATION — descriptive only).
    * No longer a resolution key (ADR-0046): the resolver is decoupled from the client rate.
    */
-  rateType: string | null;
+  fieldRateType: string | null;
   /** null ⇒ universal (applies to every client) for this user. */
   clientId: number | null;
   /** executive's location dimension; null ⇒ applies to any location (ADR-0046). */
@@ -61,30 +62,40 @@ const positiveInt = z.number().int().positive();
 const money = z.number().nonnegative().max(9999999999.99);
 const isoDate = z.string().datetime();
 const uuid = z.string().uuid();
-const rateType = z.string().trim().min(1).max(60);
 
-export const CreateCommissionRateSchema = z.object({
-  userId: uuid,
-  /**
-   * optional executive classification label (LOCAL/OGL/OUTSTATION — descriptive only).
-   * No longer required nor used in resolution (ADR-0046).
-   */
-  rateType: rateType.nullish(),
-  /** client this commission is scoped to; null/absent ⇒ universal (every client). */
-  clientId: positiveInt.nullish(),
-  /** executive location dimension; null/absent ⇒ applies to any location (ADR-0046). */
-  locationId: positiveInt.nullish(),
-  /** product dimension; null/absent ⇒ applies to any product (ADR-0046). */
-  productId: positiveInt.nullish(),
-  /** verification-unit dimension; null/absent ⇒ applies to any unit (ADR-0046). */
-  verificationUnitId: positiveInt.nullish(),
-  /** completed-in TAT band: tat_hours, -1 (overflow), or null/absent ⇒ any band (ADR-0046). */
-  tatBand: z.number().int().nullish(),
-  amount: money,
-  currency: z.string().length(3).default('INR'),
-  /** when the rate takes effect; defaults to now server-side. */
-  effectiveFrom: isoDate.optional(),
-});
+/**
+ * ADR-0050: a commission tariff line. Three dimensions are REQUIRED-specific — `userId`, `locationId`
+ * (a `locations` area id), and `fieldRateType` (the trip band LOCAL|OGL, re-coupled as a resolution key
+ * matching the task's `field_field_rate_type`). Four dimensions support **Universal** (null = matches any):
+ * `clientId`, `productId`, `verificationUnitId`, `tatBand`. The resolver picks the MOST-SPECIFIC
+ * matching row, priority Client > Product > Unit > TAT band. `effectiveFrom` is optional (temporal).
+ */
+export const CreateCommissionRateSchema = z
+  .object({
+    userId: uuid,
+    /** client dimension; null/absent ⇒ Universal (all clients). */
+    clientId: positiveInt.nullish(),
+    /** product dimension; null/absent ⇒ Universal (all products). */
+    productId: positiveInt.nullish(),
+    /** verification-unit dimension; null/absent ⇒ Universal (all units). */
+    verificationUnitId: positiveInt.nullish(),
+    /** executive location dimension — a `locations` area id. REQUIRED for LOCAL/OGL; OPTIONAL for OFFICE
+     *  (a flat office rate has no location, ADR-0050). */
+    locationId: positiveInt.nullish(),
+    /** the field rate type — resolution key matching the task's `field_rate_type`. LOCAL/OGL for field
+     *  work, OFFICE for desk/KYC work. */
+    fieldRateType: z.enum(COMMISSION_RATE_TYPES),
+    /** completed-in TAT band: tat_hours, -1 (out of band), or null/absent ⇒ Universal (any band). */
+    tatBand: z.number().int().nullish(),
+    amount: money,
+    currency: z.string().length(3).default('INR'),
+    /** when the rate takes effect; defaults to now server-side. */
+    effectiveFrom: isoDate.optional(),
+  })
+  .refine((v) => v.fieldRateType === 'OFFICE' || !!v.locationId, {
+    message: 'locationId is required for a LOCAL/OGL commission rate (OFFICE is location-less)',
+    path: ['locationId'],
+  });
 
 /** Revise = a new effective-dated version of an existing commission rate (old row is end-dated). */
 export const ReviseCommissionRateSchema = z.object({

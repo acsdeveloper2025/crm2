@@ -243,7 +243,7 @@ export const taskService = {
     const attrs = {
       assignedTo: v.assignedTo,
       visitType: v.visitType,
-      distanceBand: v.distanceBand,
+      fieldRateType: v.fieldRateType,
       billCount: v.billCount,
     };
     const results: BulkAssignResult['results'] = [];

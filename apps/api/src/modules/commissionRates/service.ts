@@ -23,7 +23,7 @@ const CR_PAGE_SPEC: PageSpec = {
   sortMap: {
     user: 'u.name',
     client: 'c.name',
-    rateType: 'cr.rate_type',
+    fieldRateType: 'cr.field_rate_type',
     amount: 'cr.amount',
     effectiveFrom: 'cr.effective_from',
     status: 'cr.is_active',
@@ -31,7 +31,7 @@ const CR_PAGE_SPEC: PageSpec = {
     updatedAt: 'cr.updated_at',
   },
   filterMap: {
-    rateType: { column: 'cr.rate_type', kind: 'text' },
+    fieldRateType: { column: 'cr.field_rate_type', kind: 'text' },
     user: { column: 'u.name', kind: 'text' },
     client: { column: 'c.name', kind: 'text' },
     createdAt: { column: 'cr.created_at', kind: 'date' },
@@ -50,7 +50,7 @@ const toPosInt = (v: unknown): number | undefined => {
 const COMMISSION_RATE_EXPORT_COLUMNS: ExportColumn<CommissionRateView>[] = [
   { id: 'user', header: 'User', value: (r) => r.userName },
   { id: 'client', header: 'Client', value: (r) => r.clientName ?? 'Universal' },
-  { id: 'rateType', header: 'Rate Type', value: (r) => r.rateType },
+  { id: 'fieldRateType', header: 'Rate Type', value: (r) => r.fieldRateType },
   { id: 'amount', header: 'Amount', value: (r) => r.amount },
   { id: 'status', header: 'Status', value: (r) => (r.isActive ? 'Active' : 'Inactive') },
   { id: 'effectiveFrom', header: 'Effective From', value: (r) => r.effectiveFrom },

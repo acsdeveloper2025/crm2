@@ -641,6 +641,56 @@ verify on the prod-dev box post-deploy or via a local preview. New discovery →
 - The geography substrate (locations, `case_tasks`/`cases` area/pincode, `RATE_LATERAL` cascade) is
   fully live for rates and reusable as the reference model for commission.
 
+## Section R0050 — ADR-0050 rate-type / office two-actor commission: pre-push review gate (2026-06-20)
+
+4-agent adversarial review (CEO · CTO · Design · Security) of the two-rate-type + office flat-commission
+build, on top of a green `pnpm verify`. Verdicts: Security **GO**, CEO/Design **GO-with-nits**, CTO
+**NO-GO** (one blocker, now fixed). All findings dispositioned below.
+
+### R0050-1 · Migration re-run breaks the 2nd deploy (rename trap) — ✅ FIXED (2026-06-20)
+`0083` renames `rate_type`/`distance_band`, but the deploy migrate replays the FULL set every deploy and
+earlier migrations reference the OLD names verbatim. **Reproduced** (apply set ×2 on a scratch DB): 2nd
+pass hard-failed on `0058` (index on `rate_type` — `CREATE INDEX IF NOT EXISTS` still resolves columns),
+`0079` (`ALTER COLUMN rate_type DROP NOT NULL`), `0083`; and silently resurrected `rates.rate_type` +
+`case_tasks.distance_band` (`0013`/`0011`). Same class as the `0037`/`0081` MIS incident. **FIX:** guarded
+each old-name block on the renamed column's absence (`IF NOT EXISTS field_rate_type/client_rate_type`) in
+`0011`/`0013`/`0058`/`0079` — runs once on a fresh DB / first deploy, no-ops on every re-run; kept the
+`rates.rate_type_id` unconditional cleanup (`0012` re-adds it each deploy). **Verified:** 3 consecutive
+full deploys apply clean, schema converges (renamed cols only, no-overlap constraints intact). **Guardrail
+added:** `apps/api/src/platform/__tests__/migrations.rerun.test.ts` (applies the set ×3, asserts no
+resurrected columns). DON'T-REGRESS: any future column RENAME / DROP+ADD CHECK must keep this test green.
+
+### R0050-2 · OFFICE distance-band picker shown on 2 assign surfaces — ✅ FIXED (2026-06-20)
+ADR-0050 §3 = no LOCAL/OGL picker for OFFICE (auto-stamped). `AddTasksForm` honored it; `CaseDetailPage`
+`AssignForm` + `PipelinePage` `BulkAssignAction` showed it unconditionally (server ignored it → no
+corruption, but misleading). Gated both on `visitType==='FIELD'` + clear stale `fieldRateType` on switch.
+
+### R0050-3 · SDK field renames are a wire-contract change (not "additive") — 🟢 WONTFIX/authorized
+`rateType→clientRateType`, `distanceBand→fieldRateType` on `/api/v2` request/response schemas. Authorized
+by ADR-0050 (supersedes ADR-0046, owner+CTO sign-off — a freeze exception, not a silent break). **Mobile
+unaffected:** the `/sync/download` projection emits none of these fields; web FE moves in lockstep.
+
+### R0050-4 · ₹0-on-missing-commission-config is silent — 🟡 DEFERRED (ADR-0050 open item)
+A task whose dims match no active commission row earns ₹0 silently (LEFT JOIN → NULL → COALESCE 0);
+renders as `—` like "not yet completed". Pre-existing ADR-0050 "Consequences" risk. **Launch-checklist:**
+pre-seed OFFICE rates before go-live; ship a distinct "unresolved" indicator (TODO). Not a leak (Security).
+
+### R0050-5 · Office-exec has no in-app Excel-export / relay-state — 🟡 DEFERRED (product follow-up)
+The two-actor relay (KYC_VERIFIER downloads→emails source→forwards response; never completes) has no
+per-task Excel export affordance and no "sent/received" timestamp, so an ASSIGNED office task is
+indistinguishable from a stuck one on aging surfaces. First post-launch ask; not a blocker.
+
+### R0050-6 · Design nits — 🟡 DEFERRED
+`AddTasksForm.tsx` separator uses `text-border` as a text color (only such use; prefer
+`text-muted-foreground`); FIELD assign-at-create has no client-side guard for the now-required
+`fieldRateType` (server 400s — consistent with the form's existing server-refine reliance).
+
+### Verified PASS (Security — no finding)
+COMMISSION_LATERAL: `cmr.user_id = ct.assigned_to` is a top-level AND (enforced on the OFFICE branch too);
+LOCAL/OGL and OFFICE rate-spaces are disjoint; `fieldRateType` client enum = LOCAL/OGL only (OFFICE is
+server-derived from `visit_type`, not client-settable); the MANAGER/TL grant unlocks only the 2 task-close
+routes (no money/export/admin); completion stays scope-bound (404, IDOR-safe); all SQL parameterized.
+
 ---
 *Governance ledger. Update — never overwrite — as findings change state. Linked from
 `CRM2_MASTER_MEMORY.md`, `PROJECT_INDEX.md`, `docs/ARCHITECTURE_GOVERNANCE.md`,

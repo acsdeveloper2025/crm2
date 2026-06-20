@@ -13,22 +13,30 @@ ALTER TABLE commission_rates
   ADD COLUMN IF NOT EXISTS verification_unit_id integer REFERENCES verification_units (id),
   ADD COLUMN IF NOT EXISTS tat_band             integer;            -- tat_hours | -1 overflow | NULL=any
 
-ALTER TABLE commission_rates ALTER COLUMN rate_type DROP NOT NULL;
-
-ALTER TABLE commission_rates DROP CONSTRAINT IF EXISTS commission_rates_no_overlap;
+-- `rate_type` is renamed to `field_rate_type` by 0083. Since prod RE-RUNS every migration on every
+-- deploy, this rate_type-touching block must NOT execute once the rename has happened (it would
+-- reference a column that no longer exists → hard error: "column rate_type does not exist"). Guard it on
+-- the pre-rename state: it runs on a fresh DB / the first deploy (before 0083), then no-ops on every
+-- subsequent re-run (the renamed column auto-carries the DROP NOT NULL + the no-overlap EXCLUDE).
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'commission_rates_no_overlap') THEN
-    ALTER TABLE commission_rates ADD CONSTRAINT commission_rates_no_overlap EXCLUDE USING gist (
-      user_id WITH =,
-      (COALESCE(location_id, -1)) WITH =,
-      (COALESCE(client_id, -1)) WITH =,
-      (COALESCE(product_id, -1)) WITH =,
-      (COALESCE(verification_unit_id, -1)) WITH =,
-      (COALESCE(tat_band, 0)) WITH =,
-      (COALESCE(rate_type, '')) WITH =,
-      tstzrange(effective_from, COALESCE(effective_to, 'infinity'), '[)') WITH &&
-    ) WHERE (is_active);
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name = 'commission_rates' AND column_name = 'field_rate_type') THEN
+    ALTER TABLE commission_rates ALTER COLUMN rate_type DROP NOT NULL;
+
+    ALTER TABLE commission_rates DROP CONSTRAINT IF EXISTS commission_rates_no_overlap;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'commission_rates_no_overlap') THEN
+      ALTER TABLE commission_rates ADD CONSTRAINT commission_rates_no_overlap EXCLUDE USING gist (
+        user_id WITH =,
+        (COALESCE(location_id, -1)) WITH =,
+        (COALESCE(client_id, -1)) WITH =,
+        (COALESCE(product_id, -1)) WITH =,
+        (COALESCE(verification_unit_id, -1)) WITH =,
+        (COALESCE(tat_band, 0)) WITH =,
+        (COALESCE(rate_type, '')) WITH =,
+        tstzrange(effective_from, COALESCE(effective_to, 'infinity'), '[)') WITH &&
+      ) WHERE (is_active);
+    END IF;
   END IF;
 END $$;
 
