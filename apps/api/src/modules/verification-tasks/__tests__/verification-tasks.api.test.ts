@@ -462,11 +462,10 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
         )
         .attach('files', img, { filename: 'photo.jpg', contentType: 'image/jpeg' });
       expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(res.body.data.taskId).toBe(taskId);
-      expect(res.body.data.verificationType).toBe('residence');
-      expect(res.body.data.attachments).toHaveLength(1);
-      const a = res.body.data.attachments[0];
+      expect(res.body.taskId).toBe(taskId);
+      expect(res.body.verificationType).toBe('residence');
+      expect(res.body.attachments).toHaveLength(1);
+      const a = res.body.attachments[0];
       expect(a.photoType).toBe('verification');
       expect(a.geoLocation.latitude).toBe(28.6);
       expect(a.url).toContain(`field-photos/${caseId}/${taskId}/`);
@@ -499,7 +498,7 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
         .field('photoType', 'verification')
         .attach('files', img, { filename: 'photo.jpg', contentType: 'image/jpeg' });
       expect(replay.status).toBe(200);
-      expect(replay.body.data.attachments).toHaveLength(1);
+      expect(replay.body.attachments).toHaveLength(1);
       const count = (
         await db!.pool.query<{ n: number }>(
           `SELECT count(*)::int AS n FROM case_attachments WHERE task_id = $1`,
@@ -542,9 +541,9 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
         .set('Idempotency-Key', 'op-PV2')
         .attach('files', pdf, { filename: 'doc.pdf', contentType: 'application/pdf' });
       expect(bad.status).toBe(200);
-      expect(bad.body.success).toBe(false);
-      expect(bad.body.data.attachments).toHaveLength(0);
-      expect(bad.body.data.failed).toHaveLength(1);
+      expect(bad.status).toBe(200);
+      expect(bad.body.attachments).toHaveLength(0);
+      expect(bad.body.failed).toHaveLength(1);
     });
   });
 
@@ -580,16 +579,15 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
         .get(`/api/v2/verification-tasks/${taskId}/attachments`)
         .set(hdr('FIELD_AGENT', agent));
       expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(res.body.data).toHaveLength(2);
-      const rows = res.body.data as { originalName: string; url: string }[];
+      expect(res.body).toHaveLength(2);
+      const rows = res.body as { originalName: string; url: string }[];
       expect(rows.map((a) => a.originalName).sort()).toEqual(['policy.pdf', 'task-ref.pdf']);
       const url = Object.fromEntries(rows.map((a) => [a.originalName, a.url]));
       expect(url['policy.pdf']).toBe('https://fake/attachments/x/p.pdf'); // absolute presigned URL
       expect(url['task-ref.pdf']).toBe('https://fake/attachments/x/t.pdf');
-      expect(res.body.data[0]).toMatchObject({ mimeType: 'application/pdf' });
-      expect(typeof res.body.data[0].size).toBe('number');
-      expect(res.body.data[0].uploadedAt).toBeTruthy();
+      expect(res.body[0]).toMatchObject({ mimeType: 'application/pdf' });
+      expect(typeof res.body[0].size).toBe('number');
+      expect(res.body[0].uploadedAt).toBeTruthy();
 
       // a different agent (not assigned this task) → 404 (ownership, IDOR-safe)
       const other = await createUser({ username: 'fa_other', name: 'Other', role: 'FIELD_AGENT' });

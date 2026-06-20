@@ -104,12 +104,9 @@ function uploadResult(
   verificationType: string | null,
   submissionId: string | null,
 ): DeviceAttachmentUploadResult {
-  const msg = `${attachments.length} verification photo${attachments.length === 1 ? '' : 's'} uploaded`;
-  return {
-    success: attachments.length > 0,
-    message: failed.length > 0 ? `${msg} (${failed.length} failed)` : msg,
-    data: { attachments, failed, caseId, taskId, verificationType, submissionId },
-  };
+  // v2-native (ADR-0054): bare result, no v1 {success,message,data} wrapper. Still always 200 (new +
+  // replay); the device detects partial/total failure from the `failed` array, not a `success` flag.
+  return { attachments, failed, caseId, taskId, verificationType, submissionId };
 }
 
 export const verificationTaskService = {
@@ -155,19 +152,17 @@ export const verificationTaskService = {
     await ownedCaseId(taskId, actor); // 404 unless the task is assigned to the actor
     const rows = await repo.attachmentsForDeviceTask(taskId, actor.userId);
     const storage = getStorage();
-    return {
-      success: true,
-      data: await Promise.all(
-        rows.map(async (r) => ({
-          id: r.id,
-          originalName: r.originalName,
-          mimeType: r.mimeType,
-          size: r.fileSize,
-          url: await storage.signedUrl(r.storageKey),
-          uploadedAt: r.createdAt,
-        })),
-      ),
-    };
+    // v2-native (ADR-0054): a bare array of the office reference docs (no v1 {success,data} wrapper).
+    return await Promise.all(
+      rows.map(async (r) => ({
+        id: r.id,
+        originalName: r.originalName,
+        mimeType: r.mimeType,
+        size: r.fileSize,
+        url: await storage.signedUrl(r.storageKey),
+        uploadedAt: r.createdAt,
+      })),
+    );
   },
 
   /** Submit a verification form (evidence) AND complete the task — ADR-0032 submit==complete. The

@@ -103,22 +103,21 @@ export interface DeviceAttachment {
   uploadedAt: string;
 }
 
+/** v2-native (ADR-0054) — the bare upload result; no v1 {success,message,data} wrapper. Always 200
+ *  (new + replay); the device reads `failed` to detect partial/total failure. */
 export interface DeviceAttachmentUploadResult {
-  success: boolean;
-  message: string;
-  data: {
-    attachments: DeviceAttachment[];
-    failed: { filename: string; reason: string }[];
-    caseId: string;
-    taskId: string;
-    verificationType: string | null;
-    submissionId: string | null;
-  };
+  attachments: DeviceAttachment[];
+  failed: { filename: string; reason: string }[];
+  caseId: string;
+  taskId: string;
+  verificationType: string | null;
+  submissionId: string | null;
 }
 
 /**
  * GET /api/v2/verification-tasks/:id/attachments — the office REFERENCE docs the device shows the
- * agent for an owned task (the device labels these REMOTE / "Source: Backend/Web"). v1-envelope shape.
+ * agent for an owned task (the device labels these REMOTE / "Source: Backend/Web"). v2-native: a bare
+ * array (no v1 {success,data} wrapper).
  */
 export interface DeviceTaskAttachment {
   id: string;
@@ -131,7 +130,5 @@ export interface DeviceTaskAttachment {
   uploadedAt: string;
 }
 
-export interface DeviceTaskAttachmentList {
-  success: boolean;
-  data: DeviceTaskAttachment[];
-}
+/** v2-native (ADR-0054) — a bare array of the office reference docs. */
+export type DeviceTaskAttachmentList = DeviceTaskAttachment[];
