@@ -3,13 +3,11 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import {
   VISIT_TYPES,
   VISIT_TYPE_LABELS,
-  FIELD_RATE_TYPES,
   type AvailableUnit,
   type RatePreview,
   type AssignableUser,
   type CaseApplicant,
   type CaseTaskView,
-  type FieldRateType,
   type Location,
   type Paginated,
   type TatPolicyOption,
@@ -25,10 +23,9 @@ interface TaskRow {
   /** Target TAT in hours (ADR-0044) — the office SLA promise; replaces the old abstract priority. */
   tatHours: number;
   // ADR-0024 assign-at-create (only when canAssign): the pool, the FIELD location, and the executive.
+  // ADR-0056: the field rate type is NOT collected here — the server derives it from the chosen
+  // executive's commission at the location (and blocks a FIELD assign with no commission there).
   visitType: VisitType | '';
-  // ADR-0050: the trip distance band (LOCAL/OGL) — required whenever this row is assigned (assigneeId
-  // set), as it is the executive-commission resolution key.
-  fieldRateType: FieldRateType | '';
   pincodeQuery: string;
   /** A `locations` (pincode, area) row id — the FIELD task's verification location (= area = pincode). */
   locationId: string;
@@ -43,7 +40,6 @@ const emptyTask = (): TaskRow => ({
   trigger: '',
   tatHours: 24, // default 24h (= the old MEDIUM default)
   visitType: '',
-  fieldRateType: '',
   pincodeQuery: '',
   locationId: '',
   assigneeId: '',
@@ -121,11 +117,7 @@ export function AddTasksForm({
             ...(assigning && r.visitType === 'FIELD' && locationId
               ? { pincodeId: locationId, areaId: locationId }
               : {}),
-            // ADR-0050: send the distance band whenever this row is being assigned (assigneeId set) —
-            // the schema requires it, and it is the executive-commission resolution key.
-            ...(assigning && r.assigneeId && r.fieldRateType
-              ? { fieldRateType: r.fieldRateType as FieldRateType }
-              : {}),
+            // ADR-0056: no fieldRateType — the server derives it from the assignee's commission.
             ...(assigning && r.assigneeId ? { assigneeId: r.assigneeId } : {}),
           };
         }),
@@ -233,16 +225,16 @@ function TaskRowEditor({
   // depend on HOW the task is verified. A create-only role (no visit-type picker) keeps them visible.
   const showDispatch = !canAssign || !!row.visitType;
 
-  // ADR-0050 rate-type preview: once a unit + location (area) are picked, show the CLIENT rate type
-  // (Rate Management) and the FIELD rate type(s) (Commission Management) mapped to that pincode/area.
+  // ADR-0056 rate-type preview: shown AFTER the executive is chosen. CLIENT = the location bill label
+  // (Rate Management); FIELD = the chosen executive's derived trip band (Commission) — scoped by assigneeId.
   const { data: ratePreview } = useQuery({
-    queryKey: ['rate-preview', clientId, productId, row.verificationUnitId, row.locationId],
+    queryKey: ['rate-preview', clientId, productId, row.verificationUnitId, row.locationId, row.assigneeId],
     queryFn: () =>
       api<RatePreview>(
         'GET',
-        `/api/v2/cases/rate-preview?clientId=${clientId}&productId=${productId}&verificationUnitId=${row.verificationUnitId}&locationId=${row.locationId}`,
+        `/api/v2/cases/rate-preview?clientId=${clientId}&productId=${productId}&verificationUnitId=${row.verificationUnitId}&locationId=${row.locationId}&assigneeId=${row.assigneeId}`,
       ),
-    enabled: !!row.verificationUnitId && !!row.locationId,
+    enabled: !!row.verificationUnitId && !!row.locationId && !!row.assigneeId,
   });
 
   // FIELD only: search the pincode → the area picker lists that pincode's (pincode, area) rows.
@@ -344,7 +336,6 @@ function TaskRowEditor({
                 const nv = e.target.value as VisitType | '';
                 onChange({
                   visitType: nv,
-                  fieldRateType: '',
                   pincodeQuery: '',
                   locationId: '',
                   assigneeId: '',
@@ -421,37 +412,7 @@ function TaskRowEditor({
             </FieldLabel>
           </>
         )}
-        {/* ADR-0050 rate-type preview — the rate types mapped to the chosen pincode/area: CLIENT (Rate
-            Management → bill) and FIELD (Commission Management → commission). Read-only, types only. */}
-        {ratePreview && (
-          <div className="rounded-md border border-border bg-surface-muted px-3 py-2 text-xs sm:col-span-2 lg:col-span-4">
-            <span className="font-medium text-foreground">Rate types at this location:</span>{' '}
-            <span className="text-muted-foreground">Client</span>{' '}
-            <span className="font-mono uppercase">{ratePreview.clientRateType ?? '—'}</span>
-            <span className="mx-2 text-border">·</span>
-            <span className="text-muted-foreground">Field</span>{' '}
-            <span className="font-mono uppercase">
-              {ratePreview.fieldRateTypes.length ? ratePreview.fieldRateTypes.join(' / ') : '—'}
-            </span>
-          </div>
-        )}
-        {/* Field Rate Type (LOCAL/OGL) — FIELD only; the executive-commission key. OFFICE has none. */}
-        {canAssign && isField && (
-          <FieldLabel label="Field Rate Type">
-            <select
-              className="input"
-              value={row.fieldRateType}
-              onChange={(e) => onChange({ fieldRateType: e.target.value as FieldRateType | '' })}
-            >
-              <option value="">Select…</option>
-              {FIELD_RATE_TYPES.map((b) => (
-                <option key={b} value={b}>
-                  {b}
-                </option>
-              ))}
-            </select>
-          </FieldLabel>
-        )}
+        {/* ADR-0024/0055: pick the executive FIRST — the field rate type then derives from THIS executive. */}
         {canAssign && row.visitType && (
           <FieldLabel label={`Executive (${VISIT_TYPE_LABELS[row.visitType]})`}>
             <select
@@ -476,6 +437,27 @@ function TaskRowEditor({
               ))}
             </select>
           </FieldLabel>
+        )}
+        {/* ADR-0056 rate-type preview — shown AFTER the executive is chosen. CLIENT = the location bill
+            label (Rate Management); FIELD = the chosen executive's derived trip band (Commission). The
+            field rate type is NOT a manual pick. No band ⇒ this executive has no commission here and the
+            FIELD assignment is blocked server-side. */}
+        {ratePreview && (
+          <div className="rounded-md border border-border bg-surface-muted px-3 py-2 text-xs sm:col-span-2 lg:col-span-4">
+            <span className="font-medium text-foreground">Rate types at this location:</span>{' '}
+            <span className="text-muted-foreground">Client</span>{' '}
+            <span className="font-mono uppercase">{ratePreview.clientRateType ?? '—'}</span>
+            <span className="mx-2 text-border">·</span>
+            <span className="text-muted-foreground">Field</span>{' '}
+            <span className="font-mono uppercase">
+              {ratePreview.fieldRateTypes.length ? ratePreview.fieldRateTypes.join(' / ') : '—'}
+            </span>
+            {isField && ratePreview.fieldRateTypes.length === 0 && (
+              <span className="ml-2 text-destructive">
+                No commission configured for this executive here — assignment will be blocked.
+              </span>
+            )}
+          </div>
         )}
 
         {/* Per-task reference document (ADR-0025 B2) — full-width; shown once a visit type is chosen. */}

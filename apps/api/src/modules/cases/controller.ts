@@ -86,7 +86,14 @@ export const caseController = {
         throw AppError.badRequest('BAD_REQUEST', {
           param: 'clientId, productId, verificationUnitId, locationId',
         });
-      res.json(await svc.ratePreview(clientId, productId, verificationUnitId, locationId));
+      // ADR-0056: optional executive — when present the FIELD side is scoped to that assignee's commission.
+      const assigneeRaw = req.query['assigneeId'];
+      const assigneeId =
+        typeof assigneeRaw === 'string' &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(assigneeRaw)
+          ? assigneeRaw
+          : null;
+      res.json(await svc.ratePreview(clientId, productId, verificationUnitId, locationId, assigneeId));
     } catch (e) {
       next(e);
     }

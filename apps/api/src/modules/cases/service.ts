@@ -195,8 +195,9 @@ export const caseService = {
     productId: number,
     verificationUnitId: number,
     locationId: number,
+    assigneeId: string | null,
   ): Promise<{ clientRateType: string | null; fieldRateTypes: string[] }> {
-    return repo.ratePreview(clientId, productId, verificationUnitId, locationId);
+    return repo.ratePreview(clientId, productId, verificationUnitId, locationId, assigneeId);
   },
 
   async addTasks(caseId: string, input: unknown, actor: Actor): Promise<CaseTaskView[]> {

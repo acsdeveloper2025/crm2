@@ -154,6 +154,79 @@ async function recomputeCaseStatus(q: TxQuery, caseId: string, actorId: string):
   );
 }
 
+/**
+ * ADR-0056: resolve a FIELD executive's trip band (`field_rate_type`, LOCAL/OGL) for a task — derived
+ * from the executive's OWN active commission rows at the task location. NOT client-supplied. Mirrors
+ * `COMMISSION_LATERAL` (ADR-0050 §2) MINUS the `field_rate_type` equality (we are deriving it) and MINUS
+ * `tat_band` (the band is a completion-time amount concern; it does not change the trip type). Same
+ * location set + most-specific ORDER as the resolver, so the derived band is guaranteed to resolve a
+ * commission amount downstream. Returns null ⇒ the executive has no commission here ⇒ the caller BLOCKS.
+ * OFFICE rows are excluded (desk work auto-stamps 'OFFICE' separately).
+ */
+async function deriveFieldRateTypeForTask(
+  q: TxQuery,
+  caseId: string,
+  taskId: string,
+  assigneeId: string,
+): Promise<string | null> {
+  const [row] = await q<{ fieldRateType: string }>(
+    `WITH t AS (
+       SELECT ct.verification_unit_id AS unit, ct.area_id, ct.pincode_id,
+              cs.client_id, cs.product_id, cs.area_id AS c_area, cs.pincode_id AS c_pincode
+       FROM case_tasks ct JOIN cases cs ON cs.id = ct.case_id
+       WHERE ct.id = $2 AND ct.case_id = $3)
+     SELECT cmr.field_rate_type FROM commission_rates cmr, t
+      WHERE cmr.user_id = $1 AND cmr.is_active
+        AND cmr.field_rate_type IS NOT NULL AND cmr.field_rate_type <> 'OFFICE'
+        AND (cmr.client_id IS NULL OR cmr.client_id = t.client_id)
+        AND (cmr.product_id IS NULL OR cmr.product_id = t.product_id)
+        AND (cmr.verification_unit_id IS NULL OR cmr.verification_unit_id = t.unit)
+        AND cmr.location_id IN (t.area_id, t.pincode_id, t.c_area, t.c_pincode)
+        AND cmr.effective_from <= now() AND (cmr.effective_to IS NULL OR cmr.effective_to > now())
+      ORDER BY cmr.client_id DESC NULLS LAST, cmr.product_id DESC NULLS LAST,
+               cmr.verification_unit_id DESC NULLS LAST,
+               (CASE WHEN cmr.location_id = t.area_id   THEN 4 WHEN cmr.location_id = t.pincode_id THEN 3
+                     WHEN cmr.location_id = t.c_area    THEN 2 WHEN cmr.location_id = t.c_pincode  THEN 1
+                     ELSE 0 END) DESC,
+               cmr.id DESC
+      LIMIT 1`,
+    [assigneeId, taskId, caseId],
+  );
+  return row?.fieldRateType ?? null;
+}
+
+/** ADR-0056: same derivation for a not-yet-created task (assign-at-create) — the location ids come from
+ *  the input (area = pincode = the chosen `locations` row) + the case-level fallback. See above. */
+async function deriveFieldRateTypeForNewTask(
+  q: TxQuery,
+  caseId: string,
+  assigneeId: string,
+  verificationUnitId: number,
+  areaId: number | null,
+  pincodeId: number | null,
+): Promise<string | null> {
+  const [row] = await q<{ fieldRateType: string }>(
+    `WITH c AS (SELECT client_id, product_id, area_id AS c_area, pincode_id AS c_pincode FROM cases WHERE id = $2)
+     SELECT cmr.field_rate_type FROM commission_rates cmr, c
+      WHERE cmr.user_id = $1 AND cmr.is_active
+        AND cmr.field_rate_type IS NOT NULL AND cmr.field_rate_type <> 'OFFICE'
+        AND (cmr.client_id IS NULL OR cmr.client_id = c.client_id)
+        AND (cmr.product_id IS NULL OR cmr.product_id = c.product_id)
+        AND (cmr.verification_unit_id IS NULL OR cmr.verification_unit_id = $3)
+        AND cmr.location_id IN ($4, $5, c.c_area, c.c_pincode)
+        AND cmr.effective_from <= now() AND (cmr.effective_to IS NULL OR cmr.effective_to > now())
+      ORDER BY cmr.client_id DESC NULLS LAST, cmr.product_id DESC NULLS LAST,
+               cmr.verification_unit_id DESC NULLS LAST,
+               (CASE WHEN cmr.location_id = $4 THEN 4 WHEN cmr.location_id = $5 THEN 3
+                     WHEN cmr.location_id = c.c_area THEN 2 WHEN cmr.location_id = c.c_pincode THEN 1
+                     ELSE 0 END) DESC,
+               cmr.id DESC
+      LIMIT 1`,
+    [assigneeId, caseId, verificationUnitId, areaId, pincodeId],
+  );
+  return row?.fieldRateType ?? null;
+}
+
 /** Task-view columns shared by the by-case and by-id reads (dispatch fields + applicant + assignee).
  *  `rate_type` (ADR-0024) is resolved live from rate management for this case's client+product and
  *  the task's unit — the BEST-available active rate for that CPV, preferring the most specific
@@ -426,15 +499,17 @@ export const caseRepository = {
     );
   },
 
-  /** Rate-type preview during task creation (ADR-0050): the CLIENT rate type mapped in Rate Management
-   *  for this client+product+unit at the chosen location (most-specific: exact location > location-less
-   *  default), and the distinct FIELD rate types configured in active Commission Management rows at that
-   *  location (client/product/unit Universal-aware). Types only — no amounts, no per-user resolution. */
+  /** Rate-type preview during task creation (ADR-0050 + ADR-0056): the CLIENT rate type mapped in Rate
+   *  Management for this client+product+unit at the chosen location (most-specific: exact location >
+   *  location-less default — a display label), and the FIELD rate type(s) from active Commission rows at
+   *  that location. ADR-0056: when `assigneeId` is given the FIELD side is scoped to THAT executive (0/1
+   *  band — the office picks no band; OFFICE excluded); without it, the location-wide union. Types only. */
   async ratePreview(
     clientId: number,
     productId: number,
     verificationUnitId: number,
     locationId: number,
+    assigneeId: string | null,
   ): Promise<{ clientRateType: string | null; fieldRateTypes: string[] }> {
     const [clientRow] = await query<{ clientRateType: string | null }>(
       `SELECT r.client_rate_type
@@ -450,12 +525,14 @@ export const caseRepository = {
       `SELECT DISTINCT cmr.field_rate_type
          FROM commission_rates cmr
         WHERE cmr.is_active AND cmr.location_id = $4 AND cmr.field_rate_type IS NOT NULL
+          AND cmr.field_rate_type <> 'OFFICE'
+          AND ($5::uuid IS NULL OR cmr.user_id = $5::uuid)
           AND cmr.effective_from <= now() AND (cmr.effective_to IS NULL OR cmr.effective_to > now())
           AND (cmr.client_id IS NULL OR cmr.client_id = $1)
           AND (cmr.product_id IS NULL OR cmr.product_id = $2)
           AND (cmr.verification_unit_id IS NULL OR cmr.verification_unit_id = $3)
         ORDER BY cmr.field_rate_type`,
-      [clientId, productId, verificationUnitId, locationId],
+      [clientId, productId, verificationUnitId, locationId, assigneeId],
     );
     return {
       clientRateType: clientRow?.clientRateType ?? null,
@@ -505,7 +582,7 @@ export const caseRepository = {
       // ADR-0024 assign-at-create (service has re-checked eligibility): when assigneeId is set the
       // task is born ASSIGNED with its pool (visitType) + location; otherwise it stays PENDING.
       visitType?: string | undefined;
-      // ADR-0050: trip distance band stamped on assign-at-create (commission resolution key).
+      // ADR-0056: an explicit override; normally absent — the server derives from the assignee's commission.
       fieldRateType?: string | undefined;
       pincodeId?: number | undefined;
       areaId?: number | undefined;
@@ -524,6 +601,26 @@ export const caseRepository = {
         for (const t of tasks) {
           seq += 1;
           const assignee = t.assigneeId ?? null;
+          // ADR-0056: derive the FIELD trip band from the assignee's commission at the task location when
+          // the client didn't supply one (the web never does); no commission there ⇒ block the FIELD
+          // assign. An explicit value is honored. OFFICE is auto-stamped 'OFFICE' by the INSERT CASE.
+          let fieldRateType: string | null = t.fieldRateType ?? null;
+          if (assignee && t.visitType === 'FIELD' && !fieldRateType) {
+            fieldRateType = await deriveFieldRateTypeForNewTask(
+              q,
+              caseId,
+              assignee,
+              t.verificationUnitId,
+              t.areaId ?? null,
+              t.pincodeId ?? null,
+            );
+            if (!fieldRateType)
+              throw AppError.badRequest('NO_FIELD_COMMISSION', {
+                assigneeId: assignee,
+                areaId: t.areaId ?? null,
+                pincodeId: t.pincodeId ?? null,
+              });
+          }
           const [inserted] = await q<{ id: string }>(
             `INSERT INTO case_tasks
                (case_id, verification_unit_id, applicant_id, address, trigger, priority,
@@ -563,7 +660,7 @@ export const caseRepository = {
               t.latitude ?? null,
               t.longitude ?? null,
               t.tatHours ?? null,
-              t.fieldRateType ?? null,
+              fieldRateType,
             ],
           );
           // Append-only assignment history for a task assigned at creation (first event = ASSIGNED).
@@ -745,6 +842,15 @@ export const caseRepository = {
   ): Promise<CaseTaskView> {
     try {
       return await withTransaction(async (q) => {
+        // ADR-0056: derive the FIELD trip band from the assignee's commission at the task location when the
+        // client didn't supply one (the web never does); block if none. Covers single assign AND bulk-assign
+        // (which calls this method). An explicit value is honored. OFFICE → SQL CASE stamps 'OFFICE'.
+        let fieldRateType: string | null = input.fieldRateType ?? null;
+        if (input.visitType === 'FIELD' && !fieldRateType) {
+          fieldRateType = await deriveFieldRateTypeForTask(q, caseId, taskId, input.assignedTo);
+          if (!fieldRateType)
+            throw AppError.badRequest('NO_FIELD_COMMISSION', { assigneeId: input.assignedTo });
+        }
         const [updated] = await q<{ id: string; previousAssignedTo: string | null }>(
           `UPDATE case_tasks
            SET assigned_to = $3, status = 'ASSIGNED', visit_type = $4,
@@ -762,7 +868,7 @@ export const caseRepository = {
             caseId,
             input.assignedTo,
             input.visitType,
-            input.fieldRateType ?? null,
+            fieldRateType,
             input.billCount,
             actorId,
             expectedVersion,
@@ -785,7 +891,7 @@ export const caseRepository = {
             input.assignedTo,
             updated.previousAssignedTo,
             input.visitType,
-            input.fieldRateType ?? null,
+            fieldRateType,
             input.billCount,
             actorId,
           ],
@@ -1066,6 +1172,14 @@ export const caseRepository = {
           [revokedTaskId, caseId],
         );
         if (!parent) throw AppError.notFound('TASK_NOT_FOUND');
+        // ADR-0056: derive the FIELD trip band from the assignee's commission at the (revoked) task's
+        // location when the client didn't supply one; block if none. An explicit value is honored.
+        let fieldRateType: string | null = input.fieldRateType ?? null;
+        if (input.visitType === 'FIELD' && !fieldRateType) {
+          fieldRateType = await deriveFieldRateTypeForTask(q, caseId, revokedTaskId, input.assignedTo);
+          if (!fieldRateType)
+            throw AppError.badRequest('NO_FIELD_COMMISSION', { assigneeId: input.assignedTo });
+        }
         const [seqRow] = await q<{ n: number }>(
           `SELECT count(*)::int AS n FROM case_tasks WHERE case_id = $1`,
           [caseId],
@@ -1091,7 +1205,7 @@ export const caseRepository = {
             caseId,
             revokedTaskId,
             input.visitType,
-            input.fieldRateType ?? null,
+            fieldRateType,
             input.billCount,
             input.assignedTo,
             actorId,
@@ -1110,7 +1224,7 @@ export const caseRepository = {
             input.assignedTo,
             parent.assignedTo,
             input.visitType,
-            input.fieldRateType ?? null,
+            fieldRateType,
             input.billCount,
             actorId,
           ],

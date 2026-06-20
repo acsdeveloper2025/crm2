@@ -428,8 +428,9 @@ export const AddTasksSchema = z.object({
           // task carries its location (areaId/pincodeId) for territory match + rate resolution;
           // assigneeId assigns it immediately (server re-checks eligibility) — omit all to add it PENDING.
           visitType: z.enum(VISIT_TYPES).optional(),
-          // ADR-0050: the trip distance band (LOCAL/OGL) — OPTIONAL; when set on an assign-at-create it
-          // is the executive-commission resolution key (matches the task's field_rate_type).
+          // ADR-0056: field_rate_type is normally server-derived from the assignee's commission (the web
+          // no longer picks it). An explicit value is honored for back-compat; a FIELD assign with neither
+          // an explicit value NOR a matching commission at the location is blocked (NO_FIELD_COMMISSION).
           fieldRateType: z.enum(FIELD_RATE_TYPES).optional(),
           pincodeId: positiveInt.optional(),
           areaId: positiveInt.optional(),
@@ -448,10 +449,6 @@ export const AddTasksSchema = z.object({
         .refine((t) => !t.assigneeId || t.visitType !== 'FIELD' || (!!t.areaId && !!t.pincodeId), {
           message: 'a FIELD assignment requires the verification location (pincode + area)',
           path: ['areaId'],
-        })
-        .refine((t) => !t.assigneeId || t.visitType !== 'FIELD' || !!t.fieldRateType, {
-          message: 'fieldRateType (LOCAL/OGL) is required for a FIELD assign-at-create',
-          path: ['fieldRateType'],
         }),
     )
     .min(1)
@@ -471,22 +468,17 @@ export interface EligibleAssigneesQuery {
 const uuid = z.string().uuid();
 const MAX_BILL_COUNT = 50;
 
-/** Assign (or reassign) a task to an executive: the visit-type pool + field rate type + bill count.
- *  The OCC `version` travels OUTSIDE this schema (requireVersion → 400). `fieldRateType` (LOCAL/OGL) is
- *  the executive-commission resolution key (`commission_rates.field_rate_type` matches the task's
- *  `field_rate_type`, ADR-0050) and is REQUIRED for a FIELD assignment (else the task earns no
- *  commission); OFFICE assignments may omit it. */
-export const AssignTaskSchema = z
-  .object({
-    assignedTo: uuid,
-    visitType: z.enum(VISIT_TYPES),
-    fieldRateType: z.enum(FIELD_RATE_TYPES).optional(),
-    billCount: z.number().int().min(0).max(MAX_BILL_COUNT),
-  })
-  .refine((v) => v.visitType !== 'FIELD' || !!v.fieldRateType, {
-    message: 'fieldRateType (LOCAL/OGL) is required for a FIELD assignment',
-    path: ['fieldRateType'],
-  });
+/** Assign (or reassign) a task to an executive: the visit-type pool + bill count. The OCC `version`
+ *  travels OUTSIDE this schema (requireVersion → 400). ADR-0056: the executive-commission key
+ *  `field_rate_type` (LOCAL/OGL) is normally NOT picked here — the server derives it from the assignee's
+ *  commission at the task location and BLOCKS a FIELD assign with no commission there. An explicit value
+ *  is honored for back-compat; OFFICE auto-stamps 'OFFICE' regardless. */
+export const AssignTaskSchema = z.object({
+  assignedTo: uuid,
+  visitType: z.enum(VISIT_TYPES),
+  fieldRateType: z.enum(FIELD_RATE_TYPES).optional(),
+  billCount: z.number().int().min(0).max(MAX_BILL_COUNT),
+});
 export type AssignTaskInput = z.infer<typeof AssignTaskSchema>;
 
 /** The wire shape of a versioned assignment write (input + the OCC token). */
@@ -574,18 +566,14 @@ export type ReworkTaskInput = z.infer<typeof ReworkTaskSchema>;
  * extra bill). The operator re-picks the pool (visit type), assignee, and bill — the SAME fields as an
  * assignment (location stays the task's, as in v2 assign) + an optional reason. Gated `task.rework`.
  */
-export const ReassignTaskSchema = z
-  .object({
-    assignedTo: uuid,
-    visitType: z.enum(VISIT_TYPES),
-    fieldRateType: z.enum(FIELD_RATE_TYPES).optional(), // ADR-0050: commission key, required for FIELD
-    billCount: z.number().int().min(0).max(MAX_BILL_COUNT),
-    reason: z.string().trim().max(MAX_REMARK).optional(),
-  })
-  .refine((v) => v.visitType !== 'FIELD' || !!v.fieldRateType, {
-    message: 'fieldRateType (LOCAL/OGL) is required for a FIELD assignment',
-    path: ['fieldRateType'],
-  });
+export const ReassignTaskSchema = z.object({
+  assignedTo: uuid,
+  visitType: z.enum(VISIT_TYPES),
+  // ADR-0056: normally server-derived from the assignee's commission; an explicit value is honored.
+  fieldRateType: z.enum(FIELD_RATE_TYPES).optional(),
+  billCount: z.number().int().min(0).max(MAX_BILL_COUNT),
+  reason: z.string().trim().max(MAX_REMARK).optional(),
+});
 export type ReassignTaskInput = z.infer<typeof ReassignTaskSchema>;
 
 /**

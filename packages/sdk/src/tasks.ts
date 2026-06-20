@@ -81,26 +81,27 @@ const MAX_BILL_COUNT = 50;
  * distance/bill attributes. Per-row OCC (`version`) + per-row outcome — a failed row never
  * aborts the batch (B-23 precedent).
  */
-export const BulkAssignSchema = z
-  .object({
-    items: z
-      .array(z.object({ id: uuid, version: z.number().int().min(0) }))
-      .min(1)
-      .max(MAX_BULK_ASSIGN_ITEMS),
-    assignedTo: uuid,
-    visitType: z.enum(VISIT_TYPES),
-    // ADR-0050: the field rate type (LOCAL/OGL) is the executive-commission resolution key; REQUIRED for
-    // a FIELD bulk assignment (else those tasks resolve no commission), optional for OFFICE.
-    fieldRateType: z.enum(FIELD_RATE_TYPES).optional(),
-    billCount: z.number().int().min(0).max(MAX_BILL_COUNT),
-  })
-  .refine((v) => v.visitType !== 'FIELD' || !!v.fieldRateType, {
-    message: 'fieldRateType (LOCAL/OGL) is required for a FIELD assignment',
-    path: ['fieldRateType'],
-  });
+export const BulkAssignSchema = z.object({
+  items: z
+    .array(z.object({ id: uuid, version: z.number().int().min(0) }))
+    .min(1)
+    .max(MAX_BULK_ASSIGN_ITEMS),
+  assignedTo: uuid,
+  visitType: z.enum(VISIT_TYPES),
+  // ADR-0056: field_rate_type is normally server-derived per task from the assignee's commission at that
+  // task's location; an explicit value is honored. A FIELD task with neither → NO_FIELD_COMMISSION row.
+  fieldRateType: z.enum(FIELD_RATE_TYPES).optional(),
+  billCount: z.number().int().min(0).max(MAX_BILL_COUNT),
+});
 export type BulkAssignInput = z.infer<typeof BulkAssignSchema>;
 
-export type BulkAssignRowStatus = 'OK' | 'CONFLICT' | 'NOT_FOUND' | 'NOT_ASSIGNABLE' | 'INELIGIBLE_ASSIGNEE';
+export type BulkAssignRowStatus =
+  | 'OK'
+  | 'CONFLICT'
+  | 'NOT_FOUND'
+  | 'NOT_ASSIGNABLE'
+  | 'INELIGIBLE_ASSIGNEE'
+  | 'NO_FIELD_COMMISSION';
 
 /** Per-row outcome of a bulk assignment (the UI summarizes counts, keeps failures selected). */
 export interface BulkAssignResult {
@@ -110,4 +111,6 @@ export interface BulkAssignResult {
   notFoundCount: number;
   notAssignableCount: number;
   ineligibleCount: number;
+  /** ADR-0056: FIELD rows whose assignee has no commission configured at the task location. */
+  noFieldCommissionCount: number;
 }

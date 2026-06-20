@@ -4,7 +4,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   VISIT_TYPES,
   VISIT_TYPE_LABELS,
-  FIELD_RATE_TYPES,
   KYC_RESULTS,
   KYC_RESULT_LABELS,
   TASK_ORIGIN_LABELS,
@@ -19,7 +18,7 @@ import {
   type AssignTaskInput,
   type CompleteTaskInput,
   type CaseFinalizeInput,
-  type FieldRateType,
+  type RatePreview,
   type KycResult,
   type VisitType,
   type CaseAttachment,
@@ -775,6 +774,8 @@ function TasksSection({
                       <AssignForm
                         task={t}
                         caseId={caseId}
+                        clientId={clientId}
+                        productId={productId}
                         pending={assign.isPending}
                         error={assign.isError}
                         onCancel={() => setOpenTaskId(null)}
@@ -837,6 +838,8 @@ function TasksSection({
                       <AssignForm
                         task={t}
                         caseId={caseId}
+                        clientId={clientId}
+                        productId={productId}
                         pending={reassign.isPending}
                         error={reassign.isError}
                         onCancel={() => setReassignTaskId(null)}
@@ -878,6 +881,8 @@ function TasksSection({
 function AssignForm({
   task,
   caseId,
+  clientId,
+  productId,
   pending,
   error,
   onCancel,
@@ -885,6 +890,8 @@ function AssignForm({
 }: {
   task: CaseTaskView;
   caseId: string;
+  clientId: number;
+  productId: number;
   pending: boolean;
   error: boolean;
   onCancel: () => void;
@@ -892,9 +899,6 @@ function AssignForm({
 }) {
   const [assignedTo, setAssignedTo] = useState(task.assignedTo ?? '');
   const [visitType, setVisitType] = useState<VisitType>(task.visitType ?? 'FIELD');
-  // ADR-0050: the trip distance band is the executive-commission resolution key — REQUIRED (no default,
-  // a conscious LOCAL/OGL choice). Pre-fill from the task if it already carries one.
-  const [fieldRateType, setFieldRateType] = useState<FieldRateType | ''>(task.fieldRateType ?? '');
   const [billCount, setBillCount] = useState(task.billCount || 1);
 
   // ADR-0024: the pool is the chosen visit-type pool ∩ (FIELD) the task's OWN territory — the same
@@ -914,10 +918,22 @@ function AssignForm({
   });
   const pool = users ?? [];
 
+  // ADR-0056: once an executive is chosen, preview the rate types at the task's location — CLIENT bill
+  // label + the chosen executive's DERIVED field trip band (no manual pick; no band ⇒ assign blocked).
+  const { data: ratePreview } = useQuery({
+    queryKey: ['rate-preview', clientId, productId, task.verificationUnitId, task.areaId, assignedTo],
+    queryFn: () =>
+      api<RatePreview>(
+        'GET',
+        `/api/v2/cases/rate-preview?clientId=${clientId}&productId=${productId}&verificationUnitId=${task.verificationUnitId}&locationId=${task.areaId}&assigneeId=${assignedTo}`,
+      ),
+    enabled: visitType === 'FIELD' && !!task.areaId && !!assignedTo,
+  });
+
   const submit = () => {
     if (!assignedTo) return;
-    // fieldRateType is OPTIONAL (ADR-0050 commission key) — send it only when chosen.
-    onSubmit({ assignedTo, visitType, billCount, ...(fieldRateType ? { fieldRateType } : {}) });
+    // ADR-0056: no fieldRateType — the server derives it from the assignee's commission at the location.
+    onSubmit({ assignedTo, visitType, billCount });
   };
 
   return (
@@ -927,10 +943,8 @@ function AssignForm({
           className="h-9 w-36 rounded-md border border-border bg-background px-2 text-sm"
           value={visitType}
           onChange={(e) => {
-            const next = e.target.value as VisitType;
-            setVisitType(next);
+            setVisitType(e.target.value as VisitType);
             setAssignedTo(''); // pool changes with the visit type
-            if (next !== 'FIELD') setFieldRateType(''); // OFFICE has no trip band (auto-stamped server-side)
           }}
         >
           {VISIT_TYPES.map((v) => (
@@ -940,23 +954,7 @@ function AssignForm({
           ))}
         </select>
       </Field>
-      {/* ADR-0050: the field-rate-type (trip band) applies to FIELD only; OFFICE auto-stamps 'OFFICE'. */}
-      {visitType === 'FIELD' && (
-        <Field label="Distance band">
-          <select
-            className="h-9 w-36 rounded-md border border-border bg-background px-2 text-sm"
-            value={fieldRateType}
-            onChange={(e) => setFieldRateType(e.target.value as FieldRateType | '')}
-          >
-            <option value="">Select…</option>
-            {FIELD_RATE_TYPES.map((b) => (
-              <option key={b} value={b}>
-                {b}
-              </option>
-            ))}
-          </select>
-        </Field>
-      )}
+      {/* ADR-0024/0056: pick the executive — the FIELD trip band then derives from THIS executive. */}
       <Field label="Executive">
         <select
           className="h-9 w-56 rounded-md border border-border bg-background px-2 text-sm"
@@ -979,6 +977,25 @@ function AssignForm({
           ))}
         </select>
       </Field>
+      {/* ADR-0056 rate-type preview — CLIENT location bill label + the chosen executive's derived FIELD
+          trip band. No band ⇒ this executive has no commission here and the FIELD assign is blocked. */}
+      {ratePreview && (
+        <div className="w-full rounded-md border border-border bg-surface-muted px-3 py-2 text-xs">
+          <span className="font-medium text-foreground">Rate types at this location:</span>{' '}
+          <span className="text-muted-foreground">Client</span>{' '}
+          <span className="font-mono uppercase">{ratePreview.clientRateType ?? '—'}</span>
+          <span className="mx-2 text-border">·</span>
+          <span className="text-muted-foreground">Field</span>{' '}
+          <span className="font-mono uppercase">
+            {ratePreview.fieldRateTypes.length ? ratePreview.fieldRateTypes.join(' / ') : '—'}
+          </span>
+          {ratePreview.fieldRateTypes.length === 0 && (
+            <span className="ml-2 text-destructive">
+              No commission configured for this executive here — assignment will be blocked.
+            </span>
+          )}
+        </div>
+      )}
       <Field label="Bill count">
         <input
           type="number"

@@ -12,11 +12,9 @@ import {
   type Paginated,
   type TaskStats,
   type TaskView,
-  type FieldRateType,
   type VisitType,
   VISIT_TYPES,
   VISIT_TYPE_LABELS,
-  FIELD_RATE_TYPES,
 } from '@crm2/sdk';
 import { api, apiExport } from '../../lib/sdk.js';
 import { formatDateTime } from '../../lib/format.js';
@@ -298,7 +296,6 @@ function BulkAssignAction({ selection }: { selection: BulkSelection<TaskView> })
   const [visitType, setVisitType] = useState<VisitType>('FIELD');
   // ADR-0050: the trip distance band is the executive-commission resolution key — REQUIRED, no default
   // (a conscious LOCAL/OGL choice shared across the whole selection).
-  const [fieldRateType, setFieldRateType] = useState<FieldRateType | ''>('');
   const [billCount, setBillCount] = useState(1);
   const [busy, setBusy] = useState(false);
   const [poolError, setPoolError] = useState(false);
@@ -333,8 +330,7 @@ function BulkAssignAction({ selection }: { selection: BulkSelection<TaskView> })
         items: selection.rows.map((r) => ({ id: r.id, version: r.version })),
         assignedTo,
         visitType,
-        // fieldRateType is OPTIONAL (ADR-0050 commission key) — send only when chosen.
-        ...(fieldRateType ? { fieldRateType } : {}),
+        // ADR-0056: no fieldRateType — the server derives each task's band from the assignee's commission.
         billCount,
       });
       void qc.invalidateQueries({ queryKey: [QK] });
@@ -342,6 +338,8 @@ function BulkAssignAction({ selection }: { selection: BulkSelection<TaskView> })
       if (res.conflictCount) parts.push(`${res.conflictCount} changed by someone else`);
       if (res.notAssignableCount) parts.push(`${res.notAssignableCount} not assignable`);
       if (res.ineligibleCount) parts.push(`${res.ineligibleCount} ineligible for this executive`);
+      if (res.noFieldCommissionCount)
+        parts.push(`${res.noFieldCommissionCount} with no commission at the location`);
       if (res.notFoundCount) parts.push(`${res.notFoundCount} not found`);
       setMessage(parts.join(' · '));
       const clean = res.okCount === res.results.length;
@@ -406,10 +404,8 @@ function BulkAssignAction({ selection }: { selection: BulkSelection<TaskView> })
                     className="h-9 w-36 rounded-md border border-border bg-background px-2 text-sm"
                     value={visitType}
                     onChange={(e) => {
-                      const next = e.target.value as VisitType;
-                      setVisitType(next);
+                      setVisitType(e.target.value as VisitType);
                       setAssignedTo(''); // pool changes with the visit type
-                      if (next !== 'FIELD') setFieldRateType(''); // OFFICE has no trip band (auto-stamped)
                     }}
                   >
                     {VISIT_TYPES.map((v) => (
@@ -419,26 +415,8 @@ function BulkAssignAction({ selection }: { selection: BulkSelection<TaskView> })
                     ))}
                   </select>
                 </label>
-                {/* ADR-0050: trip band is FIELD-only; OFFICE auto-stamps 'OFFICE' server-side. */}
-                {visitType === 'FIELD' && (
-                  <label className="flex flex-col gap-1">
-                    <span className="text-xs uppercase tracking-wide text-muted-foreground">
-                      Distance band
-                    </span>
-                    <select
-                      className="h-9 w-36 rounded-md border border-border bg-background px-2 text-sm"
-                      value={fieldRateType}
-                      onChange={(e) => setFieldRateType(e.target.value as FieldRateType | '')}
-                    >
-                      <option value="">Select…</option>
-                      {FIELD_RATE_TYPES.map((b) => (
-                        <option key={b} value={b}>
-                          {b}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
+                {/* ADR-0056: no field-rate-type picker — the server derives each task's trip band from the
+                    assignee's commission at that task's location (NO_FIELD_COMMISSION row if none). */}
                 <label className="flex flex-col gap-1">
                   <span className="text-xs uppercase tracking-wide text-muted-foreground">Bill count</span>
                   <input

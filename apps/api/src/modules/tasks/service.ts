@@ -240,6 +240,9 @@ export const taskService = {
     const eligible = new Set(
       await repo.eligibleTaskIdsForAssignee(ids, v.assignedTo, v.visitType, await getScopedUserIds(actor)),
     );
+    // ADR-0056: field_rate_type is normally server-derived — caseRepository.assignTask derives it per task
+    // from the assignee's commission at that task's location (NO_FIELD_COMMISSION if none). An explicit
+    // value (rare; the web never sends one for bulk) is honored.
     const attrs = {
       assignedTo: v.assignedTo,
       visitType: v.visitType,
@@ -253,6 +256,7 @@ export const taskService = {
       NOT_FOUND: 0,
       NOT_ASSIGNABLE: 0,
       INELIGIBLE_ASSIGNEE: 0,
+      NO_FIELD_COMMISSION: 0,
     };
     for (const item of v.items) {
       const row = visible.get(item.id);
@@ -269,6 +273,8 @@ export const taskService = {
           status = 'OK';
         } catch (e) {
           if (e instanceof AppError && e.code === 'STALE_UPDATE') status = 'CONFLICT';
+          // ADR-0056: a FIELD assignee with no commission at this task's location → per-row status.
+          else if (e instanceof AppError && e.code === 'NO_FIELD_COMMISSION') status = 'NO_FIELD_COMMISSION';
           else throw e; // a real failure must not be swallowed as a per-row status
         }
       }
@@ -282,6 +288,7 @@ export const taskService = {
       notFoundCount: counts.NOT_FOUND,
       notAssignableCount: counts.NOT_ASSIGNABLE,
       ineligibleCount: counts.INELIGIBLE_ASSIGNEE,
+      noFieldCommissionCount: counts.NO_FIELD_COMMISSION,
     };
   },
 };
