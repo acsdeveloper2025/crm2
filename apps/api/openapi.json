@@ -844,25 +844,6 @@
         ]
       }
     },
-    "/api/v2/cases/{id}/tasks/{taskId}/unassign": {
-      "post": {
-        "tags": [
-          "cases"
-        ],
-        "operationId": "post_api_v2_cases_id_tasks_taskId_unassign",
-        "summary": "POST /api/v2/cases/{id}/tasks/{taskId}/unassign",
-        "responses": {
-          "default": {
-            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      }
-    },
     "/api/v2/cases/{id}/verdict-history": {
       "get": {
         "tags": [

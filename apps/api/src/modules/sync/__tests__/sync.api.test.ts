@@ -332,12 +332,21 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
     const fa2 = await createUser({ username: 'fa_ra2', name: 'FA RA2', role: 'FIELD_AGENT' });
     const t = await seedTask(ctx, { name: 'RA APP', trigger: 'x' });
     expect((await assign(t.caseId, t.taskId, fa1)).status).toBe(200); // version 1 → 2
-    // reassign away to fa2 (OCC version is now 2) → REASSIGNED history, previous_assigned_to = fa1
+    // ADR-0055: single /assign no longer re-points a live task; the in-place reassign-away that produces a
+    // purge signal now flows through bulk-assign (still PENDING|ASSIGNED). Reassign away fa1 → fa2 (version
+    // is now 2) → REASSIGNED history, previous_assigned_to = fa1.
     const reassign = await request(app)
-      .post(`/api/v2/cases/${t.caseId}/tasks/${t.taskId}/assign`)
+      .post('/api/v2/tasks/bulk-assign')
       .set(SA)
-      .send({ assignedTo: fa2, visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 1, version: 2 });
+      .send({
+        items: [{ id: t.taskId, version: 2 }],
+        assignedTo: fa2,
+        visitType: 'FIELD',
+        fieldRateType: 'LOCAL',
+        billCount: 1,
+      });
     expect(reassign.status).toBe(200);
+    expect(reassign.body.okCount).toBe(1);
 
     const seenBy1 = await request(app).get('/api/v2/sync/download').set(hdr('FIELD_AGENT', fa1));
     expect(seenBy1.body.tasks).toEqual([]); // no longer assigned → out of the tasks filter
@@ -492,12 +501,19 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
     const fa2 = await createUser({ username: 'fa_pgd2', name: 'FA PGD2', role: 'FIELD_AGENT' });
     const t = await seedTask(ctx, { name: 'PGD APP', trigger: 'x' });
     expect((await assign(t.caseId, t.taskId, fa1)).status).toBe(200);
+    // ADR-0055: reassign-away via bulk-assign (single /assign no longer re-points a live task).
     expect(
       (
         await request(app)
-          .post(`/api/v2/cases/${t.caseId}/tasks/${t.taskId}/assign`)
+          .post('/api/v2/tasks/bulk-assign')
           .set(SA)
-          .send({ assignedTo: fa2, visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 1, version: 2 })
+          .send({
+            items: [{ id: t.taskId, version: 2 }],
+            assignedTo: fa2,
+            visitType: 'FIELD',
+            fieldRateType: 'LOCAL',
+            billCount: 1,
+          })
       ).status,
     ).toBe(200);
 

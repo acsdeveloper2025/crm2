@@ -478,13 +478,6 @@ function TasksSection({
     onError: onOccError,
   });
 
-  const unassign = useMutation({
-    mutationFn: ({ taskId, version }: { taskId: string; version: number }) =>
-      api<CaseTaskView>('POST', `/api/v2/cases/${caseId}/tasks/${taskId}/unassign`, { version }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['case', caseId] }),
-    onError: onOccError,
-  });
-
   const complete = useMutation({
     mutationFn: ({ taskId, body }: { taskId: string; body: CompleteTaskInput & { version: number } }) =>
       api<CaseTaskView>('POST', `/api/v2/cases/${caseId}/tasks/${taskId}/complete`, body),
@@ -626,7 +619,6 @@ function TasksSection({
         </thead>
         <tbody>
           {shownTasks.map((t) => {
-            const assigned = t.status !== 'PENDING' && t.assignedTo;
             return (
               <Fragment key={t.id}>
                 <tr className="border-t border-border">
@@ -692,10 +684,11 @@ function TasksSection({
                   {canAct && (
                     <td className="px-3 py-2" data-label="Action">
                       <div className="flex gap-2">
-                        {/* ADR-0024 assign/reassign — only on an assignable (PENDING/ASSIGNED) task.
-                            A terminal task is never assigned in place: COMPLETED is reworked via
-                            REVISIT and REVOKED via reassign-after-revoke (ADR-0033, below). */}
-                        {canAssign && (t.status === 'PENDING' || t.status === 'ASSIGNED') && (
+                        {/* ADR-0055: assign only a PENDING task. A live ASSIGNED task is never re-pointed
+                            in place and is never unassigned — the office Revokes it (mandatory reason) and
+                            reassigns the REVOKED task (reassign-after-revoke, below), so every agent change
+                            leaves an auditable reason. COMPLETED is reworked via REVISIT. */}
+                        {canAssign && t.status === 'PENDING' && (
                           <button
                             className="text-xs font-medium text-primary hover:underline"
                             onClick={() => {
@@ -703,16 +696,7 @@ function TasksSection({
                               setOpenTaskId(openTaskId === t.id ? null : t.id);
                             }}
                           >
-                            {assigned ? 'Reassign' : 'Assign'}
-                          </button>
-                        )}
-                        {canAssign && t.status === 'ASSIGNED' && (
-                          <button
-                            className="text-xs font-medium text-destructive hover:underline"
-                            onClick={() => unassign.mutate({ taskId: t.id, version: t.version })}
-                            disabled={unassign.isPending}
-                          >
-                            Unassign
+                            Assign
                           </button>
                         )}
                         {canComplete && FINALIZABLE.has(t.status) && (

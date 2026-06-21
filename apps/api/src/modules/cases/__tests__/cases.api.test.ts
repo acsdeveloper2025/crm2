@@ -654,34 +654,39 @@ describe.skipIf(!RUN)('cases API', () => {
     });
   });
 
-  it('reassigns to a different executive, then unassigns back to PENDING', async () => {
+  it('ADR-0055: rejects in-place reassign of a live ASSIGNED task and has no unassign route', async () => {
     const { caseId, taskId } = await seedCaseWithTask('AS2');
-    // ADR-0024: the pool follows the chosen visit type. Reassign across pools — a FIELD agent first,
-    // then re-pool to OFFICE and a backend user (the task is unlocated → no territory gate).
     const a1 = await createUser({ username: 'fa_as2a', name: 'AGENT A', role: 'FIELD_AGENT' });
     const a2 = await createUser({ username: 'kyc_as2b', name: 'OFFICE B', role: 'KYC_VERIFIER' });
 
-    await request(app)
+    // Initial assignment of a PENDING task is allowed.
+    const assign = await request(app)
       .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
       .set(SA)
       .send({ assignedTo: a1, visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 1, version: 1 });
+    expect(assign.status).toBe(200);
+    expect(assign.body.assignedTo).toBe(a1);
+
+    // ADR-0055: a live ASSIGNED task is never re-pointed in place — 409 TASK_NOT_ASSIGNABLE.
+    // The office must Revoke (mandatory reason) then reassign-after-revoke (ADR-0033).
     const reassign = await request(app)
       .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
       .set(SA)
       .send({ assignedTo: a2, visitType: 'OFFICE', fieldRateType: 'OGL', billCount: 1, version: 2 });
-    expect(reassign.status).toBe(200);
-    expect(reassign.body.assignedTo).toBe(a2);
-    expect(reassign.body.visitType).toBe('OFFICE');
+    expect(reassign.status).toBe(409);
+    expect(reassign.body.error).toBe('TASK_NOT_ASSIGNABLE');
 
+    // ADR-0055: the unassign route is removed — there is no silent ASSIGNED → PENDING.
     const unassign = await request(app)
       .post(`/api/v2/cases/${caseId}/tasks/${taskId}/unassign`)
       .set(SA)
-      .send({ version: 3 });
-    expect(unassign.status).toBe(200);
-    expect(unassign.body.status).toBe('PENDING');
-    expect(unassign.body.assignedTo).toBeNull();
-    expect(unassign.body.visitType).toBeNull();
-    expect(unassign.body.billCount).toBe(1);
+      .send({ version: 2 });
+    expect(unassign.status).toBe(404);
+
+    // The task stays ASSIGNED to the original agent (no partial move).
+    const detail = await request(app).get(`/api/v2/cases/${caseId}`).set(SA);
+    expect(detail.body.tasks[0].status).toBe('ASSIGNED');
+    expect(detail.body.tasks[0].assignedTo).toBe(a1);
   });
 
   it('rejects an assignee outside the eligible pool (400 INVALID_ASSIGNEE)', async () => {
@@ -695,16 +700,9 @@ describe.skipIf(!RUN)('cases API', () => {
     expect(res.body.error).toBe('INVALID_ASSIGNEE');
   });
 
-  it('cannot assign a terminal task (409 TASK_NOT_ASSIGNABLE); cannot unassign a PENDING task (409)', async () => {
+  it('cannot assign a terminal task (409 TASK_NOT_ASSIGNABLE)', async () => {
     const { caseId, taskId } = await seedCaseWithTask('AS4');
     const agent = await createUser({ username: 'fa_as4', name: 'FIELD FOUR', role: 'FIELD_AGENT' });
-
-    const unassignPending = await request(app)
-      .post(`/api/v2/cases/${caseId}/tasks/${taskId}/unassign`)
-      .set(SA)
-      .send({ version: 1 });
-    expect(unassignPending.status).toBe(409);
-    expect(unassignPending.body.error).toBe('TASK_NOT_ASSIGNED');
 
     await db!.pool.query(`UPDATE case_tasks SET status = 'COMPLETED' WHERE id = $1`, [taskId]);
     const res = await request(app)
@@ -1548,6 +1546,17 @@ describe.skipIf(!RUN)('cases API', () => {
       expect(noVersion.status).toBe(400);
       expect(noVersion.body.error).toBe('VERSION_REQUIRED');
 
+      // ADR-0055: a live ASSIGNED task can no longer be re-assigned, so OCC staleness is exercised on the
+      // still-PENDING task — a wrong version (the row is at version 1) misses the OCC guard, returns fresh.
+      const stale = await request(app)
+        .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
+        .set(SA)
+        .send({ ...body, version: 99 });
+      expect(stale.status).toBe(409);
+      expect(stale.body.error).toBe('STALE_UPDATE');
+      expect(stale.body.current.version).toBe(1);
+
+      // the correct version assigns the PENDING task
       expect(
         (
           await request(app)
@@ -1556,26 +1565,18 @@ describe.skipIf(!RUN)('cases API', () => {
             .send({ ...body, version: 1 })
         ).status,
       ).toBe(200);
-      // version bumped to 2 → replaying version 1 is stale, returns the fresh row
-      const stale = await request(app)
-        .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
-        .set(SA)
-        .send({ ...body, version: 1 });
-      expect(stale.status).toBe(409);
-      expect(stale.body.error).toBe('STALE_UPDATE');
-      expect(stale.body.current.version).toBe(2);
     });
 
-    it('writes the append-only history trail: ASSIGNED → REASSIGNED → UNASSIGNED', async () => {
+    it('writes the append-only ASSIGNED history event (immutable)', async () => {
       const { caseId, taskId } = await seedCaseWithTask('HIST');
       const a1 = await createUser({ username: 'fa_h1', name: 'HIST A', role: 'FIELD_AGENT' });
-      const a2 = await createUser({ username: 'fa_h2', name: 'HIST B', role: 'FIELD_AGENT' });
       const post = (path: string, body: object) =>
         request(app).post(`/api/v2/cases/${caseId}/tasks/${taskId}/${path}`).set(SA).send(body);
       const attrs = { visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 1 };
+      // ADR-0055: assign records ASSIGNED. The in-place REASSIGNED and UNASSIGNED history events are gone
+      // with the removed in-place reassign / unassign — an agent change now goes Revoke → reassign-after-
+      // revoke (covered by the reassign-after-revoke + sync purge tests).
       expect((await post('assign', { ...attrs, assignedTo: a1, version: 1 })).status).toBe(200);
-      expect((await post('assign', { ...attrs, assignedTo: a2, version: 2 })).status).toBe(200);
-      expect((await post('unassign', { version: 3 })).status).toBe(200);
 
       const { rows } = await db!.pool.query<{
         action: string;
@@ -1586,10 +1587,8 @@ describe.skipIf(!RUN)('cases API', () => {
          FROM task_assignment_history WHERE task_id = $1 ORDER BY id`,
         [taskId],
       );
-      expect(rows.map((r) => r.action)).toEqual(['ASSIGNED', 'REASSIGNED', 'UNASSIGNED']);
+      expect(rows.map((r) => r.action)).toEqual(['ASSIGNED']);
       expect(rows[0]).toMatchObject({ assigned_to: a1, previous_assigned_to: null });
-      expect(rows[1]).toMatchObject({ assigned_to: a2, previous_assigned_to: a1 });
-      expect(rows[2]).toMatchObject({ assigned_to: null, previous_assigned_to: a2 });
       // append-only: the immutability trigger blocks UPDATE/DELETE
       await expect(
         db!.pool.query(`DELETE FROM task_assignment_history WHERE task_id = $1`, [taskId]),

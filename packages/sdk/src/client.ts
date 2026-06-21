@@ -671,10 +671,10 @@ export function createSdk(opts: SdkOptions) {
         if (q.areaId !== undefined) p.set('areaId', String(q.areaId));
         return req<AssignableUser[]>('GET', `/api/v2/cases/${caseId}/eligible-assignees?${p.toString()}`);
       },
+      // ADR-0055: assign a PENDING task only (server-gated); no unassign — move off an agent via Revoke +
+      // reassign-after-revoke (reassignTask, below).
       assignTask: (caseId: string, taskId: string, input: AssignTaskRequest) =>
         req<CaseTaskView>('POST', `/api/v2/cases/${caseId}/tasks/${taskId}/assign`, input),
-      unassignTask: (caseId: string, taskId: string, version: number) =>
-        req<CaseTaskView>('POST', `/api/v2/cases/${caseId}/tasks/${taskId}/unassign`, { version }),
       completeTask: (caseId: string, taskId: string, input: CompleteTaskRequest) =>
         req<CaseTaskView>('POST', `/api/v2/cases/${caseId}/tasks/${taskId}/complete`, input),
       // Record the per-task office result on an already-COMPLETED task (ADR-0032 D3).

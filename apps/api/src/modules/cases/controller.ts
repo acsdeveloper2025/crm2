@@ -183,16 +183,6 @@ export const caseController = {
     }
   },
 
-  async unassignTask(req: Request, res: Response, next: NextFunction) {
-    try {
-      const caseId = parseUuidParam(req, 'id');
-      const taskId = parseUuidParam(req, 'taskId');
-      res.json(await svc.unassignTask(caseId, taskId, req.body, actor(req)));
-    } catch (e) {
-      next(e);
-    }
-  },
-
   async completeTask(req: Request, res: Response, next: NextFunction) {
     try {
       const caseId = parseUuidParam(req, 'id');

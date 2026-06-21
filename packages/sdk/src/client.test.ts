@@ -320,7 +320,6 @@ describe('createSdk — transport', () => {
         billCount: 1,
         version: 1,
       }),
-      s.cases.unassignTask('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002', 1),
       s.cases.completeTask('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002', {
         result: 'POSITIVE',
         remark: 'verified',
@@ -377,7 +376,7 @@ describe('createSdk — transport', () => {
       s.savedViews.remove('00000000-0000-0000-0000-0000000000aa'),
       s.savedViews.setDefault('00000000-0000-0000-0000-0000000000aa', true),
     ]);
-    expect(calls.length).toBe(162);
+    expect(calls.length).toBe(161); // ADR-0055: removed cases.unassignTask
     expect(calls.some((c) => c.url === 'http://x/api/v2/commission-rates')).toBe(true);
     expect(calls.some((c) => c.url === 'http://x/api/v2/tat-policies')).toBe(true);
     expect(calls.some((c) => c.url === 'http://x/api/v2/report-layouts')).toBe(true);

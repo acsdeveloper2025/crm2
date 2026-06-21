@@ -293,8 +293,10 @@ export const caseService = {
     // Scope guard on the WRITE (IDOR): out-of-scope task ≡ missing → 404.
     const state = await repo.taskAssignmentState(caseId, taskId, await resolveScope(actor));
     if (!state) throw AppError.notFound('TASK_NOT_FOUND');
-    if (state.status !== 'PENDING' && state.status !== 'ASSIGNED')
-      throw AppError.conflict('TASK_NOT_ASSIGNABLE');
+    // ADR-0055: assign only a PENDING task. A live ASSIGNED task is never re-pointed in place — the office
+    // Revokes it (mandatory reason) and reassigns the REVOKED task (reassign-after-revoke, ADR-0033), so
+    // every agent change leaves an auditable reason.
+    if (state.status !== 'PENDING') throw AppError.conflict('TASK_NOT_ASSIGNABLE');
     // Eligibility (ADR-0024): the chosen visit-type pool ∩ actor hierarchy ∩ (FIELD) the task's
     // own territory — the SAME model as Add Task, so reassign and create agree.
     const eligible = await taskRepository.eligibleTaskIdsForAssignee(
@@ -321,16 +323,6 @@ export const caseService = {
     }
     emitTaskUpdate(task); // PENDING→ASSIGNED + case NEW→IN_PROGRESS → office views refetch live (ADR-0027)
     return task;
-  },
-
-  async unassignTask(caseId: string, taskId: string, input: unknown, actor: Actor): Promise<CaseTaskView> {
-    const version = requireVersion(input);
-    const state = await repo.taskAssignmentState(caseId, taskId, await resolveScope(actor));
-    if (!state) throw AppError.notFound('TASK_NOT_FOUND');
-    if (state.status !== 'ASSIGNED') throw AppError.conflict('TASK_NOT_ASSIGNED');
-    const view = await repo.unassignTask(caseId, taskId, actor.userId, version);
-    emitTaskUpdate(view); // ASSIGNED→PENDING → office views refetch live
-    return view;
   },
 
   /** Finalize a task (ADR-0025/ADR-0047): record the official result + remark → COMPLETED. The generic

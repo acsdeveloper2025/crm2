@@ -801,42 +801,6 @@ export const caseRepository = {
     }
   },
 
-  /** OCC-guarded unassign + UNASSIGNED history event (same contract as assignTask). */
-  async unassignTask(
-    caseId: string,
-    taskId: string,
-    actorId: string,
-    expectedVersion: number,
-  ): Promise<CaseTaskView> {
-    return withTransaction(async (q) => {
-      const [updated] = await q<{ id: string; previousAssignedTo: string | null }>(
-        `UPDATE case_tasks
-         SET assigned_to = NULL, status = 'PENDING', visit_type = NULL, field_rate_type = NULL,
-             bill_count = 1, assigned_by = NULL, assigned_at = NULL,
-             version = version + 1, updated_by = $3, updated_at = now()
-         FROM (SELECT id, assigned_to AS prev FROM case_tasks WHERE id = $1 AND case_id = $2) p
-         WHERE case_tasks.id = p.id AND case_tasks.version = $4
-         RETURNING case_tasks.id, p.prev AS previous_assigned_to`,
-        [taskId, caseId, actorId, expectedVersion],
-      );
-      if (!updated) {
-        const [current] = await q<CaseTaskView>(TASK_VIEW_BY_ID, [taskId]);
-        if (!current || current.caseId !== caseId) throw AppError.notFound('TASK_NOT_FOUND');
-        throw AppError.stale(current);
-      }
-      await q(
-        `INSERT INTO task_assignment_history
-           (task_id, case_id, action, assigned_to, previous_assigned_to, assigned_by)
-         VALUES ($1, $2, 'UNASSIGNED', NULL, $3, $4)`,
-        [taskId, caseId, updated.previousAssignedTo, actorId],
-      );
-      await recomputeCaseStatus(q, caseId, actorId);
-      const [row] = await q<CaseTaskView>(TASK_VIEW_BY_ID, [taskId]);
-      if (!row) throw AppError.internal('unassign returned no row');
-      return row;
-    });
-  },
-
   /** OCC-guarded finalize (ADR-0025): records the official result + remark and moves the task to
    *  COMPLETED. The service has already scope-checked the task and validated the source-status
    *  transition; the version guard catches a concurrent writer (every status writer bumps version),
