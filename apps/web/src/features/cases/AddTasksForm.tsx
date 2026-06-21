@@ -106,11 +106,18 @@ export function AddTasksForm({
   const setRow = (i: number, patch: Partial<TaskRow>) =>
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
 
-  // A row is submittable with its core fields. Address is required only for a FIELD visit (OFFICE/desk
-  // tasks have none; an assign-later task gets its address when later dispatched as FIELD).
-  const valid = rows.filter(
-    (r) => r.verificationUnitId && r.applicantId && (r.visitType !== 'FIELD' || r.address.trim()),
-  );
+  // ADR-0056: "Assign later" (a bare PENDING task with no visit type / no location) is removed for
+  // assigners — it produced tasks that could never be dispatched. A visit type is now required, and a
+  // FIELD task must carry its dispatch address + location so it is assignable. The EXECUTIVE may still be
+  // left for later (a located PENDING task is assignable from the case page). Create-only roles (no
+  // case.assign) keep the lean unit+applicant rule — their tasks get visit type/location at the assign.
+  const valid = rows.filter((r) => {
+    if (!r.verificationUnitId || !r.applicantId) return false;
+    if (!canAssign) return true;
+    if (!r.visitType) return false;
+    if (r.visitType === 'FIELD') return !!r.address.trim() && !!r.locationId;
+    return true; // OFFICE: no visit location
+  });
   const hasBlocked = valid.some((r) => blockedIds[r.id]);
 
   const add = useMutation({
@@ -383,7 +390,7 @@ function TaskRowEditor({
                 });
               }}
             >
-              <option value="">— Assign later —</option>
+              <option value="">Select visit type…</option>
               {VISIT_TYPES.map((v) => (
                 <option key={v} value={v}>
                   {VISIT_TYPE_LABELS[v]}
@@ -450,6 +457,12 @@ function TaskRowEditor({
                 ))}
               </select>
             </FieldLabel>
+            {!row.locationId && (
+              <p className="text-xs text-muted-foreground sm:col-span-2 lg:col-span-4">
+                A field task needs a pincode + area to be dispatched — set them above (the executive can be
+                left for later).
+              </p>
+            )}
           </>
         )}
         {/* ADR-0024/0056: pick the executive FIRST — the field rate type then derives from THIS executive. */}
@@ -468,7 +481,7 @@ function TaskRowEditor({
                     ? 'Loading…'
                     : (pool?.length ?? 0) === 0
                       ? 'No eligible executive'
-                      : 'Assign later / select…'}
+                      : 'Select — or leave to assign later'}
               </option>
               {pool?.map((u) => (
                 <option key={u.id} value={u.id}>
