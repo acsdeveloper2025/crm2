@@ -95,3 +95,13 @@ Numbers are never reused. Filenames follow `ADR-NNNN-kebab-slug.md`. Use
 | [ADR-0044](./ADR-0044-task-tat-priority.md) | Task TAT (turnaround-time) SLA — target TAT + completed-in band | Accepted | 2026-06-18 |
 | [ADR-0045](./ADR-0045-web-session-lifecycle.md) | Web session lifecycle — idle auto-logout + 12h absolute cap + FIELD_AGENT carve-out | Accepted | 2026-06-18 |
 | [ADR-0046](./ADR-0046-commission-location-and-tat-dimensions.md) | Field-executive commission — location + client/product/VU + TAT-band dimensions (decoupled from client rate) | Accepted | 2026-06-18 |
+| [ADR-0047](./ADR-0047-two-stage-task-completion.md) | Two-stage task completion — SUBMITTED (field) then COMPLETED (office) | Accepted | 2026-06-19 |
+| [ADR-0048](./ADR-0048-rate-location-rank-fix.md) | Client-rate location ranking — the location-less default must outrank a non-matching override | Accepted | 2026-06-19 |
+| [ADR-0049](./ADR-0049-mis-generation-engine.md) | MIS generation & export engine (pure-MIS page) | Accepted | 2026-06-19 |
+| [ADR-0050](./ADR-0050-commission-exact-match-rate-type-key.md) | Two rate types (client vs field) + commission resolution model (supersedes ADR-0046 §commission) | Accepted | 2026-06-20 |
+| [ADR-0053](./ADR-0053-multi-applicant-batch-dedupe-and-post-creation-add.md) | Multi-applicant batch dedupe + post-creation applicant add | Accepted | 2026-06-20 |
+| [ADR-0054](./ADR-0054-v2-native-mobile-contract.md) | v2-native mobile contract — retire v1 compatibility | Accepted | 2026-06-20 |
+| [ADR-0055](./ADR-0055-revoke-before-reassign.md) | Revoke-before-reassign — remove in-place reassign + unassign | Accepted · Shipped 2026-06-22 | 2026-06-21 |
+| [ADR-0056](./ADR-0056-field-rate-type-auto-derived-from-executive.md) | Field rate type auto-derived from the executive's commission (supersedes ADR-0050 §3) | Accepted · Shipped 2026-06-22 | 2026-06-21 |
+
+> ADR-0051 (inline-grid editing) and ADR-0052 (button emphasis) are drafted on the parked `design-audit-wip` branch — not yet on `main`; they'll be indexed when that stream ships.

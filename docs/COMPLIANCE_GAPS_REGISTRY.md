@@ -815,6 +815,31 @@ FIELD_AGENT excluded; types-only response). CTO: 4 write paths complete + correc
 bulk per-row status correct; tx rollback clean; no migration. CEO: delivers the owner's ask (picker removed,
 exec-first, auto-derive, block); mobile unaffected (additive). `pnpm verify` GREEN.
 
+## Section R0055-R0056-SHIP — open follow-ups after the combined prod ship (2026-06-22, origin/main `80d95ce`)
+
+ADR-0055 (revoke-before-reassign) + ADR-0056 (field-rate auto-derive) shipped together; deploy gate green.
+Three deferred follow-ups, owner-acknowledged:
+
+### SHIP-1 · Bulk-assign bypasses the revoke-before-reassign gate — 🟡 DEFERRED (ADR-0055 follow-up)
+Single-assign (`cases/service.assignTask`) is now PENDING-only, but pipeline **bulk-assign**
+(`tasks/service.ts:266`) still admits `ASSIGNED` rows and re-points them in place via
+`caseRepository.assignTask`, bypassing the gate. Flagged by BOTH the revoke + field-rate sessions as a
+coordinated follow-up (the file is the field-rate session's). Restrict bulk to PENDING-only for full
+ADR-0055 consistency — owner decision pending (it changes the pipeline bulk-reassign behavior).
+
+### SHIP-2 · "Bill count" is an inconsistent billing multiplier — 🟡 DEFERRED (owner decision pending)
+`bill_count` multiplies BOTH the client bill and the commission (`billing/repository.ts:121-122`), but the
+**create** form never collects it (defaults to 1) while the inline **Assign** + **bulk** forms do; every
+task is `1` in practice. Owner to decide: remove from the assign forms (always ×1, consistent with create) /
+keep / add to create. No code change yet.
+
+### SHIP-3 · Stranded location-less PENDING tasks after "remove Assign later" — 🟡 DEFERRED (going-forward fix)
+ADR-0056's "remove Assign later" (require visit type + FIELD location at create) is **going-forward** — any
+pre-existing bare/location-less PENDING task can't be FIELD-assigned (the inline Assign form has no location
+picker; that was the rejected Option B). **Pre-deploy/post-deploy check:** `SELECT count(*) FROM case_tasks
+WHERE status='PENDING' AND area_id IS NULL` on prod — if non-zero, revoke/recreate them or revisit the
+inline-assign location fix.
+
 ---
 *Governance ledger. Update — never overwrite — as findings change state. Linked from
 `CRM2_MASTER_MEMORY.md`, `PROJECT_INDEX.md`, `docs/ARCHITECTURE_GOVERNANCE.md`,

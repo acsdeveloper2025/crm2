@@ -1,6 +1,6 @@
 # ADR-0056: Field rate type is auto-derived from the executive's commission (not office-picked)
 
-- **Status:** **Accepted** — owner-directed 2026-06-21 (owner + CTO). **Supersedes [ADR-0050](./ADR-0050-commission-exact-match-rate-type-key.md) §3** (the office picks `fieldRateType` LOCAL/OGL at FIELD assignment). Changes a FROZEN decision — see [LONG_TERM_PROTECTION.md](../governance/LONG_TERM_PROTECTION.md). (ADR-0055 was taken by the concurrent "revoke-before-reassign" work; this is 0056.)
+- **Status:** **Accepted · Shipped to prod 2026-06-22** (origin/main `80d95ce`, combined-pushed with ADR-0055; deploy gate green) — owner-directed 2026-06-21 (owner + CTO). **Supersedes [ADR-0050](./ADR-0050-commission-exact-match-rate-type-key.md) §3** (the office picks `fieldRateType` LOCAL/OGL at FIELD assignment). Changes a FROZEN decision — see [LONG_TERM_PROTECTION.md](../governance/LONG_TERM_PROTECTION.md). (ADR-0055 was taken by the concurrent "revoke-before-reassign" work; this is 0056.)
 - **Date:** 2026-06-21
 - **Migrations:** none (no schema change — `case_tasks.field_rate_type` / `commission_rates.field_rate_type` unchanged; the CHECK from mig 0084 still allows LOCAL/OGL/OFFICE).
 

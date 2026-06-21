@@ -1,10 +1,14 @@
 # ADR-0055: Revoke-before-reassign — remove in-place reassign and unassign
 
-- **Status:** **Accepted** — owner-directed 2026-06-21 (owner + CTO). Realizes an explicit owner workflow
+- **Status:** **Accepted · Shipped to prod 2026-06-22** (origin/main `80d95ce`, combined-pushed with ADR-0056; deploy gate green) — owner-directed 2026-06-21 (owner + CTO). Realizes an explicit owner workflow
   rule: a task can only be taken off a field agent by **Revoke (with a mandatory reason)**, and a revoked
   task is then **reassigned** (reassign-after-revoke, ADR-0033). There is **no direct in-place reassign** of
   a live task and **no unassign**. **Supersedes** the in-place assign/reassign-of-an-`ASSIGNED`-task and the
   `unassign` action of [ADR-0024].
+- **Follow-up (open):** pipeline **bulk-assign** still re-points a live ASSIGNED task in place (it calls
+  `caseRepository.assignTask` directly, bypassing the PENDING-only single-assign gate) — restricting it for
+  full consistency is a tracked follow-up (registered in `COMPLIANCE_GAPS_REGISTRY`). The single-assign path,
+  no-in-place-reassign, and no-unassign are live.
 - **Date:** 2026-06-21
 - **Scope:** `/api/v2` task assignment (`crm2` backend + `@crm2/sdk`) and the web case-detail actions. No DB
   migration. Mobile is unaffected (the field app never assigned/unassigned — assignment is office-side).
