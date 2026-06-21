@@ -929,9 +929,12 @@ function AssignForm({
       ),
     enabled: visitType === 'FIELD' && !!task.areaId && !!assignedTo,
   });
+  // ADR-0056: a chosen FIELD executive with no commission here would be server-blocked → disable Save.
+  const assignBlocked =
+    visitType === 'FIELD' && !!assignedTo && !!ratePreview && ratePreview.fieldRateTypes.length === 0;
 
   const submit = () => {
-    if (!assignedTo) return;
+    if (!assignedTo || assignBlocked) return;
     // ADR-0056: no fieldRateType — the server derives it from the assignee's commission at the location.
     onSubmit({ assignedTo, visitType, billCount });
   };
@@ -977,6 +980,13 @@ function AssignForm({
           ))}
         </select>
       </Field>
+      {/* No executive covers this task's territory → name where to fix it (FIELD pool = territory-scoped). */}
+      {visitType === 'FIELD' && !fieldNoLocation && !usersLoading && pool.length === 0 && (
+        <p className="w-full text-xs text-destructive">
+          No field executive covers this task's pincode/area — assign one this territory in{' '}
+          <span className="font-medium">Admin → User Management</span>.
+        </p>
+      )}
       {/* ADR-0056 rate-type preview — CLIENT location bill label + the chosen executive's derived FIELD
           trip band. No band ⇒ this executive has no commission here and the FIELD assign is blocked. */}
       {ratePreview && (
@@ -989,10 +999,18 @@ function AssignForm({
           <span className="font-mono uppercase">
             {ratePreview.fieldRateTypes.length ? ratePreview.fieldRateTypes.join(' / ') : '—'}
           </span>
+          {ratePreview.clientRateType === null && (
+            <p className="mt-1 text-muted-foreground">
+              No client rate at this location — set it in <span className="font-medium">Rate Management</span>{' '}
+              (the bill resolves ₹0 until then).
+            </p>
+          )}
           {ratePreview.fieldRateTypes.length === 0 && (
-            <span className="ml-2 text-destructive">
-              No commission configured for this executive here — assignment will be blocked.
-            </span>
+            <p className="mt-1 text-destructive">
+              This executive has no commission here — add one in{' '}
+              <span className="font-medium">Commission Rates</span> (for this client or Universal) with a rate
+              type. Assignment is blocked until then.
+            </p>
           )}
         </div>
       )}
@@ -1009,7 +1027,7 @@ function AssignForm({
       <button
         className="h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground disabled:opacity-50"
         onClick={submit}
-        disabled={pending || !assignedTo}
+        disabled={pending || !assignedTo || assignBlocked}
       >
         {pending ? 'Saving…' : 'Save'}
       </button>

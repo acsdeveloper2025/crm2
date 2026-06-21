@@ -784,16 +784,19 @@ same assign-time→submit-time band drift). **Residual** (the cross-*specificity
 itself tat-band-specific) → 🟡 **DEFERRED**: inherent to any assign-time stamp; band is unknowable until submit;
 prod commission rows are overwhelmingly `tat_band=NULL` so this is latent.
 
-### R0056-2 · Save/Add not disabled despite a known-bad preview — 🟡 DEFERRED (UX follow-up)
-Design major. All 3 forms leave Save enabled when `ratePreview.fieldRateTypes.length === 0`, so the operator
-clicks and gets a predictable server 400. The server hard-block is authoritative and the inline red warning
-already explains it; disabling the button (esp. AddTasksForm, which needs child→parent state lifting) is a
-clean follow-up, not a gate.
+### R0056-2 · Save/Add not disabled despite a known-bad preview — ✅ FIXED (2026-06-21, owner-requested)
+Design major. **Add-Tasks** now disables the Add button when any submittable FIELD row's chosen executive has
+no commission (each `TaskRowEditor` reports its blocked state up by stable row id via `reportBlocked`); the
+case-detail **AssignForm** disables Save when `ratePreview.fieldRateTypes.length === 0`. (Pipeline **bulk**
+keeps the post-assign per-row `NO_FIELD_COMMISSION` summary — a pre-check across N locations isn't feasible.)
 
-### R0056-3 · Generic 400 copy doesn't name `NO_FIELD_COMMISSION` — 🟡 DEFERRED (UX follow-up)
-Design major. "Failed to add tasks." / "Assignment failed." don't echo the cause; adequate because the inline
-warning explains it when the preview is visible. Thin only on the rare edge where commission changed between
-preview and submit. Follow-up: map the error code to a clearer message.
+### R0056-3 · Surface WHICH dependency is missing + where to fix it — ✅ FIXED (2026-06-21, owner-requested)
+Owner: "user cannot create case/task without the whole dependency map; show a proper message of what's missing."
+Each gate now shows an actionable inline message naming the admin page: **CPV** ("map them in Admin → CPV
+Mapping"), **client rate** ("set it in Rate Management; bill ₹0 until then"), **field-exec territory** ("assign
+one this territory in Admin → User Management"), **commission** ("add one in Commission Rates for this client or
+Universal, with a rate type — assignment blocked until then"). All derived from existing UI data (available-units
+/ eligible-assignees / rate-preview) — no new endpoint. Applies to Add-Tasks + AssignForm; bulk uses its summary.
 
 ### R0056-4 · Case-detail preview passes only `locationId=areaId`, not the full ladder — 🟢 WONTFIX
 CTO minor. `CaseDetailPage` AssignForm's preview uses `task.areaId` only, while the server derive checks

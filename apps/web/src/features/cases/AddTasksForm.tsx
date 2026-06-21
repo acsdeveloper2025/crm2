@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import {
   VISIT_TYPES,
@@ -16,6 +16,8 @@ import {
 import { api, apiUpload } from '../../lib/sdk.js';
 
 interface TaskRow {
+  /** Stable client-side id (keys the row + its assign-readiness, survives add/remove reordering). */
+  id: string;
   verificationUnitId: string;
   applicantId: string;
   address: string;
@@ -34,6 +36,7 @@ interface TaskRow {
   file: File | null;
 }
 const emptyTask = (): TaskRow => ({
+  id: crypto.randomUUID(),
   verificationUnitId: '',
   applicantId: '',
   address: '',
@@ -90,6 +93,16 @@ export function AddTasksForm({
   });
   const [rows, setRows] = useState<TaskRow[]>([emptyTask()]);
   const [attachError, setAttachError] = useState(false);
+  // ADR-0056: a row is "assign-blocked" when its chosen FIELD executive has no commission at the location
+  // (the server would 400 NO_FIELD_COMMISSION). Each TaskRowEditor reports it up by row id so we can
+  // disable Add and avoid a surprise round-trip — the inline message tells the operator what to fix.
+  const [blockedIds, setBlockedIds] = useState<Record<string, boolean>>({});
+  // Stable so each TaskRowEditor's report effect fires only when its own blocked state changes.
+  const reportBlocked = useCallback(
+    (id: string, blocked: boolean) =>
+      setBlockedIds((prev) => (prev[id] === blocked ? prev : { ...prev, [id]: blocked })),
+    [],
+  );
   const setRow = (i: number, patch: Partial<TaskRow>) =>
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
 
@@ -98,6 +111,7 @@ export function AddTasksForm({
   const valid = rows.filter(
     (r) => r.verificationUnitId && r.applicantId && (r.visitType !== 'FIELD' || r.address.trim()),
   );
+  const hasBlocked = valid.some((r) => blockedIds[r.id]);
 
   const add = useMutation({
     mutationFn: async () => {
@@ -148,7 +162,7 @@ export function AddTasksForm({
     <div className="space-y-3">
       {rows.map((r, i) => (
         <TaskRowEditor
-          key={i}
+          key={r.id}
           index={i}
           caseId={caseId}
           clientId={clientId}
@@ -159,7 +173,15 @@ export function AddTasksForm({
           applicants={applicants}
           canAssign={canAssign}
           onChange={(patch) => setRow(i, patch)}
-          {...(rows.length > 1 ? { onRemove: () => setRows((rs) => rs.filter((_, idx) => idx !== i)) } : {})}
+          onBlockedChange={reportBlocked}
+          {...(rows.length > 1
+            ? {
+                onRemove: () => {
+                  setRows((rs) => rs.filter((_, idx) => idx !== i));
+                  setBlockedIds(({ [r.id]: _drop, ...rest }) => rest);
+                },
+              }
+            : {})}
         />
       ))}
       <button
@@ -170,11 +192,16 @@ export function AddTasksForm({
       </button>
       {units && units.length === 0 && (
         <p className="text-sm text-muted-foreground">
-          No verification units are enabled (CPV) for this client + product.
+          No verification units enabled for this client + product — map them in{' '}
+          <span className="font-medium">Admin → CPV Mapping</span>.
         </p>
       )}
       <div className="flex flex-wrap items-center gap-2">
-        <button className="btn" disabled={valid.length === 0 || add.isPending} onClick={() => add.mutate()}>
+        <button
+          className="btn"
+          disabled={valid.length === 0 || add.isPending || hasBlocked}
+          onClick={() => add.mutate()}
+        >
           {add.isPending
             ? 'Adding…'
             : `${submitLabel ?? 'Add'} ${valid.length} Task${valid.length === 1 ? '' : 's'}`}
@@ -183,6 +210,11 @@ export function AddTasksForm({
           <button className="btn-ghost" onClick={onCancel}>
             Cancel
           </button>
+        )}
+        {hasBlocked && (
+          <span className="text-sm text-destructive">
+            Resolve the missing commission on the highlighted task(s) before adding.
+          </span>
         )}
         {add.isError && <span className="text-sm text-destructive">Failed to add tasks.</span>}
         {attachError && (
@@ -204,6 +236,7 @@ function TaskRowEditor({
   applicants,
   canAssign,
   onChange,
+  onBlockedChange,
   onRemove,
 }: {
   index: number;
@@ -216,6 +249,7 @@ function TaskRowEditor({
   applicants: Pick<CaseApplicant, 'id' | 'name' | 'applicantType'>[];
   canAssign: boolean;
   onChange: (patch: Partial<TaskRow>) => void;
+  onBlockedChange: (id: string, blocked: boolean) => void;
   onRemove?: () => void;
 }) {
   const isField = row.visitType === 'FIELD';
@@ -236,6 +270,12 @@ function TaskRowEditor({
       ),
     enabled: !!row.verificationUnitId && !!row.locationId && !!row.assigneeId,
   });
+
+  // ADR-0056: a FIELD row whose chosen executive has no commission at the location is server-blocked
+  // (the preview returns no field band). Report it up so the parent disables Add — no surprise 400.
+  const assignBlocked =
+    canAssign && isField && !!row.assigneeId && !!ratePreview && ratePreview.fieldRateTypes.length === 0;
+  useEffect(() => onBlockedChange(row.id, assignBlocked), [row.id, assignBlocked, onBlockedChange]);
 
   // FIELD only: search the pincode → the area picker lists that pincode's (pincode, area) rows.
   const { data: areaMatches } = useQuery({
@@ -412,7 +452,7 @@ function TaskRowEditor({
             </FieldLabel>
           </>
         )}
-        {/* ADR-0024/0055: pick the executive FIRST — the field rate type then derives from THIS executive. */}
+        {/* ADR-0024/0056: pick the executive FIRST — the field rate type then derives from THIS executive. */}
         {canAssign && row.visitType && (
           <FieldLabel label={`Executive (${VISIT_TYPE_LABELS[row.visitType]})`}>
             <select
@@ -438,6 +478,13 @@ function TaskRowEditor({
             </select>
           </FieldLabel>
         )}
+        {/* No executive covers this territory → name where to fix it (FIELD pool = territory-scoped). */}
+        {canAssign && isField && poolReady && !poolLoading && (pool?.length ?? 0) === 0 && (
+          <p className="text-xs text-destructive sm:col-span-2 lg:col-span-4">
+            No field executive covers this pincode/area — assign one this territory in{' '}
+            <span className="font-medium">Admin → User Management</span> (or leave it Assign-later).
+          </p>
+        )}
         {/* ADR-0056 rate-type preview — shown AFTER the executive is chosen. CLIENT = the location bill
             label (Rate Management); FIELD = the chosen executive's derived trip band (Commission). The
             field rate type is NOT a manual pick. No band ⇒ this executive has no commission here and the
@@ -452,10 +499,18 @@ function TaskRowEditor({
             <span className="font-mono uppercase">
               {ratePreview.fieldRateTypes.length ? ratePreview.fieldRateTypes.join(' / ') : '—'}
             </span>
+            {ratePreview.clientRateType === null && (
+              <p className="mt-1 text-muted-foreground">
+                No client rate at this location — set it in{' '}
+                <span className="font-medium">Rate Management</span> (the bill resolves ₹0 until then).
+              </p>
+            )}
             {isField && ratePreview.fieldRateTypes.length === 0 && (
-              <span className="ml-2 text-destructive">
-                No commission configured for this executive here — assignment will be blocked.
-              </span>
+              <p className="mt-1 text-destructive">
+                This executive has no commission here — add one in{' '}
+                <span className="font-medium">Commission Rates</span> (for this client or Universal) with a
+                rate type. Assignment is blocked until then.
+              </p>
             )}
           </div>
         )}
