@@ -16,6 +16,7 @@ import { ImportButton } from '../../components/import/ImportModal.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
+import { Button } from '../../components/ui/Button.js';
 import { Input } from '../../components/ui/Input.js';
 
 const HTTP_CONFLICT = 409;
@@ -165,17 +166,18 @@ export function LocationsPage() {
         header: 'Actions',
         align: 'right',
         cell: (l) => (
-          <>
-            <button className="mr-3 font-medium text-primary hover:underline" onClick={() => setEditing(l)}>
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setEditing(l)}>
               Edit
-            </button>
-            <button
-              className="font-medium text-muted-foreground hover:text-foreground hover:underline"
+            </Button>
+            <Button
+              variant={l.isActive ? 'destructive' : 'secondary'}
+              size="sm"
               onClick={() => toggle.mutate(l)}
             >
               {l.isActive ? 'Deactivate' : 'Activate'}
-            </button>
-          </>
+            </Button>
+          </div>
         ),
       },
     ],
@@ -258,19 +260,17 @@ export function LocationsPage() {
             onChange={(e) => setEffectiveFrom(e.target.value)}
           />
         </label>
-        <button
-          className="btn"
-          disabled={
-            !pincode || !(areas.length || areaInput.trim()) || !city || !state || !country || create.isPending
-          }
+        <Button
+          disabled={!pincode || !(areas.length || areaInput.trim()) || !city || !state || !country}
+          loading={create.isPending}
           onClick={() => {
             setError(null);
             setNotice(null);
             create.mutate();
           }}
         >
-          {create.isPending ? 'Saving…' : 'Add location'}
-        </button>
+          Add location
+        </Button>
         {areas.length > 0 && (
           <div className="flex w-full flex-wrap gap-1.5">
             {areas.map((a) => (
@@ -430,19 +430,19 @@ function EditLocationDialog({ location, onClose }: { location: Location; onClose
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <div className="mt-5 flex justify-end gap-2">
-          <button className="btn-ghost" onClick={onClose} disabled={mut.isPending}>
+          <Button variant="ghost" onClick={onClose} disabled={mut.isPending}>
             Cancel
-          </button>
-          <button
-            className="btn"
-            disabled={pincode.length !== 6 || !area || !city || !state || !country || mut.isPending}
+          </Button>
+          <Button
+            disabled={pincode.length !== 6 || !area || !city || !state || !country}
+            loading={mut.isPending}
             onClick={() => {
               setError(null);
               mut.mutate();
             }}
           >
-            {mut.isPending ? 'Saving…' : 'Save'}
-          </button>
+            Save
+          </Button>
         </div>
       </div>
 

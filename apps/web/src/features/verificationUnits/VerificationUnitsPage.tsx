@@ -14,6 +14,7 @@ import { formatDateTime } from '../../lib/format.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
+import { Button } from '../../components/ui/Button.js';
 import { BulkStatusActions } from '../../components/BulkStatusActions.js';
 import { VerificationUnitDialog } from './VerificationUnitDialog.js';
 import { ImportButton } from '../../components/import/ImportModal.js';
@@ -155,17 +156,18 @@ export function VerificationUnitsPage() {
               System
             </span>
           ) : (
-            <>
-              <button className="mr-3 font-medium text-primary hover:underline" onClick={() => setEditing(u)}>
+            <div className="flex items-center justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setEditing(u)}>
                 Edit
-              </button>
-              <button
-                className="font-medium text-muted-foreground hover:text-foreground hover:underline"
+              </Button>
+              <Button
+                variant={u.isActive ? 'destructive' : 'secondary'}
+                size="sm"
                 onClick={() => toggle.mutate(u)}
               >
                 {u.isActive ? 'Deactivate' : 'Activate'}
-              </button>
-            </>
+              </Button>
+            </div>
           ),
       },
     ],
@@ -189,9 +191,7 @@ export function VerificationUnitsPage() {
               entityLabel: 'verification unit',
             }}
           />
-          <button className="btn" onClick={() => setEditing(null)}>
-            + New Unit
-          </button>
+          <Button onClick={() => setEditing(null)}>+ New Unit</Button>
         </div>
       </div>
 

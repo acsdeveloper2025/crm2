@@ -16,6 +16,7 @@ import { ImportButton } from '../../components/import/ImportModal.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
+import { Button } from '../../components/ui/Button.js';
 import { Input } from '../../components/ui/Input.js';
 import { TextArea } from '../../components/ui/TextArea.js';
 
@@ -79,17 +80,18 @@ export function DepartmentsPage() {
         header: 'Actions',
         align: 'right',
         cell: (d) => (
-          <>
-            <button className="mr-3 font-medium text-primary hover:underline" onClick={() => setEditing(d)}>
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setEditing(d)}>
               Edit
-            </button>
-            <button
-              className="font-medium text-muted-foreground hover:text-foreground hover:underline"
+            </Button>
+            <Button
+              variant={d.isActive ? 'destructive' : 'secondary'}
+              size="sm"
               onClick={() => toggle.mutate(d)}
             >
               {d.isActive ? 'Deactivate' : 'Activate'}
-            </button>
-          </>
+            </Button>
+          </div>
         ),
       },
     ],
@@ -107,9 +109,7 @@ export function DepartmentsPage() {
         </div>
         <div className="flex items-center gap-2">
           <ImportButton config={{ basePath: BASE, queryKey: QK, entityLabel: 'department' }} />
-          <button className="btn" onClick={() => setEditing(null)}>
-            + New
-          </button>
+          <Button onClick={() => setEditing(null)}>+ New</Button>
         </div>
       </div>
 
@@ -247,19 +247,19 @@ function DepartmentDialog({ row, onClose }: { row: Department | null; onClose: (
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <div className="mt-5 flex justify-end gap-2">
-          <button className="btn-ghost" onClick={onClose} disabled={mut.isPending}>
+          <Button variant="ghost" onClick={onClose} disabled={mut.isPending}>
             Cancel
-          </button>
-          <button
-            className="btn"
+          </Button>
+          <Button
             onClick={() => {
               setError(null);
               mut.mutate();
             }}
-            disabled={mut.isPending || !name.trim()}
+            disabled={!name.trim()}
+            loading={mut.isPending}
           >
-            {mut.isPending ? 'Saving…' : 'Save'}
-          </button>
+            Save
+          </Button>
         </div>
       </div>
 

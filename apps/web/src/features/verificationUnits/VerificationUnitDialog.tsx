@@ -5,6 +5,7 @@ import { api, ApiError } from '../../lib/sdk.js';
 import { toDateInput, toIsoDate } from '../../lib/format.js';
 import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
+import { Button } from '../../components/ui/Button.js';
 import { Input } from '../../components/ui/Input.js';
 
 const HTTP_CONFLICT = 409;
@@ -187,19 +188,19 @@ export function VerificationUnitDialog({ unit, onClose }: Props) {
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <div className="mt-5 flex justify-end gap-2">
-          <button className="btn-ghost" onClick={onClose} disabled={mut.isPending}>
+          <Button variant="ghost" onClick={onClose} disabled={mut.isPending}>
             Cancel
-          </button>
-          <button
-            className="btn"
+          </Button>
+          <Button
             onClick={() => {
               setError(null);
               mut.mutate();
             }}
-            disabled={mut.isPending || !name || !code}
+            disabled={!name || !code}
+            loading={mut.isPending}
           >
-            {mut.isPending ? 'Saving…' : 'Save'}
-          </button>
+            Save
+          </Button>
         </div>
       </div>
 
