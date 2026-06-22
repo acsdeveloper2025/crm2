@@ -2313,6 +2313,17 @@ describe.skipIf(!RUN)('cases API', () => {
       expect(r2.body).toEqual({ address: '12 MG ROAD, MUMBAI 400001', cached: true });
     });
 
+    it('FIELD_PHOTO rows are excluded from the general attachments list (shown only in Field Photos)', async () => {
+      setGeocoder({ reverse: () => Promise.resolve(null) });
+      const { caseId, photoId } = await seedPhoto('NOLEAK', { latitude: 19.07, longitude: 72.87 });
+      // the field photo IS surfaced in the dedicated Field Photos card…
+      const photos = await request(app).get(`/api/v2/cases/${caseId}/field-photos`).set(SA);
+      expect(photos.body.some((p: { id: string }) => p.id === photoId)).toBe(true);
+      // …but is NOT mixed into the general attachments list (ADR-0034 separation).
+      const atts = await request(app).get(`/api/v2/cases/${caseId}/attachments`).set(SA);
+      expect(atts.body.some((a: { id: string }) => a.id === photoId)).toBe(false);
+    });
+
     it('null geocoder result → null (UI degrades to coords); nothing persisted', async () => {
       setGeocoder({ reverse: () => Promise.resolve(null) });
       const { caseId, photoId } = await seedPhoto('GEO2', { latitude: 1.5, longitude: 2.5, accuracy: 5 });

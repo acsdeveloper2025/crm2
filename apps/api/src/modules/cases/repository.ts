@@ -1565,7 +1565,9 @@ export const caseRepository = {
   },
 
   /** Case-level (task_id NULL) + task-level attachments the actor can reach (their own assigned/created
-   *  tasks — need-to-know per task, mirroring v1). Admins (no scope) see all. Excludes soft-deleted. */
+   *  tasks — need-to-know per task, mirroring v1). Admins (no scope) see all. Excludes soft-deleted.
+   *  Excludes device FIELD_PHOTO rows — those are the field agent's verification photos, surfaced
+   *  separately in the Field Photos card (`listFieldPhotos`), not the general attachments list. */
   async listAttachments(caseId: string, scope: Scope | undefined): Promise<CaseAttachment[]> {
     const params: unknown[] = [caseId];
     let taskLeg = '';
@@ -1582,7 +1584,8 @@ export const caseRepository = {
               u.name AS uploaded_by_name, ca.created_at
        FROM case_attachments ca
        LEFT JOIN users u ON u.id = ca.uploaded_by
-       WHERE ca.case_id = $1 AND ca.deleted_at IS NULL ${taskLeg}
+       WHERE ca.case_id = $1 AND ca.deleted_at IS NULL
+         AND ca.kind IS DISTINCT FROM 'FIELD_PHOTO' ${taskLeg}
        ORDER BY ca.created_at DESC`,
       params,
     );
