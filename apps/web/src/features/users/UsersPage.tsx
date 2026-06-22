@@ -28,6 +28,8 @@ import { PasswordPolicyChecklist, isPasswordStrong } from '../../components/Pass
 import { UserAccessSection, type StagedScope } from '../../components/UserAccessSection.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
 import { ImportButton } from '../../components/import/ImportModal.js';
+import { Button } from '../../components/ui/Button.js';
+import { DownloadIcon } from '../../components/ui/icons.js';
 import { Input } from '../../components/ui/Input.js';
 
 const HTTP_CONFLICT = 409;
@@ -160,28 +162,23 @@ export function UsersPage() {
         header: 'Actions',
         align: 'right',
         cell: (u) => (
-          <div className="flex justify-end gap-3 whitespace-nowrap">
-            <button className="font-medium text-primary hover:underline" onClick={() => setEditing(u)}>
+          <div className="flex items-center justify-end gap-2 whitespace-nowrap">
+            <Button variant="secondary" size="sm" onClick={() => setEditing(u)}>
               Edit
-            </button>
-            <button
-              className="font-medium text-muted-foreground hover:text-foreground hover:underline"
-              onClick={() => setResetting(u)}
-            >
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setResetting(u)}>
               Reset Pwd
-            </button>
-            <button
-              className="font-medium text-muted-foreground hover:text-foreground hover:underline"
-              onClick={() => unlock.mutate(u)}
-            >
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => unlock.mutate(u)}>
               Unlock
-            </button>
-            <button
-              className="font-medium text-muted-foreground hover:text-foreground hover:underline"
+            </Button>
+            <Button
+              variant={u.isActive ? 'destructive' : 'secondary'}
+              size="sm"
               onClick={() => toggle.mutate(u)}
             >
               {u.isActive ? 'Deactivate' : 'Activate'}
-            </button>
+            </Button>
           </div>
         ),
       },
@@ -204,8 +201,8 @@ export function UsersPage() {
           <ImportButton
             config={{ basePath: `${BASE}/scope`, queryKey: 'user-scope', entityLabel: 'scope assignment' }}
           />
-          <button
-            className="btn-ghost border border-border"
+          <Button
+            variant="secondary"
             onClick={async () => {
               try {
                 const { blob, filename } = await apiBlob(`${BASE}/scope/export?mode=all&format=xlsx`);
@@ -222,11 +219,10 @@ export function UsersPage() {
               }
             }}
           >
+            <DownloadIcon />
             Export Scope
-          </button>
-          <button className="btn" onClick={() => setEditing(null)}>
-            + New
-          </button>
+          </Button>
+          <Button onClick={() => setEditing(null)}>+ New</Button>
         </div>
       </div>
 
@@ -267,9 +263,7 @@ export function UsersPage() {
             <h2 className="mb-2 text-lg font-semibold">Export failed</h2>
             <p className="mb-4 text-sm text-muted-foreground">{exportError}</p>
             <div className="flex justify-end">
-              <button className="btn" onClick={() => setExportError(null)}>
-                OK
-              </button>
+              <Button onClick={() => setExportError(null)}>OK</Button>
             </div>
           </div>
         </div>
@@ -363,9 +357,7 @@ function ResetPasswordDialog({ user, onClose }: { user: UserView; onClose: () =>
               </>
             )}
             <div className="flex justify-end">
-              <button className="btn" onClick={onClose}>
-                Done
-              </button>
+              <Button onClick={onClose}>Done</Button>
             </div>
           </div>
         ) : typing ? (
@@ -386,19 +378,19 @@ function ResetPasswordDialog({ user, onClose }: { user: UserView; onClose: () =>
             {typed.length > 0 && <PasswordPolicyChecklist password={typed} />}
             {error && <p className="text-sm text-destructive">{error}</p>}
             <div className="flex justify-end gap-2">
-              <button className="btn-ghost" onClick={() => setTyping(false)} disabled={busy}>
+              <Button variant="ghost" onClick={() => setTyping(false)} disabled={busy}>
                 Back
-              </button>
-              <button
-                className="btn"
+              </Button>
+              <Button
                 onClick={() => {
                   setError(null);
                   setPwd.mutate();
                 }}
                 disabled={busy || !isPasswordStrong(typed)}
+                loading={setPwd.isPending}
               >
-                {setPwd.isPending ? 'Setting…' : 'Set password'}
-              </button>
+                Set password
+              </Button>
             </div>
           </div>
         ) : (
@@ -447,9 +439,9 @@ function ResetPasswordDialog({ user, onClose }: { user: UserView; onClose: () =>
             </button>
             {error && <p className="text-sm text-destructive">{error}</p>}
             <div className="flex justify-end pt-1">
-              <button className="btn-ghost" onClick={onClose} disabled={busy}>
+              <Button variant="ghost" onClick={onClose} disabled={busy}>
                 Cancel
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -795,14 +787,15 @@ function UserDialog({ row, onClose }: { row: UserView | null; onClose: () => voi
                   Require MFA — the user must set up two-factor before their next sign-in
                 </span>
               </label>
-              <button
-                type="button"
-                className="mt-2 text-sm font-medium text-destructive hover:underline disabled:opacity-50"
-                disabled={adminDisableMfa.isPending}
+              <Button
+                variant="destructive"
+                size="sm"
+                className="mt-2"
+                loading={adminDisableMfa.isPending}
                 onClick={() => adminDisableMfa.mutate()}
               >
-                {adminDisableMfa.isPending ? 'Disabling…' : 'Disable this user’s MFA enrolment'}
-              </button>
+                Disable this user’s MFA enrolment
+              </Button>
             </div>
           )}
           {isEdit && (
@@ -819,19 +812,19 @@ function UserDialog({ row, onClose }: { row: UserView | null; onClose: () => voi
           {!canSave && saveDisabledReason && (
             <span className="mr-auto text-sm text-muted-foreground">{saveDisabledReason}</span>
           )}
-          <button className="btn-ghost" onClick={onClose} disabled={mut.isPending}>
+          <Button variant="ghost" onClick={onClose} disabled={mut.isPending}>
             Cancel
-          </button>
-          <button
-            className="btn"
+          </Button>
+          <Button
             onClick={() => {
               setError(null);
               mut.mutate();
             }}
-            disabled={mut.isPending || !canSave}
+            disabled={!canSave}
+            loading={mut.isPending}
           >
-            {mut.isPending ? 'Saving…' : 'Save'}
-          </button>
+            Save
+          </Button>
         </div>
       </div>
 

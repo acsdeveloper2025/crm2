@@ -5,6 +5,7 @@ import { api, ApiError } from '../../lib/sdk.js';
 import { formatDateTime } from '../../lib/format.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
+import { Button } from '../../components/ui/Button.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
 import { PolicyDialog } from './PolicyDialog.js';
 
@@ -67,17 +68,18 @@ export function PoliciesPage() {
         header: 'Actions',
         align: 'right',
         cell: (p) => (
-          <>
-            <button className="mr-3 font-medium text-primary hover:underline" onClick={() => setEditing(p)}>
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setEditing(p)}>
               Edit
-            </button>
-            <button
-              className="font-medium text-muted-foreground hover:text-foreground hover:underline"
+            </Button>
+            <Button
+              variant={p.isActive ? 'destructive' : 'secondary'}
+              size="sm"
               onClick={() => toggle.mutate(p)}
             >
               {p.isActive ? 'Deactivate' : 'Activate'}
-            </button>
-          </>
+            </Button>
+          </div>
         ),
       },
     ],
@@ -94,9 +96,7 @@ export function PoliciesPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <button className="btn" onClick={() => setEditing(null)}>
-            + New Policy
-          </button>
+          <Button onClick={() => setEditing(null)}>+ New Policy</Button>
         </div>
       </div>
 

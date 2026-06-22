@@ -9,6 +9,7 @@ import type {
   UserScopeAssignments,
 } from '@crm2/sdk';
 import { api, ApiError } from '../lib/sdk.js';
+import { Button } from './ui/Button.js';
 
 /**
  * The user dialog's ACCESS tab (ADR-0022 slice 6) — rendered DYNAMICALLY from the target role's
@@ -305,8 +306,7 @@ function ValuePicker({ onPick, placeholder }: { onPick: (v: string) => void; pla
         placeholder={placeholder}
         onChange={(e) => setValue(e.target.value)}
       />
-      <button
-        className="btn"
+      <Button
         disabled={!value.trim()}
         onClick={() => {
           onPick(value.trim());
@@ -314,7 +314,7 @@ function ValuePicker({ onPick, placeholder }: { onPick: (v: string) => void; pla
         }}
       >
         Add
-      </button>
+      </Button>
     </div>
   );
 }
@@ -345,8 +345,7 @@ function OptionsPicker({ feed, onPick }: { feed: string; onPick: (id: number, la
           </option>
         ))}
       </select>
-      <button
-        className="btn"
+      <Button
         disabled={!picked}
         onClick={() => {
           const o = options.find((x) => String(x.id) === picked);
@@ -355,7 +354,7 @@ function OptionsPicker({ feed, onPick }: { feed: string; onPick: (id: number, la
         }}
       >
         Add
-      </button>
+      </Button>
     </div>
   );
 }
@@ -388,12 +387,9 @@ function LocationPicker({ onPick }: { onPick: (id: number, label: string) => voi
               className="flex items-center justify-between border-b border-border px-2 py-1 last:border-b-0"
             >
               <span className="text-xs text-foreground">{locationLabel(l)}</span>
-              <button
-                className="text-xs font-medium text-primary hover:underline"
-                onClick={() => onPick(l.id, locationLabel(l))}
-              >
+              <Button variant="secondary" size="sm" onClick={() => onPick(l.id, locationLabel(l))}>
                 Add
-              </button>
+              </Button>
             </li>
           ))}
         </ul>

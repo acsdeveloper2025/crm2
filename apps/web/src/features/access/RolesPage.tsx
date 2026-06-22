@@ -20,6 +20,7 @@ import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
+import { Button } from '../../components/ui/Button.js';
 import { Input } from '../../components/ui/Input.js';
 import { TextArea } from '../../components/ui/TextArea.js';
 
@@ -159,21 +160,18 @@ export function RolesPage() {
         header: 'Actions',
         align: 'right',
         cell: (r) => (
-          <div className="flex justify-end gap-3 whitespace-nowrap">
-            <button
-              className="font-medium text-primary hover:underline disabled:opacity-50"
-              disabled={r.grantsAll}
-              onClick={() => setEditing(r)}
-            >
+          <div className="flex items-center justify-end gap-2 whitespace-nowrap">
+            <Button variant="secondary" size="sm" disabled={r.grantsAll} onClick={() => setEditing(r)}>
               {r.grantsAll ? 'Locked' : 'Edit'}
-            </button>
+            </Button>
             {!r.isSystem && (
-              <button
-                className="font-medium text-muted-foreground hover:text-foreground hover:underline"
+              <Button
+                variant={r.isActive ? 'destructive' : 'secondary'}
+                size="sm"
                 onClick={() => toggle.mutate(r)}
               >
                 {r.isActive ? 'Deactivate' : 'Activate'}
-              </button>
+              </Button>
             )}
           </div>
         ),
@@ -192,9 +190,7 @@ export function RolesPage() {
             dimensions its users can be assigned. System roles are delete-locked; Super Admin is fully locked.
           </p>
         </div>
-        <button className="btn" onClick={() => setEditing(null)}>
-          + New Role
-        </button>
+        <Button onClick={() => setEditing(null)}>+ New Role</Button>
       </div>
 
       <DataGrid<RoleView>
@@ -229,9 +225,7 @@ export function RolesPage() {
             <h2 className="mb-2 text-lg font-semibold">Cannot deactivate</h2>
             <p className="mb-4 text-sm text-muted-foreground">{toggleError}</p>
             <div className="flex justify-end">
-              <button className="btn" onClick={() => setToggleError(null)}>
-                OK
-              </button>
+              <Button onClick={() => setToggleError(null)}>OK</Button>
             </div>
           </div>
         </div>
@@ -571,19 +565,19 @@ function RoleDialog({ row, onClose }: { row: RoleView | null; onClose: () => voi
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <div className="mt-5 flex justify-end gap-2">
-          <button className="btn-ghost" onClick={onClose} disabled={mut.isPending}>
+          <Button variant="ghost" onClick={onClose} disabled={mut.isPending}>
             Cancel
-          </button>
-          <button
-            className="btn"
+          </Button>
+          <Button
             onClick={() => {
               setError(null);
               mut.mutate();
             }}
-            disabled={mut.isPending || !canSave}
+            disabled={!canSave}
+            loading={mut.isPending}
           >
-            {mut.isPending ? 'Saving…' : 'Save'}
-          </button>
+            Save
+          </Button>
         </div>
       </div>
 

@@ -4,6 +4,7 @@ import type { Policy } from '@crm2/sdk';
 import { api, ApiError } from '../../lib/sdk.js';
 import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
+import { Button } from '../../components/ui/Button.js';
 import { Input } from '../../components/ui/Input.js';
 import { TextArea } from '../../components/ui/TextArea.js';
 
@@ -97,19 +98,19 @@ export function PolicyDialog({ policy, onClose }: Props) {
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <div className="mt-5 flex justify-end gap-2">
-          <button className="btn-ghost" onClick={onClose} disabled={mut.isPending}>
+          <Button variant="ghost" onClick={onClose} disabled={mut.isPending}>
             Cancel
-          </button>
-          <button
-            className="btn"
+          </Button>
+          <Button
             onClick={() => {
               setError(null);
               mut.mutate();
             }}
-            disabled={mut.isPending || !name || !content || (!isEdit && !code)}
+            disabled={!name || !content || (!isEdit && !code)}
+            loading={mut.isPending}
           >
-            {mut.isPending ? 'Saving…' : 'Save'}
-          </button>
+            Save
+          </Button>
         </div>
       </div>
 

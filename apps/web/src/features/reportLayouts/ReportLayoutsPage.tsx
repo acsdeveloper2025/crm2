@@ -34,6 +34,7 @@ import { useAuth } from '../../lib/AuthContext.js';
 import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
+import { Button } from '../../components/ui/Button.js';
 import { Input } from '../../components/ui/Input.js';
 import { TextArea } from '../../components/ui/TextArea.js';
 import { toast } from 'sonner';
@@ -374,8 +375,9 @@ function LayoutDesignerDialog({ editId, onClose }: { editId: number | null; onCl
                       Report Template (Handlebars)
                     </span>
                     {!isEdit && FIELD_REPORT_DEFAULTS[verificationType] && (
-                      <button
-                        className="btn-ghost text-xs"
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => {
                           const d = FIELD_REPORT_DEFAULTS[verificationType]!;
                           setTemplateBody(d.templateBody);
@@ -394,7 +396,7 @@ function LayoutDesignerDialog({ editId, onClose }: { editId: number | null; onCl
                         }}
                       >
                         Load standard template
-                      </button>
+                      </Button>
                     )}
                   </div>
                   <TextArea
@@ -452,12 +454,13 @@ function LayoutDesignerDialog({ editId, onClose }: { editId: number | null; onCl
                     <span className="block text-xs font-medium text-foreground">
                       Report Template (HTML + Handlebars)
                     </span>
-                    <button
-                      className="btn-ghost text-xs"
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={() => setTemplateBody(DEFAULT_CASE_REPORT_TEMPLATE)}
                     >
                       Load default template
-                    </button>
+                    </Button>
                   </div>
                   <TextArea
                     className="input min-h-[16rem] font-mono text-xs"
@@ -513,9 +516,9 @@ function LayoutDesignerDialog({ editId, onClose }: { editId: number | null; onCl
                   <h3 className="text-sm font-semibold">
                     {isFieldReport ? 'Variables' : 'Columns'} ({rows.length})
                   </h3>
-                  <button className="btn-ghost text-xs" onClick={() => setRows((rs) => [...rs, blankRow()])}>
+                  <Button variant="ghost" size="sm" onClick={() => setRows((rs) => [...rs, blankRow()])}>
                     + Add {isFieldReport ? 'Variable' : 'Column'}
-                  </button>
+                  </Button>
                 </div>
 
                 <div className="mt-2 space-y-2">
@@ -615,29 +618,35 @@ function LayoutDesignerDialog({ editId, onClose }: { editId: number | null; onCl
                             </select>
                           </label>
                           <div className="flex items-center gap-1 sm:col-span-2">
-                            <button
-                              className="btn-ghost px-2 text-xs"
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              iconOnly
                               aria-label="Move up"
                               disabled={i === 0}
                               onClick={() => move(i, -1)}
                             >
                               ↑
-                            </button>
-                            <button
-                              className="btn-ghost px-2 text-xs"
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              iconOnly
                               aria-label="Move down"
                               disabled={i === rows.length - 1}
                               onClick={() => move(i, 1)}
                             >
                               ↓
-                            </button>
-                            <button
-                              className="btn-ghost px-2 text-xs text-destructive"
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              iconOnly
                               aria-label="Remove column"
                               onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))}
                             >
                               ✕
-                            </button>
+                            </Button>
                           </div>
                         </div>
                         <div className="mt-1 flex items-center gap-3">
@@ -672,19 +681,19 @@ function LayoutDesignerDialog({ editId, onClose }: { editId: number | null; onCl
 
             {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
             <div className="mt-5 flex justify-end gap-2">
-              <button className="btn-ghost" onClick={onClose} disabled={save.isPending}>
+              <Button variant="ghost" onClick={onClose} disabled={save.isPending}>
                 Cancel
-              </button>
-              <button
-                className="btn"
+              </Button>
+              <Button
                 onClick={() => {
                   setError(null);
                   save.mutate();
                 }}
-                disabled={save.isPending || !canSave}
+                disabled={!canSave}
+                loading={save.isPending}
               >
-                {save.isPending ? 'Saving…' : 'Save'}
-              </button>
+                Save
+              </Button>
             </div>
           </>
         )}
@@ -764,13 +773,17 @@ export function ReportLayoutsPage() {
         id: 'actions',
         header: '',
         cell: (r) => (
-          <div className="flex justify-end gap-2">
-            <button className="btn-ghost text-xs" onClick={() => setDialog({ editId: r.id })}>
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setDialog({ editId: r.id })}>
               Edit
-            </button>
-            <button className="btn-ghost text-xs" onClick={() => toggle.mutate(r)}>
+            </Button>
+            <Button
+              variant={r.isActive ? 'destructive' : 'secondary'}
+              size="sm"
+              onClick={() => toggle.mutate(r)}
+            >
               {r.isActive ? 'Deactivate' : 'Activate'}
-            </button>
+            </Button>
           </div>
         ),
       },
@@ -791,9 +804,7 @@ export function ReportLayoutsPage() {
             templates — built from blank, no default format.
           </p>
         </div>
-        <button className="btn" onClick={() => setDialog({ editId: null })}>
-          New Layout
-        </button>
+        <Button onClick={() => setDialog({ editId: null })}>New Layout</Button>
       </div>
 
       <DataGrid<ReportLayoutView>
