@@ -5,6 +5,7 @@ import { api } from '../../lib/sdk.js';
 import { formatDateTime } from '../../lib/format.js';
 import { useAuth } from '../../lib/AuthContext.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
+import { Button } from '../../components/ui/Button.js';
 
 const STATUS_OPTIONS = CASE_STATUSES.map((s) => ({
   value: s,
@@ -68,11 +69,7 @@ export function CasesPage() {
           <h1 className="text-xl font-bold tracking-tight">Cases</h1>
           <p className="text-sm text-muted-foreground">Verification cases across all clients.</p>
         </div>
-        {has('case.create') && (
-          <button className="btn" onClick={() => navigate('/cases/new')}>
-            + New Case
-          </button>
-        )}
+        {has('case.create') && <Button onClick={() => navigate('/cases/new')}>+ New Case</Button>}
       </div>
 
       <DataGrid<CaseView>

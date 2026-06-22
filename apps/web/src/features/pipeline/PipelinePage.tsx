@@ -20,6 +20,7 @@ import { api, apiExport } from '../../lib/sdk.js';
 import { formatDateTime } from '../../lib/format.js';
 import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { DataGrid, type BulkSelection, type DataGridColumn } from '../../components/ui/data-grid/index.js';
+import { Button } from '../../components/ui/Button.js';
 
 const BASE = '/api/v2/tasks';
 const QK = 'tasks';
@@ -354,9 +355,9 @@ function BulkAssignAction({ selection }: { selection: BulkSelection<TaskView> })
 
   return (
     <>
-      <button type="button" className="btn-ghost text-xs" onClick={() => setOpen(true)}>
+      <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
         Assign…
-      </button>
+      </Button>
       {message && <span className="text-xs text-muted-foreground">{message}</span>}
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 p-4">

@@ -41,6 +41,7 @@ import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
 import { Input } from '../../components/ui/Input.js';
 import { TextArea } from '../../components/ui/TextArea.js';
+import { Button } from '../../components/ui/Button.js';
 import { AddTasksForm } from './AddTasksForm.js';
 
 /** Affordances gate on the PERMISSION (ADR-0022) — resolved by /auth/me, never a role name. */
@@ -110,9 +111,9 @@ export function CaseDetailPage() {
 
   return (
     <div className="space-y-4">
-      <button className="text-sm text-primary hover:underline" onClick={() => navigate('/cases')}>
+      <Button variant="link" size="sm" onClick={() => navigate('/cases')}>
         ← Back to cases
-      </button>
+      </Button>
 
       <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
         <div className="flex items-center justify-between">
@@ -379,16 +380,17 @@ function AddApplicantForm({ caseId }: { caseId: string }) {
         />
       )}
       <div className="flex items-center gap-2">
-        <button
-          className="btn-ghost"
-          disabled={!canSearch || dedupe.isPending}
+        <Button
+          variant="secondary"
+          disabled={!canSearch}
+          loading={dedupe.isPending}
           onClick={() => dedupe.mutate()}
         >
-          {dedupe.isPending ? 'Checking…' : 'Check duplicates'}
-        </button>
-        <button className="btn" disabled={!canAdd} onClick={() => add.mutate()}>
-          {add.isPending ? 'Adding…' : 'Add applicant'}
-        </button>
+          Check duplicates
+        </Button>
+        <Button disabled={!canAdd} loading={add.isPending} onClick={() => add.mutate()}>
+          Add applicant
+        </Button>
       </div>
     </div>
   );
@@ -557,9 +559,9 @@ function TasksSection({
           Documents / Tasks — {tasks.length}
         </span>
         {canCreate && !addingTasks && (
-          <button className="btn-ghost" onClick={() => setAddingTasks(true)}>
+          <Button variant="secondary" onClick={() => setAddingTasks(true)}>
             + Add Tasks
-          </button>
+          </Button>
         )}
       </div>
       {canCreate && addingTasks && (
@@ -693,43 +695,47 @@ function TasksSection({
                             reassigns the REVOKED task (reassign-after-revoke, below), so every agent change
                             leaves an auditable reason. COMPLETED is reworked via REVISIT. */}
                         {canAssign && t.status === 'PENDING' && (
-                          <button
-                            className="text-xs font-medium text-primary hover:underline"
+                          <Button
+                            variant="secondary"
+                            size="sm"
                             onClick={() => {
                               setCompleteTaskId(null);
                               setOpenTaskId(openTaskId === t.id ? null : t.id);
                             }}
                           >
                             Assign
-                          </button>
+                          </Button>
                         )}
                         {canComplete && FINALIZABLE.has(t.status) && (
-                          <button
-                            className="text-xs font-medium text-primary hover:underline"
+                          <Button
+                            variant="secondary"
+                            size="sm"
                             onClick={() => {
                               setOpenTaskId(null);
                               setCompleteTaskId(completeTaskId === t.id ? null : t.id);
                             }}
                           >
                             Complete
-                          </button>
+                          </Button>
                         )}
                         {/* A field-completed task carries no result yet — the office records it (D3). */}
                         {canComplete && t.status === 'COMPLETED' && !t.verificationOutcome && (
-                          <button
-                            className="text-xs font-medium text-primary hover:underline"
+                          <Button
+                            variant="secondary"
+                            size="sm"
                             onClick={() => {
                               setOpenTaskId(null);
                               setCompleteTaskId(completeTaskId === t.id ? null : t.id);
                             }}
                           >
                             Record Result
-                          </button>
+                          </Button>
                         )}
                         {/* Backend/office REVOKE a LIVE task (ADR-0033, v1 parity) — never a COMPLETED one. */}
                         {canRevoke && REVOCABLE.has(t.status) && (
-                          <button
-                            className="text-xs font-medium text-destructive hover:underline"
+                          <Button
+                            variant="destructive"
+                            size="sm"
                             onClick={() => {
                               setOpenTaskId(null);
                               setCompleteTaskId(null);
@@ -739,13 +745,14 @@ function TasksSection({
                             }}
                           >
                             Revoke
-                          </button>
+                          </Button>
                         )}
                         {/* Office intervention (ADR-0033): REVISIT a COMPLETED task (client asked for
                             more → a new billed task); REASSIGN a REVOKED task (replacement). */}
                         {canRework && REVISITABLE.has(t.status) && (
-                          <button
-                            className="text-xs font-medium text-primary hover:underline"
+                          <Button
+                            variant="secondary"
+                            size="sm"
                             onClick={() => {
                               setOpenTaskId(null);
                               setCompleteTaskId(null);
@@ -754,11 +761,12 @@ function TasksSection({
                             }}
                           >
                             Revisit
-                          </button>
+                          </Button>
                         )}
                         {canRework && REASSIGNABLE.has(t.status) && (
-                          <button
-                            className="text-xs font-medium text-primary hover:underline"
+                          <Button
+                            variant="secondary"
+                            size="sm"
                             onClick={() => {
                               setOpenTaskId(null);
                               setCompleteTaskId(null);
@@ -767,7 +775,7 @@ function TasksSection({
                             }}
                           >
                             Reassign
-                          </button>
+                          </Button>
                         )}
                       </div>
                     </td>
@@ -1314,9 +1322,9 @@ function AttachmentsSection({
           {rows.map((a) => (
             <tr key={a.id} className="border-t border-border">
               <td className="px-3 py-2" data-label="Name">
-                <button className="text-primary hover:underline" onClick={() => void download(a.id)}>
+                <Button variant="link" size="sm" onClick={() => void download(a.id)}>
                   {a.originalName}
-                </button>
+                </Button>
               </td>
               <td className="px-3 py-2" data-label="Attached to">
                 {taskLabel(a.taskId)}
@@ -1335,13 +1343,14 @@ function AttachmentsSection({
               </td>
               {canUpload && (
                 <td className="px-3 py-2" data-label="Action">
-                  <button
-                    className="text-xs font-medium text-destructive hover:underline"
+                  <Button
+                    variant="destructive"
+                    size="sm"
                     onClick={() => remove.mutate(a.id)}
                     disabled={remove.isPending}
                   >
                     Delete
-                  </button>
+                  </Button>
                 </td>
               )}
             </tr>
@@ -1376,9 +1385,9 @@ function DataEntrySection({ caseId }: { caseId: string }) {
     <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Data Entry</h2>
-        <button className="btn-ghost" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <Button variant="ghost" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
           {open ? 'Hide' : 'Show details'}
-        </button>
+        </Button>
       </div>
       {open && (
         <div className="mt-3">
@@ -1573,9 +1582,9 @@ function PickupSection({ caseId }: { caseId: string }) {
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           Pickup Information
         </h2>
-        <button className="btn-ghost" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <Button variant="ghost" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
           {open ? 'Hide' : 'Show details'}
-        </button>
+        </Button>
       </div>
       {open && (
         <div className="mt-3">
@@ -1718,9 +1727,9 @@ function MobileReportSection({ caseId, tasks }: { caseId: string; tasks: CaseTas
     <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Field Report</h2>
-        <button className="btn-ghost" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <Button variant="ghost" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
           {open ? 'Hide' : 'Show details'}
-        </button>
+        </Button>
       </div>
       {open &&
         (tasks.length === 0 ? (
@@ -2010,25 +2019,24 @@ function FieldPhotosSection({ caseId }: { caseId: string }) {
         <div className="flex items-center gap-2">
           {open ? (
             <>
-              <button className="btn-ghost" aria-label="Refresh photos" onClick={refresh}>
+              <Button variant="ghost" aria-label="Refresh photos" onClick={refresh}>
                 Refresh
-              </button>
+              </Button>
               {hasPhotos ? (
-                <button
-                  className="btn-ghost"
+                <Button
+                  variant="secondary"
                   aria-label="Download all photos"
-                  aria-busy={zipping}
+                  loading={zipping}
                   onClick={() => void downloadAll()}
-                  disabled={zipping}
                 >
-                  {zipping ? 'Zipping…' : 'Download all'}
-                </button>
+                  Download all
+                </Button>
               ) : null}
             </>
           ) : null}
-          <button className="btn-ghost" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          <Button variant="ghost" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
             {open ? 'Hide' : 'Show details'}
-          </button>
+          </Button>
         </div>
       </div>
       {open && (
@@ -2161,18 +2169,12 @@ function FieldPhotoLightbox({
             {photo.photoType ?? photo.originalName}
           </span>
           <div className="flex items-center gap-2">
-            <button
-              className="btn"
-              aria-label="Save photo"
-              aria-busy={downloading}
-              onClick={() => void onDownload()}
-              disabled={downloading}
-            >
-              {downloading ? 'Saving…' : 'Save'}
-            </button>
-            <button className="btn-ghost" aria-label="Close" onClick={onClose}>
+            <Button aria-label="Save photo" loading={downloading} onClick={() => void onDownload()}>
+              Save
+            </Button>
+            <Button variant="ghost" aria-label="Close" onClick={onClose}>
               Close
-            </button>
+            </Button>
           </div>
         </div>
         <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-black">
@@ -2236,9 +2238,9 @@ function CaseReportSection({ caseId }: { caseId: string }) {
     <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Client Report</h2>
-        <button className="btn-ghost" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <Button variant="ghost" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
           {open ? 'Hide' : 'Show details'}
-        </button>
+        </Button>
       </div>
       {open && (
         <div className="mt-3 flex flex-col gap-3">
@@ -2248,26 +2250,18 @@ function CaseReportSection({ caseId }: { caseId: string }) {
             appear in the jobs tray when ready.
           </p>
           <div className="flex flex-wrap gap-2">
-            <button className="btn-ghost" onClick={preview} disabled={busy}>
-              {busy ? 'Generating…' : 'Preview (HTML)'}
-            </button>
-            <button className="btn" onClick={() => generate.mutate('pdf')} disabled={generate.isPending}>
-              {generate.isPending ? 'Starting…' : 'PDF'}
-            </button>
-            <button
-              className="btn-ghost"
-              onClick={() => generate.mutate('docx')}
-              disabled={generate.isPending}
-            >
+            <Button variant="secondary" onClick={preview} loading={busy}>
+              Preview (HTML)
+            </Button>
+            <Button onClick={() => generate.mutate('pdf')} loading={generate.isPending}>
+              PDF
+            </Button>
+            <Button variant="secondary" onClick={() => generate.mutate('docx')} disabled={generate.isPending}>
               Word
-            </button>
-            <button
-              className="btn-ghost"
-              onClick={() => generate.mutate('xlsx')}
-              disabled={generate.isPending}
-            >
+            </Button>
+            <Button variant="secondary" onClick={() => generate.mutate('xlsx')} disabled={generate.isPending}>
               Excel
-            </button>
+            </Button>
           </div>
         </div>
       )}

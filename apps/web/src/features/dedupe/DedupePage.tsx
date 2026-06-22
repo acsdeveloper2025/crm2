@@ -13,6 +13,7 @@ import { formatDateTime } from '../../lib/format.js';
 import { useAuth } from '../../lib/AuthContext.js';
 import { Input } from '../../components/ui/Input.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
+import { Button } from '../../components/ui/Button.js';
 
 const BASE = '/api/v2/cases';
 const DEDUPE_VIEW = 'dedupe.view';
@@ -169,9 +170,9 @@ export function DedupePage() {
             placeholder="Company / employer"
           />
         </label>
-        <button type="submit" className="btn btn-primary" disabled={!canSearch}>
+        <Button type="submit" disabled={!canSearch}>
           Search
-        </button>
+        </Button>
       </form>
       {!canSearch && (name || pan || mobile || company) && (
         <p className="text-xs text-muted-foreground">Enter at least 2 characters in one field to search.</p>

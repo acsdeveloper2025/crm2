@@ -7,6 +7,7 @@ import { api } from '../../lib/sdk.js';
 import { useAuth } from '../../lib/AuthContext.js';
 import { Input } from '../../components/ui/Input.js';
 import { TextArea } from '../../components/ui/TextArea.js';
+import { Button } from '../../components/ui/Button.js';
 import { AddTasksForm } from './AddTasksForm.js';
 import { summarizeDedupe, type DedupeGroup } from './dedupeBatch.js';
 
@@ -268,29 +269,31 @@ export function CaseCreatePage() {
                     {i === 0 ? (
                       <span className="text-xs text-muted-foreground">Primary</span>
                     ) : (
-                      <button
-                        className="text-sm text-destructive hover:underline"
+                      <Button
+                        variant="destructive"
+                        size="sm"
                         onClick={() => {
                           armSearch(); // changing the applicant set re-arms the dedupe gate (ADR-0053)
                           setApplicants((rows) => rows.filter((_, idx) => idx !== i));
                         }}
                       >
                         Remove
-                      </button>
+                      </Button>
                     )}
                   </div>
                 </div>
               </div>
             ))}
-            <button
-              className="text-sm font-medium text-primary hover:underline"
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() => {
                 armSearch(); // a new applicant must be deduped before Create (ADR-0053)
                 setApplicants((rows) => [...rows, emptyApplicant()]);
               }}
             >
               + Add co-applicant
-            </button>
+            </Button>
           </div>
         </fieldset>
 
@@ -299,22 +302,23 @@ export function CaseCreatePage() {
             <span className="text-sm font-medium text-st-approved">
               ✓ Case {created.caseNumber} created — add documents/tasks below.
             </span>
-            <button className="btn-ghost ml-auto" onClick={() => navigate('/cases')}>
+            <Button variant="ghost" className="ml-auto" onClick={() => navigate('/cases')}>
               Done
-            </button>
+            </Button>
           </div>
         ) : (
           <div className="mt-4 flex items-center gap-2">
-            <button
-              className="btn-ghost"
-              disabled={!canSearch || dedupe.isPending}
+            <Button
+              variant="secondary"
+              disabled={!canSearch}
+              loading={dedupe.isPending}
               onClick={() => dedupe.mutate()}
             >
-              {dedupe.isPending ? 'Searching…' : 'Search (dedupe)'}
-            </button>
-            <button className="btn" disabled={!canCreate || create.isPending} onClick={() => create.mutate()}>
-              {create.isPending ? 'Creating…' : 'Create Case'}
-            </button>
+              Search (dedupe)
+            </Button>
+            <Button disabled={!canCreate} loading={create.isPending} onClick={() => create.mutate()}>
+              Create Case
+            </Button>
             {!canCreate && disabledReason && (
               <span className="text-sm text-muted-foreground">{disabledReason}</span>
             )}

@@ -15,6 +15,7 @@ import {
 } from '@crm2/sdk';
 import { api, apiUpload } from '../../lib/sdk.js';
 import { Input } from '../../components/ui/Input.js';
+import { Button, buttonClass } from '../../components/ui/Button.js';
 
 interface TaskRow {
   /** Stable client-side id (keys the row + its assign-readiness, survives add/remove reordering). */
@@ -192,12 +193,9 @@ export function AddTasksForm({
             : {})}
         />
       ))}
-      <button
-        className="text-sm font-medium text-primary hover:underline"
-        onClick={() => setRows((rs) => [...rs, emptyTask()])}
-      >
+      <Button variant="secondary" size="sm" onClick={() => setRows((rs) => [...rs, emptyTask()])}>
         + Add another task
-      </button>
+      </Button>
       {units && units.length === 0 && (
         <p className="text-sm text-muted-foreground">
           No verification units enabled for this client + product — map them in{' '}
@@ -205,19 +203,17 @@ export function AddTasksForm({
         </p>
       )}
       <div className="flex flex-wrap items-center gap-2">
-        <button
-          className="btn"
-          disabled={valid.length === 0 || add.isPending || hasBlocked}
+        <Button
+          disabled={valid.length === 0 || hasBlocked}
+          loading={add.isPending}
           onClick={() => add.mutate()}
         >
-          {add.isPending
-            ? 'Adding…'
-            : `${submitLabel ?? 'Add'} ${valid.length} Task${valid.length === 1 ? '' : 's'}`}
-        </button>
+          {`${submitLabel ?? 'Add'} ${valid.length} Task${valid.length === 1 ? '' : 's'}`}
+        </Button>
         {onCancel && (
-          <button className="btn-ghost" onClick={onCancel}>
+          <Button variant="ghost" onClick={onCancel}>
             Cancel
-          </button>
+          </Button>
         )}
         {hasBlocked && (
           <span className="text-sm text-destructive">
@@ -320,9 +316,9 @@ function TaskRowEditor({
           Task {index + 1}
         </span>
         {onRemove && (
-          <button className="text-xs font-medium text-destructive hover:underline" onClick={onRemove}>
+          <Button variant="destructive" size="sm" onClick={onRemove}>
             Remove
-          </button>
+          </Button>
         )}
       </div>
 
@@ -571,7 +567,7 @@ function FileField({
     <div className="col-span-full">
       <span className="mb-1 block text-xs font-medium text-foreground">{label}</span>
       <div className="flex flex-wrap items-center gap-3">
-        <label className="btn-ghost cursor-pointer text-sm">
+        <label className={`${buttonClass('ghost')} cursor-pointer text-sm`}>
           {file ? 'Change file' : 'Choose file'}
           <input
             type="file"
@@ -584,12 +580,9 @@ function FileField({
           {file ? file.name : 'PDF or image, for the executive to reference (optional).'}
         </span>
         {file && (
-          <button
-            className="text-xs font-medium text-destructive hover:underline"
-            onClick={() => onPick(null)}
-          >
+          <Button variant="destructive" size="sm" onClick={() => onPick(null)}>
             Remove
-          </button>
+          </Button>
         )}
       </div>
     </div>
