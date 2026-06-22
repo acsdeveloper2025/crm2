@@ -103,5 +103,6 @@ Numbers are never reused. Filenames follow `ADR-NNNN-kebab-slug.md`. Use
 | [ADR-0054](./ADR-0054-v2-native-mobile-contract.md) | v2-native mobile contract — retire v1 compatibility | Accepted | 2026-06-20 |
 | [ADR-0055](./ADR-0055-revoke-before-reassign.md) | Revoke-before-reassign — remove in-place reassign + unassign | Accepted · Shipped 2026-06-22 | 2026-06-21 |
 | [ADR-0056](./ADR-0056-field-rate-type-auto-derived-from-executive.md) | Field rate type auto-derived from the executive's commission (supersedes ADR-0050 §3) | Accepted · Shipped 2026-06-22 | 2026-06-21 |
+| [ADR-0058](./ADR-0058-input-uppercase-store-not-just-display.md) | Auto-uppercase typed input (store, not just display) — supersedes UPPERCASE_DISPLAY_STANDARD | Accepted | 2026-06-22 |
 
-> ADR-0051 (inline-grid editing) and ADR-0052 (button emphasis) are drafted on the parked `design-audit-wip` branch — not yet on `main`; they'll be indexed when that stream ships.
+> ADR-0051 (inline-grid editing) and ADR-0052 (button emphasis) are drafted on the parked `design-audit-wip` branch — not yet on `main`; they'll be indexed when that stream ships. ADR-0057 (field-report outcome/period canonicalization) is owned by a concurrent stream and will be indexed when it lands.

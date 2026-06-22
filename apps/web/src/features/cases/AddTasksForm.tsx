@@ -14,6 +14,7 @@ import {
   type VisitType,
 } from '@crm2/sdk';
 import { api, apiUpload } from '../../lib/sdk.js';
+import { Input } from '../../components/ui/Input.js';
 
 interface TaskRow {
   /** Stable client-side id (keys the row + its assign-readiness, survives add/remove reordering). */
@@ -406,7 +407,7 @@ function TaskRowEditor({
             the task is verified. Address is a FIELD-only visit location (OFFICE/desk has none). */}
         {showDispatch && !isOffice && (
           <FieldLabel label="Address" className="sm:col-span-2">
-            <input
+            <Input
               className="input"
               value={row.address}
               onChange={(e) => onChange({ address: e.target.value })}
@@ -416,7 +417,7 @@ function TaskRowEditor({
         )}
         {showDispatch && (
           <FieldLabel label="Trigger (instruction)" className="sm:col-span-2">
-            <input
+            <Input
               className="input"
               value={row.trigger}
               onChange={(e) => onChange({ trigger: e.target.value })}
@@ -429,7 +430,8 @@ function TaskRowEditor({
         {canAssign && isField && (
           <>
             <FieldLabel label="Pincode">
-              <input
+              <Input
+                uppercase={false}
                 className="input"
                 value={row.pincodeQuery}
                 onChange={(e) => onChange({ pincodeQuery: e.target.value, locationId: '', assigneeId: '' })}

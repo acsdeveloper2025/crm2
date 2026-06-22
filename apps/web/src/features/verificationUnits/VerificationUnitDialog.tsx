@@ -5,6 +5,7 @@ import { api, ApiError } from '../../lib/sdk.js';
 import { toDateInput, toIsoDate } from '../../lib/format.js';
 import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
+import { Input } from '../../components/ui/Input.js';
 
 const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
@@ -116,8 +117,9 @@ export function VerificationUnitDialog({ unit, onClose }: Props) {
         </h2>
         <div className="space-y-3">
           <Field label="Code (UPPER_SNAKE)">
-            <input
+            <Input
               className="input"
+              uppercase={false}
               value={code}
               onChange={(e) =>
                 setCode(
@@ -131,7 +133,7 @@ export function VerificationUnitDialog({ unit, onClose }: Props) {
             />
           </Field>
           <Field label="Name">
-            <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+            <Input className="input" value={name} onChange={(e) => setName(e.target.value)} />
           </Field>
           <Field label="Kind">
             <select
@@ -145,12 +147,13 @@ export function VerificationUnitDialog({ unit, onClose }: Props) {
             </select>
           </Field>
           <Field label="Category">
-            <input className="input" value={category} onChange={(e) => setCategory(e.target.value)} />
+            <Input className="input" value={category} onChange={(e) => setCategory(e.target.value)} />
           </Field>
           {kind === 'FIELD_VISIT' && (
             <Field label="Form code">
-              <input
+              <Input
                 className="input"
+                uppercase={false}
                 value={requiredFormCode ?? ''}
                 onChange={(e) => setRequiredFormCode(e.target.value)}
                 placeholder="RESIDENCE_FORM"
@@ -158,7 +161,7 @@ export function VerificationUnitDialog({ unit, onClose }: Props) {
             </Field>
           )}
           <Field label="Description">
-            <input className="input" value={description} onChange={(e) => setDescription(e.target.value)} />
+            <Input className="input" value={description} onChange={(e) => setDescription(e.target.value)} />
           </Field>
           <Field label="Effective From (blank = now)">
             <input

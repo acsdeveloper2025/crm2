@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { useAuth } from '../../lib/AuthContext.js';
 import { api, ApiError } from '../../lib/sdk.js';
 import { PasswordPolicyChecklist, isPasswordStrong } from '../../components/PasswordPolicyChecklist.js';
+import { Input } from '../../components/ui/Input.js';
 
 export function MustChangePasswordPage() {
   const { logout } = useAuth();
@@ -50,9 +51,10 @@ export function MustChangePasswordPage() {
 
         <label className="mb-3 block">
           <span className="mb-1 block text-xs font-medium text-foreground">Current password</span>
-          <input
+          <Input
             className="input"
             type="password"
+            uppercase={false}
             autoComplete="current-password"
             value={current}
             autoFocus
@@ -61,9 +63,10 @@ export function MustChangePasswordPage() {
         </label>
         <label className="mb-2 block">
           <span className="mb-1 block text-xs font-medium text-foreground">New password</span>
-          <input
+          <Input
             className="input"
             type="password"
+            uppercase={false}
             autoComplete="new-password"
             value={next}
             onChange={(e) => setNext(e.target.value)}
@@ -76,9 +79,10 @@ export function MustChangePasswordPage() {
         )}
         <label className="mb-3 block">
           <span className="mb-1 block text-xs font-medium text-foreground">Confirm new password</span>
-          <input
+          <Input
             className="input"
             type="password"
+            uppercase={false}
             autoComplete="new-password"
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}

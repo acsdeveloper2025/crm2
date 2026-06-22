@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../../lib/AuthContext.js';
+import { Input } from '../../components/ui/Input.js';
 
 const ERROR_LABELS: Record<string, string> = {
   INVALID_CREDENTIALS: 'Incorrect username or password.',
@@ -52,8 +53,9 @@ export function LoginPage() {
 
         <label className="mb-3 block">
           <span className="mb-1 block text-xs font-medium text-foreground">Username</span>
-          <input
+          <Input
             className="input"
+            uppercase={false}
             value={username}
             autoFocus
             autoComplete="username"
@@ -62,9 +64,10 @@ export function LoginPage() {
         </label>
         <label className="mb-3 block">
           <span className="mb-1 block text-xs font-medium text-foreground">Password</span>
-          <input
+          <Input
             className="input"
             type="password"
+            uppercase={false}
             value={password}
             autoComplete="current-password"
             onChange={(e) => setPassword(e.target.value)}
@@ -74,8 +77,9 @@ export function LoginPage() {
         {mfaNeeded && (
           <label className="mb-3 block">
             <span className="mb-1 block text-xs font-medium text-foreground">Authentication code</span>
-            <input
+            <Input
               className="input"
+              uppercase={false}
               value={mfaCode}
               autoFocus
               inputMode="numeric"

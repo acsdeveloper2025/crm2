@@ -33,6 +33,30 @@ describe('Case contract', () => {
   it('accepts a valid create with one applicant and a dedupe decision', () => {
     expect(CreateCaseSchema.safeParse(base).success).toBe(true);
   });
+
+  it('ADR-0058: uppercases applicant name + company on create (server-side safety net)', () => {
+    const parsed = CreateCaseSchema.safeParse({
+      ...base,
+      applicants: [{ name: 'Ramesh kumar', companyName: 'Acme Pvt Ltd' }],
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.applicants[0]?.name).toBe('RAMESH KUMAR');
+      expect(parsed.data.applicants[0]?.companyName).toBe('ACME PVT LTD');
+    }
+  });
+
+  it('ADR-0058: uppercases the dedupe rationale on create', () => {
+    const parsed = CreateCaseSchema.safeParse({
+      ...base,
+      dedupeDecision: 'CREATE_NEW',
+      dedupeRationale: 'genuinely a different case',
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.dedupeRationale).toBe('GENUINELY A DIFFERENT CASE');
+    }
+  });
   it('requires at least one applicant', () => {
     expect(CreateCaseSchema.safeParse({ ...base, applicants: [] }).success).toBe(false);
   });
@@ -80,10 +104,11 @@ describe('Case contract', () => {
     expect(AddTasksSchema.safeParse({ tasks: [] }).success).toBe(false);
     const parsed = AddTasksSchema.safeParse({ tasks: [taskBase] });
     expect(parsed.success).toBe(true);
-    // trigger + priority default in
+    // trigger + priority default in; ADR-0058: address is uppercased server-side
     if (parsed.success) {
       expect(parsed.data.tasks[0]?.trigger).toBe('');
       expect(parsed.data.tasks[0]?.priority).toBe('MEDIUM');
+      expect(parsed.data.tasks[0]?.address).toBe('12 MG ROAD');
     }
     // applicantId must be a uuid; priority enum-checked
     expect(AddTasksSchema.safeParse({ tasks: [{ ...taskBase, applicantId: 'nope' }] }).success).toBe(false);
@@ -98,6 +123,12 @@ describe('Case contract', () => {
     const withTat = AddTasksSchema.safeParse({ tasks: [{ ...taskBase, tatHours: 8 }] });
     expect(withTat.success).toBe(true);
     if (withTat.success) expect(withTat.data.tasks[0]?.tatHours).toBe(8);
+  });
+
+  it('ADR-0058: uppercases the task trigger server-side', () => {
+    const parsed = AddTasksSchema.safeParse({ tasks: [{ ...taskBase, trigger: 'call before visit' }] });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.tasks[0]?.trigger).toBe('CALL BEFORE VISIT');
   });
 
   it('exposes the case statuses and dedupe decisions', () => {
@@ -173,5 +204,20 @@ describe('AddApplicantSchema (ADR-0053)', () => {
 
   it('rejects a malformed PAN', () => {
     expect(AddApplicantSchema.safeParse({ ...base, pan: 'nope' }).success).toBe(false);
+  });
+
+  it('ADR-0058: uppercases name, company, and rationale on add-applicant', () => {
+    const parsed = AddApplicantSchema.safeParse({
+      name: 'Sita Rao',
+      companyName: 'Beta llp',
+      dedupeDecision: 'CREATE_NEW',
+      dedupeRationale: 'different loan, same person',
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.name).toBe('SITA RAO');
+      expect(parsed.data.companyName).toBe('BETA LLP');
+      expect(parsed.data.dedupeRationale).toBe('DIFFERENT LOAN, SAME PERSON');
+    }
   });
 });

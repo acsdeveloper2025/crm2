@@ -17,6 +17,8 @@ import { ImportButton } from '../../components/import/ImportModal.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
+import { Input } from '../../components/ui/Input.js';
+import { TextArea } from '../../components/ui/TextArea.js';
 
 const BASE = '/api/v2/designations';
 const QK = 'designations';
@@ -226,7 +228,7 @@ function DesignationDialog({ row, onClose }: { row: Designation | null; onClose:
         <div className="space-y-3">
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-foreground">Name</span>
-            <input
+            <Input
               className="input"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -246,7 +248,7 @@ function DesignationDialog({ row, onClose }: { row: Designation | null; onClose:
           </label>
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-foreground">Description</span>
-            <textarea
+            <TextArea
               className="input min-h-[5rem]"
               value={description}
               onChange={(e) => setDescription(e.target.value)}

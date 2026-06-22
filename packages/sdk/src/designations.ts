@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { toUpper } from './text.js';
 
 /**
  * @crm2/sdk — the Designation contract. A job title; a required dropdown on the user form
@@ -28,8 +29,8 @@ export interface DesignationOption {
   name: string;
 }
 
-const name = z.string().trim().min(1).max(150);
-const description = z.string().trim().max(2000);
+const name = z.string().trim().min(1).max(150).transform(toUpper);
+const description = z.string().trim().max(2000).transform(toUpper);
 const departmentId = z.number().int().positive();
 const isoDate = z.string().datetime();
 

@@ -146,7 +146,7 @@ describe.skipIf(!RUN)('locations API', () => {
       .set(SA)
       .send({ area: 'Colaba', city: 'Mumbai', state: 'Maharashtra', version: created.version });
     expect(upd.status).toBe(200);
-    expect(upd.body.area).toBe('Colaba');
+    expect(upd.body.area).toBe('COLABA');
     expect(upd.body.pincode).toBe('400001');
     expect(upd.body.version).toBe(2); // OCC token bumped by exactly 1
   });
@@ -159,11 +159,11 @@ describe.skipIf(!RUN)('locations API', () => {
         .set(SA)
         .send(loc({ area: a }));
     const p1 = await request(app).get('/api/v2/locations?limit=2&page=1&sortBy=area&sortOrder=asc').set(SA);
-    expect(p1.body.items.map((l: { area: string }) => l.area)).toEqual(['Aaa', 'Bbb']);
+    expect(p1.body.items.map((l: { area: string }) => l.area)).toEqual(['AAA', 'BBB']);
     expect(p1.body.totalCount).toBe(3);
     expect(p1.body.totalPages).toBe(2);
     const p2 = await request(app).get('/api/v2/locations?limit=2&page=2&sortBy=area&sortOrder=asc').set(SA);
-    expect(p2.body.items.map((l: { area: string }) => l.area)).toEqual(['Ccc']);
+    expect(p2.body.items.map((l: { area: string }) => l.area)).toEqual(['CCC']);
   });
 
   it('server sorting: sortBy=pincode desc orders by the whitelisted column', async () => {
@@ -205,7 +205,7 @@ describe.skipIf(!RUN)('locations API', () => {
       .send(loc({ pincode: '411001', area: 'Shivaji Nagar', city: 'Pune', state: 'Maharashtra' }));
 
     const byState = await request(app).get('/api/v2/locations?f_state=maha').set(SA);
-    expect(byState.body.items.map((l: { city: string }) => l.city).sort()).toEqual(['Mumbai', 'Pune']);
+    expect(byState.body.items.map((l: { city: string }) => l.city).sort()).toEqual(['MUMBAI', 'PUNE']);
     expect(byState.body.filters.f_state).toBe('maha');
 
     const combined = await request(app).get('/api/v2/locations?f_state=maha&f_city=pune').set(SA);
@@ -288,7 +288,7 @@ describe.skipIf(!RUN)('locations API', () => {
     expect(b.status).toBe(409);
     expect(b.body.error).toBe('STALE_UPDATE');
     expect(b.body.current.version).toBe(2);
-    expect(b.body.current.area).toBe('A-edit');
+    expect(b.body.current.area).toBe('A-EDIT');
     // B reloads to v2 and re-applies → succeeds
     const b2 = await request(app)
       .put(`/api/v2/locations/${c.id}`)
@@ -296,7 +296,7 @@ describe.skipIf(!RUN)('locations API', () => {
       .send({ area: 'B-edit', city: 'Mumbai', state: 'Maharashtra', version: b.body.current.version });
     expect(b2.status).toBe(200);
     expect(b2.body.version).toBe(3);
-    expect(b2.body.area).toBe('B-edit');
+    expect(b2.body.area).toBe('B-EDIT');
   });
 
   it('every create/update appends exactly one immutable audit_log row (actor + action)', async () => {
@@ -338,7 +338,7 @@ describe.skipIf(!RUN)('locations API', () => {
       // every row shares the same pincode/city/state — no per-area drift
       expect(
         res.body.created.every(
-          (l: { pincode: string; city: string }) => l.pincode === '400001' && l.city === 'Mumbai',
+          (l: { pincode: string; city: string }) => l.pincode === '400001' && l.city === 'MUMBAI',
         ),
       ).toBe(true);
       expect((await request(app).get('/api/v2/locations').set(SA)).body.totalCount).toBe(3);
@@ -350,9 +350,9 @@ describe.skipIf(!RUN)('locations API', () => {
         .set(SA)
         .send({ pincode: '400001', city: 'Mumbai', state: 'Maharashtra', areas: ['Fort', 'fort', 'Colaba'] });
       expect(res.status).toBe(201);
-      expect(res.body.created.map((l: { area: string }) => l.area)).toEqual(['Fort', 'Colaba']);
+      expect(res.body.created.map((l: { area: string }) => l.area)).toEqual(['FORT', 'COLABA']);
       expect(res.body.skipped).toHaveLength(1);
-      expect(res.body.skipped[0]).toMatchObject({ area: 'fort', reason: 'duplicate in request' });
+      expect(res.body.skipped[0]).toMatchObject({ area: 'FORT', reason: 'duplicate in request' });
     });
 
     it('skips an area whose (pincode,area) already exists, without aborting the rest', async () => {
@@ -365,8 +365,8 @@ describe.skipIf(!RUN)('locations API', () => {
         .set(SA)
         .send({ pincode: '400001', city: 'Mumbai', state: 'Maharashtra', areas: ['Fort', 'Colaba'] });
       expect(res.status).toBe(201);
-      expect(res.body.created.map((l: { area: string }) => l.area)).toEqual(['Colaba']);
-      expect(res.body.skipped[0]).toMatchObject({ area: 'Fort', reason: 'pincode+area already exists' });
+      expect(res.body.created.map((l: { area: string }) => l.area)).toEqual(['COLABA']);
+      expect(res.body.skipped[0]).toMatchObject({ area: 'FORT', reason: 'pincode+area already exists' });
       expect((await request(app).get('/api/v2/locations').set(SA)).body.totalCount).toBe(2);
     });
 
@@ -402,7 +402,7 @@ describe.skipIf(!RUN)('locations API', () => {
       expect(res.text.split('\r\n')[0]).toBe(
         'Pincode,Area,City,State,Country,Effective From,Created,Updated,Status',
       );
-      expect(res.text).toContain('400001,Fort,Mumbai,Maharashtra');
+      expect(res.text).toContain('400001,FORT,MUMBAI,MAHARASHTRA');
     });
 
     it('exports all matching as XLSX (200 + PK-zip body)', async () => {
@@ -453,8 +453,8 @@ describe.skipIf(!RUN)('locations API', () => {
       expect(res.text.split('\r\n')[0]).toBe(
         'Pincode,Area,City,State,Country,Effective From,Created,Updated,Status',
       );
-      expect(res.text).toContain('411001,SelA');
-      expect(res.text).not.toContain('411002,SelB'); // the unticked row is excluded
+      expect(res.text).toContain('411001,SELA');
+      expect(res.text).not.toContain('411002,SELB'); // the unticked row is excluded
     });
 
     it('mode=selected with no ids exports nothing (never falls through to all)', async () => {

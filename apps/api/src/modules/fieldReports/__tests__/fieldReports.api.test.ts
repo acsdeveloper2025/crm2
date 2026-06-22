@@ -175,7 +175,7 @@ describe.skipIf(!RUN)('field-report API (ADR-0039)', () => {
     const res = await request(app).get(`/api/v2/cases/${caseId}/tasks/${taskId}/field-report`).set(SA);
     expect(res.status).toBe(200);
     expect(res.body.verificationType).toBe(ctx.unitCode);
-    expect(res.body.layoutName).toBe('Residence Report');
+    expect(res.body.layoutName).toBe('RESIDENCE REPORT'); // entity name uppercased on store/return (ADR-0058)
     expect(res.body.narrative).toBe(
       'Visited 12 MG ROAD for RAJESH KUMAR. Area: BTM LAYOUT. Marked positive.',
     );

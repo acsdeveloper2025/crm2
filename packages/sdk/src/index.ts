@@ -1,4 +1,5 @@
 export * from './pagination.js';
+export * from './text.js';
 export * from './options.js';
 export * from './verificationUnit.js';
 export * from './clients.js';

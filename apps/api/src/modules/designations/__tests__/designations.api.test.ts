@@ -36,7 +36,7 @@ describe.skipIf(!RUN)('designations API', () => {
       .send(desig({ departmentId: deptId }));
     expect(created.status).toBe(201);
     expect(created.body.departmentId).toBe(deptId);
-    expect(created.body.departmentName).toBe('Operations');
+    expect(created.body.departmentName).toBe('OPERATIONS');
     expect(created.body.version).toBe(1);
   });
 
@@ -134,8 +134,8 @@ describe.skipIf(!RUN)('designations API', () => {
       expect(res.text.split('\r\n')[0]).toBe(
         'Name,Description,Department,Effective From,Created,Updated,Status',
       );
-      expect(res.text).toContain('Senior Field Executive');
-      expect(res.text).toContain('Operations');
+      expect(res.text).toContain('SENIOR FIELD EXECUTIVE');
+      expect(res.text).toContain('OPERATIONS');
     });
 
     it('BACKEND_USER can export (200); FIELD_AGENT cannot (403)', async () => {

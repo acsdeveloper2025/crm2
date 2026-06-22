@@ -19,6 +19,7 @@ import { api, ApiError } from '../../lib/sdk.js';
 import { formatDateTime } from '../../lib/format.js';
 import { UserPhoto } from '../../components/UserPhoto.js';
 import { PasswordPolicyChecklist, isPasswordStrong } from '../../components/PasswordPolicyChecklist.js';
+import { Input } from '../../components/ui/Input.js';
 
 const ME = ['me-profile'];
 
@@ -110,10 +111,11 @@ function IdentityCard({ me }: { me: UserView }) {
               >
                 Email
               </label>
-              <input
+              <Input
                 id="me-email"
                 className="input"
                 type="email"
+                uppercase={false}
                 value={email}
                 placeholder="name@example.com"
                 onChange={(e) => setEmail(e.target.value)}
@@ -126,9 +128,10 @@ function IdentityCard({ me }: { me: UserView }) {
               >
                 Phone
               </label>
-              <input
+              <Input
                 id="me-phone"
                 className="input"
+                uppercase={false}
                 value={phone}
                 placeholder="+919876543210"
                 onChange={(e) => setPhone(e.target.value)}
@@ -201,26 +204,29 @@ function ChangePasswordCard() {
         Set a new password. Other signed-in devices are signed out for safety.
       </p>
       <div className="max-w-sm space-y-3">
-        <input
+        <Input
           className="input"
           type="password"
+          uppercase={false}
           autoComplete="current-password"
           placeholder="Current password"
           value={current}
           onChange={(e) => setCurrent(e.target.value)}
         />
-        <input
+        <Input
           className="input"
           type="password"
+          uppercase={false}
           autoComplete="new-password"
           placeholder="New password"
           value={next}
           onChange={(e) => setNext(e.target.value)}
         />
         {next.length > 0 && <PasswordPolicyChecklist password={next} />}
-        <input
+        <Input
           className="input"
           type="password"
+          uppercase={false}
           autoComplete="new-password"
           placeholder="Confirm new password"
           value={confirm}

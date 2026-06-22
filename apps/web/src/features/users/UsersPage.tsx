@@ -28,6 +28,7 @@ import { PasswordPolicyChecklist, isPasswordStrong } from '../../components/Pass
 import { UserAccessSection, type StagedScope } from '../../components/UserAccessSection.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
 import { ImportButton } from '../../components/import/ImportModal.js';
+import { Input } from '../../components/ui/Input.js';
 
 const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
@@ -372,9 +373,10 @@ function ResetPasswordDialog({ user, onClose }: { user: UserView; onClose: () =>
             <p className="text-sm text-muted-foreground">
               Set a one-time password. {user.name} must change it on first login.
             </p>
-            <input
+            <Input
               className="input"
               type="password"
+              uppercase={false}
               autoComplete="new-password"
               placeholder="New password"
               value={typed}
@@ -627,7 +629,13 @@ function UserDialog({ row, onClose }: { row: UserView | null; onClose: () => voi
           {isEdit && (
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-foreground">Employee ID</span>
-              <input className="input font-mono" value={row?.employeeId ?? ''} readOnly disabled />
+              <Input
+                className="input font-mono"
+                uppercase={false}
+                value={row?.employeeId ?? ''}
+                readOnly
+                disabled
+              />
               <span className="mt-1 block text-xs text-muted-foreground">Auto-generated and immutable.</span>
             </label>
           )}
@@ -637,8 +645,9 @@ function UserDialog({ row, onClose }: { row: UserView | null; onClose: () => voi
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-foreground">Username (lowercase)</span>
-              <input
+              <Input
                 className="input"
+                uppercase={false}
                 value={username}
                 onChange={(e) => setUsername(e.target.value.toLowerCase())}
                 placeholder="jane_doe"
@@ -651,14 +660,15 @@ function UserDialog({ row, onClose }: { row: UserView | null; onClose: () => voi
             </label>
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-foreground">Full name</span>
-              <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+              <Input className="input" value={name} onChange={(e) => setName(e.target.value)} />
             </label>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-foreground">Phone</span>
-              <input
+              <Input
                 className="input"
+                uppercase={false}
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="+919876543210"
@@ -666,7 +676,12 @@ function UserDialog({ row, onClose }: { row: UserView | null; onClose: () => voi
             </label>
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-foreground">Email (optional)</span>
-              <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} />
+              <Input
+                className="input"
+                uppercase={false}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
             </label>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -742,9 +757,10 @@ function UserDialog({ row, onClose }: { row: UserView | null; onClose: () => voi
           {!isEdit && (
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-foreground">Password</span>
-              <input
+              <Input
                 type="password"
                 className="input"
+                uppercase={false}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="8+ chars, upper, lower, digit, symbol"

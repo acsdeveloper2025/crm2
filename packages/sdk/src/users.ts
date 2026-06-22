@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { toUpper } from './text.js';
 
 /**
  * @crm2/sdk — the User contract. Identity master-data: who exists, their role and
@@ -71,7 +72,7 @@ const username = z
   .min(3)
   .max(50)
   .regex(/^[a-z0-9][a-z0-9._-]*$/, 'lowercase letters, digits, dot, underscore or hyphen');
-const name = z.string().trim().min(1).max(150);
+const name = z.string().trim().min(1).max(150).transform(toUpper);
 const email = z.string().trim().email().max(255);
 // open role catalog (ADR-0022): shape-validated here, existence-validated by the users.role FK
 const role = z.string().regex(/^[A-Z][A-Z0-9_]{1,19}$/);

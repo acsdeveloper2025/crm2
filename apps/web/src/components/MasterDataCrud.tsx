@@ -15,6 +15,7 @@ import { ImportButton } from './import/ImportModal.js';
 import { StatusChip } from './StatusChip.js';
 import { ConflictDialog } from './ConflictDialog.js';
 import { DataGrid, type DataGridColumn } from './ui/data-grid/index.js';
+import { Input } from './ui/Input.js';
 
 const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
@@ -254,8 +255,9 @@ function MasterDataDialog({
         <div className="space-y-3">
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-foreground">Code (UPPER_SNAKE)</span>
-            <input
+            <Input
               className="input"
+              uppercase={false}
               value={code}
               onChange={(e) => setCode(e.target.value.toUpperCase())}
               placeholder={config.codePlaceholder}
@@ -268,7 +270,7 @@ function MasterDataDialog({
           </label>
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-foreground">Name</span>
-            <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+            <Input className="input" value={name} onChange={(e) => setName(e.target.value)} />
           </label>
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-foreground">

@@ -47,7 +47,7 @@ describe.skipIf(!RUN)('users API', () => {
     expect(list.body.pageSize).toBe(25); // default
     expect(list.body.sort).toEqual({ sortBy: 'name', sortOrder: 'asc' });
     const agent = list.body.items.find((u: { username: string }) => u.username === 'fa_a');
-    expect(agent.reportsToName).toBe('Manager A');
+    expect(agent.reportsToName).toBe('MANAGER A'); // ADR-0058: joined manager name is uppercased
     expect(agent.effectiveFrom).toBeTruthy(); // list must return effective_from (column render)
   });
 
@@ -104,7 +104,7 @@ describe.skipIf(!RUN)('users API', () => {
       .send({ name: 'After', role: 'TEAM_LEADER', version: u.version });
     expect(upd.status).toBe(200);
     expect(upd.body.username).toBe('edit_me');
-    expect(upd.body.name).toBe('After');
+    expect(upd.body.name).toBe('AFTER'); // ADR-0058: user name stored/returned uppercase
     expect(upd.body.role).toBe('TEAM_LEADER');
     expect(upd.body.version).toBe(2); // OCC token bumped by exactly 1
   });
@@ -256,7 +256,7 @@ describe.skipIf(!RUN)('users API', () => {
     expect(b.status).toBe(409);
     expect(b.body.error).toBe('STALE_UPDATE');
     expect(b.body.current.version).toBe(2); // fresh row returned so the client can reconcile
-    expect(b.body.current.name).toBe('A-edit');
+    expect(b.body.current.name).toBe('A-EDIT'); // ADR-0058: user name uppercase
     // B reloads to v2 and re-applies → succeeds
     const b2 = await request(app)
       .put(`/api/v2/users/${u.id}`)
@@ -264,7 +264,7 @@ describe.skipIf(!RUN)('users API', () => {
       .send({ name: 'B-edit', role: 'FIELD_AGENT', version: b.body.current.version });
     expect(b2.status).toBe(200);
     expect(b2.body.version).toBe(3);
-    expect(b2.body.name).toBe('B-edit');
+    expect(b2.body.name).toBe('B-EDIT'); // ADR-0058: user name uppercase
   });
 
   it('every create/update appends exactly one immutable audit_log row (actor + action)', async () => {
@@ -345,9 +345,9 @@ describe.skipIf(!RUN)('users API', () => {
       expect(res.text.split('\r\n')[0]).toBe(
         'Employee ID,Username,Name,Phone,Role,Department,Designation,Reports To,Effective From,Created,Updated,Status',
       );
-      expect(res.text).toContain('exp_fa,Export Agent,');
+      expect(res.text).toContain('exp_fa,EXPORT AGENT,'); // ADR-0058: name uppercase; username unchanged
       expect(res.text).toContain('FIELD AGENT');
-      expect(res.text).toContain('Export Manager');
+      expect(res.text).toContain('EXPORT MANAGER'); // ADR-0058: joined Reports To name uppercase
     });
 
     it('exports all matching as XLSX (200 + PK-zip body)', async () => {
@@ -602,8 +602,8 @@ describe.skipIf(!RUN)('users API', () => {
       expect(created.body.departmentId).toBe(deptId);
 
       const row = (await request(app).get('/api/v2/users?search=prof_a').set(SA)).body.items[0];
-      expect(row.departmentName).toBe('Operations');
-      expect(row.designationName).toBe('Field Executive');
+      expect(row.departmentName).toBe('OPERATIONS'); // ADR-0058: department name uppercase
+      expect(row.designationName).toBe('FIELD EXECUTIVE'); // ADR-0058: designation name uppercase
     });
 
     it('rejects a bad phone (400 VALIDATION) and a non-existent department (400 INVALID_REFERENCE)', async () => {
@@ -865,8 +865,8 @@ describe.skipIf(!RUN)('users API', () => {
       expect(res.body.id).toBe(me.id);
       expect(res.body.employeeId).toMatch(/^CRM-\d{5}$/);
       expect(res.body.role).toBe('FIELD_AGENT');
-      expect(res.body.reportsToName).toBe('My Manager');
-      expect(res.body.departmentName).toBe('Ops');
+      expect(res.body.reportsToName).toBe('MY MANAGER'); // ADR-0058: joined manager name uppercase
+      expect(res.body.departmentName).toBe('OPS'); // ADR-0058: department name uppercase
     });
 
     it('GET /me/profile is 401 unauthenticated', async () => {

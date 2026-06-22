@@ -1,7 +1,15 @@
-# CRM2 — Uppercase Display Standard (PERMANENT)
-**Status:** FROZEN 2026-06-04. Source of truth = `packages/ui-theme/src/tokens.css` (CSS policy) + `packages/ui-theme/src/index.ts` (exception model). This doc explains them.
+# CRM2 — Uppercase Display Standard (SUPERSEDED)
 
-> **One rule:** user-visible text renders **UPPERCASE via CSS only**. Stored values are **never** transformed — no DB, no API, no input mutation. The screen's casing is presentation; the data keeps its original case.
+> **⚠️ SUPERSEDED by [ADR-0058](./adr/ADR-0058-input-uppercase-store-not-just-display.md) (2026-06-22).**
+> The "display-only, never transform stored values" rule below has been REVERSED. Typed display text is now
+> auto-uppercased in **storage too** (client `<Input>`/`<TextArea>` + server `@crm2/sdk` `toUpper`),
+> except the documented case-sensitive safe set (username, password, email, url, tel, codes, JSON blobs…).
+> This realigns CRM2 with v1's behavior (which already mutated the typed value — see §1 below). The exception
+> model (which fields stay case-sensitive) and the CSS channel still apply. Read ADR-0058 first.
+
+**Status:** ~~FROZEN 2026-06-04~~ → SUPERSEDED 2026-06-22 (ADR-0058). Source of truth = `packages/ui-theme/src/tokens.css` (CSS policy) + the `<Input>`/`<TextArea>` components + `@crm2/sdk` `text.ts`. This doc explains the original display-only model.
+
+> **Original rule (now superseded):** user-visible text renders **UPPERCASE via CSS only**; stored values were never transformed. As of ADR-0058 the stored value is uppercased too, matching the display.
 
 ---
 

@@ -11,6 +11,11 @@ describe('Client contract', () => {
   it('rejects an empty name', () => {
     expect(CreateClientSchema.safeParse({ code: 'HDFC', name: '' }).success).toBe(false);
   });
+  it('uppercases name but not code (ADR-0058)', () => {
+    const r = CreateClientSchema.safeParse({ code: 'HDFC', name: 'hdfc bank' });
+    expect(r.success && r.data.name).toBe('HDFC BANK');
+    expect(r.success && r.data.code).toBe('HDFC'); // code preserved (UPPER_SNAKE)
+  });
   it('update accepts a name; code is optional (ADR-0020 — correctable while unreferenced)', () => {
     // name-only update is valid (code omitted → unchanged server-side)
     expect(UpdateClientSchema.safeParse({ name: 'HDFC Ltd' }).success).toBe(true);

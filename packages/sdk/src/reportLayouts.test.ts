@@ -186,6 +186,49 @@ describe('CASE_REPORT contract (ADR-0041 slice 3)', () => {
   });
 });
 
+describe('ReportLayout uppercase transform (ADR-0058)', () => {
+  it('uppercases layout name + column headerLabel/section, preserving keys/refs/template', () => {
+    const p = CreateReportLayoutSchema.parse({
+      ...base,
+      name: 'Axis Mis',
+      columns: [col({ headerLabel: 'Case No', section: 'Summary' })],
+    });
+    expect(p.name).toBe('AXIS MIS');
+    expect(p.columns[0]?.headerLabel).toBe('CASE NO');
+    expect(p.columns[0]?.section).toBe('SUMMARY');
+    // codes/keys/refs are NOT transformed
+    expect(p.columns[0]?.columnKey).toBe('case_no');
+    expect(p.columns[0]?.sourceRef).toBe('case_number');
+  });
+  it('uppercases name on update, preserving templateBody/verificationType content', () => {
+    const u = UpdateReportLayoutSchema.parse({ name: 'Renamed Layout' });
+    expect(u.name).toBe('RENAMED LAYOUT');
+    const body = UpdateReportLayoutSchema.parse({ templateBody: 'Visited {{customer_name}}.' });
+    expect(body.templateBody).toBe('Visited {{customer_name}}.');
+  });
+  it('preserves FIELD_REPORT verificationType + templateBody (codes/content not transformed)', () => {
+    const p = CreateReportLayoutSchema.parse({
+      clientId: 1,
+      productId: 2,
+      kind: 'FIELD_REPORT',
+      name: 'Axis Residence Report',
+      verificationType: 'RESIDENCE',
+      templateBody: 'Visited for {{customer_name}}.',
+      columns: [
+        col({
+          columnKey: 'customer_name',
+          headerLabel: 'Customer Name',
+          sourceType: 'FORM_DATA_PATH',
+          sourceRef: 'residence.formData.customerName',
+        }),
+      ],
+    });
+    expect(p.verificationType).toBe('RESIDENCE');
+    expect(p.templateBody).toBe('Visited for {{customer_name}}.');
+    expect(p.columns[0]?.sourceRef).toBe('residence.formData.customerName');
+  });
+});
+
 describe('UpdateReportLayout contract', () => {
   it('accepts a name-only update', () => {
     expect(UpdateReportLayoutSchema.safeParse({ name: 'Renamed' }).success).toBe(true);

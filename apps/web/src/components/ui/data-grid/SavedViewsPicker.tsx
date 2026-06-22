@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import type { SavedView, SavedViewState } from '@crm2/sdk';
 import { api, ApiError } from '../../../lib/sdk.js';
 import { useFocusTrap } from '../../../lib/useFocusTrap.js';
+import { Input } from '../Input.js';
 
 /**
  * Saved views picker (DATAGRID_STANDARD §10, B-5). A per-user named snapshot of THIS grid's URL-state
@@ -181,7 +182,7 @@ export function SavedViewsPicker({ resourceKey }: { resourceKey: string }) {
                 Save current view
               </label>
               <div className="flex items-center gap-1">
-                <input
+                <Input
                   className="input h-7 flex-1 text-xs"
                   placeholder="View name…"
                   aria-label="New view name"

@@ -81,7 +81,7 @@ describe.skipIf(!RUN)('report-templates API', () => {
     });
     expect(upd.status).toBe(200);
     expect(upd.body.code).toBe('FIELD_RESIDENCE_V1');
-    expect(upd.body.name).toBe('Updated');
+    expect(upd.body.name).toBe('UPDATED');
     expect(upd.body.templateType).toBe('KYC_DOCUMENT');
     expect(upd.body.content).toBe('new body');
     expect(upd.body.version).toBe(2); // OCC token bumped by exactly 1
@@ -173,7 +173,7 @@ describe.skipIf(!RUN)('report-templates API', () => {
     expect(b.status).toBe(409);
     expect(b.body.error).toBe('STALE_UPDATE');
     expect(b.body.current.version).toBe(2);
-    expect(b.body.current.name).toBe('A-edit');
+    expect(b.body.current.name).toBe('A-EDIT');
     // B reloads to v2 and re-applies → succeeds
     const b2 = await request(app)
       .put(`/api/v2/report-templates/${made.id}`)
@@ -181,7 +181,7 @@ describe.skipIf(!RUN)('report-templates API', () => {
       .send({ name: 'B-edit', templateType: 'KYC_DOCUMENT', content: 'b', version: b.body.current.version });
     expect(b2.status).toBe(200);
     expect(b2.body.version).toBe(3);
-    expect(b2.body.name).toBe('B-edit');
+    expect(b2.body.name).toBe('B-EDIT');
   });
 
   it('every create/update appends exactly one immutable audit_log row (actor + action)', async () => {
@@ -280,7 +280,7 @@ describe.skipIf(!RUN)('report-templates API', () => {
         /attachment; filename="report-templates-\d{8}\.csv"/,
       );
       expect(res.text.split('\r\n')[0]).toBe('Code,Name,Type,Effective From,Created,Updated,Status');
-      expect(res.text).toContain('FIELD_RESIDENCE_V1,Field Residence v1,FIELD_NARRATIVE');
+      expect(res.text).toContain('FIELD_RESIDENCE_V1,FIELD RESIDENCE V1,FIELD_NARRATIVE');
     });
 
     it('exports all matching as XLSX (200 + PK-zip body)', async () => {

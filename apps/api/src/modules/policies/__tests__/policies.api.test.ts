@@ -63,7 +63,7 @@ describe.skipIf(!RUN)('policies admin API', () => {
 
     const meta = await request(app).put(`/api/v2/policies/${id}`).set(SA).send({ name: 'Renamed', version });
     expect(meta.status).toBe(200);
-    expect(meta.body.name).toBe('Renamed');
+    expect(meta.body.name).toBe('RENAMED'); // ADR-0058: name stored uppercase
     expect(meta.body.version).toBe(2); // OCC bumps every edit
     expect(meta.body.contentVersion).toBe(1); // unchanged — content untouched
 
@@ -104,7 +104,7 @@ describe.skipIf(!RUN)('policies admin API', () => {
     expect(stale.status).toBe(409);
     expect(stale.body.error).toBe('STALE_UPDATE');
     expect(stale.body.current.version).toBe(2);
-    expect(stale.body.current.name).toBe('A-edit');
+    expect(stale.body.current.name).toBe('A-EDIT'); // ADR-0058: name stored uppercase
     const ok = await request(app)
       .put(`/api/v2/policies/${c.body.id}`)
       .set(SA)
@@ -209,7 +209,7 @@ describe.skipIf(!RUN)('policies admin API', () => {
       expect(codes).toEqual(['POLA', 'POLB']);
       const v2 = rows.find((x) => x.policyVersion === 2);
       expect(v2).toBeDefined();
-      expect(v2!.policyName).toBe('Privacy');
+      expect(v2!.policyName).toBe('PRIVACY'); // ADR-0058: policy name stored uppercase
       expect(v2!.userAgent).toBe('CRM-Mobile/1.0.69');
       expect(typeof v2!.id).toBe('string');
       expect(typeof v2!.acceptedAt).toBe('string');

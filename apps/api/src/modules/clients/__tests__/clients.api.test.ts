@@ -87,7 +87,7 @@ describe.skipIf(!RUN)('clients API', () => {
       .set(SA)
       .send({ name: 'Axis v2', version: created.version });
     expect(upd.status).toBe(200);
-    expect(upd.body.name).toBe('Axis v2');
+    expect(upd.body.name).toBe('AXIS V2'); // ADR-0058: display-text name stored UPPERCASE
     expect(upd.body.code).toBe('AXIS');
     expect(upd.body.version).toBe(2); // OCC token bumped by exactly 1
   });
@@ -125,7 +125,7 @@ describe.skipIf(!RUN)('clients API', () => {
       .set(SA)
       .send({ code: 'LOCKME', name: 'Lock Bank 2', version: c.version });
     expect(nameOnly.status).toBe(200);
-    expect(nameOnly.body.name).toBe('Lock Bank 2');
+    expect(nameOnly.body.name).toBe('LOCK BANK 2'); // ADR-0058: display-text name stored UPPERCASE
   });
 
   it('activate / deactivate toggles is_active (version-guarded, each bumps version)', async () => {
@@ -306,7 +306,7 @@ describe.skipIf(!RUN)('clients API', () => {
     expect(b.status).toBe(409);
     expect(b.body.error).toBe('STALE_UPDATE');
     expect(b.body.current.version).toBe(2);
-    expect(b.body.current.name).toBe('A-edit');
+    expect(b.body.current.name).toBe('A-EDIT'); // ADR-0058: display-text name stored UPPERCASE
     // B reloads to v2 and re-applies → succeeds
     const b2 = await request(app)
       .put(`/api/v2/clients/${c.id}`)
@@ -314,7 +314,7 @@ describe.skipIf(!RUN)('clients API', () => {
       .send({ name: 'B-edit', version: b.body.current.version });
     expect(b2.status).toBe(200);
     expect(b2.body.version).toBe(3);
-    expect(b2.body.name).toBe('B-edit');
+    expect(b2.body.name).toBe('B-EDIT'); // ADR-0058: display-text name stored UPPERCASE
   });
 
   it('every create/update appends exactly one immutable audit_log row (actor + action)', async () => {
@@ -454,7 +454,7 @@ describe.skipIf(!RUN)('clients API', () => {
       expect(res.headers['content-type']).toContain('text/csv');
       expect(res.headers['content-disposition']).toMatch(/attachment; filename="clients-\d{8}\.csv"/);
       expect(res.text.split('\r\n')[0]).toBe('Code,Name,Effective From,Created,Updated,Status');
-      expect(res.text).toContain('HDFC,HDFC Bank');
+      expect(res.text).toContain('HDFC,HDFC BANK'); // ADR-0058: name UPPERCASE; code unchanged
     });
 
     it('exports all matching as XLSX (200 + PK-zip body), honoring the active filter', async () => {
@@ -656,7 +656,7 @@ describe.skipIf(!RUN)('clients API', () => {
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({ totalRows: 2, validRows: 2, errorRows: 0 });
       expect(res.body.errors).toHaveLength(0);
-      expect(res.body.sample[0]).toMatchObject({ Code: 'ACME', Name: 'Acme Bank' });
+      expect(res.body.sample[0]).toMatchObject({ Code: 'ACME', Name: 'ACME BANK' }); // ADR-0058: name UPPERCASE; code unchanged
       // preview is read-only — the list is still empty
       expect((await request(app).get('/api/v2/clients').set(SA)).body.totalCount).toBe(0);
     });
@@ -739,7 +739,8 @@ describe.skipIf(!RUN)('clients API', () => {
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({ totalRows: 2, successRows: 2, failedRows: 0 });
       const list = await request(app).get('/api/v2/clients?search=Csv').set(SA);
-      expect(list.body.items.some((c: { name: string }) => c.name === 'Csv, Bank')).toBe(true);
+      // ADR-0058: name stored UPPERCASE; the quoted comma is still preserved (not the delimiter).
+      expect(list.body.items.some((c: { name: string }) => c.name === 'CSV, BANK')).toBe(true);
     });
 
     it('no file body → 400 NO_IMPORT_FILE', async () => {

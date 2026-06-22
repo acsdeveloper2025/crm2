@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { toUpper } from './text.js';
 
 /** @crm2/sdk — Login policies (ADR-0043). Admin-managed, versioned policies a user must accept at
  *  login; `contentVersion` drives re-acceptance, `version` is the OCC token (ADR-0019). Acceptances
@@ -47,8 +48,8 @@ const codeField = z.string().regex(/^[A-Z][A-Z0-9_]*$/, 'code must be UPPER_SNAK
 
 export const CreatePolicySchema = z.object({
   code: codeField,
-  name: z.string().min(1),
-  description: z.string().nullish(),
+  name: z.string().min(1).transform(toUpper),
+  description: z.string().transform(toUpper).nullish(),
   content: z.string().min(1),
 });
 export type CreatePolicyInput = z.infer<typeof CreatePolicySchema>;
@@ -57,8 +58,8 @@ export type CreatePolicyInput = z.infer<typeof CreatePolicySchema>;
 export const UpdatePolicySchema = z
   .object({
     code: codeField,
-    name: z.string().min(1),
-    description: z.string().nullish(),
+    name: z.string().min(1).transform(toUpper),
+    description: z.string().transform(toUpper).nullish(),
     content: z.string().min(1),
   })
   .partial();

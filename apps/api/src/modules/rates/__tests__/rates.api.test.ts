@@ -227,7 +227,7 @@ describe.skipIf(!RUN)('rates API', () => {
     const list = await request(app).get(`/api/v2/rates?clientId=${key.clientId}`).set(SA);
     expect(list.body.items).toHaveLength(1);
     expect(list.body.items[0].pincode).toBe('400001');
-    expect(list.body.items[0].area).toBe('Andheri_R8');
+    expect(list.body.items[0].area).toBe('ANDHERI_R8');
     expect(list.body.items[0].clientRateType).toBe('OGL');
 
     // a KYC-style row: same unit, no location, no rate type → distinct from the OGL row (no overlap)

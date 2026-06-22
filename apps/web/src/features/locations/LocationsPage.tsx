@@ -16,6 +16,7 @@ import { ImportButton } from '../../components/import/ImportModal.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
+import { Input } from '../../components/ui/Input.js';
 
 const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
@@ -198,7 +199,8 @@ export function LocationsPage() {
       <div className="flex flex-wrap items-end gap-2 rounded-lg border border-border bg-card p-3 shadow-sm">
         <label className="block w-full sm:w-auto">
           <span className="mb-1 block text-xs font-medium text-foreground">Pincode</span>
-          <input
+          <Input
+            uppercase={false}
             className="input w-full sm:w-28"
             value={pincode}
             onChange={(e) => setPincode(e.target.value.replace(/\D/g, '').slice(0, 6))}
@@ -209,7 +211,7 @@ export function LocationsPage() {
           <span className="mb-1 block text-xs font-medium text-foreground">
             Areas <span className="font-normal text-muted-foreground">(Enter or comma to add)</span>
           </span>
-          <input
+          <Input
             className="input w-full sm:w-auto sm:min-w-[12rem]"
             value={areaInput}
             placeholder="Fort, Colaba…"
@@ -225,7 +227,7 @@ export function LocationsPage() {
         </label>
         <label className="block w-full sm:w-auto">
           <span className="mb-1 block text-xs font-medium text-foreground">City</span>
-          <input
+          <Input
             className="input w-full sm:w-auto sm:min-w-[9rem]"
             value={city}
             onChange={(e) => setCity(e.target.value)}
@@ -233,7 +235,7 @@ export function LocationsPage() {
         </label>
         <label className="block w-full sm:w-auto">
           <span className="mb-1 block text-xs font-medium text-foreground">State</span>
-          <input
+          <Input
             className="input w-full sm:w-auto sm:min-w-[9rem]"
             value={state}
             onChange={(e) => setState(e.target.value)}
@@ -241,7 +243,7 @@ export function LocationsPage() {
         </label>
         <label className="block w-full sm:w-auto">
           <span className="mb-1 block text-xs font-medium text-foreground">Country</span>
-          <input
+          <Input
             className="input w-full sm:w-28"
             value={country}
             onChange={(e) => setCountry(e.target.value)}
@@ -388,7 +390,8 @@ function EditLocationDialog({ location, onClose }: { location: Location; onClose
         <div className="space-y-3">
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-foreground">Pincode (6 digits)</span>
-            <input
+            <Input
+              uppercase={false}
               className="input font-mono"
               value={pincode}
               onChange={(e) => setPincode(e.target.value.replace(/\D/g, '').slice(0, 6))}
@@ -399,19 +402,19 @@ function EditLocationDialog({ location, onClose }: { location: Location; onClose
           </label>
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-foreground">Area</span>
-            <input className="input" value={area} onChange={(e) => setArea(e.target.value)} />
+            <Input className="input" value={area} onChange={(e) => setArea(e.target.value)} />
           </label>
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-foreground">City</span>
-            <input className="input" value={city} onChange={(e) => setCity(e.target.value)} />
+            <Input className="input" value={city} onChange={(e) => setCity(e.target.value)} />
           </label>
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-foreground">State</span>
-            <input className="input" value={state} onChange={(e) => setState(e.target.value)} />
+            <Input className="input" value={state} onChange={(e) => setState(e.target.value)} />
           </label>
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-foreground">Country</span>
-            <input className="input" value={country} onChange={(e) => setCountry(e.target.value)} />
+            <Input className="input" value={country} onChange={(e) => setCountry(e.target.value)} />
           </label>
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-foreground">

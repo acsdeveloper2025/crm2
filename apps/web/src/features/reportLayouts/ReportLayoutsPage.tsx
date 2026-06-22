@@ -34,6 +34,8 @@ import { useAuth } from '../../lib/AuthContext.js';
 import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
+import { Input } from '../../components/ui/Input.js';
+import { TextArea } from '../../components/ui/TextArea.js';
 import { toast } from 'sonner';
 
 const HTTP_CONFLICT = 409;
@@ -339,7 +341,7 @@ function LayoutDesignerDialog({ editId, onClose }: { editId: number | null; onCl
               </label>
               <label className="block">
                 <span className="mb-1 block text-xs font-medium text-foreground">Name</span>
-                <input
+                <Input
                   className="input"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
@@ -395,8 +397,9 @@ function LayoutDesignerDialog({ editId, onClose }: { editId: number | null; onCl
                       </button>
                     )}
                   </div>
-                  <textarea
+                  <TextArea
                     className="input min-h-[8rem] font-mono text-xs"
+                    uppercase={false}
                     value={templateBody}
                     onChange={(e) => setTemplateBody(e.target.value)}
                     placeholder={
@@ -456,8 +459,9 @@ function LayoutDesignerDialog({ editId, onClose }: { editId: number | null; onCl
                       Load default template
                     </button>
                   </div>
-                  <textarea
+                  <TextArea
                     className="input min-h-[16rem] font-mono text-xs"
+                    uppercase={false}
                     value={templateBody}
                     onChange={(e) => setTemplateBody(e.target.value)}
                     placeholder={
@@ -525,7 +529,7 @@ function LayoutDesignerDialog({ editId, onClose }: { editId: number | null; onCl
                             <span className="mb-1 block text-[11px] uppercase tracking-wide text-muted-foreground">
                               Header
                             </span>
-                            <input
+                            <Input
                               className="input"
                               value={r.headerLabel}
                               onChange={(e) =>
@@ -581,8 +585,9 @@ function LayoutDesignerDialog({ editId, onClose }: { editId: number | null; onCl
                                 ))}
                               </select>
                             ) : mode === 'FREE' ? (
-                              <input
+                              <Input
                                 className="input"
+                                uppercase={false}
                                 value={r.sourceRef}
                                 onChange={(e) => patch(r.key, { sourceRef: e.target.value })}
                                 placeholder={FREE_PLACEHOLDER[r.sourceType]}
@@ -636,7 +641,7 @@ function LayoutDesignerDialog({ editId, onClose }: { editId: number | null; onCl
                           </div>
                         </div>
                         <div className="mt-1 flex items-center gap-3">
-                          <input
+                          <Input
                             className="input h-7 max-w-[14rem] text-xs"
                             value={r.section}
                             onChange={(e) => patch(r.key, { section: e.target.value })}

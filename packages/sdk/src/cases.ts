@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { SortOrder } from './pagination.js';
+import { toUpper } from './text.js';
 
 /**
  * @crm2/sdk — Cases contract (ADR-0002 Case→Task→VerificationUnit). Models Zion's
@@ -307,7 +308,7 @@ export interface DuplicateMatch {
   matchType: string[];
 }
 
-const name = z.string().trim().min(1).max(200);
+const name = z.string().trim().min(1).max(200).transform(toUpper);
 // Field validation rules (ADR-0023 hardening): PAN = ABCDE1234F (case-insensitive — the FE
 // uppercases and dedupe matches case-insensitively); phone/contact = 10–15 digits only.
 export const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/i;
@@ -350,7 +351,7 @@ export interface DedupeSearchQuery extends DedupeQuery {
   sortOrder?: SortOrder;
 }
 
-const companyName = z.string().trim().max(200);
+const companyName = z.string().trim().max(200).transform(toUpper);
 /** One applicant in a create request; index 0 is treated as the primary applicant. */
 const applicantInput = z.object({
   name,
@@ -368,7 +369,7 @@ export const CreateCaseSchema = z
     backendContactNumber: contactNumber,
     applicants: z.array(applicantInput).min(1),
     dedupeDecision: z.enum(DEDUPE_DECISIONS),
-    dedupeRationale: z.string().trim().max(2000).optional(),
+    dedupeRationale: z.string().trim().max(2000).transform(toUpper).optional(),
     // The matched case numbers the operator created despite (recorded with the rationale).
     dedupeMatches: z.array(z.string().trim().max(20)).max(200).optional(),
     // Verification location (Epic F) — scopes a field agent by territory. A `locations` row id
@@ -391,7 +392,7 @@ export const AddApplicantSchema = z
     pan: pan.optional(),
     companyName: companyName.optional(),
     dedupeDecision: z.enum(DEDUPE_DECISIONS),
-    dedupeRationale: z.string().trim().max(2000).optional(),
+    dedupeRationale: z.string().trim().max(2000).transform(toUpper).optional(),
     dedupeMatches: z.array(z.string().trim().max(20)).max(200).optional(),
   })
   .refine((v) => v.dedupeDecision !== 'CREATE_NEW' || (v.dedupeRationale?.length ?? 0) >= MIN_RATIONALE, {
@@ -414,12 +415,12 @@ export const AddTasksSchema = z.object({
           verificationUnitId: positiveInt,
           applicantId: z.string().uuid(),
           // Required for a visit; OFFICE/desk (incl. KYC document) tasks have no address → may be blank.
-          address: z.string().trim().max(MAX_ADDRESS).default(''),
+          address: z.string().trim().max(MAX_ADDRESS).transform(toUpper).default(''),
           // Optional dispatch coordinates for the task's address (v1 parity) — provided by the case
           // feed/create when known, emitted to the field app; null otherwise.
           latitude: z.number().gte(-90).lte(90).optional(),
           longitude: z.number().gte(-180).lte(180).optional(),
-          trigger: z.string().trim().max(MAX_TRIGGER).default(''),
+          trigger: z.string().trim().max(MAX_TRIGGER).transform(toUpper).default(''),
           priority: z.enum(PRIORITIES).default('MEDIUM'),
           // Target TAT in hours (ADR-0044). Optional override; omitted → derived from priority server-side
           // (URGENT 4 · HIGH 8 · MEDIUM 24 · LOW 48). Additive — mobile (ADR-0012) is unaffected.

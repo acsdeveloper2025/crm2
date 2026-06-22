@@ -4,6 +4,8 @@ import type { Policy } from '@crm2/sdk';
 import { api, ApiError } from '../../lib/sdk.js';
 import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
+import { Input } from '../../components/ui/Input.js';
+import { TextArea } from '../../components/ui/TextArea.js';
 
 const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
@@ -61,8 +63,9 @@ export function PolicyDialog({ policy, onClose }: Props) {
         <div className="space-y-3">
           {!isEdit && (
             <Field label="Code (UPPER_SNAKE)">
-              <input
+              <Input
                 className="input"
+                uppercase={false}
                 value={code}
                 onChange={(e) =>
                   setCode(
@@ -77,14 +80,15 @@ export function PolicyDialog({ policy, onClose }: Props) {
             </Field>
           )}
           <Field label="Name">
-            <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+            <Input className="input" value={name} onChange={(e) => setName(e.target.value)} />
           </Field>
           <Field label="Description (optional)">
-            <input className="input" value={description} onChange={(e) => setDescription(e.target.value)} />
+            <Input className="input" value={description} onChange={(e) => setDescription(e.target.value)} />
           </Field>
           <Field label="Content (Markdown)">
-            <textarea
+            <TextArea
               className="input min-h-[16rem]"
+              uppercase={false}
               value={content}
               onChange={(e) => setContent(e.target.value)}
               placeholder="# Policy heading&#10;&#10;Policy body in Markdown…"

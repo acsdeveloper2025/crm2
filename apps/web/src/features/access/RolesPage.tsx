@@ -20,6 +20,8 @@ import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
+import { Input } from '../../components/ui/Input.js';
+import { TextArea } from '../../components/ui/TextArea.js';
 
 const BASE = '/api/v2/roles';
 const QK = 'roles';
@@ -370,8 +372,9 @@ function RoleDialog({ row, onClose }: { row: RoleView | null; onClose: () => voi
               <span className="mb-1 block text-xs font-medium text-foreground">
                 Code (UPPER_SNAKE, immutable)
               </span>
-              <input
+              <Input
                 className="input font-mono"
+                uppercase={false}
                 value={code}
                 onChange={(e) => setCode(e.target.value.toUpperCase())}
                 placeholder="ZONE_AUDITOR"
@@ -381,12 +384,12 @@ function RoleDialog({ row, onClose }: { row: RoleView | null; onClose: () => voi
             </label>
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-foreground">Name</span>
-              <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+              <Input className="input" value={name} onChange={(e) => setName(e.target.value)} />
             </label>
           </div>
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-foreground">Description</span>
-            <textarea
+            <TextArea
               className="input min-h-[3.5rem]"
               value={description ?? ''}
               onChange={(e) => setDescription(e.target.value)}

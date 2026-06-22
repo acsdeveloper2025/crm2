@@ -238,7 +238,7 @@ describe.skipIf(!RUN)('cases API', () => {
       });
     expect(ok.status).toBe(201);
     expect(ok.body.dedupeDecision).toBe('CREATE_NEW');
-    expect(ok.body.dedupeRationale).toContain('Different loan');
+    expect(ok.body.dedupeRationale).toContain('DIFFERENT LOAN');
     // the matched case numbers are recorded with the rationale + surface on the detail
     expect(ok.body.dedupeMatchedCaseNumbers).toEqual(['CASE-000001', 'CASE-000002']);
     const detail = await request(app).get(`/api/v2/cases/${ok.body.id}`).set(SA);
@@ -301,12 +301,12 @@ describe.skipIf(!RUN)('cases API', () => {
     // captured → returned on case detail (every CaseApplicant SELECT includes company_name)
     const caseId = (await request(app).get('/api/v2/cases').set(SA)).body.items[0].id as string;
     const detail = await request(app).get(`/api/v2/cases/${caseId}`).set(SA);
-    expect(detail.body.applicants[0].companyName).toBe('Acme Industries');
+    expect(detail.body.applicants[0].companyName).toBe('ACME INDUSTRIES');
     // the in-create dedupe gate matches on company (case-insensitive)
     const gate = await request(app).post('/api/v2/cases/dedupe').set(SA).send({ company: 'acme industries' });
     expect(gate.body).toHaveLength(1);
     expect(gate.body[0].matchType).toContain('COMPANY');
-    expect(gate.body[0].companyName).toBe('Acme Industries');
+    expect(gate.body[0].companyName).toBe('ACME INDUSTRIES');
   });
 
   // ── Standalone Dedupe Check page (dedupe.view) ──
@@ -344,7 +344,7 @@ describe.skipIf(!RUN)('cases API', () => {
       expect(res.body.totalCount).toBe(1);
       expect(res.body.pageSize).toBe(25); // §4 envelope, default page size
       expect(res.body.items[0].matchType).toContain('PAN');
-      expect(res.body.items[0].companyName).toBe('Globex');
+      expect(res.body.items[0].companyName).toBe('GLOBEX');
       // company is a first-class identifier here too
       const byCompany = await request(app).get('/api/v2/cases/dedupe-search?company=globex').set(SA);
       expect(byCompany.body.items[0].matchType).toContain('COMPANY');
@@ -391,7 +391,7 @@ describe.skipIf(!RUN)('cases API', () => {
         'Case,Applicant,Company,Mobile,PAN,Status,Client,Created,Matched On',
       );
       expect(csv.text).toContain('EXPORT ME');
-      expect(csv.text).toContain('Initech');
+      expect(csv.text).toContain('INITECH');
       // export needs data.export — FIELD_AGENT lacks it
       expect((await request(app).get('/api/v2/cases/dedupe-search/export?pan=x').set(FA)).status).toBe(403);
     });
@@ -2402,7 +2402,7 @@ describe.skipIf(!RUN)('cases API', () => {
       expect(res.body.dedupeMatchedCaseNumbers).toEqual([]);
 
       const detail = await request(app).get(`/api/v2/cases/${id}`).set(SA);
-      expect(detail.body.applicants.map((a: { name: string }) => a.name)).toContain('Sita Rao');
+      expect(detail.body.applicants.map((a: { name: string }) => a.name)).toContain('SITA RAO');
       expect(detail.body.applicants.filter((a: { isPrimary: boolean }) => a.isPrimary)).toHaveLength(1);
     });
 
@@ -2432,7 +2432,7 @@ describe.skipIf(!RUN)('cases API', () => {
 
       // The per-applicant verdict must survive a re-read (GET /cases/:id), not be write-only.
       const detail = await request(app).get(`/api/v2/cases/${id}`).set(SA);
-      const added = detail.body.applicants.find((a: { name: string }) => a.name === 'Dup Person');
+      const added = detail.body.applicants.find((a: { name: string }) => a.name === 'DUP PERSON');
       expect(added.dedupeDecision).toBe('CREATE_NEW');
       expect(added.dedupeMatchedCaseNumbers).toEqual(['CASE-000001']);
       // The creation-time primary applicant has no per-row verdict (covered by the case-level record).

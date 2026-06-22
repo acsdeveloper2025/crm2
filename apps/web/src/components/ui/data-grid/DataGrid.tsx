@@ -23,6 +23,7 @@ import {
 import { useFocusTrap } from '../../../lib/useFocusTrap.js';
 import { useLoadingBand } from '../../../lib/useLoadingBand.js';
 import { HexagonLoader } from '../HexagonLoader.js';
+import { Input } from '../Input.js';
 import { SavedViewsPicker } from './SavedViewsPicker.js';
 
 /**
@@ -416,7 +417,8 @@ export function DataGrid<T>({
       {/* Toolbar: global search + page-controlled filters + page size */}
       <div className="flex flex-wrap items-center gap-2">
         {searchable && (
-          <input
+          <Input
+            uppercase={false}
             className="input max-w-xs"
             placeholder={searchPlaceholder}
             aria-label="Search"
@@ -881,7 +883,8 @@ function ColumnFilterInput({
     return () => clearTimeout(t);
   }, [draft]);
   return (
-    <input
+    <Input
+      uppercase={false}
       className="input h-7 w-full min-w-[6rem] text-xs"
       placeholder="Filter…"
       aria-label={`Filter ${label}`}

@@ -6,6 +6,11 @@ describe('Department contract', () => {
     const r = CreateDepartmentSchema.safeParse({ name: 'Operations' });
     expect(r.success && r.data.description).toBe('');
   });
+  it('uppercases name and description (ADR-0058)', () => {
+    const r = CreateDepartmentSchema.safeParse({ name: 'Operations', description: 'core team' });
+    expect(r.success && r.data.name).toBe('OPERATIONS');
+    expect(r.success && r.data.description).toBe('CORE TEAM');
+  });
   it('rejects an empty or over-long name', () => {
     expect(CreateDepartmentSchema.safeParse({ name: '' }).success).toBe(false);
     expect(CreateDepartmentSchema.safeParse({ name: 'x'.repeat(151) }).success).toBe(false);

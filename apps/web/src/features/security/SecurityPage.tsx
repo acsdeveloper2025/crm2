@@ -4,6 +4,7 @@ import type { MfaEnrollStart, MfaRecoveryCodes, MfaStatus } from '@crm2/sdk';
 import { api } from '../../lib/sdk.js';
 import { tokenStore } from '../../lib/auth.js';
 import { SessionList } from '../../components/SessionList.js';
+import { Input } from '../../components/ui/Input.js';
 
 const QK = ['mfa', 'status'];
 
@@ -88,8 +89,9 @@ export function SecurityPage() {
             <a className="block break-all text-xs text-primary hover:underline" href={pending.otpauthUri}>
               Open in authenticator
             </a>
-            <input
+            <Input
               className="input w-40"
+              uppercase={false}
               value={code}
               inputMode="numeric"
               placeholder="6-digit code"
@@ -112,8 +114,9 @@ export function SecurityPage() {
               MFA is protecting your account. To turn it off, enter a current code.
             </p>
             <div className="flex gap-2">
-              <input
+              <Input
                 className="input w-40"
+                uppercase={false}
                 value={disableCode}
                 placeholder="code"
                 onChange={(e) => setDisableCode(e.target.value)}

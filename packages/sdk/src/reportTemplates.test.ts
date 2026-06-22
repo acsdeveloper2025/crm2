@@ -10,6 +10,21 @@ describe('ReportTemplate contract', () => {
     expect(parsed.success).toBe(true);
     expect(parsed.success && parsed.data.content).toBe('');
   });
+  it('uppercases the name, leaving code/content untouched (ADR-0058)', () => {
+    const parsed = CreateReportTemplateSchema.safeParse({ ...base, content: 'Some body' });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.name).toBe('RESIDENCE');
+      expect(parsed.data.code).toBe('FIELD_RESIDENCE_V1');
+      expect(parsed.data.content).toBe('Some body');
+    }
+    const updated = UpdateReportTemplateSchema.safeParse({
+      name: 'Office report',
+      templateType: 'KYC_DOCUMENT',
+      content: 'x',
+    });
+    expect(updated.success && updated.data.name).toBe('OFFICE REPORT');
+  });
   it('rejects a lowercase code', () => {
     expect(CreateReportTemplateSchema.safeParse({ ...base, code: 'lower' }).success).toBe(false);
   });

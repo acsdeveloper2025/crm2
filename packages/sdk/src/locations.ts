@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { toUpper } from './text.js';
 
 /**
  * @crm2/sdk — the Location contract. A pincode-centric catalog row (pincode + area
@@ -23,10 +24,10 @@ export interface Location {
 }
 
 const pincode = z.string().regex(/^[1-9][0-9]{5}$/, 'pincode must be 6 digits');
-const area = z.string().min(1).max(255);
-const city = z.string().min(1).max(100);
-const state = z.string().min(1).max(100);
-const country = z.string().min(1).max(100).default('India');
+const area = z.string().min(1).max(255).transform(toUpper);
+const city = z.string().min(1).max(100).transform(toUpper);
+const state = z.string().min(1).max(100).transform(toUpper);
+const country = z.string().min(1).max(100).transform(toUpper).default('India');
 const isoDate = z.string().datetime();
 
 export const CreateLocationSchema = z.object({

@@ -7,6 +7,18 @@ describe('User contract', () => {
   it('accepts a valid user', () => {
     expect(CreateUserSchema.safeParse(base).success).toBe(true);
   });
+  it('uppercases the display name, leaving username/email/role untouched (ADR-0058)', () => {
+    const parsed = CreateUserSchema.safeParse({ ...base, email: 'jane@crm2.local' });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.name).toBe('JANE DOE');
+      expect(parsed.data.username).toBe('jane_doe');
+      expect(parsed.data.email).toBe('jane@crm2.local');
+      expect(parsed.data.role).toBe('FIELD_AGENT');
+    }
+    const updated = UpdateUserSchema.safeParse({ name: 'New Name', role: 'MANAGER' });
+    expect(updated.success && updated.data.name).toBe('NEW NAME');
+  });
   it('accepts an optional email and manager uuid', () => {
     const parsed = CreateUserSchema.safeParse({
       ...base,

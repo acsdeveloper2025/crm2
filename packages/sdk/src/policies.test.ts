@@ -10,6 +10,16 @@ describe('Policy contract — create', () => {
   it('accepts a null description', () => {
     expect(CreatePolicySchema.safeParse({ ...base, description: null }).success).toBe(true);
   });
+  it('uppercases name + description, leaving code/content untouched (ADR-0058)', () => {
+    const parsed = CreatePolicySchema.safeParse({ ...base, description: 'A short policy' });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.name).toBe('TERMS OF USE');
+      expect(parsed.data.description).toBe('A SHORT POLICY');
+      expect(parsed.data.code).toBe('TERMS_OF_USE');
+      expect(parsed.data.content).toBe('Body');
+    }
+  });
   it('rejects a lowercase code', () => {
     expect(CreatePolicySchema.safeParse({ ...base, code: 'terms' }).success).toBe(false);
   });
@@ -26,7 +36,9 @@ describe('Policy contract — create', () => {
 
 describe('Policy contract — update', () => {
   it('accepts a partial update', () => {
-    expect(UpdatePolicySchema.safeParse({ name: 'New name' }).success).toBe(true);
+    const parsed = UpdatePolicySchema.safeParse({ name: 'New name' });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.name).toBe('NEW NAME');
   });
   it('accepts an empty object', () => {
     expect(UpdatePolicySchema.safeParse({}).success).toBe(true);

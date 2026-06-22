@@ -12,6 +12,23 @@ describe('Location contract', () => {
     expect(CreateLocationSchema.safeParse({ ...base, pincode: '000000' }).success).toBe(false);
     expect(CreateLocationSchema.safeParse({ ...base, pincode: 'ABCDEF' }).success).toBe(false);
   });
+  it('uppercases area/city/state/country but not pincode (ADR-0058)', () => {
+    const r = CreateLocationSchema.safeParse({ ...base, country: 'india' });
+    expect(r.success && r.data.area).toBe('FORT');
+    expect(r.success && r.data.city).toBe('MUMBAI');
+    expect(r.success && r.data.state).toBe('MAHARASHTRA');
+    expect(r.success && r.data.country).toBe('INDIA');
+    expect(r.success && r.data.pincode).toBe('400001'); // pincode untouched
+  });
+  it('batch uppercases each area element (ADR-0058)', () => {
+    const r = CreateLocationBatchSchema.safeParse({
+      pincode: '400001',
+      city: 'Mumbai',
+      state: 'Maharashtra',
+      areas: ['Fort', 'Colaba'],
+    });
+    expect(r.success && r.data.areas).toEqual(['FORT', 'COLABA']);
+  });
   it('rejects an empty area/city/state', () => {
     expect(CreateLocationSchema.safeParse({ ...base, area: '' }).success).toBe(false);
     expect(CreateLocationSchema.safeParse({ ...base, city: '' }).success).toBe(false);
@@ -23,7 +40,7 @@ describe('Location contract', () => {
       state: 'Maharashtra',
       areas: ['Fort', 'Colaba'],
     });
-    expect(ok.success && ok.data.country).toBe('India'); // country defaults
+    expect(ok.success && ok.data.country).toBe('INDIA'); // country defaults (ADR-0058 uppercases)
     expect(
       CreateLocationBatchSchema.safeParse({ pincode: '400001', city: 'M', state: 'MH', areas: [] }).success,
     ).toBe(false);

@@ -99,7 +99,7 @@ describe.skipIf(!RUN)('verification-units API', () => {
       .set(SA)
       .send({ name: 'Business v2', version: created.version });
     expect(upd.status).toBe(200);
-    expect(upd.body.name).toBe('Business v2');
+    expect(upd.body.name).toBe('BUSINESS V2');
     expect(upd.body.version).toBe(2);
 
     // code correctable while the unit is unreferenced
@@ -313,7 +313,7 @@ describe.skipIf(!RUN)('verification-units API', () => {
     expect(b.status).toBe(409);
     expect(b.body.error).toBe('STALE_UPDATE');
     expect(b.body.current.version).toBe(2);
-    expect(b.body.current.name).toBe('A-edit');
+    expect(b.body.current.name).toBe('A-EDIT');
     const b2 = await request(app)
       .put(`/api/v2/verification-units/${u.id}`)
       .set(SA)
@@ -432,7 +432,7 @@ describe.skipIf(!RUN)('verification-units API', () => {
       expect(res.text.split('\r\n')[0]).toBe(
         'Code,Name,Category,Kind,Billing,Effective From,Created,Updated,Status',
       );
-      expect(res.text).toContain('RESIDENCE,Residence');
+      expect(res.text).toContain('RESIDENCE,RESIDENCE');
     });
 
     it('exports all matching as XLSX (200 + PK-zip body)', async () => {

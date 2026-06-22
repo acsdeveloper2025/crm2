@@ -17,6 +17,8 @@ import { BulkStatusActions } from '../../components/BulkStatusActions.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
+import { Input } from '../../components/ui/Input.js';
+import { TextArea } from '../../components/ui/TextArea.js';
 
 const BASE = '/api/v2/report-templates';
 const QK = 'report-templates';
@@ -241,8 +243,9 @@ function TemplateDialog({ row, onClose }: { row: ReportTemplate | null; onClose:
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-foreground">Code (UPPER_SNAKE)</span>
-              <input
+              <Input
                 className="input"
+                uppercase={false}
                 value={code}
                 onChange={(e) => setCode(e.target.value.toUpperCase())}
                 placeholder="FIELD_RESIDENCE_V1"
@@ -266,7 +269,7 @@ function TemplateDialog({ row, onClose }: { row: ReportTemplate | null; onClose:
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-foreground">Name</span>
-              <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+              <Input className="input" value={name} onChange={(e) => setName(e.target.value)} />
             </label>
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-foreground">
@@ -284,8 +287,9 @@ function TemplateDialog({ row, onClose }: { row: ReportTemplate | null; onClose:
             <span className="mb-1 block text-xs font-medium text-foreground">
               Template body (Handlebars / text)
             </span>
-            <textarea
+            <TextArea
               className="input min-h-[10rem] font-mono text-xs"
+              uppercase={false}
               value={content}
               onChange={(e) => setContent(e.target.value)}
               placeholder="Verification report for {{applicantName}} at {{address}}…"

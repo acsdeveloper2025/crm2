@@ -197,14 +197,17 @@
   }
 
   /* ===========================================================================
-   * CRM2 UPPERCASE DISPLAY STANDARD (PERMANENT) — matches CRM2 V1 visual style.
-   * VISUAL ONLY: user-visible text renders UPPERCASE via CSS. Stored values are
-   * NEVER transformed (no DB/API/input mutation) — see docs/UPPERCASE_DISPLAY_STANDARD.md.
-   *   • Display surfaces (dashboard/pipeline/cases/tasks/units/tables/cards/labels/
-   *     headings/badges/buttons/selects) → uppercase.
-   *   • EXCLUDED (render original case): editable inputs & textareas (WYSIWYG — the
-   *     screen must equal the stored value), technical/identifier strings (code/pre/
-   *     kbd/samp/.font-mono), external links, and anything tagged .case-sensitive.
+   * CRM2 INPUT-UPPERCASE STANDARD (ADR-0058) — supersedes the display-only
+   * UPPERCASE_DISPLAY_STANDARD. User-visible AND user-typed text is UPPERCASE: the
+   * <Input>/<TextArea> components uppercase the STORED value on type, and this CSS
+   * makes the field display uppercase too — so the screen always equals the value.
+   *   • Display + form controls (dashboard/pipeline/cases/tables/cards/labels/
+   *     headings/badges/buttons/selects/inputs/textareas) → uppercase.
+   *   • EXCLUDED (render & store original case): case-sensitive input TYPES
+   *     (email/password/url/tel/number/date/…), anything the components tag
+   *     `.case-sensitive` (username/email/password/otp/token/… via name-detection),
+   *     technical/identifier strings (code/pre/kbd/samp/.font-mono), contenteditable
+   *     rich editors, and external links.
    *   • Render every case-sensitive datum (email, URL, file name, hash, JWT/token,
    *     API key, OTP, LOS/Application/Bank reference & other external IDs) in
    *     `.font-mono` or `.case-sensitive` so it is preserved automatically.
@@ -213,15 +216,30 @@
     text-transform: uppercase;
   }
   /* Form controls don't inherit text-transform from body (UA stylesheet) — force
-     buttons & selects to follow the display policy; inputs/textareas stay verbatim. */
+     them to follow the display policy so typed text reads back UPPERCASE. */
   button,
   select,
   optgroup,
-  option {
+  option,
+  input,
+  textarea {
     text-transform: uppercase;
   }
-  input,
-  textarea,
+  /* Case-sensitive surfaces render verbatim. `.case-sensitive` (a class) and the
+     typed/identifier selectors below out-specify the element rule above. */
+  input[type='email'],
+  input[type='password'],
+  input[type='url'],
+  input[type='tel'],
+  input[type='number'],
+  input[type='date'],
+  input[type='time'],
+  input[type='datetime-local'],
+  input[type='month'],
+  input[type='week'],
+  input[type='file'],
+  input[type='color'],
+  input[type='range'],
   [contenteditable='true'],
   code,
   pre,

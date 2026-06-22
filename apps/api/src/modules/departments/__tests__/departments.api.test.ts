@@ -33,7 +33,7 @@ describe.skipIf(!RUN)('departments API', () => {
   it('creates a department (201) and lists it', async () => {
     const created = await request(app).post('/api/v2/departments').set(SA).send(dept());
     expect(created.status).toBe(201);
-    expect(created.body.name).toBe('Operations');
+    expect(created.body.name).toBe('OPERATIONS');
     expect(created.body.isActive).toBe(true);
     expect(created.body.version).toBe(1);
 
@@ -69,7 +69,7 @@ describe.skipIf(!RUN)('departments API', () => {
       .set(SA)
       .send({ name: 'Operations', description: 'changed', version: created.version });
     expect(upd.status).toBe(200);
-    expect(upd.body.description).toBe('changed');
+    expect(upd.body.description).toBe('CHANGED');
     expect(upd.body.version).toBe(2);
   });
 
@@ -158,7 +158,7 @@ describe.skipIf(!RUN)('departments API', () => {
       const res = await request(app).get('/api/v2/departments/export?format=csv&mode=current').set(SA);
       expect(res.status).toBe(200);
       expect(res.text.split('\r\n')[0]).toBe('Name,Description,Effective From,Created,Updated,Status');
-      expect(res.text).toContain('Operations,Field ops');
+      expect(res.text).toContain('OPERATIONS,FIELD OPS');
     });
 
     it('BACKEND_USER (has data.export) can export (200); FIELD_AGENT cannot (403); unauth 401', async () => {

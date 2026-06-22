@@ -153,7 +153,7 @@ describe.skipIf(!RUN)('report-layouts API (ADR-0037 slice 1)', () => {
       )
       .set(SA);
     expect(res.status).toBe(200);
-    expect(res.body.name).toBe('Off Report');
+    expect(res.body.name).toBe('OFF REPORT');
     expect(res.body.verificationType).toBe('OFFICE');
     expect(res.body.templateBody).toContain('OFFICE');
   });
@@ -292,7 +292,7 @@ describe.skipIf(!RUN)('report-layouts API (ADR-0037 slice 1)', () => {
         ],
       });
     expect(upd.status).toBe(200);
-    expect(upd.body.name).toBe('Axis MIS v2');
+    expect(upd.body.name).toBe('AXIS MIS V2');
     expect(upd.body.version).toBe(c.version + 1);
     expect(upd.body.columns).toHaveLength(1);
     expect(upd.body.columns[0].columnKey).toBe('tat');

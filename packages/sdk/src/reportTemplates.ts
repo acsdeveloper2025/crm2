@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { toUpper } from './text.js';
 import { REPORT_TEMPLATE_TYPES } from './verificationUnit.js';
 
 /**
@@ -31,7 +32,7 @@ const code = z
   .min(2)
   .max(50)
   .regex(/^[A-Z0-9][A-Z0-9_]*$/, 'UPPER_SNAKE');
-const name = z.string().trim().min(1).max(150);
+const name = z.string().trim().min(1).max(150).transform(toUpper);
 const content = z.string().max(50000);
 const templateType = z.enum(REPORT_TEMPLATE_TYPES);
 const isoDate = z.string().datetime();

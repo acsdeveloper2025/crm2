@@ -262,7 +262,7 @@ describe.skipIf(!RUN)('roles API (ADR-0022 slice 2 — editable role→permissio
         version: v,
       });
     expect(edited.status).toBe(200);
-    expect(edited.body.name).toBe('Zonal Auditor');
+    expect(edited.body.name).toBe('ZONAL AUDITOR');
     expect(edited.body.dimensions).toEqual([{ dimension: 'PINCODE', mode: 'EXPAND' }]);
 
     // system roles: never deactivatable; SUPER_ADMIN: fully locked

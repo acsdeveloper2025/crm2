@@ -14,6 +14,11 @@ describe('Designation contract', () => {
     expect(CreateDesignationSchema.safeParse({ name: '' }).success).toBe(false);
     expect(CreateDesignationSchema.safeParse({ name: 'X', departmentId: 0 }).success).toBe(false);
   });
+  it('uppercases name and description (ADR-0058)', () => {
+    const r = CreateDesignationSchema.safeParse({ name: 'Senior Executive', description: 'field role' });
+    expect(r.success && r.data.name).toBe('SENIOR EXECUTIVE');
+    expect(r.success && r.data.description).toBe('FIELD ROLE');
+  });
   it('update requires name', () => {
     expect(UpdateDesignationSchema.safeParse({ name: 'Exec', description: '' }).success).toBe(true);
     expect(UpdateDesignationSchema.safeParse({ description: '' }).success).toBe(false);

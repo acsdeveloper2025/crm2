@@ -38,6 +38,8 @@ import { formatDateTime } from '../../lib/format.js';
 import { useAuth } from '../../lib/AuthContext.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
+import { Input } from '../../components/ui/Input.js';
+import { TextArea } from '../../components/ui/TextArea.js';
 import { AddTasksForm } from './AddTasksForm.js';
 
 /** Affordances gate on the PERMISSION (ADR-0022) — resolved by /auth/me, never a role name. */
@@ -316,7 +318,7 @@ function AddApplicantForm({ caseId }: { caseId: string }) {
         Add co-applicant
       </div>
       <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
-        <input
+        <Input
           className="input"
           value={name}
           placeholder="Name"
@@ -325,7 +327,8 @@ function AddApplicantForm({ caseId }: { caseId: string }) {
             setName(e.target.value);
           }}
         />
-        <input
+        <Input
+          uppercase={false}
           className="input"
           inputMode="numeric"
           maxLength={15}
@@ -336,7 +339,8 @@ function AddApplicantForm({ caseId }: { caseId: string }) {
             setMobile(onlyDigits(e.target.value));
           }}
         />
-        <input
+        <Input
+          uppercase={false}
           className="input"
           maxLength={10}
           value={pan}
@@ -346,7 +350,7 @@ function AddApplicantForm({ caseId }: { caseId: string }) {
             setPan(e.target.value.toUpperCase());
           }}
         />
-        <input
+        <Input
           className="input"
           maxLength={200}
           value={companyName}
@@ -366,7 +370,7 @@ function AddApplicantForm({ caseId }: { caseId: string }) {
         </div>
       )}
       {hasMatches && (
-        <textarea
+        <TextArea
           className="input min-h-[3rem]"
           value={rationale}
           placeholder="Why add despite duplicates? (min 5 chars)"
@@ -1074,7 +1078,7 @@ function CompleteForm({
         </select>
       </Field>
       <Field label="Remark">
-        <input
+        <Input
           className="h-9 w-72 rounded-md border border-border bg-background px-2 text-sm"
           value={remark}
           onChange={(e) => setRemark(e.target.value)}
@@ -1123,7 +1127,7 @@ function ReasonForm({
   return (
     <div className="flex flex-wrap items-end gap-3">
       <Field label={label}>
-        <input
+        <Input
           className="h-9 w-80 rounded-md border border-border bg-background px-2 text-sm"
           value={reason}
           onChange={(e) => setReason(e.target.value)}
@@ -1177,7 +1181,7 @@ function CaseFinalizeForm({
         </select>
       </Field>
       <Field label="Remark (optional)">
-        <input
+        <Input
           className="h-9 w-72 rounded-md border border-border bg-background px-2 text-sm"
           value={remark}
           onChange={(e) => setRemark(e.target.value)}
@@ -1676,14 +1680,14 @@ function PickupForm({ caseId, data }: { caseId: string; data: CasePickup }) {
           />
         </Field>
         <Field label="Pickup Trigger">
-          <input
+          <Input
             className={inputClass}
             value={pickupTrigger}
             onChange={(e) => setPickupTrigger(e.target.value)}
           />
         </Field>
         <Field label="Sampler Name">
-          <input
+          <Input
             className={inputClass}
             value={samplerName}
             onChange={(e) => setSamplerName(e.target.value)}

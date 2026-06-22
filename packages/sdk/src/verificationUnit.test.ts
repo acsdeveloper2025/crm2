@@ -88,3 +88,25 @@ describe('VerificationUnit contract — code + result set', () => {
     expect(p.resultSet).toEqual(['Positive', 'Negative', 'Refer', 'Fraud']);
   });
 });
+
+describe('VerificationUnit contract — uppercase transform (ADR-0058)', () => {
+  it('uppercases name / category / description display text', () => {
+    const p = CreateVerificationUnitSchema.parse(
+      field({ name: 'Residence', category: 'Field', description: 'home visit' }),
+    );
+    expect(p.name).toBe('RESIDENCE');
+    expect(p.category).toBe('FIELD');
+    expect(p.description).toBe('HOME VISIT');
+  });
+  it('preserves the UPPER_SNAKE code and requiredFormCode (not transformed)', () => {
+    const p = CreateVerificationUnitSchema.parse(
+      field({ code: 'RESIDENCE', requiredFormCode: 'RESIDENCE_FORM' }),
+    );
+    expect(p.code).toBe('RESIDENCE');
+    expect(p.requiredFormCode).toBe('RESIDENCE_FORM');
+  });
+  it('leaves a null/omitted description as-is', () => {
+    const p = CreateVerificationUnitSchema.parse(field({ description: null }));
+    expect(p.description).toBeNull();
+  });
+});

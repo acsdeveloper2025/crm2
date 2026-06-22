@@ -89,7 +89,7 @@ describe.skipIf(!RUN)('products API', () => {
       .set(SA)
       .send({ name: 'Personal Loan v2', version: created.version });
     expect(upd.status).toBe(200);
-    expect(upd.body.name).toBe('Personal Loan v2');
+    expect(upd.body.name).toBe('PERSONAL LOAN V2'); // ADR-0058: display-text name stored UPPERCASE
     expect(upd.body.code).toBe('PL');
     expect(upd.body.version).toBe(2); // OCC token bumped by exactly 1
   });
@@ -247,7 +247,7 @@ describe.skipIf(!RUN)('products API', () => {
     expect(b.status).toBe(409);
     expect(b.body.error).toBe('STALE_UPDATE');
     expect(b.body.current.version).toBe(2);
-    expect(b.body.current.name).toBe('A-edit');
+    expect(b.body.current.name).toBe('A-EDIT'); // ADR-0058: display-text name stored UPPERCASE
     // B reloads to v2 and re-applies → succeeds
     const b2 = await request(app)
       .put(`/api/v2/products/${p.id}`)
@@ -255,7 +255,7 @@ describe.skipIf(!RUN)('products API', () => {
       .send({ name: 'B-edit', version: b.body.current.version });
     expect(b2.status).toBe(200);
     expect(b2.body.version).toBe(3);
-    expect(b2.body.name).toBe('B-edit');
+    expect(b2.body.name).toBe('B-EDIT'); // ADR-0058: display-text name stored UPPERCASE
   });
 
   it('every create/update appends exactly one immutable audit_log row (actor + action)', async () => {

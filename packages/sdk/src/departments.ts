@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { toUpper } from './text.js';
 
 /**
  * @crm2/sdk — the Department contract. An organisational unit; a required dropdown on the
@@ -25,8 +26,8 @@ export interface DepartmentOption {
   name: string;
 }
 
-const name = z.string().trim().min(1).max(150);
-const description = z.string().trim().max(2000);
+const name = z.string().trim().min(1).max(150).transform(toUpper);
+const description = z.string().trim().max(2000).transform(toUpper);
 const isoDate = z.string().datetime();
 
 export const CreateDepartmentSchema = z.object({

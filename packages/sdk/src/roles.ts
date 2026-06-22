@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { toUpper } from './text.js';
 
 /**
  * @crm2/sdk — Roles contract (ADR-0022, Access Control 2.0). Roles are DATA: the catalog lives in
@@ -78,8 +79,8 @@ const maxSessionMinutes = z.number().int().min(5).max(10080).nullable();
 
 export const CreateRoleSchema = z.object({
   code: ROLE_CODE,
-  name: z.string().min(1).max(150),
-  description: z.string().max(2000).optional(),
+  name: z.string().min(1).max(150).transform(toUpper),
+  description: z.string().max(2000).transform(toUpper).optional(),
   hierarchyMode: z.enum(ROLE_HIERARCHY_MODES),
   reportsToRole: ROLE_CODE.nullable().optional(),
   /** default-deny: a new role starts with exactly what the admin grants here (may be empty). */
@@ -95,8 +96,8 @@ export const CreateRoleSchema = z.object({
 export type CreateRoleInput = z.input<typeof CreateRoleSchema>;
 
 export const UpdateRoleSchema = z.object({
-  name: z.string().min(1).max(150),
-  description: z.string().max(2000).optional(),
+  name: z.string().min(1).max(150).transform(toUpper),
+  description: z.string().max(2000).transform(toUpper).optional(),
   hierarchyMode: z.enum(ROLE_HIERARCHY_MODES),
   reportsToRole: ROLE_CODE.nullable().optional(),
   /** full replacement of the wiring (omit to leave unchanged). */

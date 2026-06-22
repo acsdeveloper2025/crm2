@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { toUpper } from './text.js';
 
 /**
  * @crm2/sdk — MIS Layout engine contract (ADR-0037). A `report_layout` is the per-(client,product)
@@ -192,12 +193,12 @@ export const ReportLayoutColumnInputSchema = z
       .min(1)
       .max(80)
       .regex(/^[a-z0-9_]+$/, 'lowercase letters, digits and underscore only'),
-    headerLabel: z.string().trim().min(1).max(150),
+    headerLabel: z.string().trim().min(1).max(150).transform(toUpper),
     sourceType: z.enum(SOURCE_TYPES),
     sourceRef: z.string().trim().max(200).nullish(),
     dataType: z.enum(COLUMN_DATA_TYPES),
     displayOrder: z.number().int().min(0).optional(),
-    section: z.string().trim().max(80).nullish(),
+    section: z.string().trim().max(80).transform(toUpper).nullish(),
     isRequired: z.boolean().optional(),
     options: z.array(optionSchema).max(100).optional(),
     validation: z.record(z.string(), z.unknown()).optional(),
@@ -297,7 +298,7 @@ export const CreateReportLayoutSchema = z
     clientId: z.number().int().positive(),
     productId: z.number().int().positive(),
     kind: z.enum(LAYOUT_KINDS),
-    name: z.string().trim().min(1).max(150),
+    name: z.string().trim().min(1).max(150).transform(toUpper),
     /** FIELD_REPORT only — the verification-type key (free string; extends to KYC types later). */
     verificationType: z.string().trim().min(1).max(64).nullish(),
     /** FIELD_REPORT (plain-text narrative) and CASE_REPORT (HTML) — the Handlebars source. */
@@ -316,7 +317,7 @@ export type CreateReportLayoutInput = z.input<typeof CreateReportLayoutSchema>;
  *  triple-stash gate still applies to a new templateBody. */
 export const UpdateReportLayoutSchema = z
   .object({
-    name: z.string().trim().min(1).max(150).optional(),
+    name: z.string().trim().min(1).max(150).transform(toUpper).optional(),
     templateBody: templateBodySchema.optional(),
     pageSize: z.enum(REPORT_PAGE_SIZES).optional(),
     pageOrientation: z.enum(REPORT_PAGE_ORIENTATIONS).optional(),

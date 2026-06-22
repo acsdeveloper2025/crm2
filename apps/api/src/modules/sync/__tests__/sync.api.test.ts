@@ -180,7 +180,7 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
     expect(task.customerCallingCode).toMatch(/^CC-/);
     expect(task.address).toBe('12 MG ROAD');
     expect(task.addressPincode).toBe('');
-    expect(task.notes).toBe('VERIFY RESIDENCE — ref 99'); // trigger → notes
+    expect(task.notes).toBe('VERIFY RESIDENCE — REF 99'); // trigger → notes (uppercased display field, ADR-0058)
     expect(task.priority).toBe('HIGH');
     expect(task.status).toBe('ASSIGNED');
     expect(task.applicantType).toBe('APPLICANT');

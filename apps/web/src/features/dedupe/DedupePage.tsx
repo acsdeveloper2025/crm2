@@ -11,6 +11,7 @@ import {
 import { api, apiExport } from '../../lib/sdk.js';
 import { formatDateTime } from '../../lib/format.js';
 import { useAuth } from '../../lib/AuthContext.js';
+import { Input } from '../../components/ui/Input.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
 
 const BASE = '/api/v2/cases';
@@ -129,7 +130,7 @@ export function DedupePage() {
       >
         <label className="block text-sm">
           <span className="mb-1 block text-xs font-medium text-muted-foreground">Name</span>
-          <input
+          <Input
             className="input"
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -138,7 +139,8 @@ export function DedupePage() {
         </label>
         <label className="block text-sm">
           <span className="mb-1 block text-xs font-medium text-muted-foreground">PAN</span>
-          <input
+          <Input
+            uppercase={false}
             className="input"
             value={pan}
             maxLength={10}
@@ -148,7 +150,8 @@ export function DedupePage() {
         </label>
         <label className="block text-sm">
           <span className="mb-1 block text-xs font-medium text-muted-foreground">Mobile</span>
-          <input
+          <Input
+            uppercase={false}
             className="input"
             value={mobile}
             inputMode="numeric"
@@ -159,7 +162,7 @@ export function DedupePage() {
         </label>
         <label className="block text-sm">
           <span className="mb-1 block text-xs font-medium text-muted-foreground">Company Name</span>
-          <input
+          <Input
             className="input"
             value={company}
             onChange={(e) => setCompany(e.target.value)}

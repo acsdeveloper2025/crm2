@@ -5,6 +5,8 @@ import type { Case, CaseDetail, DuplicateMatch } from '@crm2/sdk';
 import { PAN_REGEX, PHONE_REGEX } from '@crm2/sdk';
 import { api } from '../../lib/sdk.js';
 import { useAuth } from '../../lib/AuthContext.js';
+import { Input } from '../../components/ui/Input.js';
+import { TextArea } from '../../components/ui/TextArea.js';
 import { AddTasksForm } from './AddTasksForm.js';
 import { summarizeDedupe, type DedupeGroup } from './dedupeBatch.js';
 
@@ -187,7 +189,8 @@ export function CaseCreatePage() {
               </select>
             </Field>
             <Field label="Backend Contact No">
-              <input
+              <Input
+                uppercase={false}
                 className="input"
                 inputMode="numeric"
                 maxLength={15}
@@ -212,7 +215,7 @@ export function CaseCreatePage() {
                 className="grid grid-cols-1 items-start gap-2 md:grid-cols-[1.5fr_1fr_1fr_1.5fr_auto]"
               >
                 <Field label={i === 0 ? 'Applicant Name' : `Co-applicant ${i} Name`}>
-                  <input
+                  <Input
                     className="input"
                     value={a.name}
                     onChange={(e) => setApplicant(i, { name: e.target.value })}
@@ -220,7 +223,8 @@ export function CaseCreatePage() {
                   />
                 </Field>
                 <Field label="Mobile No">
-                  <input
+                  <Input
+                    uppercase={false}
                     className="input"
                     inputMode="numeric"
                     maxLength={15}
@@ -233,7 +237,8 @@ export function CaseCreatePage() {
                   </span>
                 </Field>
                 <Field label="PAN No">
-                  <input
+                  <Input
+                    uppercase={false}
                     className="input"
                     maxLength={10}
                     value={a.pan}
@@ -245,7 +250,7 @@ export function CaseCreatePage() {
                   </span>
                 </Field>
                 <Field label="Company Name">
-                  <input
+                  <Input
                     className="input"
                     maxLength={200}
                     value={a.companyName}
@@ -394,7 +399,7 @@ export function CaseCreatePage() {
                   <span className="mb-1 block text-xs font-medium text-foreground">
                     Duplicates exist — decision: CREATE NEW. Rationale (required)
                   </span>
-                  <textarea
+                  <TextArea
                     className="input min-h-[4rem]"
                     value={rationale}
                     onChange={(e) => setRationale(e.target.value)}

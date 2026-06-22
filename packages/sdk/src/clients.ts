@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { toUpper } from './text.js';
 
 /**
  * @crm2/sdk — the Client master-data contract (DTO + validation), shared by API,
@@ -26,7 +27,7 @@ const baseShape = {
     .string()
     .regex(/^[A-Z][A-Z0-9_]*$/, 'code must be UPPER_SNAKE')
     .max(64),
-  name: z.string().min(1).max(255),
+  name: z.string().min(1).max(255).transform(toUpper),
   /** optional; defaults to now() server-side (ADR-0017). */
   effectiveFrom: isoDate.optional(),
 };
@@ -39,7 +40,7 @@ export const CreateClientSchema = z.object(baseShape);
  */
 export const UpdateClientSchema = z.object({
   code: baseShape.code.optional(),
-  name: z.string().min(1).max(255),
+  name: z.string().min(1).max(255).transform(toUpper),
   effectiveFrom: isoDate.optional(),
 });
 

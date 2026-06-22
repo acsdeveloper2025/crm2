@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { toUpper } from './text.js';
 
 /**
  * @crm2/sdk — the Verification Unit contract (DTO + validation), shared by API,
@@ -110,9 +111,9 @@ function applyInvariants(
 
 const baseShape = {
   code: z.string().regex(/^[A-Z][A-Z0-9_]*$/, 'code must be UPPER_SNAKE'),
-  name: z.string().min(1),
-  description: z.string().nullish(),
-  category: z.string().min(1),
+  name: z.string().min(1).transform(toUpper),
+  description: z.string().transform(toUpper).nullish(),
+  category: z.string().min(1).transform(toUpper),
   kind: z.enum(KINDS),
   workerRole: z.enum(WORKER_ROLES),
   assignmentMethod: z.enum(ASSIGNMENT_METHODS),
