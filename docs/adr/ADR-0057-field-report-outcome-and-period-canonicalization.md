@@ -1,6 +1,6 @@
 # ADR-0057: FIELD_REPORT renders v2-native device payloads (derive the verbose outcome label + recombine split periods at render time)
 
-- **Status:** **Accepted** — owner-directed 2026-06-22 (owner + CTO). Build in progress; **NOT yet deployed.** Extends [ADR-0039](./ADR-0039-field-report-engine.md) (FIELD_REPORT engine); the engine itself is unchanged — this adds a render-time canonicalization shim. Aligns with [ADR-0054](./ADR-0054-v2-native-mobile-contract.md) (v2-native mobile contract). Touches a FROZEN engine — see [LONG_TERM_PROTECTION.md](../governance/LONG_TERM_PROTECTION.md).
+- **Status:** **Accepted · Shipped to prod 2026-06-22** (origin/main `836fed3`; pushed with the Issue-2 attachments fix; deploy gate green, blue-green deploy in progress). Owner-directed 2026-06-22 (owner + CTO). Verified end-to-end on a real device (live RESIDENCE submission → full v1-style narrative). Extends [ADR-0039](./ADR-0039-field-report-engine.md) (FIELD_REPORT engine); the engine itself is unchanged — this adds a render-time canonicalization shim. Aligns with [ADR-0054](./ADR-0054-v2-native-mobile-contract.md) (v2-native mobile contract). Touches a FROZEN engine — see [LONG_TERM_PROTECTION.md](../governance/LONG_TERM_PROTECTION.md).
 - **Date:** 2026-06-22
 - **Migrations:** none (no schema change; stored `form_data` is **never** mutated — the transform is read-time, in-memory only, on the loaded render context).
 
