@@ -10,6 +10,8 @@ import {
 import { api, apiExport } from '../../lib/sdk.js';
 import { useAuth } from '../../lib/AuthContext.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
+import { Button } from '../../components/ui/Button.js';
+import { DownloadIcon } from '../../components/ui/icons.js';
 import { toast } from 'sonner';
 
 const DEFAULT_PAGE_SIZE = 50;
@@ -209,26 +211,28 @@ export function MisPage() {
           </label>
 
           <div className="flex gap-2 pb-0.5">
-            <button className="btn" disabled={!canGenerate || generate.isPending} onClick={handleGenerate}>
-              {generate.isPending ? 'Loading…' : 'Generate'}
-            </button>
+            <Button loading={generate.isPending} disabled={!canGenerate} onClick={handleGenerate}>
+              Generate
+            </Button>
 
             {generated && columns.length > 0 && (
               <>
-                <button
-                  className="btn-ghost"
+                <Button
+                  variant="secondary"
                   disabled={exportMis.isPending}
                   onClick={() => exportMis.mutate('xlsx')}
                 >
+                  <DownloadIcon />
                   Export XLSX
-                </button>
-                <button
-                  className="btn-ghost"
+                </Button>
+                <Button
+                  variant="secondary"
                   disabled={exportMis.isPending}
                   onClick={() => exportMis.mutate('csv')}
                 >
+                  <DownloadIcon />
                   Export CSV
-                </button>
+                </Button>
               </>
             )}
           </div>
@@ -291,16 +295,16 @@ export function MisPage() {
                 {totalCount} total · page {page} of {totalPages}
               </span>
               <div className="flex gap-2">
-                <button className="btn-ghost" disabled={page <= 1} onClick={() => handlePageChange(page - 1)}>
+                <Button variant="ghost" disabled={page <= 1} onClick={() => handlePageChange(page - 1)}>
                   Previous
-                </button>
-                <button
-                  className="btn-ghost"
+                </Button>
+                <Button
+                  variant="ghost"
                   disabled={page >= totalPages}
                   onClick={() => handlePageChange(page + 1)}
                 >
                   Next
-                </button>
+                </Button>
               </div>
             </div>
           )}

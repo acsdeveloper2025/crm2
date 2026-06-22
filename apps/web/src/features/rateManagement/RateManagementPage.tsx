@@ -21,6 +21,7 @@ import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { DataGrid, type DataGridColumn, type BulkSelection } from '../../components/ui/data-grid/index.js';
 import { BulkStatusActions } from '../../components/BulkStatusActions.js';
 import { ImportButton } from '../../components/import/ImportModal.js';
+import { Button } from '../../components/ui/Button.js';
 import { useAuth } from '../../lib/AuthContext.js';
 
 const HTTP_CONFLICT = 409;
@@ -248,26 +249,21 @@ export function RateManagementPage() {
         cell: (r) => (
           <div className="flex gap-2">
             {canManage && (
-              <button
-                className="text-xs font-medium text-primary hover:underline"
-                onClick={() => setReviseRate(r)}
-              >
+              <Button variant="secondary" size="sm" onClick={() => setReviseRate(r)}>
                 Revise
-              </button>
+              </Button>
             )}
-            <button
-              className="text-xs font-medium text-foreground hover:underline"
-              onClick={() => setHistoryRate(r)}
-            >
+            <Button variant="ghost" size="sm" onClick={() => setHistoryRate(r)}>
               History
-            </button>
+            </Button>
             {canManage && (
-              <button
-                className="text-xs font-medium text-muted-foreground hover:underline"
+              <Button
+                variant={r.isActive ? 'destructive' : 'secondary'}
+                size="sm"
                 onClick={() => toggle.mutate(r)}
               >
                 {r.isActive ? 'Deactivate' : 'Activate'}
-              </button>
+              </Button>
             )}
           </div>
         ),
@@ -289,9 +285,7 @@ export function RateManagementPage() {
         {canManage && (
           <div className="flex gap-2">
             <ImportButton config={{ basePath: '/api/v2/rates', queryKey: 'rates', entityLabel: 'rate' }} />
-            <button className="btn" onClick={() => setAdding((v) => !v)}>
-              {adding ? 'Cancel' : '+ Add rate'}
-            </button>
+            <Button onClick={() => setAdding((v) => !v)}>{adding ? 'Cancel' : '+ Add rate'}</Button>
           </div>
         )}
       </div>
@@ -545,23 +539,18 @@ function AddRateForm({
           onChange={(e) => setEffectiveFrom(e.target.value)}
         />
       </Field>
-      <button
-        className="btn"
+      <Button
+        loading={create.isPending}
         disabled={
-          !clientId ||
-          !productId ||
-          !unitId ||
-          !amount ||
-          (!isKyc && (!locationId || !clientRateType)) ||
-          create.isPending
+          !clientId || !productId || !unitId || !amount || (!isKyc && (!locationId || !clientRateType))
         }
         onClick={() => create.mutate()}
       >
-        {create.isPending ? 'Saving…' : 'Add'}
-      </button>
-      <button className="btn-ghost" onClick={onClose}>
+        Add
+      </Button>
+      <Button variant="ghost" onClick={onClose}>
         Cancel
-      </button>
+      </Button>
     </div>
   );
 }
@@ -633,12 +622,12 @@ function ReviseDialog({
           </Field>
         </div>
         <div className="mt-5 flex justify-end gap-2">
-          <button className="btn-ghost" onClick={onClose} disabled={revise.isPending}>
+          <Button variant="ghost" onClick={onClose} disabled={revise.isPending}>
             Cancel
-          </button>
-          <button className="btn" disabled={!amount || revise.isPending} onClick={() => revise.mutate()}>
-            {revise.isPending ? 'Saving…' : 'Save revision'}
-          </button>
+          </Button>
+          <Button loading={revise.isPending} disabled={!amount} onClick={() => revise.mutate()}>
+            Save revision
+          </Button>
         </div>
       </div>
 
@@ -713,9 +702,9 @@ function HistoryDialog({ rate, onClose }: { rate: RateView; onClose: () => void 
           </table>
         )}
         <div className="mt-5 flex justify-end">
-          <button className="btn-ghost" onClick={onClose}>
+          <Button variant="ghost" onClick={onClose}>
             Close
-          </button>
+          </Button>
         </div>
       </div>
     </div>

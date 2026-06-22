@@ -20,6 +20,7 @@ import { formatDateTime, toDateInput, toIsoDate } from '../../lib/format.js';
 import { useAuth } from '../../lib/AuthContext.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
 import { ImportButton } from '../../components/import/ImportModal.js';
+import { Button } from '../../components/ui/Button.js';
 import { toast } from 'sonner';
 
 const money = (n: number) => `₹${n.toFixed(2)}`;
@@ -276,19 +277,19 @@ function CommissionRateDialog({ row, onClose }: { row: CommissionRateView | null
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <div className="mt-5 flex justify-end gap-2">
-          <button className="btn-ghost" onClick={onClose} disabled={mut.isPending}>
+          <Button variant="ghost" onClick={onClose} disabled={mut.isPending}>
             Cancel
-          </button>
-          <button
-            className="btn"
+          </Button>
+          <Button
             onClick={() => {
               setError(null);
               mut.mutate();
             }}
-            disabled={mut.isPending || !valid}
+            loading={mut.isPending}
+            disabled={!valid}
           >
-            {mut.isPending ? 'Saving…' : 'Save'}
-          </button>
+            Save
+          </Button>
         </div>
       </div>
     </div>
@@ -408,17 +409,18 @@ export function CommissionRatesPage() {
         cell: (r) => (
           <div className="flex justify-end gap-1">
             {r.isActive && (
-              <button className="btn-ghost px-2 py-1 text-xs" onClick={() => setDialog({ row: r })}>
+              <Button variant="secondary" size="sm" onClick={() => setDialog({ row: r })}>
                 Revise
-              </button>
+              </Button>
             )}
-            <button
-              className="btn-ghost px-2 py-1 text-xs"
+            <Button
+              variant={r.isActive ? 'destructive' : 'secondary'}
+              size="sm"
               disabled={toggle.isPending}
               onClick={() => toggle.mutate(r)}
             >
               {r.isActive ? 'Deactivate' : 'Activate'}
-            </button>
+            </Button>
           </div>
         ),
       },
@@ -448,9 +450,7 @@ export function CommissionRatesPage() {
               entityLabel: 'commission rate',
             }}
           />
-          <button className="btn" onClick={() => setDialog({ row: null })}>
-            + New Commission Rate
-          </button>
+          <Button onClick={() => setDialog({ row: null })}>+ New Commission Rate</Button>
         </div>
       </div>
       <DataGrid<CommissionRateView>
