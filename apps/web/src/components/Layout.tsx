@@ -6,6 +6,7 @@ import { NotificationBell } from './NotificationBell.js';
 import { JobsTray } from './JobsTray.js';
 import { HeaderClock } from './HeaderClock.js';
 import { UserMenu } from './UserMenu.js';
+import { ThemeToggle } from './ThemeToggle.js';
 import { useRealtimeNotifications } from '../features/notifications/useNotifications.js';
 import { useRealtimeJobs } from '../features/jobs/useJobs.js';
 import { useRealtimeCaseUpdates } from '../features/cases/useRealtimeCaseUpdates.js';
@@ -219,6 +220,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           {!open && <span className="text-base font-bold tracking-tight text-foreground">{BRAND}</span>}
           <div className="ml-auto flex items-center gap-4">
             <HeaderClock />
+            <ThemeToggle />
             <JobsTray />
             <NotificationBell />
             <UserMenu />

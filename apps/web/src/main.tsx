@@ -4,9 +4,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
 import { App } from './App.js';
 import { AuthProvider } from './lib/AuthContext.js';
+import { initTheme } from './lib/theme.js';
 import '@fontsource-variable/inter';
 import '@fontsource-variable/jetbrains-mono';
 import './index.css';
+
+// Apply the resolved light/dark theme to <html> before first paint (avoids a flash).
+initTheme();
 
 const queryClient = new QueryClient();
 
