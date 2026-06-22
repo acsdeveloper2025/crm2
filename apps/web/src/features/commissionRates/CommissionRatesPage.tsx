@@ -18,6 +18,7 @@ import {
 import { api, apiExport, ApiError } from '../../lib/sdk.js';
 import { formatDateTime, toDateInput, toIsoDate } from '../../lib/format.js';
 import { useAuth } from '../../lib/AuthContext.js';
+import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
 import { ImportButton } from '../../components/import/ImportModal.js';
 import { Button } from '../../components/ui/Button.js';
@@ -31,6 +32,8 @@ const isStale = (e: unknown): e is ApiError =>
 /** Create (full fields) or Revise (amount + effectiveFrom, version-guarded) a commission rate. */
 function CommissionRateDialog({ row, onClose }: { row: CommissionRateView | null; onClose: () => void }) {
   const qc = useQueryClient();
+  // Trap focus + close on Escape and restore focus to the opener (a11y P1, mirrors MasterDataDialog).
+  const dialogRef = useFocusTrap<HTMLDivElement>(true, onClose);
   const isRevise = !!row;
   const [userId, setUserId] = useState(row?.userId ?? '');
   const [fieldRateType, setRateType] = useState(row?.fieldRateType ?? '');
@@ -123,11 +126,13 @@ function CommissionRateDialog({ row, onClose }: { row: CommissionRateView | null
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40">
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
+        aria-labelledby="commission-rate-dialog-title"
         className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg border border-border bg-card p-6 text-card-foreground shadow-lg"
       >
-        <h2 className="mb-4 text-lg font-semibold">
+        <h2 id="commission-rate-dialog-title" className="mb-4 text-lg font-semibold">
           {isRevise ? 'Revise Commission Rate' : 'New Commission Rate'}
         </h2>
         <div className="space-y-3">
