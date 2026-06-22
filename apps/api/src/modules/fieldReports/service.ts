@@ -1,6 +1,7 @@
 import type { FieldReportView } from '@crm2/sdk';
 import { fieldReportRepository as repo } from './repository.js';
 import { renderNarrative } from './render.js';
+import { canonicalizeRenderContext } from './canonicalize.js';
 import { buildSections } from './sections.js';
 import { reportLayoutRepository } from '../reportLayouts/repository.js';
 import { AppError } from '../../platform/errors.js';
@@ -49,7 +50,9 @@ export const fieldReportService = {
       sections,
       layoutId: layout.id,
       layoutName: layout.name,
-      narrative: renderNarrative(layout.templateBody, layout.columns, ctx),
+      // Canonicalize the v2-native device payload (codes → v1 verbose labels, split → combined periods)
+      // for the v1-vocabulary templates — read-time only, stored data untouched (ADR-0057).
+      narrative: renderNarrative(layout.templateBody, layout.columns, canonicalizeRenderContext(ctx)),
     };
   },
 };

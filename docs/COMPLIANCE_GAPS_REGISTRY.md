@@ -840,6 +840,50 @@ picker; that was the rejected Option B). **Pre-deploy/post-deploy check:** `SELE
 WHERE status='PENDING' AND area_id IS NULL` on prod — if non-zero, revoke/recreate them or revisit the
 inline-assign location fix.
 
+## Section AUDIT-2026-06-22 — verification-form field-mapping audit (9 FIELD_VISIT types × 4 layers)
+
+Read-only multi-agent audit. Nothing changed. Full report: `docs/audit-2026-06-22/` (README + per-layer
+files). Mobile capture, backend storage, frontend raw-field display, and the field-photo
+lat/long→reverse-geocoded-address chain all **PASS** for all 9 types. The break is the **FIELD_REPORT
+narrative generator** only — and raw captured fields always still display, so no data is lost.
+
+### AUDIT-1 · FIELD_REPORT narrative renders empty — outcome-vocabulary mismatch — 🔴 CONFIRMED, owner decision pending
+Default templates branch (strict `===`) on v1 verbose labels (`"Positive & Door Open"`, `"ERT"`,
+`"Untraceable"`, …); the v2 app submits 5 uppercase CODES in `verificationOutcome`
+(`POSITIVE`/`SHIFTED`/`NSP`/`ENTRY_RESTRICTED`/`UNTRACEABLE`, `FormSubmissionService.ts:81`,
+`VerificationFormScreen.tsx:80`). No backend code→label normalization (`fieldReports/repository.ts:52`
+verbatim), so no `{{#eq outcome …}}` branch ever matches → empty body, all 9 types. Tests are green
+because `defaults.*.render.test.ts` feed the v1 label, not the device code. Real v1 dump confirms the
+labels were the historical vocabulary; the v2 mobile rewrite (`LegacyFormTemplateBuilders.normalizeOutcome`)
+collapsed them to codes. **Latent until an admin activates a FIELD_REPORT layout prefilled from the
+defaults** (`ReportLayoutsPage.tsx:374-378` one-click). Evidence: `docs/audit-2026-06-22/layer4-template-mapping.md`.
+
+### AUDIT-2 · FIELD_REPORT tenure clauses empty — composite period-key arity — 🔴 CONFIRMED, owner decision pending
+Templates read a single `<period>` ref; the app emits split `<period>Value` + `<period>Unit` (~20
+instances, 8 types) → empty "for the last … years" clauses. No `concat` helper, so needs a real resolver/
+helper, not a rename. Tests mask it by feeding the combined string.
+
+### AUDIT-3 · Secondary per-field ref drifts — 🟡 DEFERRED (P2, medium confidence)
+`applicantStayingFloor` vs mobile `addressFloor` (floor clause), `callConfirmation` absence for
+BUILDER/NOC, `finalStatusNegative` captured-but-never-printed (APF), `businessExistance` misspelled twin.
+Isolated; raw view still shows them; fix after AUDIT-1/2. Confirm each against the exact mobile form.
+
+### AUDIT-4 · Test debt masks the whole class — 🟡 DEFERRED (must fix alongside AUDIT-1/2)
+`defaults.*.render.test.ts` feed v1-shaped fixtures (verbose-label outcome + combined period) the v2
+device never sends → `pnpm verify` stays green while real reports are blank. Add a contract test that
+renders a default template from a **real captured device blob** and asserts a non-empty body.
+
+### Open verification (needs prod/dev DB — not done in this audit)
+`SELECT verification_type, is_active FROM report_layouts WHERE template_type='FIELD_REPORT'` on prod →
+decides AUDIT-1/2 **live vs latent**. Then one real device submission per type → diff rendered `narrative`.
+
+### Verified PASS (no finding)
+Backend verbatim jsonb round-trip + uniform across all 9 slugs (`cases/repository.ts:1413-1418`);
+generic raw-field display, no per-type gating, nothing dropped (`fieldReports/sections.ts`,
+`CaseDetailPage.tsx:1783-1792`); field-photo lat/long + reverse-geocoded-address full chain with
+graceful null fallback, all 9 types (`platform/geocode/*`, `case_attachments.geo_location` +
+`reverse_geocoded_address`, `CaseDetailPage.tsx:1860-1906`).
+
 ---
 *Governance ledger. Update — never overwrite — as findings change state. Linked from
 `CRM2_MASTER_MEMORY.md`, `PROJECT_INDEX.md`, `docs/ARCHITECTURE_GOVERNANCE.md`,
