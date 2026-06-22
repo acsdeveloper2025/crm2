@@ -184,5 +184,38 @@ describe.skipIf(!RUN)('designations API', () => {
       expect(confirm.body).toMatchObject({ totalRows: 2, successRows: 2, failedRows: 0 });
       expect((await request(app).get('/api/v2/designations').set(SA)).body.totalCount).toBe(2);
     });
+
+    it('resolves the Department FK by name + round-trips the export Department column (IE-DEFER-1)', async () => {
+      await mkDept('Field Ops'); // stored uppercase: 'FIELD OPS'
+      const HEAD = ['Name', 'Description', 'Department', 'Effective From'];
+      const mk = async (rows: (string | number)[][]): Promise<Buffer> => {
+        const ExcelJS = (await import('exceljs')).default;
+        const wb = new ExcelJS.Workbook();
+        const ws = wb.addWorksheet('Sheet1');
+        ws.addRow(HEAD);
+        for (const r of rows) ws.addRow(r);
+        return Buffer.from(await wb.xlsx.writeBuffer());
+      };
+      // unknown department → per-row error against the Department column (no silent null)
+      const bad = await upload('preview', await mk([['Analyst', '', 'No Such Dept', '']]));
+      expect(bad.body.errorRows).toBe(1);
+      expect(bad.body.errors[0]).toMatchObject({ column: 'Department' });
+      // valid → resolves name→id (case-insensitive) and persists the link
+      const ok = await upload('confirm', await mk([['Field Analyst', 'd', 'field ops', '']]));
+      expect(ok.body).toMatchObject({ totalRows: 1, successRows: 1, failedRows: 0 });
+      const row = (await request(app).get('/api/v2/designations?limit=50').set(SA)).body.items.find(
+        (d: { name: string }) => d.name === 'FIELD ANALYST',
+      );
+      expect(row.departmentName).toBe('FIELD OPS'); // FK linked (was silently nulled before)
+      // the export Department column now re-imports (round-trip): export → preview = 0 errors
+      const csv = (await request(app).get('/api/v2/designations/export?format=csv&mode=all').set(SA)).text;
+      const rt = await request(app)
+        .post('/api/v2/designations/import?mode=preview')
+        .set(SA)
+        .set('content-type', 'application/octet-stream')
+        .set('x-filename', 'designations.csv')
+        .send(Buffer.from(csv, 'utf8'));
+      expect(rt.body.errorRows).toBe(0);
+    });
   });
 });

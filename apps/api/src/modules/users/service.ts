@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import {
   CreateUserSchema,
   UpdateUserSchema,
@@ -11,6 +12,8 @@ import {
   type Paginated,
 } from '@crm2/sdk';
 import { userRepository as repo } from './repository.js';
+import { departmentService } from '../departments/service.js';
+import { designationService } from '../designations/service.js';
 import { hashPassword, generateTempPassword } from '../../platform/password.js';
 import { AppError } from '../../platform/errors.js';
 import { requireVersion } from '../../platform/occ.js';
@@ -27,6 +30,7 @@ import {
   runImportPreview,
   type ImportColumn,
   type ImportSpec,
+  type ResolveResult,
 } from '../../platform/import/index.js';
 import { parseIsoDate } from '../../platform/import/parsers.js';
 import { applyBulkOcc, parseBulkItems } from '../../platform/bulk.js';
@@ -88,10 +92,10 @@ const USER_EXPORT_COLUMNS: ExportColumn<UserView>[] = [
 /**
  * Import contract (B-14): the user file manifest. NO `reportsTo` column — the manager link is an
  * FK to another user that may not exist yet at import time (chicken-and-egg) and would make the
- * import order-dependent. Managers are assigned later via the per-user edit form, so the import is
- * deliberately FK-FREE: `create` maps reportsTo → null when absent. `effectiveFrom` is optional
- * (blank → server default now()) and coerced to ISO so the schema's `z.string().datetime()` accepts
- * a date typed into Excel.
+ * import order-dependent. Managers are assigned later via the per-user edit form. Department +
+ * Designation ARE importable (headers match the export) — they are resolved by NAME (both are
+ * name-keyed + unique), so a user export re-imports losslessly (those FKs were silently nulled before,
+ * IE-DEFER-1). `effectiveFrom` is optional (blank → server default now()), coerced to ISO.
  */
 const USER_IMPORT_COLUMNS: ImportColumn[] = [
   { id: 'username', header: 'Username', required: true },
@@ -101,22 +105,84 @@ const USER_IMPORT_COLUMNS: ImportColumn[] = [
   // import-vs-export asymmetry (phone exports but was not importable).
   { id: 'phone', header: 'Phone' },
   { id: 'role', header: 'Role', required: true },
+  { id: 'departmentName', header: 'Department' },
+  { id: 'designationName', header: 'Designation' },
   { id: 'effectiveFrom', header: 'Effective From', parse: parseIsoDate },
 ];
 
-const USER_IMPORT_SPEC: ImportSpec<CreateUserInput> = {
+const USER_IMPORT_SAMPLE: Record<string, string> = {
+  username: 'jdoe',
+  name: 'John Doe',
+  email: 'jdoe@crm2.local',
+  phone: '+919876543210',
+  role: 'FIELD_AGENT',
+  departmentName: 'Field Ops',
+  designationName: 'Field Executive',
+};
+
+/**
+ * File-shape schema: the numeric FK ids (departmentId/designationId) are replaced by their NAMES,
+ * resolved to ids per-request; ALL other Create validation (username/email/phone/role/password) is
+ * preserved so the preview pass still flags bad rows before confirm.
+ */
+const UserImportFileSchema = CreateUserSchema.omit({ departmentId: true, designationId: true }).extend({
+  departmentName: z.string().optional(),
+  designationName: z.string().optional(),
+});
+type UserImportFile = z.infer<typeof UserImportFileSchema>;
+
+/** Template spec (no resolve — columns + sample only). */
+const USER_TEMPLATE_SPEC: ImportSpec<UserImportFile> = {
   resource: 'users',
   columns: USER_IMPORT_COLUMNS,
-  schema: CreateUserSchema,
+  schema: UserImportFileSchema,
   uniqueKey: 'username',
-  sample: {
-    username: 'jdoe',
-    name: 'John Doe',
-    email: 'jdoe@crm2.local',
-    phone: '+919876543210',
-    role: 'FIELD_AGENT',
-  },
+  sample: USER_IMPORT_SAMPLE,
 };
+
+/** Build the user ImportSpec for ONE request: preload the department + designation NAME→id maps once
+ *  and resolve each row's Department/Designation names to ids; `create` re-validates the full input. */
+async function buildUserImportSpec(): Promise<ImportSpec<UserImportFile, CreateUserInput>> {
+  const [departments, designations] = await Promise.all([
+    departmentService.options(),
+    designationService.options(),
+  ]);
+  const deptByName = new Map(departments.map((d) => [d.name.toUpperCase(), d.id]));
+  const desigByName = new Map(designations.map((d) => [d.name.toUpperCase(), d.id]));
+  const resolve = async (input: UserImportFile): Promise<ResolveResult<CreateUserInput>> => {
+    const { departmentName, designationName, ...rest } = input;
+    const errors: { column: string; message: string }[] = [];
+    let departmentId: number | undefined;
+    if (departmentName) {
+      departmentId = deptByName.get(departmentName.toUpperCase());
+      if (departmentId === undefined)
+        errors.push({ column: 'Department', message: `unknown department ${departmentName}` });
+    }
+    let designationId: number | undefined;
+    if (designationName) {
+      designationId = desigByName.get(designationName.toUpperCase());
+      if (designationId === undefined)
+        errors.push({ column: 'Designation', message: `unknown designation ${designationName}` });
+    }
+    if (errors.length > 0) return { ok: false, errors };
+    return {
+      ok: true,
+      value: {
+        ...rest,
+        ...(departmentId !== undefined ? { departmentId } : {}),
+        ...(designationId !== undefined ? { designationId } : {}),
+      },
+    };
+  };
+  return {
+    resource: 'users',
+    columns: USER_IMPORT_COLUMNS,
+    schema: UserImportFileSchema,
+    uniqueKey: 'username',
+    sample: USER_IMPORT_SAMPLE,
+    resolve,
+  };
+}
 
 /**
  * User service — admin identity master-data.
@@ -218,17 +284,20 @@ export const userService = {
    *  Confirm reuses the audited `userService.create` per row (which maps fields + sets reportsTo null
    *  when absent), so each imported row also appends an audit_log CREATE; a duplicate username is
    *  reported per-row and never blocks the others. */
-  importTemplate: () => buildTemplate(USER_IMPORT_SPEC),
-  importPreview: (file: Buffer) => runImportPreview(file, USER_IMPORT_SPEC),
-  importConfirm: (file: Buffer, userId: string, fileName: string | undefined) =>
-    runImportConfirm(
+  importTemplate: () => buildTemplate(USER_TEMPLATE_SPEC),
+  async importPreview(file: Buffer) {
+    return runImportPreview(file, await buildUserImportSpec());
+  },
+  async importConfirm(file: Buffer, userId: string, fileName: string | undefined) {
+    return runImportConfirm(
       file,
-      USER_IMPORT_SPEC,
+      await buildUserImportSpec(),
       async (input) => {
         await userService.create(input, userId);
       },
       { userId, fileName },
-    ),
+    );
+  },
 
   async update(id: string, input: unknown, userId: string): Promise<User> {
     const v = UpdateUserSchema.parse(input); // field validation (400 VALIDATION)

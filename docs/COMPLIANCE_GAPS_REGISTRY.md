@@ -930,12 +930,16 @@ import `+Phone`. CPV-Mapping export split the combined `"CODE — Name"` cell in
 `Client/Product Code` (the import key) + `Name` columns → re-importable (round-trip test: export→preview
 = 0 errors). `rates/service.ts`, `users/service.ts`, `cpv/service.ts`.
 
-### IE-DEFER-1 · Users + Designations FK import (department/designation) — 🟡 DEFERRED
-`departmentId`/`designationId` (user Create-form fields) and designation→`departmentId` are not
-importable; designation export shows `Department` but re-import nulls it. Both need a department/
-designation **code→id resolve surface** (`options()` returns only `{id,name}` today) + an import builder
-with `resolve` (mirroring `cpv`/`commissionRates`). Multi-module additive change; P1 (optional FK
-nulled on re-import), not P0. One coherent follow-up.
+### IE-DEFER-1 → ✅ FIXED (2026-06-22, owner pulled forward) · Users + Designations FK import (department/designation)
+Both departments and designations are **name-keyed (unique)**, so no new code surface was needed —
+the per-request import builder resolves the FK by NAME via the existing `options()` ({id,name}). Added a
+`Department` column to the designation import (matches the export header) + `Department`/`Designation`
+columns to the user import (match the export headers); both refactored to file-schema + async `resolve`
+builders (`buildDesignationImportSpec` / `buildUserImportSpec`, mirroring cpv/commission). The user file
+schema = `CreateUserSchema.omit({departmentId,designationId}).extend({departmentName,designationName})`
+so ALL preview validation (username/email/phone/role/password) is preserved; an unknown name → per-row
+error against the Department/Designation column (no silent null). A designation/user export now re-imports
+losslessly (round-trip tests assert 0 errors). `designations/service.ts`, `users/service.ts`.
 
 ### IE-DEFER-2 · CPV unit-enablement leg (`client_product_verification_units`) import/export — 🟡 DEFERRED
 The per-mapping unit-enablement leg (`cpvUnitService`) has no bulk import/export. The PRIMARY "CPV

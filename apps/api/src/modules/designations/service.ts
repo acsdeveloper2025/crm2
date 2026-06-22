@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import {
   CreateDesignationSchema,
   UpdateDesignationSchema,
@@ -7,6 +8,7 @@ import {
   type Paginated,
 } from '@crm2/sdk';
 import { designationRepository as repo } from './repository.js';
+import { departmentService } from '../departments/service.js';
 import { AppError } from '../../platform/errors.js';
 import { requireVersion } from '../../platform/occ.js';
 import { resolvePage, resolveFilters, buildPage, type PageSpec } from '../../platform/pagination.js';
@@ -22,6 +24,7 @@ import {
   runImportPreview,
   type ImportColumn,
   type ImportSpec,
+  type ResolveResult,
 } from '../../platform/import/index.js';
 import { parseIsoDate } from '../../platform/import/parsers.js';
 import { applyBulkOcc, parseBulkItems } from '../../platform/bulk.js';
@@ -55,20 +58,79 @@ const DESIGNATION_EXPORT_COLUMNS: ExportColumn<Designation>[] = [
   { id: 'status', header: 'Status', value: (d) => (d.isActive ? 'Active' : 'Inactive') },
 ];
 
-// Import is FK-free (mirrors users/locations imports): a department is linked later via the edit
-// dialog, so the file has no Department column — keeps the engine resolve-free.
+/**
+ * Import manifest (B-14). The `Department` column matches the EXPORT 'Department' header so a
+ * designation export re-imports losslessly (it was previously FK-free, silently nulling the link on
+ * re-import — IE-DEFER-1). The file carries the department NAME (departments are name-keyed, unique);
+ * the per-request builder resolves name→id. `Department` is optional (blank ⇒ unlinked).
+ */
 const DESIGNATION_IMPORT_COLUMNS: ImportColumn[] = [
   { id: 'name', header: 'Name', required: true },
   { id: 'description', header: 'Description' },
+  { id: 'departmentName', header: 'Department' },
   { id: 'effectiveFrom', header: 'Effective From', parse: parseIsoDate },
 ];
 
-const DESIGNATION_IMPORT_SPEC: ImportSpec<CreateDesignationInput> = {
+const DESIGNATION_IMPORT_SAMPLE: Record<string, string> = {
+  name: 'Senior Field Executive',
+  description: 'Experienced field agent',
+  departmentName: 'Field Ops',
+};
+
+/** File-shape schema (the spreadsheet row): the FK is a department NAME, resolved to an id downstream. */
+const DesignationImportFileSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().optional(),
+  departmentName: z.string().optional(),
+  effectiveFrom: z.string().datetime().optional(),
+});
+type DesignationImportFile = z.infer<typeof DesignationImportFileSchema>;
+
+/** Template spec (no resolve — the template only needs columns + sample, never FK lookups). */
+const DESIGNATION_TEMPLATE_SPEC: ImportSpec<DesignationImportFile> = {
   resource: 'designations',
   columns: DESIGNATION_IMPORT_COLUMNS,
-  schema: CreateDesignationSchema,
-  sample: { name: 'Senior Field Executive', description: 'Experienced field agent' },
+  schema: DesignationImportFileSchema,
+  uniqueKey: 'name',
+  sample: DESIGNATION_IMPORT_SAMPLE,
 };
+
+/** Build the designation ImportSpec for ONE request: preload the department NAME→id map once and
+ *  resolve each row to the numeric-id CreateDesignationInput (the audited `create` re-validates). */
+async function buildDesignationImportSpec(): Promise<
+  ImportSpec<DesignationImportFile, CreateDesignationInput>
+> {
+  const departments = await departmentService.options();
+  const deptByName = new Map(departments.map((d) => [d.name.toUpperCase(), d.id]));
+  const resolve = async (input: DesignationImportFile): Promise<ResolveResult<CreateDesignationInput>> => {
+    let departmentId: number | undefined;
+    if (input.departmentName) {
+      departmentId = deptByName.get(input.departmentName.toUpperCase());
+      if (departmentId === undefined)
+        return {
+          ok: false,
+          errors: [{ column: 'Department', message: `unknown department ${input.departmentName}` }],
+        };
+    }
+    return {
+      ok: true,
+      value: {
+        name: input.name,
+        ...(input.description !== undefined ? { description: input.description } : {}),
+        ...(departmentId !== undefined ? { departmentId } : {}),
+        ...(input.effectiveFrom ? { effectiveFrom: input.effectiveFrom } : {}),
+      },
+    };
+  };
+  return {
+    resource: 'designations',
+    columns: DESIGNATION_IMPORT_COLUMNS,
+    schema: DesignationImportFileSchema,
+    uniqueKey: 'name',
+    sample: DESIGNATION_IMPORT_SAMPLE,
+    resolve,
+  };
+}
 
 /** Designation service — job-title CRUD (a required dropdown on the user form). */
 export const designationService = {
@@ -116,17 +178,20 @@ export const designationService = {
     return { rows: items, columns: DESIGNATION_EXPORT_COLUMNS };
   },
 
-  importTemplate: () => buildTemplate(DESIGNATION_IMPORT_SPEC),
-  importPreview: (file: Buffer) => runImportPreview(file, DESIGNATION_IMPORT_SPEC),
-  importConfirm: (file: Buffer, userId: string, fileName: string | undefined) =>
-    runImportConfirm(
+  importTemplate: () => buildTemplate(DESIGNATION_TEMPLATE_SPEC),
+  async importPreview(file: Buffer) {
+    return runImportPreview(file, await buildDesignationImportSpec());
+  },
+  async importConfirm(file: Buffer, userId: string, fileName: string | undefined) {
+    return runImportConfirm(
       file,
-      DESIGNATION_IMPORT_SPEC,
+      await buildDesignationImportSpec(),
       async (input) => {
         await designationService.create(input, userId);
       },
       { userId, fileName },
-    ),
+    );
+  },
 
   create(input: unknown, userId: string): Promise<Designation> {
     const v = CreateDesignationSchema.parse(input); // throws ZodError → 400

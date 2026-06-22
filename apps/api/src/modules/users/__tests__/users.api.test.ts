@@ -583,6 +583,33 @@ describe.skipIf(!RUN)('users API', () => {
       const row = list.body.items.find((u: { username: string }) => u.username === 'pjones');
       expect(row.phone).toBe('+919812345678'); // phone round-trips through import (was import-dropped)
     });
+
+    it('resolves Department + Designation FKs by name on import (IE-DEFER-1)', async () => {
+      await request(app).post('/api/v2/departments').set(SA).send({ name: 'Field Ops' }); // → 'FIELD OPS'
+      await request(app).post('/api/v2/designations').set(SA).send({ name: 'Field Executive' }); // → 'FIELD EXECUTIVE'
+      const ExcelJS = (await import('exceljs')).default;
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Sheet1');
+      ws.addRow(['Username', 'Name', 'Role', 'Department', 'Designation']);
+      ws.addRow(['drowe', 'Dana Rowe', 'FIELD_AGENT', 'field ops', 'Field Executive']); // case-insensitive
+      const res = await upload('confirm', Buffer.from(await wb.xlsx.writeBuffer()));
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ totalRows: 1, successRows: 1, failedRows: 0 });
+      const row = (await request(app).get('/api/v2/users?search=drowe').set(SA)).body.items.find(
+        (u: { username: string }) => u.username === 'drowe',
+      );
+      expect(row.departmentName).toBe('FIELD OPS'); // FK linked (was silently nulled on import before)
+      expect(row.designationName).toBe('FIELD EXECUTIVE');
+
+      // an unknown designation → per-row error against the Designation column (no silent null)
+      const wb2 = new ExcelJS.Workbook();
+      const ws2 = wb2.addWorksheet('S');
+      ws2.addRow(['Username', 'Name', 'Role', 'Designation']);
+      ws2.addRow(['dnope', 'D N', 'FIELD_AGENT', 'No Such Title']);
+      const bad = await upload('preview', Buffer.from(await wb2.xlsx.writeBuffer()));
+      expect(bad.body.errorRows).toBe(1);
+      expect(bad.body.errors[0]).toMatchObject({ column: 'Designation' });
+    });
   });
 
   // ── profile fields (User-Management parity epic, slice 3) ──
