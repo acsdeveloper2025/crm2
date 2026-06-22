@@ -155,6 +155,15 @@ describe.skipIf(!RUN)('Field Monitoring console (ADR-0026)', () => {
     expect(res.text).toContain('Agent');
   });
 
+  it('a data.export-only role without page.field_monitoring cannot export (403) — roster PII not export-widened', async () => {
+    // BACKEND_USER holds data.export but NOT page.field_monitoring; the export carries the same
+    // field-agent PII (name/phone/employeeId + territory) as the roster, so it shares the view audience.
+    const res = await request(app)
+      .get('/api/v2/field-monitoring/export?format=csv&mode=all')
+      .set(hdr('BACKEND_USER', '00000000-0000-0000-0000-0000000000be'));
+    expect(res.status).toBe(403);
+  });
+
   // ── Request location ping (ADR-0027 phase 2) ──
 
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

@@ -10,7 +10,10 @@ export const departmentRoutes: Router = Router();
 
 // `/options` and `/export` are static single-segment paths — declared before `/:id`.
 departmentRoutes.get('/options', authorize(PERMISSIONS.USER_VIEW), c.options);
-departmentRoutes.get('/export', authorize(PERMISSIONS.DATA_EXPORT), c.export);
+// Gated USER_VIEW (NOT bare data.export): the department list is `page.users` (SUPER_ADMIN-only), so
+// the export must share that audience — data.export alone (held by MANAGER/TEAM_LEADER/BACKEND_USER)
+// would let them export the org structure they cannot read. Mirrors the users /export precedent.
+departmentRoutes.get('/export', authorize(PERMISSIONS.USER_VIEW), c.export);
 // Import (B-14): create-authority gate (user.manage). Raw body runs only on this route.
 departmentRoutes.get('/import-template', authorize(PERMISSIONS.USER_MANAGE), c.importTemplate);
 departmentRoutes.post(

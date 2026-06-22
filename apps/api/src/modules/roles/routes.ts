@@ -10,7 +10,11 @@ import { roleController as c } from './controller.js';
 export const roleRoutes: Router = Router();
 
 // static single-segment paths precede `/:code`
-roleRoutes.get('/export', authorize(PERMISSIONS.DATA_EXPORT), c.export);
+// Gated ACCESS_VIEW (NOT bare data.export): the export dumps the full RBAC topology (every role's
+// permission set + scope wiring) — the SAME sensitive data as `GET /` (page.access). data.export alone
+// would WIDEN disclosure: MANAGER/TEAM_LEADER/BACKEND_USER hold it but cannot read roles. Mirrors the
+// users /export + /scope/export precedent (export never wider than read).
+roleRoutes.get('/export', authorize(PERMISSIONS.ACCESS_VIEW), c.export);
 roleRoutes.get('/options', authorize(PERMISSIONS.USER_VIEW), c.options);
 roleRoutes.get('/dimensions', authorize(PERMISSIONS.ACCESS_VIEW), c.dimensions);
 roleRoutes.get('/', authorize(PERMISSIONS.ACCESS_VIEW), c.list);

@@ -341,8 +341,10 @@ describe.skipIf(!RUN)('report-templates API', () => {
       expect((await request(app).get('/api/v2/report-templates/export')).status).toBe(401);
     });
 
-    it('BACKEND_USER (has data.export) can export (200)', async () => {
-      expect((await request(app).get('/api/v2/report-templates/export?format=csv').set(BE)).status).toBe(200);
+    it('a data.export-only role without page.templates cannot export templates (403) — export shares the list audience', async () => {
+      // BACKEND_USER holds data.export but NOT page.templates (it is 403 on `GET /` above); the export
+      // must not widen access beyond who can read the template list.
+      expect((await request(app).get('/api/v2/report-templates/export?format=csv').set(BE)).status).toBe(403);
     });
   });
 

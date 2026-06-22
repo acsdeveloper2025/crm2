@@ -10,7 +10,10 @@ export const reportTemplateRoutes: Router = Router();
 
 reportTemplateRoutes.get('/', authorize(PERMISSIONS.TEMPLATE_VIEW), c.list);
 // `/export` must precede `/:id` routes or it'd be captured as id="export".
-reportTemplateRoutes.get('/export', authorize(PERMISSIONS.DATA_EXPORT), c.export);
+// Gated TEMPLATE_VIEW (NOT bare data.export): the export streams the SAME template rows as `GET /`
+// (page.templates), so it must share the list's audience. data.export alone would WIDEN access —
+// MANAGER/TEAM_LEADER/BACKEND_USER hold it but cannot read templates. Mirrors users /export precedent.
+reportTemplateRoutes.get('/export', authorize(PERMISSIONS.TEMPLATE_VIEW), c.export);
 reportTemplateRoutes.post('/', authorize(PERMISSIONS.TEMPLATE_MANAGE), c.create);
 reportTemplateRoutes.put('/:id', authorize(PERMISSIONS.TEMPLATE_MANAGE), c.update);
 // Bulk routes are static paths (single segment) — no collision with `/:id/...` (two segments).

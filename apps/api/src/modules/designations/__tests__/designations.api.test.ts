@@ -138,8 +138,10 @@ describe.skipIf(!RUN)('designations API', () => {
       expect(res.text).toContain('OPERATIONS');
     });
 
-    it('BACKEND_USER can export (200); FIELD_AGENT cannot (403)', async () => {
-      expect((await request(app).get('/api/v2/designations/export?format=csv').set(BE)).status).toBe(200);
+    it('a data.export-only role without page.users cannot export (403); FIELD_AGENT cannot (403)', async () => {
+      // BACKEND_USER holds data.export but is 403 on the designation list (page.users); the export must
+      // share the list audience (org structure is not export-widened).
+      expect((await request(app).get('/api/v2/designations/export?format=csv').set(BE)).status).toBe(403);
       expect((await request(app).get('/api/v2/designations/export').set(FA)).status).toBe(403);
     });
   });

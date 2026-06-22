@@ -100,6 +100,15 @@ describe.skipIf(!RUN)('roles API (ADR-0022 slice 2 — editable role→permissio
     expect((exp.body as Buffer).subarray(0, 2).toString('latin1')).toBe('PK');
   });
 
+  it('a data.export-only role without page.access cannot export roles (403) — RBAC topology is not export-widened', async () => {
+    // MANAGER holds data.export but NOT page.access; the roles export carries the full permission
+    // topology, so it must share the read audience (the exact scope/billing export precedent).
+    const exp = await request(app)
+      .get('/api/v2/roles/export?mode=all&format=xlsx')
+      .set(authHeaderForRole('MANAGER'));
+    expect(exp.status).toBe(403);
+  });
+
   it('editing a role’s permissions takes LIVE effect (grant → 200, revoke → 403) — the authorize() cutover', async () => {
     // baseline: a field agent can list cases (case.view) but not create them (no case.create)
     expect((await request(app).get('/api/v2/cases').set(FA)).status).toBe(200);

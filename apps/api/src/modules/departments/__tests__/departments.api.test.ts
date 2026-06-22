@@ -161,8 +161,10 @@ describe.skipIf(!RUN)('departments API', () => {
       expect(res.text).toContain('OPERATIONS,FIELD OPS');
     });
 
-    it('BACKEND_USER (has data.export) can export (200); FIELD_AGENT cannot (403); unauth 401', async () => {
-      expect((await request(app).get('/api/v2/departments/export?format=csv').set(BE)).status).toBe(200);
+    it('a data.export-only role without page.users cannot export (403) — export shares the list audience; unauth 401', async () => {
+      // BACKEND_USER holds data.export but is 403 on the department list (page.users); the export must
+      // not widen access beyond who can read the list (org structure is not export-widened).
+      expect((await request(app).get('/api/v2/departments/export?format=csv').set(BE)).status).toBe(403);
       expect((await request(app).get('/api/v2/departments/export').set(FA)).status).toBe(403);
       expect((await request(app).get('/api/v2/departments/export')).status).toBe(401);
     });
