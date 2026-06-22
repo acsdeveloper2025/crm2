@@ -6,6 +6,7 @@ import { formatDateTime } from '../../lib/format.js';
 import { useAuth } from '../../lib/AuthContext.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
 import { Button } from '../../components/ui/Button.js';
+import { WorkStatusChip } from '../../components/WorkStatusChip.js';
 
 const STATUS_OPTIONS = CASE_STATUSES.map((s) => ({
   value: s,
@@ -50,7 +51,7 @@ export function CasesPage() {
         sortable: true,
         filterable: true,
         filterOptions: STATUS_OPTIONS,
-        cell: (c) => c.status.replace(/_/g, ' '),
+        cell: (c) => <WorkStatusChip status={c.status} />,
       },
       {
         id: 'createdAt',

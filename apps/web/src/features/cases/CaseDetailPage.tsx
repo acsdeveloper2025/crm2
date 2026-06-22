@@ -42,6 +42,7 @@ import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
 import { Input } from '../../components/ui/Input.js';
 import { TextArea } from '../../components/ui/TextArea.js';
 import { Button } from '../../components/ui/Button.js';
+import { WorkStatusChip } from '../../components/WorkStatusChip.js';
 import { AddTasksForm } from './AddTasksForm.js';
 
 /** Affordances gate on the PERMISSION (ADR-0022) — resolved by /auth/me, never a role name. */
@@ -64,15 +65,6 @@ const REASSIGNABLE = new Set(['REVOKED']);
 
 /** Case-status badge tone (ADR-0032). Mirrors the Pipeline task-status palette; AWAITING_COMPLETION
  *  reads as "under review" (awaiting the office verdict). */
-const CASE_STATUS_TONE: Record<string, string> = {
-  NEW: 'bg-st-pending-bg text-st-pending',
-  IN_PROGRESS: 'bg-st-in-progress-bg text-st-in-progress',
-  AWAITING_COMPLETION: 'bg-st-under-review-bg text-st-under-review',
-  COMPLETED: 'bg-st-approved-bg text-st-approved',
-  REVOKED: 'bg-st-rejected-bg text-st-rejected',
-  CANCELLED: 'bg-st-rejected-bg text-st-rejected',
-};
-
 export function CaseDetailPage() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
@@ -120,11 +112,10 @@ export function CaseDetailPage() {
           <h1 className="text-xl font-bold tracking-tight">
             <span className="font-mono">{data.caseNumber}</span> · {data.primaryName}
           </h1>
-          <span
-            className={`rounded px-2 py-0.5 text-xs font-medium ${CASE_STATUS_TONE[data.status] ?? 'bg-surface-muted'}`}
-          >
-            {CASE_STATUS_LABELS[data.status] ?? data.status.replace(/_/g, ' ')}
-          </span>
+          <WorkStatusChip
+            status={data.status}
+            label={CASE_STATUS_LABELS[data.status] ?? data.status.replace(/_/g, ' ')}
+          />
         </div>
         <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-sm md:grid-cols-4">
           <Meta label="Client" value={data.clientName} />

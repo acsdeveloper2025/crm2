@@ -12,15 +12,14 @@ import {
   type ExportRequest,
 } from '@crm2/sdk';
 import { api, apiExport } from '../../lib/sdk.js';
-import { formatDateTime } from '../../lib/format.js';
+import { formatDateTime, formatMoney } from '../../lib/format.js';
 import { useAuth } from '../../lib/AuthContext.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
 
-const money = (n: number | null) => (n === null ? '—' : `₹${n.toFixed(2)}`);
 /** Line total = per-unit amount × billable-units (ADR-0046 §5 / G-2). */
 const lineMoney = (amount: number | null, count: number) =>
-  amount === null ? '—' : `₹${(amount * count).toFixed(2)}`;
+  formatMoney(amount === null ? null : amount * count);
 /** Completed-in TAT band label: -1 = completed outside every band; null = not derivable. */
 const bandLabel = (b: number | null) => (b == null ? '—' : b === -1 ? 'Out of band' : `≤${b}h`);
 
@@ -94,8 +93,8 @@ function BillingCaseLines({ caseId }: { caseId: string }) {
           <td className="py-1" colSpan={7}>
             Case total
           </td>
-          <td className="py-1 text-right tabular-nums">{money(billSum)}</td>
-          <td className="py-1 text-right tabular-nums">{money(commSum)}</td>
+          <td className="py-1 text-right tabular-nums">{formatMoney(billSum)}</td>
+          <td className="py-1 text-right tabular-nums">{formatMoney(commSum)}</td>
           <td className="py-1" />
         </tr>
       </tbody>
@@ -149,10 +148,10 @@ function BillingBreakdownPanels({ clientId }: { clientId: string }) {
                     {g.billableUnits}
                   </td>
                   <td data-label="Bill" className="py-1 text-right tabular-nums">
-                    {money(g.billTotal)}
+                    {formatMoney(g.billTotal)}
                   </td>
                   <td data-label="Commission" className="py-1 text-right tabular-nums">
-                    {money(g.commissionTotal)}
+                    {formatMoney(g.commissionTotal)}
                   </td>
                 </tr>
               ))
@@ -192,10 +191,10 @@ function BillingBreakdownPanels({ clientId }: { clientId: string }) {
                     {g.billableUnits}
                   </td>
                   <td data-label="Bill" className="py-1 text-right tabular-nums">
-                    {money(g.billTotal)}
+                    {formatMoney(g.billTotal)}
                   </td>
                   <td data-label="Commission" className="py-1 text-right tabular-nums">
-                    {money(g.commissionTotal)}
+                    {formatMoney(g.commissionTotal)}
                   </td>
                 </tr>
               ))
@@ -252,14 +251,14 @@ export function BillingPage() {
         header: 'Bill Total',
         sortable: true,
         align: 'right',
-        cell: (r) => <span className="tabular-nums">{money(r.billTotal)}</span>,
+        cell: (r) => <span className="tabular-nums">{formatMoney(r.billTotal)}</span>,
       },
       {
         id: 'commissionTotal',
         header: 'Commission',
         sortable: true,
         align: 'right',
-        cell: (r) => <span className="tabular-nums">{money(r.commissionTotal)}</span>,
+        cell: (r) => <span className="tabular-nums">{formatMoney(r.commissionTotal)}</span>,
       },
       {
         id: 'lastCompletedAt',

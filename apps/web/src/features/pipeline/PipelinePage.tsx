@@ -21,20 +21,10 @@ import { formatDateTime } from '../../lib/format.js';
 import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { DataGrid, type BulkSelection, type DataGridColumn } from '../../components/ui/data-grid/index.js';
 import { Button } from '../../components/ui/Button.js';
+import { WorkStatusChip } from '../../components/WorkStatusChip.js';
 
 const BASE = '/api/v2/tasks';
 const QK = 'tasks';
-
-/** Status → frozen status-token pair (COLOR_SYSTEM_FREEZE). */
-const STATUS_TONE: Record<string, string> = {
-  PENDING: 'bg-st-pending-bg text-st-pending',
-  ASSIGNED: 'bg-st-assigned-bg text-st-assigned',
-  IN_PROGRESS: 'bg-st-in-progress-bg text-st-in-progress',
-  SUBMITTED: 'bg-st-under-review-bg text-st-under-review',
-  COMPLETED: 'bg-st-approved-bg text-st-approved',
-  REVOKED: 'bg-st-rejected-bg text-st-rejected',
-  CANCELLED: 'bg-st-rejected-bg text-st-rejected',
-};
 
 /** The Zion-style work buckets. Status buckets set the `status` domain filter; the Out-of-TAT bucket
  *  sets `overdue` (a cross-status derived filter, ADR-0044). All buckets are mutually exclusive.
@@ -147,11 +137,7 @@ export function PipelinePage() {
         hideable: false,
         cell: (t) => (
           <span className="flex items-center gap-1.5">
-            <span
-              className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_TONE[t.status] ?? 'bg-surface-muted'}`}
-            >
-              {t.status.replace(/_/g, ' ')}
-            </span>
+            <WorkStatusChip status={t.status} />
             {t.overdue && (
               <span
                 className="rounded bg-st-rejected-bg px-1.5 py-0.5 text-xs font-medium text-st-rejected"

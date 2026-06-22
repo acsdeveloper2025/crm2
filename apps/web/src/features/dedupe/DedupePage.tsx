@@ -14,18 +14,11 @@ import { useAuth } from '../../lib/AuthContext.js';
 import { Input } from '../../components/ui/Input.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
 import { Button } from '../../components/ui/Button.js';
+import { WorkStatusChip } from '../../components/WorkStatusChip.js';
 
 const BASE = '/api/v2/cases';
 const DEDUPE_VIEW = 'dedupe.view';
 const MIN_TERM = 2;
-
-/** Case status → frozen status-token pair (COLOR_SYSTEM_FREEZE). */
-const STATUS_TONE: Record<string, string> = {
-  NEW: 'bg-st-pending-bg text-st-pending',
-  IN_PROGRESS: 'bg-st-in-progress-bg text-st-in-progress',
-  COMPLETED: 'bg-st-approved-bg text-st-approved',
-  CANCELLED: 'bg-st-rejected-bg text-st-rejected',
-};
 
 type Identifiers = {
   name?: string | undefined;
@@ -82,13 +75,7 @@ export function DedupePage() {
         id: 'status',
         header: 'Status',
         sortable: true,
-        cell: (r) => (
-          <span
-            className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${STATUS_TONE[r.status] ?? ''}`}
-          >
-            {r.status.replace(/_/g, ' ')}
-          </span>
-        ),
+        cell: (r) => <WorkStatusChip status={r.status} />,
       },
       { id: 'clientName', header: 'Client', sortable: true, cell: (r) => r.clientName },
       { id: 'createdAt', header: 'Created', sortable: true, cell: (r) => formatDateTime(r.createdAt) },

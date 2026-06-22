@@ -15,7 +15,7 @@ import {
   type ExportRequest,
 } from '@crm2/sdk';
 import { api, apiExport, ApiError } from '../../lib/sdk.js';
-import { formatDateTime } from '../../lib/format.js';
+import { formatDateTime, formatMoney } from '../../lib/format.js';
 import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { DataGrid, type DataGridColumn, type BulkSelection } from '../../components/ui/data-grid/index.js';
@@ -27,7 +27,6 @@ import { useAuth } from '../../lib/AuthContext.js';
 const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
   e instanceof ApiError && e.status === HTTP_CONFLICT && e.code === 'STALE_UPDATE';
-const money = (n: number) => `₹${n.toFixed(2)}`;
 const isoOrUndefined = (d: string): string | undefined => (d ? new Date(d).toISOString() : undefined);
 
 type Opt = { value: string; label: string };
@@ -222,7 +221,7 @@ export function RateManagementPage() {
         header: 'Rate',
         sortable: true,
         align: 'right',
-        cell: (r) => <span className="tabular-nums">{money(r.amount)}</span>,
+        cell: (r) => <span className="tabular-nums">{formatMoney(r.amount)}</span>,
       },
       {
         id: 'effectiveFrom',
@@ -598,7 +597,7 @@ function ReviseDialog({
         <p className="mb-4 text-xs text-muted-foreground">
           New version of <b>{rate.unitName}</b>
           {rate.clientRateType ? ` · ${rate.clientRateType}` : ''}
-          {rate.pincode ? ` · ${rate.pincode}` : ''} (current {money(rate.amount)}). The current row is
+          {rate.pincode ? ` · ${rate.pincode}` : ''} (current {formatMoney(rate.amount)}). The current row is
           end-dated, never overwritten.
         </p>
         <div className="space-y-3">
@@ -693,8 +692,8 @@ function HistoryDialog({ rate, onClose }: { rate: RateView; onClose: () => void 
                     {h.action}
                   </td>
                   <td data-label="Old → New" className="py-1 pr-4 tabular-nums">
-                    {h.oldAmount !== null ? money(h.oldAmount) : '—'} →{' '}
-                    {h.newAmount !== null ? money(h.newAmount) : '—'}
+                    {h.oldAmount !== null ? formatMoney(h.oldAmount) : '—'} →{' '}
+                    {h.newAmount !== null ? formatMoney(h.newAmount) : '—'}
                   </td>
                 </tr>
               ))}

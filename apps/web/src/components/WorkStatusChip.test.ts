@@ -13,13 +13,18 @@ describe('workStatusChipClass', () => {
     expect(c).toContain('text-st-approved');
   });
 
-  it('maps each known work status to a frozen st-* token pair', () => {
+  it('maps each known task status to a frozen st-* token pair', () => {
     expect(workStatusChipClass('PENDING')).toContain('text-st-pending');
     expect(workStatusChipClass('ASSIGNED')).toContain('text-st-assigned');
     expect(workStatusChipClass('IN_PROGRESS')).toContain('text-st-in-progress');
     expect(workStatusChipClass('SUBMITTED')).toContain('text-st-under-review');
     expect(workStatusChipClass('REVOKED')).toContain('text-st-rejected');
     expect(workStatusChipClass('CANCELLED')).toContain('text-st-rejected');
+  });
+
+  it('also covers the case-status domain (superset: NEW, AWAITING_COMPLETION)', () => {
+    expect(workStatusChipClass('NEW')).toContain('text-st-pending');
+    expect(workStatusChipClass('AWAITING_COMPLETION')).toContain('text-st-under-review');
   });
 
   it('falls back to a neutral surface for an unknown status', () => {

@@ -16,7 +16,7 @@ import {
   type ExportRequest,
 } from '@crm2/sdk';
 import { api, apiExport, ApiError } from '../../lib/sdk.js';
-import { formatDateTime, toDateInput, toIsoDate } from '../../lib/format.js';
+import { formatDateTime, formatMoney, toDateInput, toIsoDate } from '../../lib/format.js';
 import { useAuth } from '../../lib/AuthContext.js';
 import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
@@ -24,7 +24,6 @@ import { ImportButton } from '../../components/import/ImportModal.js';
 import { Button } from '../../components/ui/Button.js';
 import { toast } from 'sonner';
 
-const money = (n: number) => `₹${n.toFixed(2)}`;
 const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
   e instanceof ApiError && e.status === HTTP_CONFLICT && e.code === 'STALE_UPDATE';
@@ -390,7 +389,7 @@ export function CommissionRatesPage() {
         header: 'Amount',
         sortable: true,
         align: 'right',
-        cell: (r) => <span className="tabular-nums">{money(r.amount)}</span>,
+        cell: (r) => <span className="tabular-nums">{formatMoney(r.amount)}</span>,
       },
       {
         id: 'status',
