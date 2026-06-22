@@ -105,6 +105,6 @@ Numbers are never reused. Filenames follow `ADR-NNNN-kebab-slug.md`. Use
 | [ADR-0056](./ADR-0056-field-rate-type-auto-derived-from-executive.md) | Field rate type auto-derived from the executive's commission (supersedes ADR-0050 §3) | Accepted · Shipped 2026-06-22 | 2026-06-21 |
 | [ADR-0057](./ADR-0057-field-report-outcome-and-period-canonicalization.md) | FIELD_REPORT renders v2-native device payloads (derive verbose outcome label + recombine split periods at render time; extends ADR-0039) | Accepted · Shipped 2026-06-22 | 2026-06-22 |
 | [ADR-0058](./ADR-0058-input-uppercase-store-not-just-display.md) | Auto-uppercase typed input (store, not just display) — supersedes UPPERCASE_DISPLAY_STANDARD | Accepted | 2026-06-22 |
-| [ADR-0059](./ADR-0059-case-creation-bulk-import.md) | Case-Creation bulk import (Excel/CSV) — reuse the import engine + CreateCaseSchema, honour the ADR-0053 dedupe gate; v1 = one row/case | Proposed | 2026-06-22 |
+| [ADR-0059](./ADR-0059-case-creation-bulk-import.md) | Case-Creation bulk import (Excel/CSV) — grouped rows (multi-applicant), PENDING by default + optional assign, importer-run dedupe + CPV gate; design finalised from the C1–C5 audit | Proposed | 2026-06-22 |
 
 > ADR-0051 (inline-grid editing) and ADR-0052 (button emphasis) are drafted on the parked `design-audit-wip` branch — not yet on `main`; they'll be indexed when that stream ships.
