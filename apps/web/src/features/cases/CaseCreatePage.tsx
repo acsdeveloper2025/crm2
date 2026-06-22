@@ -296,7 +296,7 @@ export function CaseCreatePage() {
 
         {created ? (
           <div className="mt-4 flex items-center gap-2 border-t border-border pt-4">
-            <span className="text-sm font-medium text-st-completed">
+            <span className="text-sm font-medium text-st-approved">
               ✓ Case {created.caseNumber} created — add documents/tasks below.
             </span>
             <button className="btn-ghost ml-auto" onClick={() => navigate('/cases')}>

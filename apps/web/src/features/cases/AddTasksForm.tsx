@@ -226,7 +226,7 @@ export function AddTasksForm({
         )}
         {add.isError && <span className="text-sm text-destructive">Failed to add tasks.</span>}
         {attachError && (
-          <span className="text-sm text-amber-600">Tasks added, but some attachments failed to upload.</span>
+          <span className="text-sm text-warning">Tasks added, but some attachments failed to upload.</span>
         )}
       </div>
     </div>
