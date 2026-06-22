@@ -884,6 +884,127 @@ generic raw-field display, no per-type gating, nothing dropped (`fieldReports/se
 graceful null fallback, all 9 types (`platform/geocode/*`, `case_attachments.geo_location` +
 `reverse_geocoded_address`, `CaseDetailPage.tsx:1860-1906`).
 
+## Section IE-2026-06-22 — Excel/CSV import-export coverage audit & fix (admin/master-data first)
+
+Multi-agent audit (7 page-groups × field matrix) of `.xlsx`/`.csv` import+export coverage so every
+add/edit field is importable + exportable, lossless, RBAC-correct, escaped (CWE-1236/G-9), case-correct
+(ADR-0058). Full matrices: `docs/audit-2026-06-22/import-export/A1..A7.md` + `README.md`. No frozen
+decision changed → **no ADR**; all fixes additive (export manifests + import columns + route guards).
+Confirmed platform-wide: imports reuse the SDK Create schema (ADR-0058 transforms run on import, no
+bypass); `.xlsx` + `.csv` both accepted; forbidden-import history surfaces expose no import.
+
+### IE-1 · Users export gated by bare `data.export` (PII export wider than read) — ✅ FIXED (2026-06-22)
+`GET /users/export` required only `data.export`, held by MANAGER/TEAM_LEADER/BACKEND_USER, none of
+which hold `page.users` (SUPER_ADMIN-only) — so they could export every user's name/phone/employeeId
+(PII) without being able to open the list. Re-gated `USER_VIEW`, mirroring the in-repo
+`/scope/export` + billing `/cases/export` precedent (export never wider than read). The test that
+*codified* the hole (`BACKEND_USER … can export (200)`) was flipped to assert 403. `users/routes.ts`.
+
+### IE-2 · Field-Monitoring export gated by bare `data.export` — ✅ FIXED (2026-06-22)
+`GET /field-monitoring/export` (FIELD-agent roster: name/phone/employeeId PII + territory) was
+exportable by BACKEND_USER (holds `data.export`, not `page.field_monitoring`). Re-gated
+`FIELD_MONITORING_VIEW`. `field-monitoring/routes.ts`.
+
+### IE-3 · Roles export gated by bare `data.export` (RBAC topology disclosure) — ✅ FIXED (2026-06-22)
+`GET /roles/export` dumped every role's permission set + scope wiring to roles lacking `page.access`.
+Re-gated `ACCESS_VIEW`. `roles/routes.ts`.
+
+### IE-4 · Report-Templates export gated by bare `data.export` — ✅ FIXED (2026-06-22)
+`GET /report-templates/export` was exportable by roles that 403 on the template list (`page.templates`).
+Re-gated `TEMPLATE_VIEW`; the `BACKEND_USER can export (200)` test flipped to 403. `reportTemplates/routes.ts`.
+
+### IE-5 · Commission-rate export dropped the resolution dimensions — ✅ FIXED (2026-06-22)
+`COMMISSION_RATE_EXPORT_COLUMNS` emitted user/client/rateType/amount only — dropping `location` (a
+REQUIRED key for LOCAL/OGL), `product`, `verificationUnit`, `tatBand`, `currency` (all on
+`CommissionRateView`). Two differently-dimensioned rows exported identically and could not round-trip
+(the required location was gone). Added all five (grid-aligned ids). `commissionRates/service.ts`.
+
+### IE-6 · Verification-Unit export lossy (9 of ~23 fields); KYC import impossible — ✅ FIXED (2026-06-22)
+Export now mirrors the 19 import columns (same headers) + read-only audit cols → an export re-imports
+losslessly. Added the `Required Attachments` import column with a `TYPE[:MIN]` round-trip parser/formatter
+— KYC_DOCUMENT units (which require ≥1 attachment) could **never** import before. `verificationUnits/service.ts`.
+
+### IE-7 · Rates/Users/CPV round-trip + completeness gaps — ✅ FIXED (2026-06-22)
+Rates export `+currency` (importable) `+effectiveTo` (history window). Users export `+Email`; users
+import `+Phone`. CPV-Mapping export split the combined `"CODE — Name"` cell into separate
+`Client/Product Code` (the import key) + `Name` columns → re-importable (round-trip test: export→preview
+= 0 errors). `rates/service.ts`, `users/service.ts`, `cpv/service.ts`.
+
+### IE-DEFER-1 · Users + Designations FK import (department/designation) — 🟡 DEFERRED
+`departmentId`/`designationId` (user Create-form fields) and designation→`departmentId` are not
+importable; designation export shows `Department` but re-import nulls it. Both need a department/
+designation **code→id resolve surface** (`options()` returns only `{id,name}` today) + an import builder
+with `resolve` (mirroring `cpv`/`commissionRates`). Multi-module additive change; P1 (optional FK
+nulled on re-import), not P0. One coherent follow-up.
+
+### IE-DEFER-2 · CPV unit-enablement leg (`client_product_verification_units`) import/export — 🟡 DEFERRED
+The per-mapping unit-enablement leg (`cpvUnitService`) has no bulk import/export. The PRIMARY "CPV
+Mapping" surface (client↔product, `client_products`) IS fully covered (down-graded P0→P1). A new
+surface (manifest + route + controller + SDK + web + client/product/unit code resolve) — its own slice.
+
+### IE-DEFER-3 · Case Creation bulk import · Bulk Assignment file import · Cases grid export — 🟡 DEFERRED
+Case-creation bulk import does not exist (import-mandatory §4) and needs its own ADR — it must reuse
+`CreateCaseSchema` and honour ADR-0053 (multi-applicant batch dedupe) + ADR-0056 (visit-type + FIELD
+location + derived field-rate) + the dedupe gate. Bulk Assignment is an in-grid JSON action
+(`POST /tasks/bulk-assign`), not a spreadsheet import. Cases DataGrid has no `exportFn`; several
+case/task fields export nowhere. ALL deferred: the `cases`/`tasks` modules are under concurrent
+parallel-session WIP (do not collide), and case-creation import is a feature, not a coverage patch.
+
+### IE-DEFER-4 · MIS/Billing/Field-Monitoring ≥10k export → background job — 🟡 DEFERRED
+`mode:all` ≥10k returns 413 `EXPORT_TOO_LARGE` instead of enqueuing a job (standard §2); only
+`locations` registers an async export builder. Incremental rollout — register builders per surface.
+
+### IE-DEFER-5 · Policies export — 🟡 DEFERRED
+The Policies admin DataGrid has no export (standard §1). Low-risk additive (metadata manifest + route +
+SDK + web). Policies *content* stays non-importable (versioned legal blob — WONTFIX).
+
+### IE-DEFER-6 · Scope-assignments export honours filters + emits codes + web surface — 🟡 DEFERRED
+The `/users/scope/export` ignores the DataGrid filter/sort, emits resolved labels (import wants codes),
+and has API routes but no web button. P1 round-trip/correctness; bundle with IE-DEFER-1.
+
+### IE-8 · Departments + Designations export gated wider than their list — ✅ FIXED (2026-06-22, review-panel)
+The Security reviewer caught a miss in the IE-1..4 gate sweep: `GET /departments/export` and
+`GET /designations/export` were gated bare `data.export` (SA+MGR+TL+BE) while their LIST is `page.users`
+(SUPER_ADMIN-only) — so MANAGER/TEAM_LEADER/BACKEND_USER could export the org's department/designation
+structure they cannot read. Same export-wider-than-read class as IE-1..4. Low impact (no PII/money/secret
+— name/description/dates/status only) but real. Re-gated both `/export` → `USER_VIEW`; the
+`BACKEND_USER can export (200)` tests flipped to 403. `departments/routes.ts`, `designations/routes.ts`.
+
+### IE-9 · Review-panel hardening (parser + template discoverability + export consistency) — ✅ FIXED (2026-06-22)
+- **CTO P2:** `parseAttachmentList` accepted a blank-type token (`":2"` → `{type:'',min:2}`); now filters
+  empty-type tokens. `verificationUnits/service.ts`.
+- **Design P2-1:** the VU import template shipped a blank `Required Attachments` sample → the `TYPE[:MIN]`
+  grammar was undiscoverable; added a worked sample (`DOCUMENT,PAN:2`) so the template self-documents.
+- **Design P3-1:** commission export rendered "applies to any" three ways (`Universal` for client, blank
+  for the other dims); now renders `Universal` for all Universal-able dimensions (no blank-vs-missing ambiguity).
+
+### IE-DEFER-7 · Commission-rate export ⇏ commission import template (round-trip shape mismatch) — 🟡 DEFERRED
+The Design reviewer noted commission rates have BOTH export and import, but the export is display-oriented
+(combined `Location` "411001 Fort", `Product` code+name, `Unit` name, `User` display name, `TAT` "24h")
+while the import template is code/pincode-keyed (`Username`, `Location Pincode`+`Area`, `Product Code`,
+`Unit Code`, integer `TAT Band`) — so an exported file does not re-import cleanly (unlike CPV/VU/Users/Rates,
+which were aligned). The IE-5 P0 (dropped required dimensions / ambiguity) IS fixed; full export↔import
+alignment (split Location, emit codes, bare TAT) is a follow-up that conflicts with the FE grid `cols`
+ids and so warrants its own pass. Export is documented in-code as read-for-analysis, not a re-import source.
+
+### Review-panel verdicts (4-agent, 2026-06-22)
+CTO: NO BLOCKING ISSUES (reuse + additive + contract-safe + tests genuine; round-trip + RBAC traced to
+seed). Security: no P0/P1 in the change; the four (now six) gates correctly close real export-wider-than-read
+exfils; no secret leak (password_hash is not a UserView field); CWE-1236 guard covers every new cell; the
+attachment parser is injection/ReDoS/DoS-safe. CEO: **ACCEPT round-1 (master-data + security)**; two owner
+asks — (a) name **Case Creation bulk import** (IE-DEFER-3) the round-2 headliner (highest daily-value admin
+workflow), (b) consider pulling **users/designations dept+designation FK import** (IE-DEFER-1) forward — same
+code→id resolve pattern this change already proves for CPV/commission. Design: no P1 blockers; P2/P3 above
+FIXED or dispositioned (IE-DEFER-7). Pre-existing P3 (not introduced here, logged for a follow-up):
+`requiredAttachments` element `{type,min}` shape is unvalidated by the SDK schema (`z.array(z.unknown())`);
+constrain `type` to an enum when the field gets a server-side consumer.
+
+### WONTFIX (justified)
+Report Templates content blob, Report Layouts designer artifact, Saved Views (per-user opaque state),
+System (read-only health), Reference (seeded lookup), Policies content (legal blob) — non-importable by
+design. Audit/Billing/Commission/Notification/System-log history — forbidden import (§4), correctly
+exposing no import endpoint. MIS money-drop (G-4) verified applied on BOTH `/rows` and `/export`.
+
 ---
 *Governance ledger. Update — never overwrite — as findings change state. Linked from
 `CRM2_MASTER_MEMORY.md`, `PROJECT_INDEX.md`, `docs/ARCHITECTURE_GOVERNANCE.md`,
