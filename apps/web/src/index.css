@@ -11,12 +11,10 @@
   .input {
     @apply w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-ring disabled:bg-muted disabled:text-muted-foreground;
   }
-  .btn {
-    @apply rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50;
-  }
-  .btn-ghost {
-    @apply rounded-md border border-input px-3 py-1.5 text-sm text-foreground hover:bg-accent disabled:opacity-50;
-  }
+  /* `.btn` / `.btn-ghost` were retired by the F7 migration (ADR-0052): every actionable
+     control now routes through the shared <Button> / buttonClass() so affordance, sizing,
+     focus, loading and the variant→token mapping stay in one place. Re-adding a global
+     button class here would let pages bypass that contract — use <Button> instead. */
 
   /* Hexagon Loader (PAGINATION_AND_LOADING_STANDARDS §7) — indeterminate mode marches a
      dash segment around the hexagon outline (pathLength=100). Determinate mode sets
