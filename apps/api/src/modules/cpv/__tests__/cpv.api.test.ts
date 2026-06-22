@@ -424,14 +424,17 @@ describe.skipIf(!RUN)('CPV API', () => {
   describe('export', () => {
     const FA = authHeaderForRole('FIELD_AGENT');
 
-    it('exports the current view as CSV (200 + headers + the joined client/product cells)', async () => {
+    it('exports the current view as CSV (200 + headers + separate code/name cells, round-trippable)', async () => {
       await newClientProduct(await newClient('C_EXP'), await newProduct('P_EXP'));
       const res = await request(app).get('/api/v2/client-products/export?format=csv&mode=current').set(SA);
       expect(res.status).toBe(200);
       expect(res.headers['content-type']).toContain('text/csv');
       expect(res.headers['content-disposition']).toMatch(/attachment; filename="client-products-\d{8}\.csv"/);
-      expect(res.text.split('\r\n')[0]).toBe('Client,Product,Units,Effective From,Created,Updated,Status');
-      expect(res.text).toContain('C_EXP'); // the client cell carries "C_EXP — Client N"
+      // codes are now their own columns (matching the import 'Client Code'/'Product Code') → re-importable.
+      expect(res.text.split('\r\n')[0]).toBe(
+        'Client Code,Client Name,Product Code,Product Name,Units,Effective From,Created,Updated,Status',
+      );
+      expect(res.text).toContain('C_EXP,'); // the Client Code cell carries the bare code (was "C_EXP — Name")
     });
 
     it('exports all matching as XLSX (200 + PK-zip body)', async () => {
@@ -455,11 +458,28 @@ describe.skipIf(!RUN)('CPV API', () => {
       const res = await request(app)
         .get('/api/v2/client-products/export?format=csv&mode=all&cols=client,status')
         .set(SA);
-      expect(res.text.split('\r\n')[0]).toBe('Client,Status');
+      expect(res.text.split('\r\n')[0]).toBe('Client Code,Status');
     });
 
     it('a role without data.export cannot export (403)', async () => {
       expect((await request(app).get('/api/v2/client-products/export').set(FA)).status).toBe(403);
+    });
+
+    it('the exported CSV re-imports losslessly (round-trip): export → upload → preview validates', async () => {
+      await newClientProduct(await newClient('C_RT'), await newProduct('P_RT'));
+      const csv = (await request(app).get('/api/v2/client-products/export?format=csv&mode=all').set(SA)).text;
+      // Feed the exact exported CSV bytes back into the import preview — the engine maps 'Client Code'/
+      // 'Product Code' and ignores the extra Name/Units/audit columns; both codes resolve → 0 errors.
+      const res = await request(app)
+        .post('/api/v2/client-products/import?mode=preview')
+        .set(SA)
+        .set('content-type', 'application/octet-stream')
+        .set('x-filename', 'client-products.csv')
+        .send(Buffer.from(csv, 'utf8'));
+      expect(res.status).toBe(200);
+      expect(res.body.errorRows).toBe(0);
+      expect(res.body.validRows).toBe(res.body.totalRows);
+      expect(res.body.totalRows).toBeGreaterThanOrEqual(1);
     });
   });
 

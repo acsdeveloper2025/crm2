@@ -46,12 +46,36 @@ const toPosInt = (v: unknown): number | undefined => {
   return Number.isInteger(n) && n > 0 ? n : undefined;
 };
 
-/** DataGrid export manifest — `id`s match the FE column ids (CommissionRatesPage). */
+/** DataGrid export manifest — `id`s match the FE column ids (CommissionRatesPage). The ADR-0046
+ *  resolution dimensions (product / verification-unit / location / tat-band) and the currency are
+ *  exported so two differently-dimensioned rows are NEVER ambiguous and the `location` (a REQUIRED
+ *  key for LOCAL/OGL rows) is never dropped. Every Universal-able dimension renders the literal
+ *  `Universal` when unset (consistent with the Client column) so a reader never confuses "applies to
+ *  any" with "missing". NOTE: this export is display-oriented — the commission IMPORT template is
+ *  code/pincode-keyed, so an export is read-for-analysis, not a re-import source (registry IE-DEFER-7). */
+const UNIVERSAL = 'Universal';
 const COMMISSION_RATE_EXPORT_COLUMNS: ExportColumn<CommissionRateView>[] = [
   { id: 'user', header: 'User', value: (r) => r.userName },
-  { id: 'client', header: 'Client', value: (r) => r.clientName ?? 'Universal' },
+  { id: 'client', header: 'Client', value: (r) => r.clientName ?? UNIVERSAL },
   { id: 'fieldRateType', header: 'Rate Type', value: (r) => r.fieldRateType },
+  {
+    id: 'product',
+    header: 'Product',
+    value: (r) => (r.productName ? `${r.productCode ?? ''} ${r.productName}`.trim() : UNIVERSAL),
+  },
+  { id: 'verificationUnit', header: 'Unit', value: (r) => r.verificationUnitName ?? UNIVERSAL },
+  {
+    id: 'location',
+    header: 'Location',
+    value: (r) => (r.pincode || r.area ? `${r.pincode ?? ''} ${r.area ?? ''}`.trim() : UNIVERSAL),
+  },
+  {
+    id: 'tatBand',
+    header: 'TAT Band',
+    value: (r) => (r.tatBand == null ? UNIVERSAL : r.tatBand === -1 ? 'Out of band' : `${r.tatBand}h`),
+  },
   { id: 'amount', header: 'Amount', value: (r) => r.amount },
+  { id: 'currency', header: 'Currency', value: (r) => r.currency },
   { id: 'status', header: 'Status', value: (r) => (r.isActive ? 'Active' : 'Inactive') },
   { id: 'effectiveFrom', header: 'Effective From', value: (r) => r.effectiveFrom },
   { id: 'createdAt', header: 'Created', value: (r) => r.createdAt },

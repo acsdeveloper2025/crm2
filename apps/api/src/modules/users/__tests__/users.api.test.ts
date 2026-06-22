@@ -343,7 +343,7 @@ describe.skipIf(!RUN)('users API', () => {
       expect(res.headers['content-type']).toContain('text/csv');
       expect(res.headers['content-disposition']).toMatch(/attachment; filename="users-\d{8}\.csv"/);
       expect(res.text.split('\r\n')[0]).toBe(
-        'Employee ID,Username,Name,Phone,Role,Department,Designation,Reports To,Effective From,Created,Updated,Status',
+        'Employee ID,Username,Name,Email,Phone,Role,Department,Designation,Reports To,Effective From,Created,Updated,Status',
       );
       expect(res.text).toContain('exp_fa,EXPORT AGENT,'); // ADR-0058: name uppercase; username unchanged
       expect(res.text).toContain('FIELD AGENT');
@@ -381,7 +381,7 @@ describe.skipIf(!RUN)('users API', () => {
       expect(res.status).toBe(200);
       const rows = res.text.split('\r\n');
       expect(rows[0]).toBe(
-        'Employee ID,Username,Name,Phone,Role,Department,Designation,Reports To,Effective From,Created,Updated,Status',
+        'Employee ID,Username,Name,Email,Phone,Role,Department,Designation,Reports To,Effective From,Created,Updated,Status',
       );
       expect(res.text).toContain('sel_a');
       expect(res.text).not.toContain('sel_b'); // the unticked row is excluded
@@ -408,8 +408,10 @@ describe.skipIf(!RUN)('users API', () => {
       expect((await request(app).get('/api/v2/users/export')).status).toBe(401);
     });
 
-    it('BACKEND_USER (has data.export) can export (200)', async () => {
-      expect((await request(app).get('/api/v2/users/export?format=csv').set(BE)).status).toBe(200);
+    it('a data.export-only role without page.users cannot export users (403) — export shares the list audience', async () => {
+      // BACKEND_USER holds data.export but NOT page.users; the export carries the same PII (name/
+      // phone/employeeId) as the user list, so it must not widen access beyond who can read the list.
+      expect((await request(app).get('/api/v2/users/export?format=csv').set(BE)).status).toBe(403);
     });
   });
 
@@ -565,6 +567,21 @@ describe.skipIf(!RUN)('users API', () => {
       expect((await upload('preview', buf, FA)).status).toBe(403);
       expect((await request(app).get('/api/v2/users/import-template').set(FA)).status).toBe(403);
       expect((await request(app).get('/api/v2/users/import-template')).status).toBe(401);
+    });
+
+    it('imports the phone column (Create-form field) and persists it on the row', async () => {
+      const ExcelJS = (await import('exceljs')).default;
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Sheet1');
+      ws.addRow(['Username', 'Name', 'Email', 'Phone', 'Role']);
+      ws.addRow(['pjones', 'Pat Jones', 'pat@crm2.local', '+919812345678', 'FIELD_AGENT']);
+      const buf = Buffer.from(await wb.xlsx.writeBuffer());
+      const res = await upload('confirm', buf);
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ totalRows: 1, successRows: 1, failedRows: 0 });
+      const list = await request(app).get('/api/v2/users?search=pjones').set(SA);
+      const row = list.body.items.find((u: { username: string }) => u.username === 'pjones');
+      expect(row.phone).toBe('+919812345678'); // phone round-trips through import (was import-dropped)
     });
   });
 

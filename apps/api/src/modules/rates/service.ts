@@ -72,7 +72,12 @@ const RATE_EXPORT_COLUMNS: ExportColumn<RateView>[] = [
   { id: 'area', header: 'Area', value: (r) => r.area },
   { id: 'clientRateType', header: 'Rate Type', value: (r) => r.clientRateType },
   { id: 'amount', header: 'Rate', value: (r) => r.amount },
+  // currency is importable (rates/import.ts) but was dropped from export → non-lossless round-trip.
+  { id: 'currency', header: 'Currency', value: (r) => r.currency },
   { id: 'effectiveFrom', header: 'Effective From', value: (r) => r.effectiveFrom },
+  // effectiveTo (history-row validity window; null = current) — without it a history export loses the
+  // end of each version's window. Not a FE grid column, so it rides only the full (no-`cols`) export.
+  { id: 'effectiveTo', header: 'Effective To', value: (r) => r.effectiveTo },
   { id: 'createdAt', header: 'Created', value: (r) => r.createdAt },
   { id: 'updatedAt', header: 'Updated', value: (r) => r.updatedAt },
   { id: 'status', header: 'Status', value: (r) => (r.isActive ? 'Active' : 'Inactive') },

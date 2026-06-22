@@ -22,13 +22,17 @@ import { buildTemplate, runImportConfirm, runImportPreview } from '../../platfor
 import { buildClientProductSpec, CP_TEMPLATE_SPEC } from './import.js';
 
 /**
- * DataGrid export manifest (IMPORT_EXPORT_STANDARD). Column `id`s match the FE DataGrid column ids so
- * the visible-columns (`cols`) selection filters + orders them; the `actions` column has no data value
- * and is absent. Client/Product cells carry both code and name (the grid shows code bold + name muted).
+ * DataGrid export manifest (IMPORT_EXPORT_STANDARD). The `client`/`product` ids match the FE DataGrid
+ * column ids so the visible-columns (`cols`) selection filters + orders them; their header+value carry
+ * the CODE — the key the import consumes ('Client Code'/'Product Code') — so an export re-imports
+ * losslessly (the old combined "CODE — Name" cell could not). The Client/Product Name columns ride
+ * alongside for readability; the import ignores them. The `actions` column has no data value and is absent.
  */
 const CP_EXPORT_COLUMNS: ExportColumn<ClientProductView>[] = [
-  { id: 'client', header: 'Client', value: (r) => `${r.clientCode} — ${r.clientName}` },
-  { id: 'product', header: 'Product', value: (r) => `${r.productCode} — ${r.productName}` },
+  { id: 'client', header: 'Client Code', value: (r) => r.clientCode },
+  { id: 'clientName', header: 'Client Name', value: (r) => r.clientName },
+  { id: 'product', header: 'Product Code', value: (r) => r.productCode },
+  { id: 'productName', header: 'Product Name', value: (r) => r.productName },
   { id: 'units', header: 'Units', value: (r) => r.unitCount },
   { id: 'effectiveFrom', header: 'Effective From', value: (r) => r.effectiveFrom },
   { id: 'createdAt', header: 'Created', value: (r) => r.createdAt },

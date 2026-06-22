@@ -430,7 +430,7 @@ describe.skipIf(!RUN)('verification-units API', () => {
         /attachment; filename="verification-units-\d{8}\.csv"/,
       );
       expect(res.text.split('\r\n')[0]).toBe(
-        'Code,Name,Category,Kind,Billing,Effective From,Created,Updated,Status',
+        'Code,Name,Description,Category,Kind,Worker Role,Assignment Method,Required Form Code,Required Photos,Required GPS,Required Attachments,Result Set,Review Required,Billing Profile,Commission Profile,Report Template Type,Reverification Rule,PII Sensitive,Sort Order,Effective From,Created,Updated,Status',
       );
       expect(res.text).toContain('RESIDENCE,RESIDENCE');
     });
@@ -481,7 +481,9 @@ describe.skipIf(!RUN)('verification-units API', () => {
         .set(SA);
       expect(res.status).toBe(200);
       const rows = res.text.split('\r\n');
-      expect(rows[0]).toBe('Code,Name,Category,Kind,Billing,Effective From,Created,Updated,Status');
+      expect(rows[0]).toBe(
+        'Code,Name,Description,Category,Kind,Worker Role,Assignment Method,Required Form Code,Required Photos,Required GPS,Required Attachments,Result Set,Review Required,Billing Profile,Commission Profile,Report Template Type,Reverification Rule,PII Sensitive,Sort Order,Effective From,Created,Updated,Status',
+      );
       expect(res.text).toContain('SELA');
       expect(res.text).not.toContain('SELB'); // the unticked row is excluded
     });
@@ -608,6 +610,7 @@ describe.skipIf(!RUN)('verification-units API', () => {
       'Required Form Code',
       'Required Photos',
       'Required GPS',
+      'Required Attachments',
       'Result Set',
       'Review Required',
       'Billing Profile',
@@ -630,6 +633,7 @@ describe.skipIf(!RUN)('verification-units API', () => {
       `${code}_FORM`,
       5,
       'true',
+      '', // Required Attachments — blank for FIELD_VISIT (not required)
       'Positive,Negative,Refer,Fraud',
       'true',
       'AGENT_COMMISSION',
@@ -646,6 +650,31 @@ describe.skipIf(!RUN)('verification-units API', () => {
       r[4] = 'NOT_A_KIND';
       return r;
     };
+    // A KYC_DOCUMENT row (worker=KYC_VERIFIER, 0 photos, no GPS, CLIENT_INVOICE, KYC template). The
+    // `attachments` cell carries the Required Attachments spec ("TYPE[:MIN]") — empty makes it fail the
+    // KYC ≥1-attachment invariant.
+    const kycRow = (code: string, attachments: string): (string | number)[] => [
+      code,
+      'KYC PAN Check',
+      'Verify PAN document',
+      'KYC',
+      'KYC_DOCUMENT',
+      'KYC_VERIFIER',
+      'DESK_POOL',
+      '', // no required form code for KYC
+      0,
+      'false',
+      attachments, // Required Attachments
+      'Positive,Negative,Refer,Fraud',
+      'true',
+      'CLIENT_INVOICE',
+      'NONE',
+      'KYC_DOCUMENT',
+      'RECHECK_FRESH_RATE',
+      'true',
+      2,
+      '2026-01-01',
+    ];
 
     const mkXlsx = async (rows: (string | number)[][]): Promise<Buffer> => {
       const ExcelJS = (await import('exceljs')).default;
@@ -703,6 +732,29 @@ describe.skipIf(!RUN)('verification-units API', () => {
         success_rows: 1,
         failed_rows: 0,
       });
+    });
+
+    it('imports a KYC_DOCUMENT unit with Required Attachments (was impossible — GAP-VU-1) + round-trips the cell', async () => {
+      // two tokens exercise both forms: bare "DOCUMENT" (min defaults to 1) and "PAN:2" (explicit min).
+      const res = await upload('confirm', await mkXlsx([kycRow('KYC_PAN', 'DOCUMENT,PAN:2')]));
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ totalRows: 1, successRows: 1, failedRows: 0 });
+      const list = await request(app).get('/api/v2/verification-units?search=KYC_PAN').set(SA);
+      const unit = list.body.items.find((u: { code: string }) => u.code === 'KYC_PAN');
+      expect(unit.requiredAttachments).toEqual([
+        { type: 'DOCUMENT', min: 1 },
+        { type: 'PAN', min: 2 },
+      ]); // attachment spec persisted
+      // export now carries the Required Attachments column → the unit re-imports losslessly
+      const exp = await request(app).get('/api/v2/verification-units/export?format=csv&mode=all').set(SA);
+      expect(exp.text).toContain('DOCUMENT,PAN:2'); // min=1 ⇒ bare "DOCUMENT"; min>1 ⇒ "PAN:2"
+    });
+
+    it('a KYC_DOCUMENT row with no Required Attachments is rejected against that column (invariant enforced)', async () => {
+      const res = await upload('preview', await mkXlsx([kycRow('KYC_NOATT', '')]));
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ totalRows: 1, validRows: 0, errorRows: 1 });
+      expect(res.body.errors.some((e: { column: string }) => e.column === 'Required Attachments')).toBe(true);
     });
 
     it('a role without verification_unit.manage cannot import (403); unauth is 401', async () => {

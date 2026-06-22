@@ -54,16 +54,73 @@ const VU_PAGE_SPEC: PageSpec = {
 };
 
 /**
- * The DataGrid export manifest. Column `id`s match the FE DataGrid column ids so the visible-columns
- * (`cols`) selection filters + orders them; the `actions` column has no data value and is absent here.
- * Dates emit the raw field (the platform cell() formats Date → ISO).
+ * requiredAttachments round-trips through a single spreadsheet cell as a comma-separated list of
+ * `TYPE:MIN` tokens (MIN omitted ⇒ 1), e.g. "DOCUMENT,PAN:2" ⇄ [{type:'DOCUMENT',min:1},{type:'PAN',min:2}].
+ * Blank ⇒ undefined so the Create schema applies its [] default (valid for non-KYC units; the KYC_DOCUMENT
+ * invariant requires ≥1, so a KYC import row must carry this cell — previously impossible, GAP-VU-1).
+ */
+const parseAttachmentList = (raw: unknown): unknown => {
+  if (raw === undefined || raw === null) return undefined;
+  const s = String(raw).trim();
+  if (s === '') return undefined;
+  return s
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((tok) => {
+      const [type, minRaw] = tok.split(':').map((x) => x.trim());
+      const min = minRaw ? Number(minRaw) : 1;
+      return { type: (type ?? '').toUpperCase(), min: Number.isInteger(min) && min > 0 ? min : 1 };
+    })
+    .filter((a) => a.type !== ''); // drop a blank-type token (e.g. ":2") — never a usable attachment spec
+};
+
+/** Inverse of {@link parseAttachmentList} for export: [{type,min}] → "TYPE[:MIN],…" (MIN omitted when 1). */
+const formatAttachmentList = (list: unknown[]): string =>
+  (Array.isArray(list) ? list : [])
+    .map((a) => {
+      if (a && typeof a === 'object' && 'type' in a) {
+        const t = String((a as { type?: unknown }).type ?? '');
+        const m = Number((a as { min?: unknown }).min);
+        return Number.isInteger(m) && m > 1 ? `${t}:${m}` : t;
+      }
+      return String(a);
+    })
+    .filter(Boolean)
+    .join(',');
+
+/**
+ * The DataGrid export manifest. The first 20 columns mirror VU_IMPORT_COLUMNS (same headers) so an
+ * export re-imports losslessly (every Create-form field is present and re-mappable); the trailing
+ * read-only audit columns (Created/Updated/Status) are ignored on re-import. The `id`s of the columns
+ * the FE grid shows (code/name/category/kind/billing/effectiveFrom/createdAt/updatedAt/status) match
+ * the grid column ids so the visible-columns (`cols`) selection still filters + orders them.
  */
 const VU_EXPORT_COLUMNS: ExportColumn<VerificationUnit>[] = [
   { id: 'code', header: 'Code', value: (r) => r.code },
   { id: 'name', header: 'Name', value: (r) => r.name },
+  { id: 'description', header: 'Description', value: (r) => r.description ?? '' },
   { id: 'category', header: 'Category', value: (r) => r.category },
   { id: 'kind', header: 'Kind', value: (r) => r.kind },
-  { id: 'billing', header: 'Billing', value: (r) => r.billingProfile },
+  { id: 'workerRole', header: 'Worker Role', value: (r) => r.workerRole },
+  { id: 'assignmentMethod', header: 'Assignment Method', value: (r) => r.assignmentMethod },
+  { id: 'requiredFormCode', header: 'Required Form Code', value: (r) => r.requiredFormCode ?? '' },
+  { id: 'requiredPhotos', header: 'Required Photos', value: (r) => r.requiredPhotos },
+  { id: 'requiredGps', header: 'Required GPS', value: (r) => r.requiredGps },
+  {
+    id: 'requiredAttachments',
+    header: 'Required Attachments',
+    value: (r) => formatAttachmentList(r.requiredAttachments),
+  },
+  { id: 'resultSet', header: 'Result Set', value: (r) => r.resultSet.join(',') },
+  { id: 'reviewRequired', header: 'Review Required', value: (r) => r.reviewRequired },
+  // id 'billing' keeps the FE grid column id; the header matches the import 'Billing Profile' for round-trip.
+  { id: 'billing', header: 'Billing Profile', value: (r) => r.billingProfile },
+  { id: 'commissionProfile', header: 'Commission Profile', value: (r) => r.commissionProfile },
+  { id: 'reportTemplateType', header: 'Report Template Type', value: (r) => r.reportTemplateType },
+  { id: 'reverificationRule', header: 'Reverification Rule', value: (r) => r.reverificationRule },
+  { id: 'piiSensitive', header: 'PII Sensitive', value: (r) => r.piiSensitive },
+  { id: 'sortOrder', header: 'Sort Order', value: (r) => r.sortOrder },
   { id: 'effectiveFrom', header: 'Effective From', value: (r) => r.effectiveFrom },
   { id: 'createdAt', header: 'Created', value: (r) => r.createdAt },
   { id: 'updatedAt', header: 'Updated', value: (r) => r.updatedAt },
@@ -86,6 +143,8 @@ const VU_IMPORT_COLUMNS: ImportColumn[] = [
   { id: 'requiredFormCode', header: 'Required Form Code' },
   { id: 'requiredPhotos', header: 'Required Photos', parse: parseInteger },
   { id: 'requiredGps', header: 'Required GPS', parse: parseBoolean },
+  // KYC_DOCUMENT units require ≥1 attachment; without this column those rows could never import (GAP-VU-1).
+  { id: 'requiredAttachments', header: 'Required Attachments', parse: parseAttachmentList },
   { id: 'resultSet', header: 'Result Set', parse: parseCsvList },
   { id: 'reviewRequired', header: 'Review Required', parse: parseBoolean },
   { id: 'billingProfile', header: 'Billing Profile', required: true },
@@ -118,6 +177,9 @@ const VU_IMPORT_SPEC: ImportSpec<CreateVerificationUnitInput> = {
     requiredFormCode: 'RESIDENCE_FORM',
     requiredPhotos: 5,
     requiredGps: 'true',
+    // demonstrates the Required Attachments cell grammar in the downloadable template: comma-separated
+    // `TYPE[:MIN]` tokens (MIN omitted ⇒ 1). KYC_DOCUMENT units MUST carry ≥1; FIELD_VISIT may leave it blank.
+    requiredAttachments: 'DOCUMENT,PAN:2',
     resultSet: 'Positive,Negative,Refer,Fraud',
     reviewRequired: 'true',
     billingProfile: 'AGENT_COMMISSION',

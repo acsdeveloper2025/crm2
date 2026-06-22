@@ -72,6 +72,8 @@ const USER_EXPORT_COLUMNS: ExportColumn<UserView>[] = [
   { id: 'employeeId', header: 'Employee ID', value: (u) => u.employeeId ?? '' },
   { id: 'username', header: 'Username', value: (u) => u.username },
   { id: 'name', header: 'Name', value: (u) => u.name },
+  // email is importable (USER_IMPORT_COLUMNS) but was dropped from export → non-lossless round-trip.
+  { id: 'email', header: 'Email', value: (u) => u.email ?? '' },
   { id: 'phone', header: 'Phone', value: (u) => u.phone ?? '' },
   { id: 'role', header: 'Role', value: (u) => u.role.replace(/_/g, ' ') },
   { id: 'departmentName', header: 'Department', value: (u) => u.departmentName ?? '' },
@@ -95,6 +97,9 @@ const USER_IMPORT_COLUMNS: ImportColumn[] = [
   { id: 'username', header: 'Username', required: true },
   { id: 'name', header: 'Name', required: true },
   { id: 'email', header: 'Email' },
+  // phone is a Create-form field validated by CreateUserSchema (E.164); exposing it here closes the
+  // import-vs-export asymmetry (phone exports but was not importable).
+  { id: 'phone', header: 'Phone' },
   { id: 'role', header: 'Role', required: true },
   { id: 'effectiveFrom', header: 'Effective From', parse: parseIsoDate },
 ];
@@ -104,7 +109,13 @@ const USER_IMPORT_SPEC: ImportSpec<CreateUserInput> = {
   columns: USER_IMPORT_COLUMNS,
   schema: CreateUserSchema,
   uniqueKey: 'username',
-  sample: { username: 'jdoe', name: 'John Doe', email: 'jdoe@crm2.local', role: 'FIELD_AGENT' },
+  sample: {
+    username: 'jdoe',
+    name: 'John Doe',
+    email: 'jdoe@crm2.local',
+    phone: '+919876543210',
+    role: 'FIELD_AGENT',
+  },
 };
 
 /**

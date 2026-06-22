@@ -371,9 +371,10 @@ describe.skipIf(!RUN)('rates API', () => {
       expect(res.headers['content-type']).toContain('text/csv');
       expect(res.headers['content-disposition']).toMatch(/attachment; filename="rates-\d{8}\.csv"/);
       expect(res.text.split('\r\n')[0]).toBe(
-        'Client,Product,Kind,Verification Unit,Pincode,Area,Rate Type,Rate,Effective From,Created,Updated,Status',
+        'Client,Product,Kind,Verification Unit,Pincode,Area,Rate Type,Rate,Currency,Effective From,Effective To,Created,Updated,Status',
       );
       expect(res.text).toContain('C_EXP1,P_EXP1');
+      expect(res.text).toContain(',INR,'); // currency now exported (lossless round-trip)
     });
 
     it('exports all matching as XLSX (200 + PK-zip body)', async () => {
@@ -424,7 +425,7 @@ describe.skipIf(!RUN)('rates API', () => {
       const res = await request(app).get(`/api/v2/rates/export?format=csv&mode=selected&ids=${a.id}`).set(SA);
       expect(res.status).toBe(200);
       expect(res.text.split('\r\n')[0]).toBe(
-        'Client,Product,Kind,Verification Unit,Pincode,Area,Rate Type,Rate,Effective From,Created,Updated,Status',
+        'Client,Product,Kind,Verification Unit,Pincode,Area,Rate Type,Rate,Currency,Effective From,Effective To,Created,Updated,Status',
       );
       expect(res.text).toContain('C_SELA');
       expect(res.text).not.toContain('C_SELB'); // the unticked row is excluded

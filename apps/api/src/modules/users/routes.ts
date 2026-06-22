@@ -27,7 +27,12 @@ userRoutes.get('/', authorize(PERMISSIONS.USER_VIEW), c.list);
 // `/options` precedes the param routes — the reports-to picker reads it (B-22).
 userRoutes.get('/options', authorize(PERMISSIONS.USER_VIEW), c.options);
 // `/export` must precede the `/:id` param routes or it'd be captured as id="export".
-userRoutes.get('/export', authorize(PERMISSIONS.DATA_EXPORT), c.export);
+// Gated USER_VIEW (NOT bare data.export): the export streams the SAME user-list rows (name/phone/
+// employeeId — PII) as `GET /`, so it must share the list's audience. data.export alone would WIDEN
+// access — MANAGER/TEAM_LEADER/BACKEND_USER hold it but cannot read the user list (page.users is
+// SUPER_ADMIN-only). Mirrors the /scope/export + billing /cases/export precedent (export never wider
+// than read).
+userRoutes.get('/export', authorize(PERMISSIONS.USER_VIEW), c.export);
 // Import (B-14): template download + preview/confirm upload. Gated by USER_MANAGE — import CREATES
 // users, so it needs the same authority as `POST /` (never a weaker generic perm). The file is sent
 // as raw bytes (no multipart dep); `raw()` runs only on this route (global json() skips non-JSON

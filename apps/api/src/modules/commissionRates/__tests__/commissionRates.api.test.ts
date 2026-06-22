@@ -389,6 +389,32 @@ describe.skipIf(!RUN)('commission-rates API (ADR-0036)', () => {
       expect(row.verificationUnitName).toBeTruthy();
     });
 
+    it('export carries the resolution dimensions (product/unit/location/tat band/currency) — no ambiguity, location never dropped', async () => {
+      await request(app).post('/api/v2/commission-rates').set(SA).send({
+        userId: dimUserId,
+        clientId,
+        locationId: locId,
+        productId: prodId,
+        verificationUnitId: vuId,
+        fieldRateType: 'LOCAL',
+        tatBand: 24,
+        amount: 70,
+      });
+      const res = await request(app)
+        .get(`/api/v2/commission-rates/export?format=csv&mode=all&userId=${dimUserId}`)
+        .set(SA);
+      expect(res.status).toBe(200);
+      const [header, ...rows] = res.text.split('\r\n');
+      expect(header).toBe(
+        'User,Client,Rate Type,Product,Unit,Location,TAT Band,Amount,Currency,Status,Effective From,Created,Updated',
+      );
+      const row = rows.find((l) => l.includes('411001'))!;
+      expect(row).toContain('411001 DIMAREA'); // ADR-0046 location — a REQUIRED LOCAL/OGL key (was dropped pre-fix)
+      expect(row).toContain('P_DIM'); // product dimension
+      expect(row).toContain('24h'); // completed-in TAT band
+      expect(row).toContain('INR'); // currency
+    });
+
     it('no-overlap holds on the new dimension tuple (two identical-dim active rows → 409)', async () => {
       const body = {
         userId: dimUserId,
