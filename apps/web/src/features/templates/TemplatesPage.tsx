@@ -11,6 +11,7 @@ import {
   type ReportTemplateType,
 } from '@crm2/sdk';
 import { api, apiExport, ApiError } from '../../lib/sdk.js';
+import { useAuth } from '../../lib/AuthContext.js';
 import { formatDateTime, toDateInput, toIsoDate } from '../../lib/format.js';
 import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { BulkStatusActions } from '../../components/BulkStatusActions.js';
@@ -35,6 +36,9 @@ const TYPE_OPTIONS = REPORT_TEMPLATE_TYPES.map((t) => ({ value: t, label: TYPE_L
 
 export function TemplatesPage() {
   const qc = useQueryClient();
+  // Mirror the server write guard (report_template.manage) so viewers don't see write controls (H-1).
+  const { has } = useAuth();
+  const canManage = has('report_template.manage');
   const [active, setActive] = useState('');
   const [editing, setEditing] = useState<ReportTemplate | null | undefined>(undefined);
   const [toggleConflict, setToggleConflict] = useState<ReportTemplate | null>(null);
@@ -92,27 +96,31 @@ export function TemplatesPage() {
         sortable: true,
         cell: (t) => <StatusChip isActive={t.isActive} effectiveFrom={t.effectiveFrom} />,
       },
-      {
-        id: 'actions',
-        header: 'Actions',
-        align: 'right',
-        cell: (t) => (
-          <div className="flex items-center justify-end gap-2">
-            <Button variant="secondary" size="sm" onClick={() => setEditing(t)}>
-              Edit
-            </Button>
-            <Button
-              variant={t.isActive ? 'destructive' : 'secondary'}
-              size="sm"
-              onClick={() => toggle.mutate(t)}
-            >
-              {t.isActive ? 'Deactivate' : 'Activate'}
-            </Button>
-          </div>
-        ),
-      },
+      ...(canManage
+        ? [
+            {
+              id: 'actions',
+              header: 'Actions',
+              align: 'right',
+              cell: (t: ReportTemplate) => (
+                <div className="flex items-center justify-end gap-2">
+                  <Button variant="secondary" size="sm" onClick={() => setEditing(t)}>
+                    Edit
+                  </Button>
+                  <Button
+                    variant={t.isActive ? 'destructive' : 'secondary'}
+                    size="sm"
+                    onClick={() => toggle.mutate(t)}
+                  >
+                    {t.isActive ? 'Deactivate' : 'Activate'}
+                  </Button>
+                </div>
+              ),
+            } satisfies DataGridColumn<ReportTemplate>,
+          ]
+        : []),
     ],
-    [toggle],
+    [toggle, canManage],
   );
 
   return (
@@ -124,7 +132,7 @@ export function TemplatesPage() {
             Authored report bodies the report engine renders per verification type.
           </p>
         </div>
-        <Button onClick={() => setEditing(null)}>+ New</Button>
+        {canManage && <Button onClick={() => setEditing(null)}>+ New</Button>}
       </div>
 
       <DataGrid<ReportTemplate>

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { pageQueryToParams, type PageQuery, type Paginated, type Policy } from '@crm2/sdk';
 import { api, ApiError } from '../../lib/sdk.js';
+import { useAuth } from '../../lib/AuthContext.js';
 import { formatDateTime } from '../../lib/format.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
@@ -15,6 +16,9 @@ const isStale = (e: unknown): e is ApiError =>
 
 export function PoliciesPage() {
   const qc = useQueryClient();
+  // Mirror the server write guard (policy.manage) so viewers don't see write controls (H-1).
+  const { has } = useAuth();
+  const canManage = has('policy.manage');
   const [editing, setEditing] = useState<Policy | null | undefined>(undefined); // undefined=closed, null=create
   const [toggleConflict, setToggleConflict] = useState<Policy | null>(null);
 
@@ -63,27 +67,31 @@ export function PoliciesPage() {
         sortable: true,
         cell: (p) => <StatusChip isActive={p.isActive} effectiveFrom={p.effectiveFrom} />,
       },
-      {
-        id: 'actions',
-        header: 'Actions',
-        align: 'right',
-        cell: (p) => (
-          <div className="flex items-center justify-end gap-2">
-            <Button variant="secondary" size="sm" onClick={() => setEditing(p)}>
-              Edit
-            </Button>
-            <Button
-              variant={p.isActive ? 'destructive' : 'secondary'}
-              size="sm"
-              onClick={() => toggle.mutate(p)}
-            >
-              {p.isActive ? 'Deactivate' : 'Activate'}
-            </Button>
-          </div>
-        ),
-      },
+      ...(canManage
+        ? [
+            {
+              id: 'actions',
+              header: 'Actions',
+              align: 'right',
+              cell: (p: Policy) => (
+                <div className="flex items-center justify-end gap-2">
+                  <Button variant="secondary" size="sm" onClick={() => setEditing(p)}>
+                    Edit
+                  </Button>
+                  <Button
+                    variant={p.isActive ? 'destructive' : 'secondary'}
+                    size="sm"
+                    onClick={() => toggle.mutate(p)}
+                  >
+                    {p.isActive ? 'Deactivate' : 'Activate'}
+                  </Button>
+                </div>
+              ),
+            } satisfies DataGridColumn<Policy>,
+          ]
+        : []),
     ],
-    [toggle],
+    [toggle, canManage],
   );
 
   return (
@@ -96,7 +104,7 @@ export function PoliciesPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button onClick={() => setEditing(null)}>+ New Policy</Button>
+          {canManage && <Button onClick={() => setEditing(null)}>+ New Policy</Button>}
         </div>
       </div>
 

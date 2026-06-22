@@ -15,6 +15,7 @@ import {
   type ScopeDimensionInfo,
 } from '@crm2/sdk';
 import { api, apiExport, ApiError } from '../../lib/sdk.js';
+import { useAuth } from '../../lib/AuthContext.js';
 import { formatDateTime } from '../../lib/format.js';
 import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { StatusChip } from '../../components/StatusChip.js';
@@ -39,6 +40,9 @@ const MODE_LABELS: Record<RoleHierarchyMode, string> = {
 
 export function RolesPage() {
   const qc = useQueryClient();
+  // Mirror the server write guard (role.manage) so viewers don't see write controls (H-1).
+  const { has } = useAuth();
+  const canManage = has('role.manage');
   const [active, setActive] = useState('');
   const [editing, setEditing] = useState<RoleView | null | undefined>(undefined);
   const [toggleConflict, setToggleConflict] = useState<RoleView | null>(null);
@@ -155,29 +159,33 @@ export function RolesPage() {
         sortable: true,
         cell: (r) => <StatusChip isActive={r.isActive} effectiveFrom={r.createdAt} />,
       },
-      {
-        id: 'actions',
-        header: 'Actions',
-        align: 'right',
-        cell: (r) => (
-          <div className="flex items-center justify-end gap-2 whitespace-nowrap">
-            <Button variant="secondary" size="sm" disabled={r.grantsAll} onClick={() => setEditing(r)}>
-              {r.grantsAll ? 'Locked' : 'Edit'}
-            </Button>
-            {!r.isSystem && (
-              <Button
-                variant={r.isActive ? 'destructive' : 'secondary'}
-                size="sm"
-                onClick={() => toggle.mutate(r)}
-              >
-                {r.isActive ? 'Deactivate' : 'Activate'}
-              </Button>
-            )}
-          </div>
-        ),
-      },
+      ...(canManage
+        ? [
+            {
+              id: 'actions',
+              header: 'Actions',
+              align: 'right',
+              cell: (r: RoleView) => (
+                <div className="flex items-center justify-end gap-2 whitespace-nowrap">
+                  <Button variant="secondary" size="sm" disabled={r.grantsAll} onClick={() => setEditing(r)}>
+                    {r.grantsAll ? 'Locked' : 'Edit'}
+                  </Button>
+                  {!r.isSystem && (
+                    <Button
+                      variant={r.isActive ? 'destructive' : 'secondary'}
+                      size="sm"
+                      onClick={() => toggle.mutate(r)}
+                    >
+                      {r.isActive ? 'Deactivate' : 'Activate'}
+                    </Button>
+                  )}
+                </div>
+              ),
+            } satisfies DataGridColumn<RoleView>,
+          ]
+        : []),
     ],
-    [toggle],
+    [toggle, canManage],
   );
 
   return (
@@ -190,7 +198,7 @@ export function RolesPage() {
             dimensions its users can be assigned. System roles are delete-locked; Super Admin is fully locked.
           </p>
         </div>
-        <Button onClick={() => setEditing(null)}>+ New Role</Button>
+        {canManage && <Button onClick={() => setEditing(null)}>+ New Role</Button>}
       </div>
 
       <DataGrid<RoleView>
