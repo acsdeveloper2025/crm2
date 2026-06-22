@@ -43,7 +43,7 @@ export function SessionList({ userId, currentJti }: { userId?: string; currentJt
                 <div className="flex items-center gap-2">
                   <span className="truncate text-sm font-medium">{s.deviceInfo || 'Unknown device'}</span>
                   {s.current && (
-                    <span className="rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium uppercase text-primary">
+                    <span className="rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium uppercase text-primary-hover">
                       This device
                     </span>
                   )}

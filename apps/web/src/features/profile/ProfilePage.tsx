@@ -72,7 +72,7 @@ function IdentityCard({ me }: { me: UserView }) {
         <h2 className="font-semibold">Identity</h2>
         <span
           className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-            me.isActive ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
+            me.isActive ? 'bg-primary/10 text-primary-hover' : 'bg-muted text-muted-foreground'
           }`}
         >
           {me.isActive ? 'Active' : 'Inactive'}
@@ -315,7 +315,7 @@ export function ProfilePage() {
         <h1 className="text-xl font-bold tracking-tight">My Profile</h1>
         <p className="text-sm text-muted-foreground">
           Your identity and contact details.{' '}
-          <Link to="/security" className="text-primary hover:underline">
+          <Link to="/security" className="text-primary-hover underline">
             Two-factor authentication and active sessions
           </Link>{' '}
           live on the Security page.

@@ -30,10 +30,19 @@ const PAGES: PageSpec[] = [
   { name: 'Access Control', path: '/admin/rbac' },
   { name: 'System', path: '/admin/system' },
   { name: 'Cases', path: '/cases', primary: /New/, card: true },
+  { name: 'New Case', path: '/cases/new', primary: /Create Case/ },
   { name: 'Pipeline', path: '/pipeline', card: true },
+  { name: 'Dedupe', path: '/dedupe' },
+  { name: 'Field Monitoring', path: '/field-monitoring' },
   { name: 'Billing', path: '/billing', card: true },
   { name: 'Commission Rates', path: '/admin/commission-rates', primary: /New/, card: true },
   { name: 'MIS Layouts', path: '/admin/report-layouts', primary: /New Layout/, card: true },
+  { name: 'Departments', path: '/admin/departments', primary: /New/, card: true },
+  { name: 'Designations', path: '/admin/designations', primary: /New/, card: true },
+  { name: 'Policies', path: '/admin/policies', primary: /New Policy/, card: true },
+  { name: 'Dashboard', path: '/dashboard' },
+  { name: 'Profile', path: '/profile' },
+  { name: 'Security', path: '/security' },
 ];
 
 async function horizontalOverflow(page: Page): Promise<number> {

@@ -257,7 +257,9 @@ function DimensionBlock({
         <p className="text-sm font-medium text-foreground">{info?.label ?? wiring.dimension}</p>
         <span
           className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
-            wiring.mode === 'RESTRICT' ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary'
+            wiring.mode === 'RESTRICT'
+              ? 'bg-destructive/10 text-destructive'
+              : 'bg-primary/10 text-primary-hover'
           }`}
         >
           {wiring.mode}

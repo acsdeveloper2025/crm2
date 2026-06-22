@@ -29,10 +29,22 @@ const PAGES: { name: string; path: string }[] = [
   { name: 'Access Control', path: '/admin/rbac' },
   { name: 'System', path: '/admin/system' },
   { name: 'Cases', path: '/cases' },
+  { name: 'New Case', path: '/cases/new' },
+  // /cases/:id (case detail) is deliberately omitted: axe needs a concrete, seeded case id,
+  // which varies by database. Its rich button/dialog surface reuses the same primitives
+  // (Button/StatusChip/DataGrid/dialogs) already scanned on the pages above.
   { name: 'Pipeline', path: '/pipeline' },
+  { name: 'Dedupe', path: '/dedupe' },
+  { name: 'Field Monitoring', path: '/field-monitoring' },
   { name: 'Billing', path: '/billing' },
   { name: 'Commission Rates', path: '/admin/commission-rates' },
   { name: 'MIS Layouts', path: '/admin/report-layouts' },
+  { name: 'Departments', path: '/admin/departments' },
+  { name: 'Designations', path: '/admin/designations' },
+  { name: 'Policies', path: '/admin/policies' },
+  { name: 'Dashboard', path: '/dashboard' },
+  { name: 'Profile', path: '/profile' },
+  { name: 'Security', path: '/security' },
 ];
 
 test.skip(
