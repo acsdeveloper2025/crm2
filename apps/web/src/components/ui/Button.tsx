@@ -12,6 +12,10 @@ import type { ButtonHTMLAttributes } from 'react';
  *   ghost       = borderless utility (Cancel / Columns / Views / pager / More)
  *   link        = text only (genuine inline links, never row actions)
  * Same-color actions (Export ↓ / Import ↑) are differentiated by icon, not colour.
+ *
+ * `loading` shows the platform hexagon marcher inline (never a spinning circle —
+ * PAGINATION_AND_LOADING_STANDARDS §7) and disables the control. `iconOnly` makes a
+ * square ≥44px touch target and REQUIRES an `aria-label` (enforced at the type level).
  */
 export type ButtonVariant = 'primary' | 'secondary' | 'destructive' | 'ghost' | 'link';
 export type ButtonSize = 'sm' | 'md';
@@ -24,6 +28,12 @@ const SIZES: Record<ButtonSize, string> = {
   sm: 'px-2 py-1 text-xs',
 };
 
+// Icon-only buttons are square, padding-free, and ≥44px (WCAG 2.5.5 / repo touch-target rule).
+const ICON_SIZES: Record<ButtonSize, string> = {
+  md: 'h-11 w-11 p-0',
+  sm: 'h-9 w-9 p-0',
+};
+
 const VARIANTS: Record<ButtonVariant, string> = {
   primary: 'bg-primary text-primary-foreground hover:opacity-90',
   secondary: 'bg-primary-muted text-primary-hover hover:opacity-90',
@@ -33,23 +43,70 @@ const VARIANTS: Record<ButtonVariant, string> = {
 };
 
 /** Compose the className for a button variant + size (pure — unit-tested in Button.test.ts). */
-export function buttonClass(variant: ButtonVariant, size: ButtonSize = 'md'): string {
-  return `${BASE} ${SIZES[size]} ${VARIANTS[variant]}`;
+export function buttonClass(
+  variant: ButtonVariant,
+  size: ButtonSize = 'md',
+  opts?: { iconOnly?: boolean },
+): string {
+  const sizing = opts?.iconOnly ? ICON_SIZES[size] : SIZES[size];
+  return `${BASE} ${sizing} ${VARIANTS[variant]}`;
 }
 
-export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+const HEX_POINTS = '24,4 41.32,14 41.32,34 24,44 6.68,34 6.68,14';
+
+/** Inline 1em hexagon marcher — inherits the button's text colour (`stroke-current`). */
+function ButtonSpinner() {
+  return (
+    <svg viewBox="0 0 48 48" className="h-[1em] w-[1em] shrink-0" fill="none" aria-hidden="true">
+      <polygon points={HEX_POINTS} className="stroke-current opacity-30" strokeWidth="4" />
+      <polygon
+        points={HEX_POINTS}
+        pathLength={100}
+        className="stroke-current hex-march"
+        strokeWidth="4"
+        strokeLinecap="round"
+        strokeDasharray="25 75"
+      />
+    </svg>
+  );
+}
+
+type BaseButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
   size?: ButtonSize;
-}
+  /** Shows the platform hexagon marcher and disables the control. */
+  loading?: boolean;
+};
+
+/** Icon-only buttons MUST carry an accessible name. */
+export type ButtonProps =
+  | (BaseButtonProps & { iconOnly: true; 'aria-label': string })
+  | (BaseButtonProps & { iconOnly?: false });
 
 /** The one button component every page uses. Defaults to `primary`/`md`. */
 export function Button({
   variant = 'primary',
   size = 'md',
+  loading = false,
+  iconOnly = false,
   className,
   type = 'button',
+  disabled,
+  children,
   ...rest
 }: ButtonProps) {
-  const cls = className ? `${buttonClass(variant, size)} ${className}` : buttonClass(variant, size);
-  return <button type={type} className={cls} {...rest} />;
+  const base = buttonClass(variant, size, { iconOnly });
+  const cls = className ? `${base} ${className}` : base;
+  return (
+    <button
+      type={type}
+      className={cls}
+      disabled={disabled === true || loading}
+      aria-busy={loading || undefined}
+      {...rest}
+    >
+      {loading && <ButtonSpinner />}
+      {children}
+    </button>
+  );
 }

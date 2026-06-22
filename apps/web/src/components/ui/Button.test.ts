@@ -52,4 +52,20 @@ describe('buttonClass', () => {
     expect(buttonClass('primary', 'sm')).toContain('text-xs');
     expect(buttonClass('primary')).toContain('text-sm');
   });
+
+  it('iconOnly is a square ≥44px touch target (no rectangular text padding)', () => {
+    const c = buttonClass('ghost', 'md', { iconOnly: true });
+    // 44px square (WCAG 2.5.5 / repo touch-target rule), padding-free so the glyph centres
+    expect(c).toContain('h-11');
+    expect(c).toContain('w-11');
+    expect(c).toContain('p-0');
+    expect(c).not.toContain('px-3'); // drops the md rectangular padding
+    // still carries the variant chrome
+    expect(c).toContain('hover:bg-accent');
+  });
+
+  it('iconOnly defaults to rectangular when omitted', () => {
+    expect(buttonClass('ghost', 'md')).toContain('px-3');
+    expect(buttonClass('ghost', 'md')).not.toContain('h-11');
+  });
 });
