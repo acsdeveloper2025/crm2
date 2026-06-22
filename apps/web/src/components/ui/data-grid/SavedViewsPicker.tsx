@@ -6,6 +6,7 @@ import type { SavedView, SavedViewState } from '@crm2/sdk';
 import { api, ApiError } from '../../../lib/sdk.js';
 import { useFocusTrap } from '../../../lib/useFocusTrap.js';
 import { Input } from '../Input.js';
+import { Button } from '../Button.js';
 
 /**
  * Saved views picker (DATAGRID_STANDARD §10, B-5). A per-user named snapshot of THIS grid's URL-state
@@ -102,15 +103,15 @@ export function SavedViewsPicker({ resourceKey }: { resourceKey: string }) {
 
   return (
     <div className="relative">
-      <button
-        type="button"
-        className="btn-ghost text-xs"
+      <Button
+        variant="ghost"
+        size="sm"
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
       >
         Views{views.length > 0 ? ` (${views.length})` : ''}
-      </button>
+      </Button>
       {open && (
         <>
           <button
@@ -196,14 +197,15 @@ export function SavedViewsPicker({ resourceKey }: { resourceKey: string }) {
                     if (e.key === 'Enter') submitNew();
                   }}
                 />
-                <button
-                  type="button"
-                  className="btn h-7 px-2 text-xs"
-                  disabled={!newName.trim() || createMut.isPending}
+                <Button
+                  size="sm"
+                  className="h-7"
+                  disabled={!newName.trim()}
+                  loading={createMut.isPending}
                   onClick={submitNew}
                 >
                   Save
-                </button>
+                </Button>
               </div>
               {error && (
                 <p className="mt-1 px-1 text-xs text-destructive" role="alert">

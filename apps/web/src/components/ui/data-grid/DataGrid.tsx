@@ -24,6 +24,8 @@ import { useFocusTrap } from '../../../lib/useFocusTrap.js';
 import { useLoadingBand } from '../../../lib/useLoadingBand.js';
 import { HexagonLoader } from '../HexagonLoader.js';
 import { Input } from '../Input.js';
+import { Button } from '../Button.js';
+import { DownloadIcon } from '../icons.js';
 import { SavedViewsPicker } from './SavedViewsPicker.js';
 
 /**
@@ -439,16 +441,17 @@ export function DataGrid<T>({
           <SavedViewsPicker resourceKey={queryKey} />
           {exportFn && (
             <div className="relative">
-              <button
-                type="button"
-                className="btn-ghost text-xs"
+              <Button
+                variant="secondary"
+                size="sm"
                 aria-haspopup="menu"
                 aria-expanded={exportMenuOpen}
-                disabled={!!exporting}
+                loading={!!exporting}
                 onClick={() => setExportMenuOpen((o) => !o)}
               >
-                {exporting ? 'Exporting…' : 'Export'}
-              </button>
+                <DownloadIcon />
+                Export
+              </Button>
               {exportMenuOpen && (
                 <>
                   <button
@@ -505,15 +508,15 @@ export function DataGrid<T>({
           )}
           {hideableColumns.length > 0 && (
             <div className="relative">
-              <button
-                type="button"
-                className="btn-ghost text-xs"
+              <Button
+                variant="ghost"
+                size="sm"
                 aria-haspopup="menu"
                 aria-expanded={menuOpen}
                 onClick={() => setMenuOpen((o) => !o)}
               >
                 Columns
-              </button>
+              </Button>
               {menuOpen && (
                 <>
                   {/* click-outside backdrop */}
@@ -613,39 +616,37 @@ export function DataGrid<T>({
             {selectedCount} selected
           </span>
           {allPageSelected && !allMatching && totalCount > pageIds.length && (
-            <button
-              type="button"
-              className="font-medium text-primary hover:underline"
-              onClick={() => setAllMatching(true)}
-            >
+            <Button variant="link" size="sm" className="font-medium" onClick={() => setAllMatching(true)}>
               Select all {totalCount} matching
-            </button>
+            </Button>
           )}
           <div className="ml-auto flex flex-wrap items-center gap-2">
             {bulkActions?.(bulkSelection)}
             {exportFn && (
               <>
-                <button
-                  type="button"
-                  className="btn-ghost text-xs"
-                  disabled={!!exporting}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  loading={!!exporting}
                   onClick={() => exportSelection('xlsx')}
                 >
-                  {exporting ? 'Exporting…' : 'Export XLSX'}
-                </button>
-                <button
-                  type="button"
-                  className="btn-ghost text-xs"
+                  <DownloadIcon />
+                  Export XLSX
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
                   disabled={!!exporting}
                   onClick={() => exportSelection('csv')}
                 >
+                  <DownloadIcon />
                   CSV
-                </button>
+                </Button>
               </>
             )}
-            <button type="button" className="btn-ghost text-xs" onClick={clearSelection}>
+            <Button variant="ghost" size="sm" onClick={clearSelection}>
               Clear
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -750,9 +751,14 @@ export function DataGrid<T>({
               <tr>
                 <td colSpan={colCount} className="px-3 py-8 text-center text-destructive">
                   Failed to load.{' '}
-                  <button className="font-medium underline" onClick={() => void refetch()}>
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="font-medium underline"
+                    onClick={() => void refetch()}
+                  >
                     Retry
-                  </button>
+                  </Button>
                 </td>
               </tr>
             )}
@@ -842,20 +848,20 @@ export function DataGrid<T>({
             : `${totalCount} row${totalCount === 1 ? '' : 's'} · Page ${page} of ${Math.max(1, totalPages)}`}
         </span>
         <div className="flex items-center gap-2">
-          <button
-            className="btn-ghost"
+          <Button
+            variant="ghost"
             disabled={page <= 1 || isLoading}
             onClick={() => patch({ page: String(page - 1) }, false)}
           >
             Previous
-          </button>
-          <button
-            className="btn-ghost"
+          </Button>
+          <Button
+            variant="ghost"
             disabled={page >= totalPages || isLoading}
             onClick={() => patch({ page: String(page + 1) }, false)}
           >
             Next
-          </button>
+          </Button>
         </div>
       </div>
     </div>

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, apiUpload, ApiError } from '../lib/sdk.js';
+import { Button } from './ui/Button.js';
+import { UploadIcon } from './ui/icons.js';
 
 const NOT_FOUND = 404;
 const STORAGE_503 = 503;
@@ -121,14 +123,10 @@ export function UserPhoto({
         <p className="text-sm font-medium text-foreground">Profile photo</p>
         {configured ? (
           <>
-            <button
-              type="button"
-              className="btn-ghost text-sm"
-              disabled={busy}
-              onClick={() => fileRef.current?.click()}
-            >
-              {busy ? 'Uploading…' : url ? 'Replace photo' : 'Upload photo'}
-            </button>
+            <Button variant="secondary" size="sm" loading={busy} onClick={() => fileRef.current?.click()}>
+              <UploadIcon />
+              {url ? 'Replace photo' : 'Upload photo'}
+            </Button>
             <input
               ref={fileRef}
               type="file"

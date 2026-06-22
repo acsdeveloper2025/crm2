@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { BulkResult } from '@crm2/sdk';
 import { api } from '../lib/sdk.js';
 import type { BulkSelection } from './ui/data-grid/index.js';
+import { Button } from './ui/Button.js';
 
 /** Any selectable master-data row carries the OCC token the bulk mutation guards on. */
 interface Versioned {
@@ -62,22 +63,24 @@ export function BulkStatusActions<T extends Versioned>({
   const disabled = selection.rows.length === 0 || busy !== null;
   return (
     <>
-      <button
-        type="button"
-        className="btn-ghost text-xs"
+      <Button
+        variant="secondary"
+        size="sm"
         disabled={disabled}
+        loading={busy === 'activate'}
         onClick={() => void run('activate')}
       >
-        {busy === 'activate' ? 'Activating…' : 'Activate'}
-      </button>
-      <button
-        type="button"
-        className="btn-ghost text-xs"
+        Activate
+      </Button>
+      <Button
+        variant="destructive"
+        size="sm"
         disabled={disabled}
+        loading={busy === 'deactivate'}
         onClick={() => void run('deactivate')}
       >
-        {busy === 'deactivate' ? 'Deactivating…' : 'Deactivate'}
-      </button>
+        Deactivate
+      </Button>
       {message && (
         <span className="text-xs text-muted-foreground" role="status">
           {message}

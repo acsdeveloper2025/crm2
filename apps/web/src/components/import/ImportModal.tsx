@@ -10,6 +10,8 @@ import {
 } from '@crm2/sdk';
 import { apiBlob, apiUpload, ApiError } from '../../lib/sdk.js';
 import { useFocusTrap } from '../../lib/useFocusTrap.js';
+import { Button } from '../ui/Button.js';
+import { DownloadIcon, UploadIcon } from '../ui/icons.js';
 
 /** What an importable list passes in: the API base path, the cache key to refresh, and a label. */
 export interface ImportConfig {
@@ -40,9 +42,10 @@ export function ImportButton({ config }: { config: ImportConfig }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button className="btn-ghost" onClick={() => setOpen(true)}>
+      <Button variant="secondary" onClick={() => setOpen(true)}>
+        <UploadIcon />
         Import
-      </button>
+      </Button>
       {open && <ImportModal config={config} onClose={() => setOpen(false)} />}
     </>
   );
@@ -170,9 +173,10 @@ function ImportModal({ config, onClose }: { config: ImportConfig; onClose: () =>
 
         {(stage === 'idle' || stage === 'previewing') && (
           <div className="space-y-4">
-            <button className="btn-ghost" onClick={downloadTemplate}>
-              ↓ Download template (.xlsx)
-            </button>
+            <Button variant="secondary" onClick={downloadTemplate}>
+              <DownloadIcon />
+              Download template (.xlsx)
+            </Button>
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-foreground">
                 Upload filled template (.xlsx or .csv)
@@ -265,13 +269,13 @@ function ImportModal({ config, onClose }: { config: ImportConfig; onClose: () =>
             )}
 
             <div className="flex justify-end gap-2">
-              <button className="btn-ghost" onClick={reset}>
+              <Button variant="ghost" onClick={reset}>
                 Choose different file
-              </button>
-              <button className="btn" onClick={confirm} disabled={preview.validRows === 0}>
+              </Button>
+              <Button onClick={confirm} disabled={preview.validRows === 0}>
                 Import {preview.validRows} {config.entityLabel}
                 {preview.validRows === 1 ? '' : 's'}
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -290,23 +294,22 @@ function ImportModal({ config, onClose }: { config: ImportConfig; onClose: () =>
               <span className="text-muted-foreground">{result.durationMs} ms</span>
             </div>
             {result.errors.length > 0 && (
-              <button className="btn-ghost" onClick={() => downloadErrors(result.errors)}>
-                ↓ Download error report (.csv)
-              </button>
+              <Button variant="secondary" onClick={() => downloadErrors(result.errors)}>
+                <DownloadIcon />
+                Download error report (.csv)
+              </Button>
             )}
             <div className="flex justify-end">
-              <button className="btn" onClick={onClose}>
-                Done
-              </button>
+              <Button onClick={onClose}>Done</Button>
             </div>
           </div>
         )}
 
         {stage !== 'done' && (
           <div className="mt-5 flex justify-end">
-            <button className="btn-ghost" onClick={onClose}>
+            <Button variant="ghost" onClick={onClose}>
               Cancel
-            </button>
+            </Button>
           </div>
         )}
       </div>

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { SessionInfo } from '@crm2/sdk';
 import { api } from '../lib/sdk.js';
 import { formatDateTime } from '../lib/format.js';
+import { Button } from './ui/Button.js';
 
 /**
  * Active-session list with revoke-one (slice 6). Shared by the self view (/security) and the admin
@@ -52,13 +53,15 @@ export function SessionList({ userId, currentJti }: { userId?: string; currentJt
                 </div>
               </div>
               {!s.current && (
-                <button
-                  className="btn-ghost shrink-0 text-sm"
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="shrink-0"
                   onClick={() => revoke.mutate(s.id)}
-                  disabled={revoke.isPending}
+                  loading={revoke.isPending}
                 >
                   Revoke
-                </button>
+                </Button>
               )}
             </li>
           ))}

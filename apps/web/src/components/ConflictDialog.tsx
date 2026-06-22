@@ -1,5 +1,6 @@
 import { formatDateTime } from '../lib/format.js';
 import { useFocusTrap } from '../lib/useFocusTrap.js';
+import { Button } from './ui/Button.js';
 
 /** The fresh server row returned on a 409 STALE_UPDATE (ADR-0019); only the audit fields are read here. */
 interface ConflictCurrent {
@@ -50,12 +51,10 @@ export function ConflictDialog({
           Reload to pick up the latest version, then re-apply and save — or discard your changes.
         </p>
         <div className="mt-5 flex justify-end gap-2">
-          <button className="btn-ghost" onClick={onDiscard}>
+          <Button variant="ghost" onClick={onDiscard}>
             Discard my changes
-          </button>
-          <button className="btn" onClick={onReload}>
-            Reload &amp; re-apply
-          </button>
+          </Button>
+          <Button onClick={onReload}>Reload &amp; re-apply</Button>
         </div>
       </div>
     </div>
