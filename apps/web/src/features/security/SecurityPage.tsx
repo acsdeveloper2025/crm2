@@ -5,6 +5,7 @@ import { api } from '../../lib/sdk.js';
 import { tokenStore } from '../../lib/auth.js';
 import { SessionList } from '../../components/SessionList.js';
 import { Button } from '../../components/ui/Button.js';
+import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
 import { Input } from '../../components/ui/Input.js';
 
 const QK = ['mfa', 'status'];
@@ -60,81 +61,96 @@ export function SecurityPage() {
       <div className="rounded-lg border border-border bg-card p-5 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
           <span className="font-medium">Two-factor authentication</span>
-          <span
-            className={
-              enrolled ? 'text-sm font-medium text-primary' : 'text-sm font-medium text-muted-foreground'
-            }
-          >
-            {enrolled ? 'ON' : 'OFF'}
-          </span>
+          {!status.isLoading && !status.isError && (
+            <span
+              className={
+                enrolled ? 'text-sm font-medium text-primary' : 'text-sm font-medium text-muted-foreground'
+              }
+            >
+              {enrolled ? 'ON' : 'OFF'}
+            </span>
+          )}
         </div>
-        {status.data?.required && !enrolled && (
-          <p className="mb-3 text-sm text-destructive">An administrator requires MFA on your account.</p>
-        )}
-
-        {!enrolled && !pending && (
-          <Button onClick={() => start.mutate()} loading={start.isPending}>
-            Enable MFA
-          </Button>
-        )}
-
-        {pending && (
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              Add this secret to your authenticator app (Google Authenticator, Authy, …), then enter the
-              6-digit code to confirm.
-            </p>
-            <code className="block select-all rounded border border-border bg-muted px-3 py-2 font-mono text-sm">
-              {pending.secret}
-            </code>
-            <a className="block break-all text-xs text-primary hover:underline" href={pending.otpauthUri}>
-              Open in authenticator
-            </a>
-            <Input
-              className="input w-40"
-              uppercase={false}
-              value={code}
-              inputMode="numeric"
-              placeholder="6-digit code"
-              onChange={(e) => setCode(e.target.value)}
-            />
-            <div className="flex gap-2">
-              <Button onClick={() => verify.mutate()} loading={verify.isPending} disabled={!code}>
-                Confirm
-              </Button>
-              <Button variant="ghost" onClick={() => setPending(null)}>
-                Cancel
-              </Button>
-            </div>
+        {status.isLoading ? (
+          <HexagonLoader operation="Loading two-factor status" />
+        ) : status.isError ? (
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-muted-foreground">Couldn’t load your two-factor status.</span>
+            <Button variant="secondary" size="sm" onClick={() => void status.refetch()}>
+              Retry
+            </Button>
           </div>
-        )}
+        ) : (
+          <>
+            {status.data?.required && !enrolled && (
+              <p className="mb-3 text-sm text-destructive">An administrator requires MFA on your account.</p>
+            )}
 
-        {enrolled && (
-          <div className="space-y-2">
-            <p className="text-sm text-muted-foreground">
-              MFA is protecting your account. To turn it off, enter a current code.
-            </p>
-            <div className="flex gap-2">
-              <Input
-                className="input w-40"
-                uppercase={false}
-                value={disableCode}
-                placeholder="code"
-                onChange={(e) => setDisableCode(e.target.value)}
-              />
-              <Button
-                variant="destructive"
-                onClick={() => disable.mutate()}
-                loading={disable.isPending}
-                disabled={!disableCode}
-              >
-                Disable MFA
+            {!enrolled && !pending && (
+              <Button onClick={() => start.mutate()} loading={start.isPending}>
+                Enable MFA
               </Button>
-            </div>
-          </div>
-        )}
+            )}
 
-        {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
+            {pending && (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Add this secret to your authenticator app (Google Authenticator, Authy, …), then enter the
+                  6-digit code to confirm.
+                </p>
+                <code className="block select-all rounded border border-border bg-muted px-3 py-2 font-mono text-sm">
+                  {pending.secret}
+                </code>
+                <a className="block break-all text-xs text-primary hover:underline" href={pending.otpauthUri}>
+                  Open in authenticator
+                </a>
+                <Input
+                  className="input w-40"
+                  uppercase={false}
+                  value={code}
+                  inputMode="numeric"
+                  placeholder="6-digit code"
+                  onChange={(e) => setCode(e.target.value)}
+                />
+                <div className="flex gap-2">
+                  <Button onClick={() => verify.mutate()} loading={verify.isPending} disabled={!code}>
+                    Confirm
+                  </Button>
+                  <Button variant="ghost" onClick={() => setPending(null)}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {enrolled && (
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  MFA is protecting your account. To turn it off, enter a current code.
+                </p>
+                <div className="flex gap-2">
+                  <Input
+                    className="input w-40"
+                    uppercase={false}
+                    value={disableCode}
+                    placeholder="code"
+                    onChange={(e) => setDisableCode(e.target.value)}
+                  />
+                  <Button
+                    variant="destructive"
+                    onClick={() => disable.mutate()}
+                    loading={disable.isPending}
+                    disabled={!disableCode}
+                  >
+                    Disable MFA
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
+          </>
+        )}
       </div>
 
       {recovery && (

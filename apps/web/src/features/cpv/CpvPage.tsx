@@ -18,6 +18,7 @@ import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { ImportButton } from '../../components/import/ImportModal.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
 import { Button } from '../../components/ui/Button.js';
+import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
 
 const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
@@ -473,8 +474,20 @@ function UnitManager({ link }: { link: ClientProductView }) {
         <tbody>
           {enabled.isLoading && (
             <tr>
-              <td colSpan={6} className="px-3 py-4 text-center text-muted-foreground">
-                Loading…
+              <td colSpan={6} className="px-3 py-4">
+                <HexagonLoader operation="Loading enabled units" />
+              </td>
+            </tr>
+          )}
+          {enabled.isError && (
+            <tr>
+              <td colSpan={6} className="px-3 py-4">
+                <div className="flex items-center justify-center gap-3 text-sm text-muted-foreground">
+                  <span>Couldn’t load enabled units.</span>
+                  <Button variant="secondary" size="sm" onClick={() => void enabled.refetch()}>
+                    Retry
+                  </Button>
+                </div>
               </td>
             </tr>
           )}

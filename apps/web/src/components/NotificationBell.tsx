@@ -16,6 +16,7 @@ import {
 } from '../features/notifications/useNotifications.js';
 import { fetchJobResultUrl } from '../features/jobs/api.js';
 import { Button } from './ui/Button.js';
+import { HexagonLoader } from './ui/HexagonLoader.js';
 import { Popover } from './ui/Popover.js';
 
 /** A JOB_COMPLETED notification carries the job id in its payload; clicking it downloads the artifact. */
@@ -74,7 +75,14 @@ function NotificationPanel({ unread }: { unread: number }) {
 
       <div className="max-h-96 overflow-y-auto">
         {list.isLoading ? (
-          <p className="px-3 py-6 text-center text-sm text-muted-foreground">Loading…</p>
+          <HexagonLoader operation="Loading notifications" />
+        ) : list.isError ? (
+          <div className="flex flex-col items-center gap-2 px-3 py-6 text-center text-sm text-muted-foreground">
+            <span>Couldn’t load notifications.</span>
+            <Button variant="secondary" size="sm" onClick={() => void list.refetch()}>
+              Retry
+            </Button>
+          </div>
         ) : items.length === 0 ? (
           <p className="px-3 py-6 text-center text-sm text-muted-foreground">No notifications</p>
         ) : (

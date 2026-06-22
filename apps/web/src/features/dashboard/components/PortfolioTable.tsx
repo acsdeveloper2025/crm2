@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import type { PortfolioRow } from '@crm2/sdk';
 import { api } from '../../../lib/sdk.js';
+import { Button } from '../../../components/ui/Button.js';
 
 /**
  * Portfolio rollup (Zion's Home table, scoped) — client × product with pending/completed/total case
@@ -21,8 +22,11 @@ export function PortfolioTable() {
         Portfolio — client × product
       </div>
       {q.isError ? (
-        <div className="p-6 text-center text-sm text-muted-foreground">
-          Couldn't load the portfolio. Please retry.
+        <div className="flex flex-col items-center gap-3 p-6 text-center text-sm text-muted-foreground">
+          <span>Couldn’t load the portfolio.</span>
+          <Button variant="secondary" size="sm" onClick={() => void q.refetch()}>
+            Retry
+          </Button>
         </div>
       ) : q.isLoading ? (
         <div className="p-3">
