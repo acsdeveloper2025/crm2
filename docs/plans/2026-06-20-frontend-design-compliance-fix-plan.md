@@ -156,7 +156,7 @@ export function WorkStatusChip({ status }: { status: string }) {
 
 ### Task F7: `<Button>` variant system (per [ADR-0052](../adr/ADR-0052-button-action-emphasis-system.md))
 **Files:** Create `apps/web/src/components/ui/Button.tsx`; update `apps/web/src/index.css:14-19` (`.btn`/`.btn-ghost` → thin aliases of the new variants during migration); test `components/ui/Button.test.tsx`.
-- [ ] Build `<Button variant size>` — **owner-locked looks (ADR-0052):** `primary` (filled blue), `secondary` (**bordered** neutral), `destructive` (**filled red**), `ghost` (borderless utility), `link` (text). Sizes `sm|md`; icon-button form (square, requires `aria-label`, ≥44px); `loading`/`disabled` states. All using **existing** tokens (`bg-primary`, `border-input`, `bg-destructive`) + the global `:focus-visible` ring. **No new colors.**
+- [ ] Build `<Button variant size>` — **owner-locked looks (ADR-0052, refined 2026-06-22):** `primary` (filled blue), `secondary` (**tonal blue** = `bg-primary-muted` + blue text — Edit/Export/Import/Activate), `destructive` (**filled red**), `ghost` (borderless utility), `link` (text). Export/Import differentiated by label + download/upload glyph (not a bare arrow). Sizes `sm|md`; icon-button form (square, requires `aria-label`, ≥44px); `loading`/`disabled` states. All using **existing** tokens (`bg-primary`, `bg-primary-muted`, `bg-destructive`) + global `:focus-visible`. **No new colors. Ship a WCAG-AA contrast assertion for BOTH modes** — light tonal text `221 83% 45%` (~5.6:1); **dark `--primary` on `--primary-muted` is ~3.9:1 (FAILS) → use a lighter blue (`--primary-hover`) in dark.**
 - [ ] TDD: each variant renders its token classes; icon-button without `aria-label` fails a lint/test; `loading` shows a spinner + disables. → commit `feat(web): shared Button variant system (ADR-0052)`.
 - [ ] **Migration (mechanical, reviewed) — apply the locked [action→variant mapping](../design-audit-2026-06-19/BUTTON_INVENTORY.md):** Create/New/Save → `primary`; **Edit/Export/Import/Activate → `secondary`**; Deactivate/Delete/Revoke → `destructive`; Cancel/Columns/Views/pager/More → `ghost`. Convert the **21 bare `text-primary` link-buttons** (mostly Edit + status actions) and bespoke one-offs → `<Button>`. Enforce **one `primary` per view**. **Supersedes Wave-3 C3's** "bespoke button → `.btn-ghost`" item. → commit per area.
 
@@ -368,6 +368,16 @@ Each: TDD + browser-verify (create + edit on the route persist) → `pnpm verify
 - **No invented APIs:** code uses verified signatures (`useFocusTrap<T>(open,onClose)`, `useAuth()`, the
   existing `has` logic, the existing `₹${n.toFixed(2)}` output, the existing dropdown chrome). Where a
   backend export endpoint may not exist (B3), the plan files a gap instead of inventing it.
+
+## Review-panel conditions (CEO·CTO·Designer·Security, 2026-06-22)
+Verdict: **APPROVE_WITH_CHANGES** — docs are pushable; these gate the BUILD:
+- **F7 dark-mode contrast (Designer MAJOR):** tonal-secondary text must clear WCAG-AA in BOTH modes — dark `--primary` on `--primary-muted` is ~3.9:1 (FAILS) → use a lighter blue (`--primary-hover`) or darker muted; ship an automated contrast assertion.
+- **Inline-edit IDOR (Security):** Wave-4 inline cell/add-row + record-page writes must reuse the dialogs' server-side scope/ownership guards + per-row OCC; FE gating is defense-in-depth only.
+- **De-risk Wave 4 (CEO/CTO):** spike inline-grid on ONE flat entity (Departments) before funding the full editable DataGrid; full-page-routes-for-all is the cheap fallback.
+- **Independently gate a11y/keyboard:** keep A3 + K1 funded on their own, not only "if Wave 4 runs."
+- **Export/Import:** label + download/upload glyph, not a bare arrow (sort-caret confusion).
+- **Standards lag:** Wave-4 D5 updates `DATAGRID_STANDARD`/`MANAGEMENT_LIST_STANDARD` in the same wave the dialogs are deleted.
+- **First shippable increment (CEO):** dark-mode toggle + F7 button system (mechanical, additive) — fast visible win while Wave 4 is de-risked.
 
 ---
 *Plan for the 2026-06-19 design audit. AUDIT-ONLY until owner approval. Linked from

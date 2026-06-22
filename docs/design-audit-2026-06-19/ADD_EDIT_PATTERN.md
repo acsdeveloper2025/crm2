@@ -44,11 +44,9 @@ _Skeptic re-verified every classification below at source — **0 overturned.**_
 - **3 pages are SPLIT (inline add / popup edit)** → convert the edit half: Locations, RateManagement, Cpv. These already prove the inline-add pattern works in-repo.
 - **Reference inline implementations already in the codebase:** LocationsPage add (in-page card, `LocationsPage.tsx:198-294`), RateManagement `AddRateForm`, CPV inline link/enable forms, CaseCreatePage (full-page), CaseDetailPage edit (inline-row), ProfilePage edit (inline toggle). Converge the rest onto these.
 
-## DECIDED standard — [ADR-0051](../adr/ADR-0051-inline-grid-editing-no-modal-forms.md) (owner-accepted 2026-06-20)
+## Recommended target standard (to lock in the ADR)
 
-After benchmarking Salesforce (modal-create + inline-on-record edit) and **Twenty** (inline-grid cell editing + record page, no modal routing), the owner chose the **Twenty-style inline-grid** model. The standard is **two inline surfaces, no modal/overlay forms:**
-
-1. **Flat entities → editable Universal DataGrid** (spreadsheet-style **cell editing** + an **inline add-row**). Click/Enter a cell → inline editor → Enter/blur commit, Escape cancel; per-row OCC; inline zod validation; keyboard cell-nav. Covers Clients, Products, Departments, Designations, VUs, Policies, Locations, Rate, CPV.
-2. **Complex entities → full record-page route** (`/admin/<entity>/new`, `/:id`) with inline field editing — like Cases. Covers Users (2-tab), Roles, ReportLayouts (designer), CommissionRates (cascading pickers).
-3. **Delete all add/edit `*Dialog` modals.** Keep OCC `ConflictDialog`, `ImportModal`, confirm prompts, action dialogs, and menus (not forms).
-4. Build = fix plan **Wave 4** (editable-DataGrid Foundation → convert flat pages → record-page routes for complex → guard test). Larger build, accepted by the owner.
+1. **Add** → an in-page form (expandable panel/section at the top of the list, like LocationsPage) — never a modal.
+2. **Edit** → **inline-row edit** (edit-in-place in the DataGrid row) OR an in-page panel; never a modal.
+3. Provide ONE shared inline-form primitive (so the 14 pages converge instead of each re-rolling) — e.g. extend `MasterDataCrud` to render its form inline instead of in `MasterDataDialog`, which fixes Clients/Products/Departments/Designations/VUs in one change.
+4. Keep OCC, import, confirm, and menus as overlays (not forms) — out of scope.

@@ -1,67 +1,47 @@
 # ADR-0052: Button & action-emphasis system
 
 - **Status:** Accepted (owner decision 2026-06-20)
-- **Date:** 2026-06-20
-- **Extends (additively):** ADR-0008 (design system) component layer + `docs/COLOR_SYSTEM_FREEZE.md`. The color tokens and broader styling stay frozen — this ADR only adds the missing **button-variant / action-emphasis** tier.
+- **Date:** 2026-06-20 (decision); refined 2026-06-22 (tonal secondary + review-panel fixes). Canonical reserved number per `docs/adr/README.md`.
+- **Extends (additively):** ADR-0008 (design system) component layer + `docs/COLOR_SYSTEM_FREEZE.md`. Tokens/broader styling stay frozen — this only adds the missing button-variant tier.
 
 ## Context
 
-`apps/web` has effectively **two** button styles today (`apps/web/src/index.css:14-19`):
-- `.btn` — filled brand/primary (`bg-primary` blue), 48 uses.
-- `.btn-ghost` — a **thin grey border** (`border border-input … hover:bg-accent`), ~50 uses.
-
-Plus **21 files render real actions as bare text links** (`text-primary hover:underline`, e.g. the row `Edit`/`Deactivate`/`Activate` controls) with no background, border, or padding.
-
-Result (owner-reported): when a page has many actions, only **one** control is blue and everything else is grey-bordered or plain text, so **users can't tell the secondary/row controls are buttons.** There is no mid-emphasis "secondary" button, no destructive variant, no icon-button standard, no shared `<Button>` component, and no consistent sizes — the design audit's reuse sweep also flagged bespoke one-off buttons. The semantic tokens needed to fix this (`secondary` + `secondary-foreground` + `secondary-hover`, `destructive`, `accent`, `success/warning/info`) **already exist** (`packages/ui-theme/tailwind-preset.js:33-43`) — they are simply not wired into a button hierarchy.
+`apps/web` has effectively two button styles (`apps/web/src/index.css:14-19`): `.btn` (filled blue, 48 uses) + `.btn-ghost` (thin grey border, ~50 uses), plus **21 files rendering real actions as bare `text-primary hover:underline` links** (row Edit/Deactivate/Activate). Owner-reported: with one blue + grey/text everywhere, users can't tell secondary/row controls are buttons. A ~200-button inventory ([BUTTON_INVENTORY.md](../design-audit-2026-06-19/BUTTON_INVENTORY.md)) confirmed the real gaps are **Edit** (11 bare text-links) and **Export** (4 different styles) — not red. The `secondary`/`destructive` tokens already exist (`packages/ui-theme/tailwind-preset.js:33-43`), so the fix is additive (no new colors).
 
 ## Decision
 
-We will define a **button hierarchy with clear affordance at every emphasis level**, as a single shared `<Button variant size>` component (in `apps/web/src/components/ui/Button.tsx`) backed by the existing tokens, and migrate all buttons to it. **Every actionable control must have a button affordance** — a background OR a visible border, plus padding, hover, and a visible `:focus-visible` ring. Bare grey text is no longer an action style.
+A shared `<Button variant size>` component (`apps/web/src/components/ui/Button.tsx`) backed by existing tokens. **Every actionable control has a button affordance** (background OR visible border + padding + hover + `:focus-visible` ring) — bare grey text is no longer an action style. **Four button looks + a text link** (visuals owner-approved from the sample mockup 2026-06-20):
 
-Variants — **four button looks + a text link** (visual choices owner-approved 2026-06-20 from the sample mockup):
-1. **`primary`** — filled brand (`bg-primary`, **blue**), the **one** main action per view (today's `.btn`).
-2. **`secondary`** — **bordered neutral button** (`bg-background` + a clear `border-input` border + hover, NOT a faint grey hairline). The **missing mid tier**: clearly a button, used for the common actions and **row Edit/Export/Import/Activate** so they stop looking like text. (The earlier "outline" idea is folded into this single bordered secondary to avoid two near-identical bordered styles.)
-3. **`destructive`** — **filled red** (`bg-destructive`, white text) for Delete/Deactivate/Revoke — on table rows AND in the confirm dialog (owner-approved as in the sample).
-4. **`ghost`** — no border, hover background only; **toolbar/utility/icon use only** (Cancel, Columns, Views, pager, More), never a standalone row action.
-5. **`link`** — text-only; reserved for genuine inline text links, NOT table/row actions.
+1. **`primary`** — filled **blue** (`bg-primary`); the **one** main action per view (Create / + New / Add Task / Save).
+2. **`secondary`** — **tonal blue** (`bg-primary-muted` soft-blue fill + blue text). Colored + clearly a button, sits *below* the solid-blue primary. Used for Edit / Export / Import / Activate; **Export vs Import are told apart by a label + a download/upload glyph (NOT a bare `↓`/`↑` arrow, which can read as a sort caret), not different colors**. **Dark-safe** via the `.dark` token swap (`--primary-muted`→deep navy, `--primary`→bright blue). **WCAG-AA contrast REQUIRED in BOTH modes (F7 ships a contrast-assertion test):** light text = AA-tuned blue `hsl(221 83% 45%)` (the `--st-in-progress` value, ~5.6:1 on blue-100); **in dark, `--primary` blue-500 on `--primary-muted` is only ~3.9:1 → FAILS AA, so dark tonal text MUST use a lighter blue (e.g. `--primary-hover` blue-400) or a darker `--primary-muted`** to clear 4.5:1 (Designer review 2026-06-22).
+3. **`destructive`** — **filled red** (`bg-destructive`) for Delete/Deactivate/Revoke (rows + confirm dialog).
+4. **`ghost`** — borderless, hover bg; toolbar/utility/icon only.
+5. **`link`** — text-only; genuine inline links, never row actions.
 
-Also: **sizes** (`sm`/`md`), a dedicated **icon-button** form (square, `aria-label`, ≥44px touch target per `RESPONSIVE_DESIGN_STANDARD`), and consistent **disabled + loading** (spinner + disabled) states. All variants get the global `:focus-visible` ring (already in `tokens.css:238-240`).
+Plus sizes (`sm`/`md`), icon-button (square, `aria-label`, ≥44px), and `disabled`/`loading` states. **Rule of one primary per view.**
 
-**Rule of one:** exactly one `primary` (blue) per view/region; everything else is `secondary`/`destructive`/`ghost` — but always with a button affordance, never bare grey text.
+**Palette decision (owner 2026-06-22):** keep the current **Blue + Slate** palette — no palette redesign; the button system uses only existing tokens (`--primary`, `--primary-muted`, `--destructive`). Color encodes **hierarchy + semantics, not per-action identity**. A distinct color per action (Export=amber, Import=sky, Save=green, …) was considered and **rejected**: amber/sky/green already carry status meanings (would fight the status chips), and too many button colors destroy hierarchy + the frozen "calm/professional" identity. Same-color actions are told apart by **icons** (e.g. `↓` Export vs `↑` Import).
 
-### Action → variant mapping (locked, from the [button inventory](../design-audit-2026-06-19/BUTTON_INVENTORY.md) of ~200 buttons)
+### Action → variant mapping (locked, from the button inventory)
 | Action | Variant |
 |---|---|
-| Create / New / **Save** | `primary` (blue) |
-| **Edit · Export · Import · Activate** | `secondary` (bordered — all identical) |
-| **Deactivate · Delete · Revoke** | `destructive` (filled red) |
+| Create / New / Add Task / Save | `primary` (solid blue) |
+| Edit · Export · Import · Activate | `secondary` (tonal blue; Export/Import differentiated by ↓/↑ icons) |
+| Deactivate · Delete · Revoke | `destructive` (filled red) |
 | Cancel · Columns · Views · pager · More · icon utilities | `ghost` |
 | genuine inline text links only | `link` |
 
-The inventory showed the real gaps were **Edit** (11 bare text-links) and **Export** (4 different styles) — both become the single bordered `secondary`; red is reserved for the small destructive set.
-
 ## Consequences
-
-### Positive
-- Secondary and row actions are **visibly buttons** → fixes the owner's core complaint.
-- One shared `<Button>` → kills the 21 bare-text-link actions and the bespoke one-off buttons (design-audit reuse finding); consistent sizes/disabled/loading/focus.
-- Purely **additive to the frozen color system** — reuses existing `secondary`/`destructive` tokens; no new colors, no token changes.
-- Also lifts the row-action **touch-target** + **focus-visible** gaps from the keyboard/responsive audits.
-
-### Negative / Risks
-- Touches **many** files (≈48 `.btn` + ≈50 `.btn-ghost` + 21 text-link + bespoke). Mechanical but broad — do it as one focused migration with a codemod-style pass + review.
-- Risk of over-using `secondary` (everything mid-emphasis) → enforce the **rule of one primary** in review; lean on `outline`/`ghost` for dense toolbars so pages don't become a wall of filled buttons.
-- `.btn`/`.btn-ghost` CSS classes stay as thin aliases during migration to avoid a big-bang break, then are removed.
+**Positive:** secondary/row actions are visibly buttons (fixes the complaint); one `<Button>` kills the 21 text-links + bespoke one-offs; consistent sizes/disabled/loading/focus; purely additive (reuses existing tokens, no new colors); also lifts row-action touch-target + focus gaps.
+**Negative:** touches many files (~48 `.btn` + ~50 `.btn-ghost` + 21 text-link + bespoke) — mechanical but broad; over-use of `secondary` risks a wall of buttons → enforce rule-of-one in review.
 
 ## Alternatives Considered
-- **Just darken/strengthen `.btn-ghost`'s border** — cheapest, but still no real secondary tier and doesn't fix the 21 text-link actions; **rejected** as a half-measure.
-- **Make more buttons primary-blue** — would create many competing blue buttons (worse hierarchy); **rejected**.
-- **A broad "all v2 styling" ADR** — the color/typography/spacing system is already frozen (ADR-0008 + COLOR_SYSTEM_FREEZE + tokens); a mega-ADR would conflict with the freeze. **Rejected** in favor of this focused, additive button-system ADR.
+- Strengthen `.btn-ghost` border only — half-measure, doesn't fix text-links; rejected.
+- More primary-blue buttons — competing blues, worse hierarchy; rejected.
+- A broad "all v2 styling" ADR — the color system is frozen (ADR-0008/COLOR_SYSTEM_FREEZE); a mega-ADR would conflict; rejected in favor of this focused additive ADR.
 
 ## Migration
-Per the fix plan: a Foundation task builds `<Button>` (+ variants/sizes/icon/loading) and re-points `.btn`/`.btn-ghost` to it; then a migration task converts row actions to `secondary`/`outline`, destructive actions to `destructive`, and the 21 bare text-links to real buttons — TDD/visual + `pnpm verify` + browser-verify. Folds into and supersedes Wave-3 task C3's "bespoke button → `.btn-ghost`" item.
+Fix-plan **Foundation F7**: build `<Button>` (re-point `.btn`/`.btn-ghost` to it) → mechanical migration applying the mapping above (convert the 21 text-links + bespoke). Supersedes Wave-3 C3's "bespoke button → `.btn-ghost`" item.
 
 ## Related ADRs
-- **ADR-0008** (design system) — extended (component/button layer).
-- **ADR-0051** (inline-grid editing) — sibling; the new record pages + editable grid consume this button system.
-- Standards: `docs/COLOR_SYSTEM_FREEZE.md` (unchanged — tokens reused), `docs/UI_STANDARDS.md` + `docs/RESPONSIVE_DESIGN_STANDARD.md` (document the button variants + touch targets).
+ADR-0008 (design system — extended) · **ADR-0051** (inline-grid — sibling; record pages + editable grid consume this) · `COLOR_SYSTEM_FREEZE.md` (unchanged — tokens reused) · `UI_STANDARDS.md` / `RESPONSIVE_DESIGN_STANDARD.md` (document variants + touch targets).

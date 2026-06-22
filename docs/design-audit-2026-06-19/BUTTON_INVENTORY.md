@@ -1,6 +1,6 @@
 # Button Inventory — `apps/web` (evidence for ADR-0052)
 
-Parsed **~200 button/action elements** across every feature page + shared component (worktree @ origin/main `11997a1`). Shows the current style per action-type — the basis for the ADR-0052 variant mapping.
+Parsed **~200 button/action elements** across every page + shared component. Basis for the ADR-0052 variant mapping.
 
 ## Current style per action (style → count)
 | Action | Current styles in use | Issue |
@@ -13,17 +13,17 @@ Parsed **~200 button/action elements** across every feature page + shared compon
 | Save | primary(5), custom(3), ghost(1) | inconsistent |
 | Activate | ghost(1), primary(2) | inconsistent |
 | Cancel | ghost(23) | consistent ✓ |
-| Utility (Columns, Views, pager, More, download) | ghost(8), custom(7) | ok-ish |
+| Utility (Columns/Views/pager/More/download) | ghost(8), custom(7) | ok-ish |
 
 ## LOCKED mapping (ADR-0052, owner-approved 2026-06-20)
-Visual choices approved from the sample mockup: **secondary = bordered button**, **destructive = filled red**.
+Approved looks from the sample mockup: **secondary = tonal blue**, **destructive = filled red**.
 
 | Action | → Variant | Look |
 |---|---|---|
-| Create / New / **Save** | **primary** | filled **blue** — exactly one per view |
-| **Edit · Export · Import · Activate** | **secondary** | **bordered** neutral button (clear border + hover) — all identical |
-| **Deactivate · Delete · Revoke** | **destructive** | **filled red** (rows + confirm dialog) |
-| Cancel · Columns · Views · pager · More · icon utilities | **ghost** | borderless, low-emphasis |
-| genuine inline text links only (not row actions) | **link** | text + underline |
+| Create / New / Add Task / Save | `primary` | filled **blue** — one per view |
+| Edit · Export · Import · Activate | `secondary` | **tonal blue** (soft-blue fill + blue text); Export/Import told apart by ↓/↑ icons |
+| Deactivate · Delete · Revoke | `destructive` | **filled red** (rows + confirm dialog) |
+| Cancel · Columns · Views · pager · More · icons | `ghost` | borderless |
+| genuine inline text links only | `link` | text |
 
-Four button looks total — blue / bordered / red / borderless — so secondary actions are unmistakably buttons, blue stays rare (one per view), and red is reserved for destructive. Migration: every call-site adopts `<Button variant>` per this table (Foundation F7 in the fix plan).
+Four looks total — solid-blue / tonal-blue / red / ghost — so secondary actions are unmistakably colored buttons, the solid blue stays rare (one per view), red is reserved for destructive. Same-color actions (Export/Import) are differentiated by **icons**, not extra colors. Dark-safe via `--primary-muted`/`--primary` token swap. Palette stays current Blue+Slate. Build = fix-plan Foundation F7 + migration.
