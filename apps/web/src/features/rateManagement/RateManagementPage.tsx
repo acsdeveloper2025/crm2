@@ -18,9 +18,10 @@ import { api, apiExport, ApiError } from '../../lib/sdk.js';
 import { formatDateTime } from '../../lib/format.js';
 import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
-import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
+import { DataGrid, type DataGridColumn, type BulkSelection } from '../../components/ui/data-grid/index.js';
 import { BulkStatusActions } from '../../components/BulkStatusActions.js';
 import { ImportButton } from '../../components/import/ImportModal.js';
+import { useAuth } from '../../lib/AuthContext.js';
 
 const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
@@ -124,6 +125,10 @@ function SearchableSelect({
  */
 export function RateManagementPage() {
   const qc = useQueryClient();
+  // Writes (add / revise / activate-deactivate / bulk / import) require masterdata.manage; viewing
+  // (masterdata.view) does not. Gate the write affordances so a viewer doesn't hit a server 403.
+  const { has } = useAuth();
+  const canManage = has('masterdata.manage');
   const [clientId, setClientId] = useState('');
   const [productId, setProductId] = useState('');
   const [adding, setAdding] = useState(false);
@@ -242,29 +247,33 @@ export function RateManagementPage() {
         header: 'Actions',
         cell: (r) => (
           <div className="flex gap-2">
-            <button
-              className="text-xs font-medium text-primary hover:underline"
-              onClick={() => setReviseRate(r)}
-            >
-              Revise
-            </button>
+            {canManage && (
+              <button
+                className="text-xs font-medium text-primary hover:underline"
+                onClick={() => setReviseRate(r)}
+              >
+                Revise
+              </button>
+            )}
             <button
               className="text-xs font-medium text-foreground hover:underline"
               onClick={() => setHistoryRate(r)}
             >
               History
             </button>
-            <button
-              className="text-xs font-medium text-muted-foreground hover:underline"
-              onClick={() => toggle.mutate(r)}
-            >
-              {r.isActive ? 'Deactivate' : 'Activate'}
-            </button>
+            {canManage && (
+              <button
+                className="text-xs font-medium text-muted-foreground hover:underline"
+                onClick={() => toggle.mutate(r)}
+              >
+                {r.isActive ? 'Deactivate' : 'Activate'}
+              </button>
+            )}
           </div>
         ),
       },
     ],
-    [toggle],
+    [toggle, canManage],
   );
 
   return (
@@ -277,15 +286,17 @@ export function RateManagementPage() {
             for KYC units.
           </p>
         </div>
-        <div className="flex gap-2">
-          <ImportButton config={{ basePath: '/api/v2/rates', queryKey: 'rates', entityLabel: 'rate' }} />
-          <button className="btn" onClick={() => setAdding((v) => !v)}>
-            {adding ? 'Cancel' : '+ Add rate'}
-          </button>
-        </div>
+        {canManage && (
+          <div className="flex gap-2">
+            <ImportButton config={{ basePath: '/api/v2/rates', queryKey: 'rates', entityLabel: 'rate' }} />
+            <button className="btn" onClick={() => setAdding((v) => !v)}>
+              {adding ? 'Cancel' : '+ Add rate'}
+            </button>
+          </div>
+        )}
       </div>
 
-      {adding && (
+      {canManage && adding && (
         <AddRateForm
           clientOpts={clientOpts}
           productOpts={productOpts}
@@ -305,9 +316,13 @@ export function RateManagementPage() {
         queryKey="rates"
         rowId={(r) => r.id}
         selectable
-        bulkActions={(sel) => (
-          <BulkStatusActions selection={sel} basePath={'/api/v2/rates'} queryKey={'rates'} />
-        )}
+        {...(canManage
+          ? {
+              bulkActions: (sel: BulkSelection<RateView>) => (
+                <BulkStatusActions selection={sel} basePath={'/api/v2/rates'} queryKey={'rates'} />
+              ),
+            }
+          : {})}
         defaultSort="client"
         searchPlaceholder="Search client, product, unit, pincode, area, rate type…"
         filters={{ clientId: clientId || undefined, productId: productId || undefined }}
