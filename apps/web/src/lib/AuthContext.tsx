@@ -3,6 +3,7 @@ import type { AuthUser, LoginResponse, PendingPolicy } from '@crm2/sdk';
 import { api, setUnauthorizedHandler } from './sdk.js';
 import { tokenStore } from './auth.js';
 import { disconnectSocket } from './socket.js';
+import { hasPermission } from './permissions.js';
 
 interface AuthState {
   user: AuthUser | null;
@@ -24,6 +25,8 @@ interface AuthState {
   idleLogout: (reason: string) => Promise<void>;
   /** records the user's acceptance of all pending policies, then clears the gate. */
   acceptPolicies: () => Promise<void>;
+  /** true if the current user holds `perm` (or grantsAll). UX gating must mirror the server perm. */
+  has: (perm: string) => boolean;
 }
 
 const AuthCtx = createContext<AuthState | null>(null);
@@ -125,6 +128,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         logout,
         idleLogout,
         acceptPolicies,
+        has: (perm) => hasPermission(user, perm),
       }}
     >
       {children}

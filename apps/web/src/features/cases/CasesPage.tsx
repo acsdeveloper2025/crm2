@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { CASE_STATUSES, pageQueryToParams, type CaseView, type PageQuery, type Paginated } from '@crm2/sdk';
 import { api } from '../../lib/sdk.js';
 import { formatDateTime } from '../../lib/format.js';
+import { useAuth } from '../../lib/AuthContext.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
 
 const STATUS_OPTIONS = CASE_STATUSES.map((s) => ({
@@ -15,6 +16,7 @@ const STATUS_OPTIONS = CASE_STATUSES.map((s) => ({
 
 export function CasesPage() {
   const navigate = useNavigate();
+  const { has } = useAuth();
 
   const columns = useMemo<DataGridColumn<CaseView>[]>(
     () => [
@@ -66,9 +68,11 @@ export function CasesPage() {
           <h1 className="text-xl font-bold tracking-tight">Cases</h1>
           <p className="text-sm text-muted-foreground">Verification cases across all clients.</p>
         </div>
-        <button className="btn" onClick={() => navigate('/cases/new')}>
-          + New Case
-        </button>
+        {has('case.create') && (
+          <button className="btn" onClick={() => navigate('/cases/new')}>
+            + New Case
+          </button>
+        )}
       </div>
 
       <DataGrid<CaseView>
