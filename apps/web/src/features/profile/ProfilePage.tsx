@@ -19,6 +19,7 @@ import { api, ApiError } from '../../lib/sdk.js';
 import { formatDateTime } from '../../lib/format.js';
 import { UserPhoto } from '../../components/UserPhoto.js';
 import { PasswordPolicyChecklist, isPasswordStrong } from '../../components/PasswordPolicyChecklist.js';
+import { Button } from '../../components/ui/Button.js';
 import { Input } from '../../components/ui/Input.js';
 
 const ME = ['me-profile'];
@@ -96,9 +97,9 @@ function IdentityCard({ me }: { me: UserView }) {
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-sm font-semibold">Contact</h3>
           {!editing && (
-            <button type="button" className="btn-ghost text-sm" onClick={() => setEditing(true)}>
+            <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
               Edit
-            </button>
+            </Button>
           )}
         </div>
 
@@ -139,11 +140,11 @@ function IdentityCard({ me }: { me: UserView }) {
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
             <div className="flex gap-2">
-              <button className="btn" onClick={() => save.mutate()} disabled={save.isPending}>
-                {save.isPending ? 'Saving…' : 'Save'}
-              </button>
-              <button
-                className="btn-ghost"
+              <Button onClick={() => save.mutate()} loading={save.isPending}>
+                Save
+              </Button>
+              <Button
+                variant="ghost"
                 onClick={() => {
                   setEditing(false);
                   setError(null);
@@ -152,7 +153,7 @@ function IdentityCard({ me }: { me: UserView }) {
                 }}
               >
                 Cancel
-              </button>
+              </Button>
             </div>
           </div>
         ) : (
@@ -236,13 +237,13 @@ function ChangePasswordCard() {
           <p className="text-xs text-destructive">Passwords do not match.</p>
         )}
         {error && <p className="text-sm text-destructive">{error}</p>}
-        <button
-          className="btn"
+        <Button
           onClick={() => change.mutate()}
-          disabled={change.isPending || !current || !isPasswordStrong(next) || next !== confirm}
+          loading={change.isPending}
+          disabled={!current || !isPasswordStrong(next) || next !== confirm}
         >
-          {change.isPending ? 'Updating…' : 'Update password'}
-        </button>
+          Update password
+        </Button>
       </div>
     </div>
   );

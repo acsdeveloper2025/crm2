@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { useAuth } from '../../lib/AuthContext.js';
 import { api, ApiError } from '../../lib/sdk.js';
 import { PasswordPolicyChecklist, isPasswordStrong } from '../../components/PasswordPolicyChecklist.js';
+import { Button } from '../../components/ui/Button.js';
 import { Input } from '../../components/ui/Input.js';
 
 export function MustChangePasswordPage() {
@@ -93,16 +94,17 @@ export function MustChangePasswordPage() {
         )}
         {error && <p className="mb-3 text-sm text-destructive">{error}</p>}
 
-        <button
-          className="btn w-full"
+        <Button
+          className="w-full"
           type="submit"
-          disabled={busy || !current || !isPasswordStrong(next) || next !== confirm}
+          loading={busy}
+          disabled={!current || !isPasswordStrong(next) || next !== confirm}
         >
-          {busy ? 'Updating…' : 'Update password'}
-        </button>
-        <button type="button" className="btn-ghost mt-2 w-full" onClick={() => void logout()} disabled={busy}>
+          Update password
+        </Button>
+        <Button variant="ghost" className="mt-2 w-full" onClick={() => void logout()} disabled={busy}>
           Sign out
-        </button>
+        </Button>
       </form>
     </div>
   );

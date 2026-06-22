@@ -15,6 +15,7 @@ import {
 import { api, apiExport } from '../../lib/sdk.js';
 import { formatDateTime } from '../../lib/format.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
+import { Button } from '../../components/ui/Button.js';
 
 const BASE = '/api/v2/field-monitoring';
 const GEO = '/api/v2/geocode';
@@ -237,13 +238,14 @@ function RequestLocationCell({ agentId, agentName }: { agentId: string; agentNam
     onError: () => toast.error(`Couldn't reach ${agentName}`),
   });
   return (
-    <button
-      type="button"
+    <Button
+      variant="ghost"
+      size="sm"
+      className="whitespace-nowrap"
       onClick={() => ping.mutate()}
-      disabled={ping.isPending}
-      className="whitespace-nowrap rounded-md border border-border px-2 py-1 text-xs font-medium text-secondary-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+      loading={ping.isPending}
     >
-      {ping.isPending ? 'Requesting…' : 'Request location'}
-    </button>
+      Request location
+    </Button>
   );
 }

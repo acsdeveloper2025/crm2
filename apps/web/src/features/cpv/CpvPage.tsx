@@ -17,6 +17,7 @@ import { StatusChip } from '../../components/StatusChip.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { ImportButton } from '../../components/import/ImportModal.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
+import { Button } from '../../components/ui/Button.js';
 
 const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
@@ -67,19 +68,19 @@ function RescheduleDialog({
           />
         </label>
         <div className="mt-4 flex justify-end gap-2">
-          <button className="btn-ghost" onClick={onClose} disabled={busy}>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
             Cancel
-          </button>
-          <button
-            className="btn"
-            disabled={!date || busy}
+          </Button>
+          <Button
+            loading={busy}
+            disabled={!date}
             onClick={() => {
               const iso = toIsoDate(date);
               if (iso) onSave(iso);
             }}
           >
-            {busy ? 'Saving…' : 'Save'}
-          </button>
+            Save
+          </Button>
         </div>
       </div>
     </div>
@@ -213,19 +214,17 @@ export function CpvPage() {
         align: 'right',
         // Row click toggles expansion (renderExpanded) — stop these actions from bubbling to it.
         cell: (l) => (
-          <div onClick={(e) => e.stopPropagation()}>
-            <button
-              className="mr-3 font-medium text-primary hover:underline"
-              onClick={() => setReschedLink(l)}
-            >
+          <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+            <Button variant="secondary" size="sm" onClick={() => setReschedLink(l)}>
               Edit
-            </button>
-            <button
-              className="font-medium text-muted-foreground hover:text-foreground hover:underline"
+            </Button>
+            <Button
+              variant={l.isActive ? 'destructive' : 'secondary'}
+              size="sm"
               onClick={() => toggleLink.mutate(l)}
             >
               {l.isActive ? 'Deactivate' : 'Activate'}
-            </button>
+            </Button>
           </div>
         ),
       },
@@ -294,16 +293,16 @@ export function CpvPage() {
             onChange={(e) => setEffectiveFrom(e.target.value)}
           />
         </label>
-        <button
-          className="btn"
-          disabled={!clientId || !productId || createLink.isPending}
+        <Button
+          loading={createLink.isPending}
+          disabled={!clientId || !productId}
           onClick={() => {
             setError(null);
             createLink.mutate();
           }}
         >
-          {createLink.isPending ? 'Linking…' : 'Link product'}
-        </button>
+          Link product
+        </Button>
         {error && <p className="w-full text-sm text-destructive">{error}</p>}
       </div>
 
@@ -448,16 +447,16 @@ function UnitManager({ link }: { link: ClientProductView }) {
             onChange={(e) => setEffectiveFrom(e.target.value)}
           />
         </label>
-        <button
-          className="btn"
-          disabled={!unitId || addUnit.isPending}
+        <Button
+          loading={addUnit.isPending}
+          disabled={!unitId}
           onClick={() => {
             setError(null);
             addUnit.mutate();
           }}
         >
-          {addUnit.isPending ? 'Enabling…' : 'Enable unit'}
-        </button>
+          Enable unit
+        </Button>
         {error && <p className="w-full text-sm text-destructive">{error}</p>}
       </div>
       <table className="rtable w-full text-sm">
@@ -501,18 +500,18 @@ function UnitManager({ link }: { link: ClientProductView }) {
                 <StatusChip isActive={u.isActive} effectiveFrom={u.effectiveFrom} />
               </td>
               <td data-label="Actions" className="px-3 py-2 text-right whitespace-nowrap">
-                <button
-                  className="mr-3 font-medium text-primary hover:underline"
-                  onClick={() => setReschedUnit(u)}
-                >
-                  Edit
-                </button>
-                <button
-                  className="font-medium text-muted-foreground hover:text-foreground hover:underline"
-                  onClick={() => toggleUnit.mutate(u)}
-                >
-                  {u.isActive ? 'Deactivate' : 'Activate'}
-                </button>
+                <div className="flex items-center justify-end gap-2">
+                  <Button variant="secondary" size="sm" onClick={() => setReschedUnit(u)}>
+                    Edit
+                  </Button>
+                  <Button
+                    variant={u.isActive ? 'destructive' : 'secondary'}
+                    size="sm"
+                    onClick={() => toggleUnit.mutate(u)}
+                  >
+                    {u.isActive ? 'Deactivate' : 'Activate'}
+                  </Button>
+                </div>
               </td>
             </tr>
           ))}

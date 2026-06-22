@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../../lib/AuthContext.js';
+import { Button } from '../../components/ui/Button.js';
 import { Input } from '../../components/ui/Input.js';
 
 const ERROR_LABELS: Record<string, string> = {
@@ -95,13 +96,14 @@ export function LoginPage() {
 
         {error && <p className="mb-3 text-sm text-destructive">{error}</p>}
 
-        <button
-          className="btn w-full"
+        <Button
+          className="w-full"
           type="submit"
-          disabled={busy || !username || !password || (mfaNeeded && !mfaCode)}
+          loading={busy}
+          disabled={!username || !password || (mfaNeeded && !mfaCode)}
         >
-          {busy ? 'Signing in…' : mfaNeeded ? 'Verify & Sign In' : 'Sign In'}
-        </button>
+          {mfaNeeded ? 'Verify & Sign In' : 'Sign In'}
+        </Button>
       </form>
     </div>
   );

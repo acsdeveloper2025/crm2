@@ -5,6 +5,7 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { useAuth } from '../../lib/AuthContext.js';
+import { Button } from '../../components/ui/Button.js';
 
 export function MustAcceptPoliciesPage() {
   const { pendingPolicies, acceptPolicies, logout } = useAuth();
@@ -41,12 +42,12 @@ export function MustAcceptPoliciesPage() {
           ))}
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-border p-4">
-          <button type="button" className="btn-ghost" onClick={() => void logout()} disabled={busy}>
+          <Button variant="destructive" onClick={() => void logout()} disabled={busy}>
             Log out
-          </button>
-          <button type="button" className="btn" onClick={() => void accept()} disabled={busy}>
-            {busy ? 'Saving…' : 'I Accept'}
-          </button>
+          </Button>
+          <Button onClick={() => void accept()} loading={busy}>
+            I Accept
+          </Button>
         </div>
       </div>
     </div>

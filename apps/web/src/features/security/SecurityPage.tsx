@@ -4,6 +4,7 @@ import type { MfaEnrollStart, MfaRecoveryCodes, MfaStatus } from '@crm2/sdk';
 import { api } from '../../lib/sdk.js';
 import { tokenStore } from '../../lib/auth.js';
 import { SessionList } from '../../components/SessionList.js';
+import { Button } from '../../components/ui/Button.js';
 import { Input } from '../../components/ui/Input.js';
 
 const QK = ['mfa', 'status'];
@@ -72,9 +73,9 @@ export function SecurityPage() {
         )}
 
         {!enrolled && !pending && (
-          <button className="btn" onClick={() => start.mutate()} disabled={start.isPending}>
-            {start.isPending ? 'Starting…' : 'Enable MFA'}
-          </button>
+          <Button onClick={() => start.mutate()} loading={start.isPending}>
+            Enable MFA
+          </Button>
         )}
 
         {pending && (
@@ -98,12 +99,12 @@ export function SecurityPage() {
               onChange={(e) => setCode(e.target.value)}
             />
             <div className="flex gap-2">
-              <button className="btn" onClick={() => verify.mutate()} disabled={verify.isPending || !code}>
-                {verify.isPending ? 'Verifying…' : 'Confirm'}
-              </button>
-              <button className="btn-ghost" onClick={() => setPending(null)}>
+              <Button onClick={() => verify.mutate()} loading={verify.isPending} disabled={!code}>
+                Confirm
+              </Button>
+              <Button variant="ghost" onClick={() => setPending(null)}>
                 Cancel
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -121,13 +122,14 @@ export function SecurityPage() {
                 placeholder="code"
                 onChange={(e) => setDisableCode(e.target.value)}
               />
-              <button
-                className="btn-ghost"
+              <Button
+                variant="destructive"
                 onClick={() => disable.mutate()}
-                disabled={disable.isPending || !disableCode}
+                loading={disable.isPending}
+                disabled={!disableCode}
               >
                 Disable MFA
-              </button>
+              </Button>
             </div>
           </div>
         )}

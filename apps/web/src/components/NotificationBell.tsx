@@ -14,6 +14,7 @@ import {
   useMarkAllRead,
 } from '../features/notifications/useNotifications.js';
 import { fetchJobResultUrl } from '../features/jobs/api.js';
+import { Button } from './ui/Button.js';
 
 /** A JOB_COMPLETED notification carries the job id in its payload; clicking it downloads the artifact. */
 async function downloadFromNotification(n: Notification): Promise<void> {
@@ -97,14 +98,14 @@ export function NotificationBell() {
         <div className="absolute right-0 z-50 mt-2 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-lg">
           <div className="flex items-center justify-between border-b border-border px-3 py-2">
             <span className="text-sm font-semibold">Notifications</span>
-            <button
-              type="button"
-              className="text-xs text-primary hover:underline disabled:opacity-50"
+            <Button
+              variant="ghost"
+              size="sm"
               disabled={count === 0 || markAll.isPending}
               onClick={() => markAll.mutate()}
             >
               Mark all read
-            </button>
+            </Button>
           </div>
 
           <div className="max-h-96 overflow-y-auto">

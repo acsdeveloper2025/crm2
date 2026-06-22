@@ -12,6 +12,7 @@ import { formatDateTime } from '../lib/format.js';
 import { useJobs } from '../features/jobs/useJobs.js';
 import { fetchJobResultUrl } from '../features/jobs/api.js';
 import { HexagonLoader } from './ui/HexagonLoader.js';
+import { Button } from './ui/Button.js';
 
 const MAX_BADGE = 9;
 const isActive = (j: JobView): boolean => j.status === 'PENDING' || j.status === 'RUNNING';
@@ -144,13 +145,9 @@ export function JobsTray() {
                     )}
                     {j.status === 'SUCCEEDED' && (j.type === 'EXPORT' || j.type === 'CASE_REPORT') && (
                       <span className="flex w-full flex-col items-start gap-1">
-                        <button
-                          type="button"
-                          className="text-xs font-medium text-primary hover:underline"
-                          onClick={() => void download(j)}
-                        >
+                        <Button variant="secondary" size="sm" onClick={() => void download(j)}>
                           Download {r.filename ?? 'file'}
-                        </button>
+                        </Button>
                         {r.capped && (
                           <span className="text-[11px] text-destructive">
                             {(r.rowCount ?? 0).toLocaleString()} of {(r.totalCount ?? 0).toLocaleString()}{' '}

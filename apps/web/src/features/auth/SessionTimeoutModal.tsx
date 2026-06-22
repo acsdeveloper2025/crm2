@@ -1,4 +1,5 @@
 import { useFocusTrap } from '../../lib/useFocusTrap.js';
+import { Button } from '../../components/ui/Button.js';
 
 interface SessionTimeoutModalProps {
   remainingSeconds: number;
@@ -32,12 +33,10 @@ export function SessionTimeoutModal({ remainingSeconds, onStay, onLogout }: Sess
         </p>
         {/* Stay is first in the DOM (initial focus target); flex-row-reverse keeps it visually right. */}
         <div className="mt-5 flex flex-row-reverse gap-2">
-          <button className="btn" onClick={onStay}>
-            Stay logged in
-          </button>
-          <button className="btn-ghost" onClick={onLogout}>
+          <Button onClick={onStay}>Stay logged in</Button>
+          <Button variant="destructive" onClick={onLogout}>
             Log out now
-          </button>
+          </Button>
         </div>
       </div>
     </div>
