@@ -10,6 +10,7 @@ import type {
 import { AppError } from '../../platform/errors.js';
 import { resolveScope, type Actor } from '../../platform/scope/index.js';
 import { getStorage } from '../../platform/storage/index.js';
+import { getStaticMapProvider } from '../../platform/staticmap/index.js';
 import { enqueue } from '../../platform/jobs/index.js';
 import { caseRepository } from '../cases/repository.js';
 import { fieldReportService } from '../fieldReports/service.js';
@@ -85,20 +86,42 @@ async function assemble(
   // exclude so the math invariant Σ(task.photos.length) === totals.photoCount holds.
   const photoRows = (await caseReportRepository.listPhotosForReport(caseId)).filter((r) => r.taskId !== null);
   const storage = getStorage();
+  const staticMap = getStaticMapProvider();
   const photosByTask = new Map<string, CaseReportPhoto[]>();
-  for (const row of photoRows) {
-    const url = await storage.signedUrl(row.storageKey);
-    const photo: CaseReportPhoto = {
-      id: row.id,
-      photoType: row.photoType,
-      url,
-      latitude: typeof row.geoLocation?.latitude === 'number' ? row.geoLocation.latitude : null,
-      longitude: typeof row.geoLocation?.longitude === 'number' ? row.geoLocation.longitude : null,
-      accuracy: typeof row.geoLocation?.accuracy === 'number' ? row.geoLocation.accuracy : null,
-      reverseGeocodedAddress: row.reverseGeocodedAddress,
-      captureTime: row.geoLocation?.timestamp ?? null,
-    };
-    const taskId = row.taskId!;
+  // Build each photo block — presign + GPS-Map-Camera map inset (ADR-0060) — in bounded-parallel
+  // batches. `assemble` is shared by the SYNCHRONOUS /report.html + /preview endpoints, so a serial
+  // per-photo Static Maps fetch (each up to the 5s timeout) would add external tail latency on the
+  // happy path; batching caps the wall-time without flooding Google for a pathological many-photo case.
+  // The map is inlined as a data URI so the Google key never reaches the preview HTML and Puppeteer
+  // prints with no external fetch. Null-degrades (no coords / no key). Order is preserved per task.
+  const PHOTO_CONCURRENCY = 8;
+  const built: { taskId: string; photo: CaseReportPhoto }[] = [];
+  for (let i = 0; i < photoRows.length; i += PHOTO_CONCURRENCY) {
+    const batch = await Promise.all(
+      photoRows.slice(i, i + PHOTO_CONCURRENCY).map(async (row) => {
+        const latitude = typeof row.geoLocation?.latitude === 'number' ? row.geoLocation.latitude : null;
+        const longitude = typeof row.geoLocation?.longitude === 'number' ? row.geoLocation.longitude : null;
+        const [url, png] = await Promise.all([
+          storage.signedUrl(row.storageKey),
+          latitude !== null && longitude !== null ? staticMap.thumbnail(latitude, longitude) : null,
+        ]);
+        const photo: CaseReportPhoto = {
+          id: row.id,
+          photoType: row.photoType,
+          url,
+          latitude,
+          longitude,
+          accuracy: typeof row.geoLocation?.accuracy === 'number' ? row.geoLocation.accuracy : null,
+          reverseGeocodedAddress: row.reverseGeocodedAddress,
+          captureTime: row.geoLocation?.timestamp ?? null,
+          mapImage: png ? `data:image/png;base64,${png.toString('base64')}` : null,
+        };
+        return { taskId: row.taskId!, photo };
+      }),
+    );
+    built.push(...batch);
+  }
+  for (const { taskId, photo } of built) {
     const bucket = photosByTask.get(taskId) ?? [];
     bucket.push(photo);
     photosByTask.set(taskId, bucket);

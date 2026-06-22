@@ -48,6 +48,10 @@ export interface CaseReportPhoto {
   reverseGeocodedAddress: string | null;
   /** From geo_location.timestamp; the shutter time on the device. */
   captureTime: string | null;
+  /** GPS-Map-Camera map inset as a base64 PNG data URI (ADR-0060), or null when there are no coords /
+   *  the static-map provider is unavailable. Inlined (not a URL) so the Google key never reaches the
+   *  preview HTML and Puppeteer prints it with no external fetch. */
+  mapImage: string | null;
 }
 
 /** Per-task block: identity + dispatch + the OFFICIAL outcome + the FIELD_REPORT engine's narrative
@@ -185,7 +189,10 @@ export const CASE_REPORT_VARIABLE_CATALOG: { group: string; vars: { path: string
       { path: 'outcome', note: 'OFFICIAL task result' },
       { path: 'nl2br narrative', note: 'Narrative (use {{nl2br narrative}})' },
       { path: '#each sections', note: 'then {{title}} + {{#each fields}}{{label}}/{{value}}' },
-      { path: '#each photos', note: 'then {{url}} {{reverseGeocodedAddress}} {{photoType}}' },
+      {
+        path: '#each photos',
+        note: 'then {{url}} {{mapImage}} {{reverseGeocodedAddress}} {{coord latitude}} {{coord longitude}} {{accuracy}} {{fmtDateTime captureTime}} {{photoType}}',
+      },
     ],
   },
 ];
@@ -221,9 +228,16 @@ export const DEFAULT_CASE_REPORT_TEMPLATE = `<!doctype html>
   .task-h { font-weight: bold; font-size: 13px; }
   .badge { display: inline-block; padding: 1px 6px; border: 1px solid #999; border-radius: 3px; font-size: 10px; }
   .narrative { white-space: normal; margin: 6px 0; }
-  .photos { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
-  .photo { width: 180px; font-size: 10px; }
-  .photo img { width: 180px; height: 135px; object-fit: cover; border: 1px solid #ccc; }
+  .photos { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+  .photo { width: 240px; font-size: 9px; page-break-inside: avoid; }
+  .photo .frame { position: relative; line-height: 0; }
+  .photo img.shot { width: 240px; height: 180px; object-fit: cover; border: 1px solid #ccc; display: block; }
+  .photo .ovl { position: absolute; left: 0; right: 0; bottom: 0; display: flex; gap: 5px;
+       padding: 4px 5px; background: rgba(17,17,17,.66); color: #fff; line-height: 1.3; }
+  .photo .ovl img.map { width: 56px; height: 56px; object-fit: cover; border-radius: 3px;
+       border: 1px solid rgba(255,255,255,.5); flex: 0 0 auto; }
+  .photo .ovl .meta { overflow: hidden; word-break: break-word; }
+  .photo .ovl .meta .addr { font-weight: bold; }
   .photo .cap { color: #444; margin-top: 2px; word-break: break-word; }
   .foot { margin-top: 24px; padding-top: 8px; border-top: 1px solid #ccc; color: #666; font-size: 10px; }
 </style>
@@ -280,13 +294,20 @@ export const DEFAULT_CASE_REPORT_TEMPLATE = `<!doctype html>
     <div class="photos">
       {{#each photos}}
       <div class="photo">
-        <img src="{{url}}" alt="{{orDash photoType}}">
-        <div class="cap">
-          <strong>{{orDash photoType}}</strong><br>
-          {{#if reverseGeocodedAddress}}{{reverseGeocodedAddress}}<br>{{/if}}
-          {{#if latitude}}GPS {{latitude}}, {{longitude}}{{#if accuracy}} (±{{accuracy}}m){{/if}}<br>{{/if}}
-          {{#if captureTime}}{{fmtDate captureTime}}{{/if}}
+        <div class="frame">
+          <img class="shot" src="{{url}}" alt="{{orDash photoType}}">
+          {{#if reverseGeocodedAddress}}
+          <div class="ovl">
+            {{#if mapImage}}<img class="map" src="{{mapImage}}" alt="Location map">{{/if}}
+            <div class="meta">
+              <div class="addr">{{reverseGeocodedAddress}}</div>
+              {{#if latitude}}<div>Lat {{coord latitude}}, Long {{coord longitude}}{{#if accuracy}} (±{{accuracy}}m){{/if}}</div>{{/if}}
+              {{#if captureTime}}<div>{{fmtDateTime captureTime}}</div>{{/if}}
+            </div>
+          </div>
+          {{/if}}
         </div>
+        <div class="cap"><strong>{{orDash photoType}}</strong>{{#unless reverseGeocodedAddress}}{{#if latitude}} · Lat {{coord latitude}}, Long {{coord longitude}}{{/if}}{{/unless}}</div>
       </div>
       {{/each}}
     </div>

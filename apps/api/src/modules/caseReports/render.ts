@@ -50,6 +50,24 @@ hb.registerHelper('fmtDate', (value: unknown) => {
   return d.toISOString().slice(0, 10);
 });
 
+/** A lat/long value to 6 decimal places (ADR-0060 photo overlay); '' when not a finite number. */
+hb.registerHelper('coord', (value: unknown) => {
+  if (value == null || value === '') return '';
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toFixed(6) : '';
+});
+
+/** ISO timestamp → "YYYY-MM-DD HH:MM", preserving the captured wall-clock (no time-zone shift in a
+ *  printed report). '' when null/unparseable. Used for the field-photo capture time. */
+hb.registerHelper('fmtDateTime', (value: unknown) => {
+  if (value == null || value === '') return '';
+  const s = String(value);
+  const m = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/.exec(s);
+  if (m) return `${m[1]} ${m[2]}`;
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 16).replace('T', ' ');
+});
+
 /** A tiny inline-text badge helper (escaped). */
 hb.registerHelper('badge', (value: unknown) => {
   const s = value == null ? '' : String(value);

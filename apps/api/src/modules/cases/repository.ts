@@ -33,6 +33,20 @@ import {
 } from '../../platform/scope/index.js';
 import { COMMISSION_LATERAL } from '../../platform/billing/laterals.js';
 
+/** A field photo as a downloadable file (ADR-0060) — storage key + the inputs the server uses to build
+ *  the canonical `<caseNumber>_<taskNumber>_<NN>[_<photoType>].<ext>` filename. `seq` is the stable
+ *  1-based per-case index (shared by the zip stream and the single-photo download). */
+export interface FieldPhotoFile {
+  id: string;
+  storageKey: string;
+  originalName: string;
+  mimeType: string | null;
+  photoType: string | null;
+  caseNumber: string;
+  taskNumber: string | null;
+  seq: number;
+}
+
 /**
  * Snapshot the resolved field commission onto the task (ADR-0046 §4 persisted form; ADR-0047 freezes it
  * at SUBMIT). Reuses COMMISSION_LATERAL so the stored value matches the read-model resolver. The anchor
@@ -1613,6 +1627,39 @@ export const caseRepository = {
        LEFT JOIN verification_units vu ON vu.id = ct.verification_unit_id
        WHERE ca.case_id = $1 AND ca.kind = 'FIELD_PHOTO' AND ca.deleted_at IS NULL ${taskLeg}
        ORDER BY ca.created_at DESC`,
+      params,
+    );
+  },
+
+  /** Every field photo of a case as a downloadable FILE row (storage key + naming inputs), with a
+   *  STABLE 1-based per-case `seq` (ROW_NUMBER over the scope-visible set, ordered created_at,id). The
+   *  zip endpoint streams all of them; the single-photo download `.find`s its row in the SAME list, so
+   *  both resolve to an identical filename (ADR-0060). Scope-guarded via the same task-leg as
+   *  listFieldPhotos (out-of-scope photos are excluded AND don't consume a seq). */
+  async listFieldPhotoFiles(caseId: string, scope: Scope | undefined): Promise<FieldPhotoFile[]> {
+    const params: unknown[] = [caseId];
+    let taskLeg = '';
+    if (scope) {
+      const pred = taskScopePredicate(params, scope);
+      taskLeg = pred
+        ? `AND EXISTS (SELECT 1 FROM case_tasks ct JOIN cases cs ON cs.id = ct.case_id
+                       WHERE ct.id = ca.task_id AND ${pred})`
+        : '';
+    }
+    return query<FieldPhotoFile>(
+      `WITH visible AS (
+         SELECT ca.id, ca.storage_key AS "storageKey", ca.original_name AS "originalName",
+                ca.mime_type AS "mimeType", ca.photo_type AS "photoType",
+                csm.case_number AS "caseNumber", ctm.task_number AS "taskNumber", ca.created_at
+         FROM case_attachments ca
+           JOIN cases csm ON csm.id = ca.case_id
+           LEFT JOIN case_tasks ctm ON ctm.id = ca.task_id
+         WHERE ca.case_id = $1 AND ca.kind = 'FIELD_PHOTO' AND ca.deleted_at IS NULL ${taskLeg}
+       )
+       SELECT id, "storageKey", "originalName", "mimeType", "photoType", "caseNumber", "taskNumber",
+              (ROW_NUMBER() OVER (ORDER BY created_at, id))::int AS seq
+       FROM visible
+       ORDER BY seq`,
       params,
     );
   },

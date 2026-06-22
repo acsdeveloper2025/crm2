@@ -1,16 +1,20 @@
 import type { FieldReportSection, FieldReportField } from '@crm2/sdk';
+import { SECTION_MAP } from './sectionMap.js';
 
 /**
  * Build the display-ready raw-field sections for a task's submitted `form_data` (ADR-0039 R1 — the v1
- * `createComprehensiveFormSections` parity). GENERIC introspection of whatever the device submitted (no
- * per-type schema): one section per top-level form-type slug, its agent-keyed fields flattened to
- * `Label: value` rows. System/bulky keys (photos, attachments, geo, metadata) are skipped — photos live
- * in the Field Photos card (#7). Empty input → no sections.
+ * `createComprehensiveFormSections` parity). For a KNOWN form-type slug (one of the 9 in `SECTION_MAP`),
+ * emit v1-style ordered, grouped, human-labelled sections per the spec
+ * (`docs/engineering/field-report-section-grouping-2026-06-22.md`); any submitted key the map does not
+ * place falls into a trailing "Additional Details" section so NO field is ever lost (the audited
+ * never-lose-a-field invariant). For an UNKNOWN/custom slug, fall back to the generic single-section
+ * flatten (one section titled from the slug). System/bulky keys (photos, attachments, geo, metadata)
+ * are skipped — photos live in the Field Photos card (#7). Empty input → no sections.
  *
  * Device blob shape (per the verification-tasks ingest): `form_data[<slug>] = { formData: {...keyed
  * fields}, verificationOutcome, photos, attachmentIds, geoLocation, metadata }`. We surface the keyed
- * `formData` fields + `verificationOutcome`. Defensive: if a slug's value is already a flat object (no
- * nested `formData`), we flatten it directly.
+ * `formData` fields + the raw `verificationOutcome`. Defensive: if a slug's value is already a flat
+ * object (no nested `formData`), we use it directly.
  */
 
 // System/envelope keys that ride alongside the agent's fields (confirmed against live v1
@@ -79,6 +83,64 @@ function flatten(obj: Record<string, unknown>): FieldReportField[] {
   return fields;
 }
 
+/**
+ * Generic single-section fallback for an unknown/custom slug: flatten the agent fields under one
+ * heading derived from the slug, then append the raw outcome row (the pre-SECTION_MAP behavior).
+ */
+function genericSection(
+  slug: string,
+  fieldsSource: Record<string, unknown>,
+  outcome: string | null,
+): FieldReportSection | null {
+  const fields = flatten(fieldsSource);
+  if (outcome !== null) fields.push({ label: 'Verification Outcome', value: outcome });
+  return fields.length ? { title: toLabel(slug), fields } : null;
+}
+
+/**
+ * Mapped grouping for a known slug: emit the spec's named sections in order, deduping each `ref` to one
+ * row across the whole slug (first occurrence wins — the spec lists the primary/non-ERT field first).
+ * The raw outcome row leads the first emitted section. Any submitted key the map never placed (and not
+ * a system/bulky key) is collected into a trailing "Additional Details" section so no field is lost.
+ */
+function mappedSections(
+  defs: ReadonlyArray<{ title: string; fields: ReadonlyArray<{ ref: string; label: string }> }>,
+  fieldsSource: Record<string, unknown>,
+  outcome: string | null,
+): FieldReportSection[] {
+  const sections: FieldReportSection[] = [];
+  const placed = new Set<string>();
+  for (const def of defs) {
+    const fields: FieldReportField[] = [];
+    for (const { ref, label } of def.fields) {
+      if (placed.has(ref)) continue;
+      const value = toValue(fieldsSource[ref]);
+      if (value === null) continue;
+      placed.add(ref);
+      fields.push({ label, value });
+    }
+    if (fields.length) sections.push({ title: def.title, fields });
+  }
+  // Lead the first emitted section with the raw outcome (spec puts Verification Outcome first).
+  if (outcome !== null) {
+    const outcomeRow: FieldReportField = { label: 'Verification Outcome', value: outcome };
+    if (sections.length) sections[0]!.fields.unshift(outcomeRow);
+    else sections.push({ title: defs[0]?.title ?? 'Verification Outcome & Status', fields: [outcomeRow] });
+  }
+  // Never-lose-a-field: every remaining submitted key not in the map (and not a system key).
+  // `verificationOutcome` is already surfaced as the leading outcome row (relevant only in the
+  // flat-blob fallback where it sits in `fieldsSource`), so never re-emit it here.
+  const extra: FieldReportField[] = [];
+  for (const [k, v] of Object.entries(fieldsSource)) {
+    if (placed.has(k) || SKIP_KEYS.has(k.toLowerCase()) || k.toLowerCase() === 'verificationoutcome')
+      continue;
+    const value = toValue(v);
+    if (value !== null) extra.push({ label: toLabel(k), value });
+  }
+  if (extra.length) sections.push({ title: 'Additional Details', fields: extra });
+  return sections;
+}
+
 export function buildSections(formData: Record<string, unknown> | null | undefined): FieldReportSection[] {
   if (!formData || typeof formData !== 'object') return [];
   const sections: FieldReportSection[] = [];
@@ -89,11 +151,14 @@ export function buildSections(formData: Record<string, unknown> | null | undefin
     const keyed = blob['formData'];
     const fieldsSource =
       keyed && typeof keyed === 'object' && !Array.isArray(keyed) ? (keyed as Record<string, unknown>) : blob;
-    const fields = flatten(fieldsSource);
-    // surface the evidence outcome alongside the keyed fields when present.
     const outcome = toValue(blob['verificationOutcome']);
-    if (outcome !== null) fields.push({ label: 'Verification Outcome', value: outcome });
-    if (fields.length) sections.push({ title: toLabel(slug), fields });
+    const defs = SECTION_MAP[slug];
+    if (defs) {
+      sections.push(...mappedSections(defs, fieldsSource, outcome));
+    } else {
+      const generic = genericSection(slug, fieldsSource, outcome);
+      if (generic) sections.push(generic);
+    }
   }
   return sections;
 }

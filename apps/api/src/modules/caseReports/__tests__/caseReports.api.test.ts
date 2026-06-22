@@ -236,6 +236,9 @@ describe.skipIf(!RUN)('case-report preview API (ADR-0041 S5 slice 1)', () => {
     expect(p1.reverseGeocodedAddress).toBe('MG Road, Bengaluru');
     expect(p1.latitude).toBe(12.97);
     expect(p1.captureTime).toBe('2026-06-17T10:00:00Z');
+    // GPS-Map-Camera inset (ADR-0060): null here — no static-map key configured, provider degrades to null.
+    expect(p1.mapImage).toBeNull();
+    expect(p2.mapImage).toBeNull();
     expect(p2.reverseGeocodedAddress).toBeNull(); // not yet resolved — renderer would resolve-on-demand
 
     // totals

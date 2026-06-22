@@ -57,6 +57,19 @@ caseRoutes.get(
   authorize(PERMISSIONS.CASE_VIEW),
   c.fieldPhotoAddress,
 );
+// Field-photo downloads + GPS map inset (ADR-0060). The `.zip` literal is declared before the
+// `/:attachmentId/...` paths so it can't be shadowed. All case.view + scope-guarded.
+caseRoutes.get('/:id/field-photos.zip', authorize(PERMISSIONS.CASE_VIEW), c.fieldPhotosZip);
+caseRoutes.get(
+  '/:id/field-photos/:attachmentId/staticmap',
+  authorize(PERMISSIONS.CASE_VIEW),
+  c.fieldPhotoStaticMap,
+);
+caseRoutes.get(
+  '/:id/field-photos/:attachmentId/download',
+  authorize(PERMISSIONS.CASE_VIEW),
+  c.fieldPhotoDownload,
+);
 // FIELD_REPORT narrative (ADR-0039) — the #6 card's rendered report for one task.
 caseRoutes.get(
   '/:id/tasks/:taskId/field-report',

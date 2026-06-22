@@ -8,47 +8,164 @@ describe('field-report sections', () => {
     expect(toLabel('tpc1Name')).toBe('Tpc1 Name');
   });
 
-  it('groups by form-type slug, flattens keyed fields + surfaces outcome', () => {
+  it('RESIDENCE blob → v1-style ordered, titled sections with mapped labels; outcome leads first section', () => {
     const out = buildSections({
       residence: {
-        formData: { customerName: 'RAJESH', stayingPeriod: '5 Years', totalFamilyMembers: 4 },
-        verificationOutcome: 'POSITIVE_DOOR_OPEN',
+        formData: {
+          houseStatus: 'OPENED',
+          finalStatus: 'POSITIVE',
+          metPersonName: 'RAJESH',
+          metPersonRelation: 'SELF',
+          stayingPeriod: '5 Years',
+          totalFamilyMembers: 4,
+          locality: 'Residential',
+          otherObservation: 'All ok',
+        },
+        verificationOutcome: 'POSITIVE',
         photos: [{ id: 'x' }],
         geoLocation: { latitude: 1 },
-        metadata: { app: 'v1' },
+        metadata: { app: 'v2' },
       },
     });
-    expect(out).toHaveLength(1);
-    expect(out[0]!.title).toBe('Residence');
+    // Sections appear in spec order, only non-empty ones survive.
+    expect(out.map((s) => s.title)).toEqual([
+      'Verification Outcome & Status',
+      'Met Person & Occupancy',
+      'Household & Premises Details',
+      'Locality & Area Assessment',
+      'Conclusion / Remarks',
+    ]);
+    // Outcome row leads the first section, then the mapped fields in spec order with human labels.
+    expect(out[0]).toEqual({
+      title: 'Verification Outcome & Status',
+      fields: [
+        { label: 'Verification Outcome', value: 'POSITIVE' },
+        { label: 'House Status', value: 'OPENED' },
+        { label: 'Final Status', value: 'POSITIVE' },
+      ],
+    });
+    expect(out[1]).toEqual({
+      title: 'Met Person & Occupancy',
+      fields: [
+        { label: 'Met Person Name', value: 'RAJESH' },
+        { label: 'Met Person Relation', value: 'SELF' },
+        { label: 'Staying Period', value: '5 Years' },
+      ],
+    });
+    expect(out[2]).toEqual({
+      title: 'Household & Premises Details',
+      fields: [{ label: 'Total Family Members', value: '4' }],
+    });
+    expect(out[4]).toEqual({
+      title: 'Conclusion / Remarks',
+      fields: [{ label: 'Field Observation', value: 'All ok' }],
+    });
+  });
+
+  it('a submitted key NOT in the map still appears under "Additional Details" (never-lose-a-field)', () => {
+    const out = buildSections({
+      residence: {
+        formData: { houseStatus: 'OPENED', someBrandNewField: 'KEEP-ME', tags: ['a', 'b'] },
+        verificationOutcome: 'POSITIVE',
+      },
+    });
+    const additional = out.find((s) => s.title === 'Additional Details');
+    expect(additional).toBeDefined();
+    expect(additional!.fields).toEqual([
+      { label: 'Some Brand New Field', value: 'KEEP-ME' },
+      { label: 'Tags', value: 'a, b' },
+    ]);
+    // The unknown key never collides with mapped placement and the outcome is not duplicated.
     expect(out[0]!.fields).toEqual([
-      { label: 'Customer Name', value: 'RAJESH' },
-      { label: 'Staying Period', value: '5 Years' },
-      { label: 'Total Family Members', value: '4' },
-      { label: 'Verification Outcome', value: 'POSITIVE_DOOR_OPEN' },
+      { label: 'Verification Outcome', value: 'POSITIVE' },
+      { label: 'House Status', value: 'OPENED' },
     ]);
   });
 
-  it('skips system/bulky keys and null/empty/nested-object values', () => {
+  it('empty/absent mapped fields are dropped and empty sections omitted', () => {
     const out = buildSections({
-      office: {
+      residence: {
         formData: {
-          companyName: 'ACME',
-          empty: '',
-          missing: null,
-          nested: { deep: 1 },
-          tags: ['a', 'b'],
+          houseStatus: 'OPENED',
+          finalStatus: '', // empty → dropped
+          metPersonName: null, // null → dropped, its section empties out
+          nested: { deep: 1 }, // nested object → dropped (no Additional Details either)
         },
       },
     });
-    expect(out[0]!.fields).toEqual([
-      { label: 'Company Name', value: 'ACME' },
-      { label: 'Tags', value: 'a, b' },
+    // Only the outcome/status section survives (no outcome row, no Met Person section, no Additional).
+    expect(out).toHaveLength(1);
+    expect(out[0]).toEqual({
+      title: 'Verification Outcome & Status',
+      fields: [{ label: 'House Status', value: 'OPENED' }],
+    });
+  });
+
+  it('dedupes an ERT-shared ref to one row (first/non-ERT wins) — property-apf met-person', () => {
+    const out = buildSections({
+      'property-apf': {
+        formData: {
+          buildingStatus: 'UNDER_CONSTRUCTION',
+          projectName: 'Skyline',
+          metPersonName: 'WATCHMAN', // shared by "Met Person Name" + "Name of Met Person (ERT)"
+          metPersonDesignation: 'Guard',
+        },
+        verificationOutcome: 'ERT',
+      },
+    });
+    const titles = out.map((s) => s.title);
+    expect(titles).toEqual(['Verification Outcome & Status', 'Project Details', 'Met Person Details']);
+    const metPerson = out.find((s) => s.title === 'Met Person Details')!;
+    // metPersonName rendered exactly once, under its primary (non-ERT) label.
+    expect(metPerson.fields).toEqual([
+      { label: 'Met Person Name', value: 'WATCHMAN' },
+      { label: 'Met Person Designation', value: 'Guard' },
     ]);
   });
 
-  it('falls back to the blob itself when there is no nested formData', () => {
-    const out = buildSections({ noc: { remark: 'ok', area: 'BTM' } });
-    expect(out[0]!.title).toBe('Noc');
+  it('OFFICE blob proves multi-type coverage with mapped grouping', () => {
+    const out = buildSections({
+      office: {
+        formData: {
+          officeStatus: 'EXISTS',
+          metPersonName: 'PRIYA',
+          metPersonDesignation: 'HR',
+          workingPeriod: '3 Years',
+          companyNatureOfBusiness: 'IT Services',
+          contactPerson: 'PRIYA',
+        },
+        verificationOutcome: 'POSITIVE',
+      },
+    });
+    expect(out.map((s) => s.title)).toEqual([
+      'Verification Outcome & Status',
+      'Met Person Details',
+      'Employment & Office Details',
+      'Telephonic Confirmation',
+    ]);
+    expect(out[0]!.fields[0]).toEqual({ label: 'Verification Outcome', value: 'POSITIVE' });
+    expect(out[1]!.fields).toEqual([
+      { label: 'Met Person Name', value: 'PRIYA' },
+      { label: 'Met Person Designation', value: 'HR' },
+    ]);
+  });
+
+  it('UNKNOWN/custom slug → generic single-section flatten (no regression)', () => {
+    const out = buildSections({
+      customForm: { formData: { remark: 'ok', area: 'BTM' }, verificationOutcome: 'POSITIVE' },
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0]!.title).toBe('Custom Form');
+    expect(out[0]!.fields).toEqual([
+      { label: 'Remark', value: 'ok' },
+      { label: 'Area', value: 'BTM' },
+      { label: 'Verification Outcome', value: 'POSITIVE' },
+    ]);
+  });
+
+  it('UNKNOWN slug falls back to the blob itself when there is no nested formData', () => {
+    const out = buildSections({ customForm: { remark: 'ok', area: 'BTM' } });
+    expect(out[0]!.title).toBe('Custom Form');
     expect(out[0]!.fields).toEqual([
       { label: 'Remark', value: 'ok' },
       { label: 'Area', value: 'BTM' },
@@ -59,5 +176,6 @@ describe('field-report sections', () => {
     expect(buildSections(null)).toEqual([]);
     expect(buildSections({})).toEqual([]);
     expect(buildSections({ residence: { photos: [], metadata: {} } })).toEqual([]);
+    expect(buildSections({ customForm: { photos: [], metadata: {} } })).toEqual([]);
   });
 });

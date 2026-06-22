@@ -30,6 +30,8 @@ import { caseRepository as repo } from './repository.js';
 import { emitTaskUpdate, emitCaseStatusUpdate } from './case-events.js';
 import { geocodeService } from '../geocode/service.js';
 import { geocodeConfigured } from '../../platform/geocode/index.js';
+import { getStaticMapProvider } from '../../platform/staticmap/index.js';
+import type { FieldPhotoFile } from './repository.js';
 import { taskRepository } from '../tasks/repository.js';
 import { AppError } from '../../platform/errors.js';
 import { requireVersion } from '../../platform/occ.js';
@@ -125,6 +127,27 @@ function dedupeIdentifiers(rawQuery: Record<string, unknown>) {
     pan: str(rawQuery['pan']),
     company: str(rawQuery['company']),
   });
+}
+
+/** Map a stored mime / original-name to a safe download extension (ADR-0060). Field photos are
+ *  jpeg/png from the device; we trust the original-name extension first, then the mime, then jpg. */
+function photoExt(mimeType: string | null, originalName: string): string {
+  const fromName = /\.([A-Za-z0-9]{1,5})$/.exec(originalName)?.[1]?.toLowerCase();
+  if (fromName) return fromName === 'jpeg' ? 'jpg' : fromName;
+  if (mimeType === 'image/png') return 'png';
+  if (mimeType === 'image/webp') return 'webp';
+  return 'jpg';
+}
+
+/** The canonical field-photo download name (ADR-0060): `<caseNumber>_<taskNumber>_<NN>[_<photoType>].<ext>`.
+ *  One source of truth for the per-image download, the zip entry, and the fullscreen save. */
+function fieldPhotoFilename(file: FieldPhotoFile): string {
+  const sanitize = (s: string): string => s.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  const seq = String(file.seq).padStart(2, '0');
+  const parts = [sanitize(file.caseNumber), sanitize(file.taskNumber ?? 'NA'), seq];
+  const type = file.photoType ? sanitize(file.photoType) : '';
+  const base = parts.join('_') + (type ? `_${type}` : '');
+  return `${base}.${photoExt(file.mimeType, file.originalName)}`;
 }
 
 /**
@@ -499,6 +522,52 @@ export const caseService = {
       address: await repo.setFieldPhotoReverseGeocodedAddress(attachmentId, res.address),
       cached: false,
     };
+  },
+
+  /** The GPS map-inset thumbnail for ONE field photo (ADR-0060) — proxies Google Static Maps for the
+   *  photo's frozen coords, key server-side. Scope-guarded (→ 404). Returns the PNG bytes, or null when
+   *  the photo has no coords or the static-map provider is unavailable (UI degrades to a placeholder). */
+  async fieldPhotoStaticMap(caseId: string, attachmentId: string, actor: Actor): Promise<Buffer | null> {
+    const scope = await resolveScope(actor);
+    const row = await repo.fieldPhotoForGeocode(caseId, attachmentId, scope);
+    if (!row) throw AppError.notFound('FIELD_PHOTO_NOT_FOUND');
+    const lat = row.geoLocation?.latitude;
+    const lng = row.geoLocation?.longitude;
+    if (typeof lat !== 'number' || typeof lng !== 'number') return null;
+    return getStaticMapProvider().thumbnail(lat, lng);
+  },
+
+  /** Stream-ready download of ONE field photo (ADR-0060): the bytes + the canonical filename + mime.
+   *  Scope-guarded via the per-case file list (so its `seq`/name match the zip exactly) → 404. */
+  async fieldPhotoDownload(
+    caseId: string,
+    attachmentId: string,
+    actor: Actor,
+  ): Promise<{ bytes: Buffer; filename: string; mimeType: string }> {
+    const scope = await resolveScope(actor);
+    const files = await repo.listFieldPhotoFiles(caseId, scope);
+    const file = files.find((f) => f.id === attachmentId);
+    if (!file) throw AppError.notFound('FIELD_PHOTO_NOT_FOUND');
+    const bytes = await getStorage().get(file.storageKey); // 503 if storage unconfigured
+    return { bytes, filename: fieldPhotoFilename(file), mimeType: file.mimeType ?? 'image/jpeg' };
+  },
+
+  /** All of a case's field photos as a downloadable bundle (ADR-0060): the zip name + each photo's
+   *  canonical filename + bytes (the controller streams them via archiver). Scope-guarded; an empty
+   *  set → 404 so the web hides the control rather than serving an empty archive. */
+  async fieldPhotosZip(
+    caseId: string,
+    actor: Actor,
+  ): Promise<{ zipName: string; files: { filename: string; bytes: Buffer }[] }> {
+    const scope = await resolveScope(actor);
+    if (!(await repo.caseVisible(caseId, scope))) throw AppError.notFound('CASE_NOT_FOUND');
+    const rows = await repo.listFieldPhotoFiles(caseId, scope);
+    if (rows.length === 0) throw AppError.notFound('NO_FIELD_PHOTOS');
+    const storage = getStorage();
+    const files = await Promise.all(
+      rows.map(async (f) => ({ filename: fieldPhotoFilename(f), bytes: await storage.get(f.storageKey) })),
+    );
+    return { zipName: `${rows[0]!.caseNumber.replace(/[^A-Za-z0-9-]+/g, '_')}_field-photos.zip`, files };
   },
 
   /** The async-on-upload worker processor (ADR-0040 Slice B; system job, NO actor scope). Idempotent:

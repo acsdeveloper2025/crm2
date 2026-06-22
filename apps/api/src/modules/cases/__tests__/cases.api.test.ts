@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
 import {
   createTestDb,
@@ -11,6 +11,7 @@ import { createApp } from '../../../http/app.js';
 import { setPool } from '../../../platform/db.js';
 import { setStorage, type StorageProvider } from '../../../platform/storage/index.js';
 import { setGeocoder } from '../../../platform/geocode/index.js';
+import { setStaticMapProvider } from '../../../platform/staticmap/index.js';
 import { enqueueReverseGeocode, awaitAllReverseGeocodeJobs } from '../../../platform/geocode/queue.js';
 import { caseRepository } from '../repository.js';
 import { geocodeRepository } from '../../geocode/repository.js';
@@ -2381,6 +2382,156 @@ describe.skipIf(!RUN)('cases API', () => {
       expect(await caseRepository.fieldPhotoAddressById(photoId)).toBe('REPLAYED ADDR, BENGALURU');
       // The open slot is cleared (replayed_at stamped).
       expect((await geocodeService.dlq()).some((r) => r.attachmentId === photoId)).toBe(false);
+    });
+  });
+
+  // ── Field-photo downloads + GPS map inset (ADR-0060) ──────────────────────
+  describe('field photo download / zip / static-map (ADR-0060)', () => {
+    const PHOTO_BYTES = Buffer.from('PNGDATA');
+    // A storage fake whose get(key) yields known bytes (the base fakeStorage returns empty bytes).
+    const bytesStorage: StorageProvider = {
+      put: (key) => Promise.resolve({ key }),
+      get: () => Promise.resolve(PHOTO_BYTES),
+      signedUrl: (key) => Promise.resolve(`https://signed.example/${key}`),
+      remove: () => Promise.resolve(),
+    };
+
+    beforeAll(() => setStorage(bytesStorage));
+    afterAll(() => setStorage(null));
+    afterEach(() => setStaticMapProvider(null));
+
+    /** Replicate the server's canonical filename (cases/service.ts fieldPhotoFilename) for an assertion. */
+    function expectedFilename(
+      caseNumber: string,
+      taskNumber: string,
+      seq: number,
+      photoType: string,
+    ): string {
+      const sanitize = (s: string): string => s.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+      const nn = String(seq).padStart(2, '0');
+      return `${sanitize(caseNumber)}_${sanitize(taskNumber)}_${nn}_${sanitize(photoType)}.jpg`;
+    }
+
+    /** Seed a case+task, then insert ONE FIELD_PHOTO row (known storage key + geo + photo_type). */
+    async function seedFieldPhoto(
+      tag: string,
+      geo: Record<string, unknown> | null,
+    ): Promise<{ caseId: string; photoId: string; caseNumber: string; taskNumber: string }> {
+      const { caseId, taskId } = await seedCaseWithTask(tag);
+      const detail = await request(app).get(`/api/v2/cases/${caseId}`).set(SA);
+      const caseNumber = detail.body.caseNumber as string;
+      const taskNumber = detail.body.tasks[0].taskNumber as string;
+      const row = await caseRepository.insertFieldAttachment(
+        {
+          caseId,
+          taskId,
+          originalName: 'p.jpg',
+          mimeType: 'image/jpeg',
+          fileSize: PHOTO_BYTES.length,
+          storageKey: `field-photos/${caseId}/${taskId}/x.jpg`,
+          thumbnailKey: null,
+          sha256: 'a'.repeat(64),
+          clientSha256: null,
+          hashVerified: false,
+          geoLocation: geo,
+          photoType: 'verification',
+          submissionId: null,
+          verificationType: 'RESIDENCE',
+          operationId: `dl-${tag}:0`,
+        },
+        '00000000-0000-0000-0000-000000000001',
+      );
+      return { caseId, photoId: row.id, caseNumber, taskNumber };
+    }
+
+    it('downloads ONE field photo with the canonical filename + bytes; unknown id → 404', async () => {
+      const { caseId, photoId, caseNumber, taskNumber } = await seedFieldPhoto('DL1', {
+        latitude: 19.07,
+        longitude: 72.87,
+      });
+      const res = await request(app).get(`/api/v2/cases/${caseId}/field-photos/${photoId}/download`).set(SA);
+      expect(res.status).toBe(200);
+      const cd = res.headers['content-disposition'] as string;
+      // canonical <caseNumber>_<taskNumber>_01_<TYPE>.<ext> (seq 1 → NN=01; photoType 'verification')
+      expect(cd).toContain(`filename="${expectedFilename(caseNumber, taskNumber, 1, 'verification')}"`);
+      expect(cd).toMatch(/filename="CASE_\d{6}_CASE_\d{6}_1_01_verification\.jpg"/);
+      expect(Buffer.from(res.body)).toEqual(PHOTO_BYTES);
+
+      const unknown = await request(app)
+        .get(`/api/v2/cases/${caseId}/field-photos/00000000-0000-0000-0000-0000000000ff/download`)
+        .set(SA);
+      expect(unknown.status).toBe(404);
+    });
+
+    it('zips ALL field photos (application/zip, non-empty); a case with none → 404 NO_FIELD_PHOTOS', async () => {
+      const { caseId } = await seedFieldPhoto('ZIP1', { latitude: 19.07, longitude: 72.87 });
+      const zip = await request(app)
+        .get(`/api/v2/cases/${caseId}/field-photos.zip`)
+        .set(SA)
+        .buffer(true)
+        .parse((res, cb) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (c: Buffer) => chunks.push(c));
+          res.on('end', () => cb(null, Buffer.concat(chunks)));
+        });
+      expect(zip.status).toBe(200);
+      expect(zip.headers['content-type']).toContain('application/zip');
+      expect((zip.body as Buffer).length).toBeGreaterThan(0);
+
+      // A case with NO field photos → 404 NO_FIELD_PHOTOS (the web hides the control, not an empty zip).
+      const { caseId: emptyCaseId } = await seedCaseWithTask('ZIP_EMPTY');
+      const none = await request(app).get(`/api/v2/cases/${emptyCaseId}/field-photos.zip`).set(SA);
+      expect(none.status).toBe(404);
+      expect(none.body.error).toBe('NO_FIELD_PHOTOS');
+    });
+
+    it('serves the static-map PNG when the provider yields bytes', async () => {
+      const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+      setStaticMapProvider({ thumbnail: () => Promise.resolve(PNG) });
+      const { caseId, photoId } = await seedFieldPhoto('SM1', { latitude: 19.07, longitude: 72.87 });
+      const res = await request(app).get(`/api/v2/cases/${caseId}/field-photos/${photoId}/staticmap`).set(SA);
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('image/png');
+      expect(Buffer.from(res.body)).toEqual(PNG);
+    });
+
+    it('404 STATIC_MAP_UNAVAILABLE when the provider returns null', async () => {
+      setStaticMapProvider({ thumbnail: () => Promise.resolve(null) });
+      const { caseId, photoId } = await seedFieldPhoto('SM2', { latitude: 19.07, longitude: 72.87 });
+      const res = await request(app).get(`/api/v2/cases/${caseId}/field-photos/${photoId}/staticmap`).set(SA);
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('STATIC_MAP_UNAVAILABLE');
+    });
+
+    it('404 STATIC_MAP_UNAVAILABLE when the photo has no coords (provider not consulted)', async () => {
+      let called = false;
+      setStaticMapProvider({
+        thumbnail: () => {
+          called = true;
+          return Promise.resolve(Buffer.from([0x89]));
+        },
+      });
+      const { caseId, photoId } = await seedFieldPhoto('SM3', null);
+      const res = await request(app).get(`/api/v2/cases/${caseId}/field-photos/${photoId}/staticmap`).set(SA);
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('STATIC_MAP_UNAVAILABLE');
+      expect(called).toBe(false);
+    });
+
+    it('IDOR: an out-of-scope user gets 404 on download / zip / static-map (indistinguishable from missing)', async () => {
+      setStaticMapProvider({ thumbnail: () => Promise.resolve(Buffer.from([0x89, 0x50, 0x4e, 0x47])) });
+      const { caseId, photoId } = await seedFieldPhoto('IDOR', { latitude: 19.07, longitude: 72.87 });
+      // A FIELD_AGENT assigned NOTHING on this case → the case is out of scope (has case.view, no access).
+      const stranger = await createUser({ username: 'fp_idor', name: 'STRANGER', role: 'FIELD_AGENT' });
+      const auth = { 'x-test-auth': `FIELD_AGENT:${stranger}` };
+      expect(
+        (await request(app).get(`/api/v2/cases/${caseId}/field-photos/${photoId}/download`).set(auth)).status,
+      ).toBe(404);
+      expect(
+        (await request(app).get(`/api/v2/cases/${caseId}/field-photos/${photoId}/staticmap`).set(auth))
+          .status,
+      ).toBe(404);
+      expect((await request(app).get(`/api/v2/cases/${caseId}/field-photos.zip`).set(auth)).status).toBe(404);
     });
   });
 

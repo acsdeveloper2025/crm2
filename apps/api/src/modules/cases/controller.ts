@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
+import archiver from 'archiver';
 import { caseService as svc } from './service.js';
 import { AppError } from '../../platform/errors.js';
 import { HTTP_STATUS } from '../../platform/http.js';
@@ -286,6 +287,57 @@ export const caseController = {
       const caseId = parseUuidParam(req, 'id');
       const attachmentId = parseUuidParam(req, 'attachmentId');
       res.json(await svc.resolveFieldPhotoAddress(caseId, attachmentId, actor(req)));
+    } catch (e) {
+      next(e);
+    }
+  },
+
+  /** GPS map-inset PNG for one field photo (ADR-0060) — proxied Google Static Maps, key server-side.
+   *  404 when no coords / static maps unavailable → the web falls back to a coordinate placeholder. */
+  async fieldPhotoStaticMap(req: Request, res: Response, next: NextFunction) {
+    try {
+      const caseId = parseUuidParam(req, 'id');
+      const attachmentId = parseUuidParam(req, 'attachmentId');
+      const png = await svc.fieldPhotoStaticMap(caseId, attachmentId, actor(req));
+      if (!png) throw AppError.notFound('STATIC_MAP_UNAVAILABLE');
+      res.setHeader('content-type', 'image/png');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Cache-Control', 'private, max-age=86400');
+      res.send(png);
+    } catch (e) {
+      next(e);
+    }
+  },
+
+  /** Download ONE field photo (ADR-0060) — bytes + the canonical filename (server-set disposition). */
+  async fieldPhotoDownload(req: Request, res: Response, next: NextFunction) {
+    try {
+      const caseId = parseUuidParam(req, 'id');
+      const attachmentId = parseUuidParam(req, 'attachmentId');
+      const { bytes, filename, mimeType } = await svc.fieldPhotoDownload(caseId, attachmentId, actor(req));
+      res.setHeader('content-type', mimeType);
+      res.setHeader('content-disposition', `attachment; filename="${filename}"`);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.send(bytes);
+    } catch (e) {
+      next(e);
+    }
+  },
+
+  /** Download ALL of a case's field photos as a zip (ADR-0060) — each entry canonically named. The
+   *  scope-guarded list is resolved (may 404 NO_FIELD_PHOTOS) BEFORE any byte is streamed. */
+  async fieldPhotosZip(req: Request, res: Response, next: NextFunction) {
+    try {
+      const caseId = parseId(req);
+      const { zipName, files } = await svc.fieldPhotosZip(caseId, actor(req));
+      res.setHeader('content-type', 'application/zip');
+      res.setHeader('content-disposition', `attachment; filename="${zipName}"`);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      const archive = archiver('zip', { zlib: { level: 9 } });
+      archive.on('error', next);
+      archive.pipe(res);
+      for (const f of files) archive.append(f.bytes, { name: f.filename });
+      await archive.finalize();
     } catch (e) {
       next(e);
     }

@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -36,6 +36,7 @@ import { api, apiUpload, apiBlob, ApiError } from '../../lib/sdk.js';
 import { JOBS_KEY } from '../jobs/index.js';
 import { formatDateTime } from '../../lib/format.js';
 import { useAuth } from '../../lib/AuthContext.js';
+import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
 import { Input } from '../../components/ui/Input.js';
@@ -1814,16 +1815,221 @@ function FieldReportBody({ report }: { report: FieldReportView }) {
   );
 }
 
-/** #7 Field Photos — the device's submitted photos (ADR-0034). Collapsed by default; lazy-loads. */
+/** Save a fetched blob under a server-suggested filename (same anchor pattern as the DataGrid export). */
+function saveBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+/** Capture instant → "Mon, 22/06/2026 01:54 PM GMT+5:30" in the viewer's timezone (we don't store the
+ *  capture offset, so the local zone is shown — acceptable per the GPS-Map-Camera spec). */
+function formatCaptureTime(iso: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    timeZoneName: 'short',
+  }).format(new Date(iso));
+}
+
+/** The resolved per-photo meta the overlay renders (address + coords + capture time). */
+interface PhotoMeta {
+  address: string | null;
+  lat: number | undefined;
+  lng: number | undefined;
+  hasCoords: boolean;
+  accuracy: number | undefined;
+  captureTime: string | undefined;
+  mapsHref: string | undefined;
+}
+
+/** Resolve a photo's display meta: coords from the geo payload, address via the server-frozen value or
+ *  the on-view fallback (ADR-0040). Shared by the card overlay and the fullscreen lightbox. */
+function usePhotoMeta(caseId: string, photo: CaseFieldPhoto): PhotoMeta {
+  const lat = photo.geoLocation?.latitude;
+  const lng = photo.geoLocation?.longitude;
+  const hasCoords = typeof lat === 'number' && typeof lng === 'number';
+  const { data: addr } = useQuery({
+    queryKey: ['field-photo-address', caseId, photo.id],
+    queryFn: () =>
+      api<{ address: string | null; cached: boolean }>(
+        'GET',
+        `/api/v2/cases/${caseId}/field-photos/${photo.id}/address`,
+      ),
+    enabled: !photo.reverseGeocodedAddress && hasCoords,
+    staleTime: Infinity,
+  });
+  return {
+    address: photo.reverseGeocodedAddress ?? addr?.address ?? null,
+    lat,
+    lng,
+    hasCoords,
+    accuracy: photo.geoLocation?.accuracy,
+    captureTime: photo.geoLocation?.timestamp,
+    mapsHref: hasCoords ? `https://www.google.com/maps?q=${lat},${lng}` : undefined,
+  };
+}
+
+/** The static-map inset (NEW authed PNG route) — a ~64px rounded thumbnail of the capture point.
+ *  Falls back to a 📍 + coordinate placeholder on 404/error or when there are no coords. */
+function StaticMapInset({ caseId, photo, meta }: { caseId: string; photo: CaseFieldPhoto; meta: PhotoMeta }) {
+  const { data: blob } = useQuery({
+    queryKey: ['field-photo-staticmap', caseId, photo.id],
+    queryFn: () => apiBlob(`/api/v2/cases/${caseId}/field-photos/${photo.id}/staticmap`),
+    enabled: meta.hasCoords,
+    retry: false,
+  });
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    if (!blob) return;
+    const url = URL.createObjectURL(blob.blob);
+    setSrc(url);
+    return () => URL.revokeObjectURL(url);
+  }, [blob]);
+
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt=""
+        aria-hidden="true"
+        className="h-16 w-16 shrink-0 rounded-md border border-white/30 object-cover"
+      />
+    );
+  }
+  // No map (no coords, or 404/unavailable) → a compact coordinate placeholder.
+  return (
+    <div className="flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded-md border border-white/30 bg-foreground/50 text-center text-[10px] leading-tight text-white">
+      <span aria-hidden="true">📍</span>
+      {meta.hasCoords ? (
+        <span className="px-0.5">
+          {meta.lat!.toFixed(3)}, {meta.lng!.toFixed(3)}
+        </span>
+      ) : (
+        <span className="px-0.5 text-white/70">No GPS</span>
+      )}
+    </div>
+  );
+}
+
+/** The GPS-Map-Camera overlay band: map inset + bold full address + coords link + capture time.
+ *  `compact` tightens the typography for the small card; the lightbox uses the larger variant. */
+function PhotoOverlay({
+  caseId,
+  photo,
+  meta,
+  compact,
+}: {
+  caseId: string;
+  photo: CaseFieldPhoto;
+  meta: PhotoMeta;
+  compact: boolean;
+}) {
+  return (
+    <div
+      className={`flex gap-2 bg-foreground/70 text-white ${compact ? 'p-2 text-[11px]' : 'p-3 text-xs sm:text-sm'}`}
+    >
+      <StaticMapInset caseId={caseId} photo={photo} meta={meta} />
+      <div className="min-w-0 flex-1">
+        {photo.photoType || photo.unitName ? (
+          <div className="font-medium text-white/80">
+            {[photo.photoType, photo.unitName].filter(Boolean).join(' · ')}
+          </div>
+        ) : null}
+        {meta.address ? <div className="font-bold leading-snug">📍 {meta.address}</div> : null}
+        {meta.hasCoords ? (
+          <a
+            href={meta.mapsHref}
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Open photo location in Google Maps"
+            className="mt-0.5 inline-block break-all text-white underline hover:no-underline"
+          >
+            Lat {meta.lat!.toFixed(6)}, Long {meta.lng!.toFixed(6)}
+            {typeof meta.accuracy === 'number' ? ` (±${Math.round(meta.accuracy)}m)` : ''}
+          </a>
+        ) : null}
+        {meta.captureTime ? (
+          <div className="mt-0.5 text-white/80">{formatCaptureTime(meta.captureTime)}</div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/** #7 Field Photos — the device's submitted photos (ADR-0034), GPS-Map-Camera-style gallery.
+ *  Collapsed by default; lazy-loads. Header carries Refresh + Download-all controls. */
 function FieldPhotosSection({ caseId }: { caseId: string }) {
   const [open, setOpen] = useState(false);
+  const qc = useQueryClient();
+  const [zipping, setZipping] = useState(false);
+
+  const { data } = useQuery({
+    queryKey: ['field-photos', caseId],
+    queryFn: () => api<CaseFieldPhoto[]>('GET', `/api/v2/cases/${caseId}/field-photos`),
+    enabled: open,
+  });
+  const hasPhotos = (data?.length ?? 0) > 0;
+
+  // Re-fetch the list, the presigned image URLs, the map insets, and any on-view addresses — every
+  // per-caseId key (presigned URLs expire, so a refresh must drop them).
+  const refresh = (): void => {
+    for (const key of ['field-photos', 'field-photo-url', 'field-photo-staticmap', 'field-photo-address']) {
+      void qc.invalidateQueries({
+        predicate: (q) => q.queryKey[0] === key && q.queryKey[1] === caseId,
+      });
+    }
+  };
+
+  const downloadAll = async (): Promise<void> => {
+    setZipping(true);
+    try {
+      const { blob, filename } = await apiBlob(`/api/v2/cases/${caseId}/field-photos.zip`);
+      saveBlob(blob, filename);
+    } catch {
+      toast.error('Could not download the photos');
+    } finally {
+      setZipping(false);
+    }
+  };
+
   return (
     <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Field Photos</h2>
-        <button className="btn-ghost" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-          {open ? 'Hide' : 'Show details'}
-        </button>
+        <div className="flex items-center gap-2">
+          {open ? (
+            <>
+              <button className="btn-ghost" aria-label="Refresh photos" onClick={refresh}>
+                Refresh
+              </button>
+              {hasPhotos ? (
+                <button
+                  className="btn-ghost"
+                  aria-label="Download all photos"
+                  aria-busy={zipping}
+                  onClick={() => void downloadAll()}
+                  disabled={zipping}
+                >
+                  {zipping ? 'Zipping…' : 'Download all'}
+                </button>
+              ) : null}
+            </>
+          ) : null}
+          <button className="btn-ghost" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+            {open ? 'Hide' : 'Show details'}
+          </button>
+        </div>
       </div>
       {open && (
         <div className="mt-3">
@@ -1843,76 +2049,146 @@ function FieldPhotosBody({ caseId }: { caseId: string }) {
   if (isError || !data) return <p className="text-sm text-destructive">Could not load field photos.</p>;
   if (data.length === 0) return <p className="text-sm text-muted-foreground">No field photos uploaded.</p>;
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
       {data.map((p) => (
-        <FieldPhotoThumb key={p.id} caseId={caseId} photo={p} />
+        <FieldPhotoCard key={p.id} caseId={caseId} photo={p} />
       ))}
     </div>
   );
 }
 
-function FieldPhotoThumb({ caseId, photo }: { caseId: string; photo: CaseFieldPhoto }) {
+function FieldPhotoCard({ caseId, photo }: { caseId: string; photo: CaseFieldPhoto }) {
   // The image is served via the existing presigned attachment-url route (works for any kind).
   const { data } = useQuery({
     queryKey: ['field-photo-url', caseId, photo.id],
     queryFn: () => api<{ url: string }>('GET', `/api/v2/cases/${caseId}/attachments/${photo.id}/url`),
   });
-  const lat = photo.geoLocation?.latitude;
-  const lng = photo.geoLocation?.longitude;
-  const hasCoords = typeof lat === 'number' && typeof lng === 'number';
-  // On-view fallback (ADR-0040): if the address was never resolved server-side, resolve+freeze it now.
-  const { data: addr } = useQuery({
-    queryKey: ['field-photo-address', caseId, photo.id],
-    queryFn: () =>
-      api<{ address: string | null; cached: boolean }>(
-        'GET',
-        `/api/v2/cases/${caseId}/field-photos/${photo.id}/address`,
-      ),
-    enabled: !photo.reverseGeocodedAddress && hasCoords,
-    staleTime: Infinity,
-  });
-  const address = photo.reverseGeocodedAddress ?? addr?.address ?? null;
-  const accuracy = photo.geoLocation?.accuracy;
-  const captureTime = photo.geoLocation?.timestamp;
-  const mapsHref = hasCoords ? `https://www.google.com/maps?q=${lat},${lng}` : undefined;
+  const meta = usePhotoMeta(caseId, photo);
+  const [lightbox, setLightbox] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  const download = async (): Promise<void> => {
+    setDownloading(true);
+    try {
+      const { blob, filename } = await apiBlob(`/api/v2/cases/${caseId}/field-photos/${photo.id}/download`);
+      saveBlob(blob, filename);
+    } catch {
+      toast.error('Could not download the photo');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
-    <div className="overflow-hidden rounded-md border border-border">
-      <a href={data?.url} target="_blank" rel="noreferrer" className="block">
-        {data?.url ? (
-          <img
-            src={data.url}
-            alt={photo.photoType ?? photo.originalName}
-            className="h-32 w-full object-cover"
-          />
-        ) : (
-          <div className="flex h-32 items-center justify-center bg-surface-muted">
-            <HexagonLoader operation="Loading" />
+    <div className="overflow-hidden rounded-md border border-border bg-card">
+      <div className="relative">
+        <button
+          type="button"
+          aria-label="Open photo full screen"
+          className="block w-full"
+          onClick={() => setLightbox(true)}
+        >
+          {data?.url ? (
+            <img src={data.url} alt="" className="h-52 w-full cursor-zoom-in object-cover" />
+          ) : (
+            <div className="flex h-52 items-center justify-center bg-surface-muted">
+              <HexagonLoader operation="Loading" />
+            </div>
+          )}
+        </button>
+        <button
+          type="button"
+          aria-label="Download photo"
+          aria-busy={downloading}
+          className="absolute right-2 top-2 rounded-md bg-foreground/70 px-2 py-1 text-xs font-medium text-white hover:bg-foreground/90 disabled:opacity-60"
+          onClick={() => void download()}
+          disabled={downloading}
+        >
+          {downloading ? '…' : 'Download'}
+        </button>
+      </div>
+      <PhotoOverlay caseId={caseId} photo={photo} meta={meta} compact />
+      {lightbox && (
+        <FieldPhotoLightbox
+          caseId={caseId}
+          photo={photo}
+          meta={meta}
+          imageUrl={data?.url}
+          downloading={downloading}
+          onDownload={download}
+          onClose={() => setLightbox(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Fullscreen lightbox: large image + the same overlay + a Save control. Esc / backdrop / close button
+ *  dismiss it; focus is trapped while open (useFocusTrap). */
+function FieldPhotoLightbox({
+  caseId,
+  photo,
+  meta,
+  imageUrl,
+  downloading,
+  onDownload,
+  onClose,
+}: {
+  caseId: string;
+  photo: CaseFieldPhoto;
+  meta: PhotoMeta;
+  imageUrl: string | undefined;
+  downloading: boolean;
+  onDownload: () => Promise<void>;
+  onClose: () => void;
+}) {
+  const dialogRef = useFocusTrap<HTMLDivElement>(true, onClose);
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-foreground/70 p-4"
+      onClick={onClose}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Field photo${photo.photoType ? ` — ${photo.photoType}` : ''}`}
+        className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-border bg-card shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-2 border-b border-border p-2">
+          <span className="truncate px-1 text-sm font-medium text-foreground">
+            {photo.photoType ?? photo.originalName}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              className="btn"
+              aria-label="Save photo"
+              aria-busy={downloading}
+              onClick={() => void onDownload()}
+              disabled={downloading}
+            >
+              {downloading ? 'Saving…' : 'Save'}
+            </button>
+            <button className="btn-ghost" aria-label="Close" onClick={onClose}>
+              Close
+            </button>
           </div>
-        )}
-      </a>
-      <div className="flex flex-col gap-0.5 px-2 py-1 text-xs">
-        <div className="truncate font-medium text-foreground">{photo.photoType ?? '—'}</div>
-        {photo.unitName ? <div className="truncate text-muted-foreground">{photo.unitName}</div> : null}
-        {address ? (
-          <div className="line-clamp-2 text-muted-foreground" title={address}>
-            📍 {address}
-          </div>
-        ) : null}
-        {hasCoords ? (
-          <a
-            href={mapsHref}
-            target="_blank"
-            rel="noreferrer"
-            aria-label="Open photo location in Google Maps"
-            className="truncate text-primary hover:underline"
-          >
-            {lat!.toFixed(6)}, {lng!.toFixed(6)}
-            {typeof accuracy === 'number' ? ` (±${Math.round(accuracy)}m)` : ''}
-          </a>
-        ) : null}
-        {captureTime ? (
-          <div className="truncate text-muted-foreground">{new Date(captureTime).toLocaleString()}</div>
-        ) : null}
+        </div>
+        <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-black">
+          {imageUrl ? (
+            <img
+              src={imageUrl}
+              alt={photo.photoType ?? photo.originalName}
+              className="max-h-[70vh] w-auto object-contain"
+            />
+          ) : (
+            <div className="flex h-64 items-center justify-center">
+              <HexagonLoader operation="Loading" />
+            </div>
+          )}
+        </div>
+        <PhotoOverlay caseId={caseId} photo={photo} meta={meta} compact={false} />
       </div>
     </div>
   );

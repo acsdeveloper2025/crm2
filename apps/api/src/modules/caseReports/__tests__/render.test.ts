@@ -56,6 +56,7 @@ const baseCtx = (overrides: Partial<CaseReportContext> = {}): CaseReportContext 
           accuracy: 8,
           reverseGeocodedAddress: 'MG Road, Bengaluru',
           captureTime: '2026-06-12T10:00:00Z',
+          mapImage: 'data:image/png;base64,AAAA',
         },
       ],
     },
