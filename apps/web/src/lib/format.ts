@@ -15,6 +15,15 @@ export function formatDateTime(iso: string | null | undefined): string {
   return `${pad(d.getDate())} ${MONTHS[d.getMonth()]} ${d.getFullYear()}, ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/**
+ * Indian Rupee display formatter — the single source for every money cell (replaces the
+ * `const money = (n) => `₹${n.toFixed(2)}`` duplicated across billing/rates/commission).
+ * `—` (em-dash) for null/undefined so empty money reads consistently with other blank cells.
+ */
+export function formatMoney(n: number | null | undefined): string {
+  return n === null || n === undefined ? '—' : `₹${n.toFixed(2)}`;
+}
+
 /** ISO timestamp → `YYYY-MM-DD` (local) for an `<input type="date">` value. Empty when missing. */
 export function toDateInput(iso: string | null | undefined): string {
   if (!iso) return '';
