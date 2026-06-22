@@ -15,6 +15,7 @@ import { ImportButton } from './import/ImportModal.js';
 import { StatusChip } from './StatusChip.js';
 import { ConflictDialog } from './ConflictDialog.js';
 import { DataGrid, type DataGridColumn } from './ui/data-grid/index.js';
+import { Button } from './ui/Button.js';
 import { Input } from './ui/Input.js';
 
 const HTTP_CONFLICT = 409;
@@ -100,17 +101,18 @@ export function MasterDataCrud({ config }: { config: Config }) {
         header: 'Actions',
         align: 'right',
         cell: (r) => (
-          <>
-            <button className="mr-3 font-medium text-primary hover:underline" onClick={() => setEditing(r)}>
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setEditing(r)}>
               Edit
-            </button>
-            <button
-              className="font-medium text-muted-foreground hover:text-foreground hover:underline"
+            </Button>
+            <Button
+              variant={r.isActive ? 'destructive' : 'secondary'}
+              size="sm"
               onClick={() => toggle.mutate(r)}
             >
               {r.isActive ? 'Deactivate' : 'Activate'}
-            </button>
-          </>
+            </Button>
+          </div>
         ),
       },
     ],
@@ -132,9 +134,7 @@ export function MasterDataCrud({ config }: { config: Config }) {
               entityLabel: config.title.replace(/s$/, '').toLowerCase(),
             }}
           />
-          <button className="btn" onClick={() => setEditing(null)}>
-            + New
-          </button>
+          <Button onClick={() => setEditing(null)}>+ New</Button>
         </div>
       </div>
 
@@ -286,19 +286,19 @@ function MasterDataDialog({
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <div className="mt-5 flex justify-end gap-2">
-          <button className="btn-ghost" onClick={onClose} disabled={mut.isPending}>
+          <Button variant="ghost" onClick={onClose} disabled={mut.isPending}>
             Cancel
-          </button>
-          <button
-            className="btn"
+          </Button>
+          <Button
             onClick={() => {
               setError(null);
               mut.mutate();
             }}
-            disabled={mut.isPending || !name || !code}
+            disabled={!name || !code}
+            loading={mut.isPending}
           >
-            {mut.isPending ? 'Saving…' : 'Save'}
-          </button>
+            Save
+          </Button>
         </div>
       </div>
 
