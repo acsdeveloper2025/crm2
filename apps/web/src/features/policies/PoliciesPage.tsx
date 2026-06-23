@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { pageQueryToParams, type PageQuery, type Paginated, type Policy } from '@crm2/sdk';
 import { api, ApiError } from '../../lib/sdk.js';
@@ -8,7 +9,6 @@ import { StatusChip } from '../../components/StatusChip.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { Button } from '../../components/ui/Button.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
-import { PolicyDialog } from './PolicyDialog.js';
 
 const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
@@ -16,10 +16,10 @@ const isStale = (e: unknown): e is ApiError =>
 
 export function PoliciesPage() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   // Mirror the server write guard (policy.manage) so viewers don't see write controls (H-1).
   const { has } = useAuth();
   const canManage = has('policy.manage');
-  const [editing, setEditing] = useState<Policy | null | undefined>(undefined); // undefined=closed, null=create
   const [toggleConflict, setToggleConflict] = useState<Policy | null>(null);
 
   const toggle = useMutation({
@@ -75,7 +75,7 @@ export function PoliciesPage() {
               align: 'right',
               cell: (p: Policy) => (
                 <div className="flex items-center justify-end gap-2">
-                  <Button variant="secondary" size="sm" onClick={() => setEditing(p)}>
+                  <Button variant="secondary" size="sm" onClick={() => navigate(`/admin/policies/${p.id}`)}>
                     Edit
                   </Button>
                   <Button
@@ -104,7 +104,7 @@ export function PoliciesPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          {canManage && <Button onClick={() => setEditing(null)}>+ New Policy</Button>}
+          {canManage && <Button onClick={() => navigate('/admin/policies/new')}>+ New Policy</Button>}
         </div>
       </div>
 
@@ -119,8 +119,6 @@ export function PoliciesPage() {
         }
         dateFilters={[{ id: 'effectiveFrom', label: 'Effective From' }]}
       />
-
-      {editing !== undefined && <PolicyDialog policy={editing} onClose={() => setEditing(undefined)} />}
 
       {toggleConflict && (
         <ConflictDialog

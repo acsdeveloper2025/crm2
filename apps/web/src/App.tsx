@@ -9,6 +9,7 @@ import { MustAcceptPoliciesPage } from './features/auth/MustAcceptPoliciesPage.j
 import { Layout } from './components/Layout.js';
 import { VerificationUnitsPage } from './features/verificationUnits/VerificationUnitsPage.js';
 import { PoliciesPage } from './features/policies/PoliciesPage.js';
+import { PolicyRecordPage } from './features/policies/PolicyRecordPage.js';
 import { ClientsPage } from './features/clients/ClientsPage.js';
 import { ProductsPage } from './features/products/ProductsPage.js';
 import { CpvPage } from './features/cpv/CpvPage.js';
@@ -77,6 +78,8 @@ export function App() {
         <Route path="/admin/templates" element={<TemplatesPage />} />
         <Route path="/admin/system" element={<SystemPage />} />
         <Route path="/admin/policies" element={<PoliciesPage />} />
+        <Route path="/admin/policies/new" element={<PolicyRecordPage />} />
+        <Route path="/admin/policies/:id" element={<PolicyRecordPage />} />
         <Route path="/security" element={<SecurityPage />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/pipeline" element={<PipelinePage />} />
