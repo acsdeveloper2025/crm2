@@ -159,6 +159,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
   useRealtimeCaseUpdates();
   return (
     <div className="flex min-h-screen bg-surface-muted text-foreground">
+      {/* Skip link (a11y) — the first tab stop, so keyboard users can jump past the nav to the
+          page content; visually hidden until focused. */}
+      <a
+        href="#main"
+        className="sr-only rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-50"
+      >
+        Skip to content
+      </a>
       {/* Idle / absolute-session auto-logout (ADR-0045) — self-disables for exempt roles. */}
       <IdleLogoutManager />
       {/* Backdrop — only below lg (overlay mode), only while open */}
@@ -226,7 +234,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <UserMenu />
           </div>
         </header>
-        <main className="min-w-0 flex-1 p-4 md:p-6">{children}</main>
+        <main id="main" tabIndex={-1} className="min-w-0 flex-1 p-4 md:p-6 focus:outline-none">
+          {children}
+        </main>
       </div>
     </div>
   );

@@ -47,6 +47,8 @@ export function RolesPage() {
   const [editing, setEditing] = useState<RoleView | null | undefined>(undefined);
   const [toggleConflict, setToggleConflict] = useState<RoleView | null>(null);
   const [toggleError, setToggleError] = useState<string | null>(null);
+  // Focus-trap the "Cannot deactivate" alert while it's open (a11y) — the hook no-ops when inactive.
+  const toggleErrorRef = useFocusTrap<HTMLDivElement>(!!toggleError, () => setToggleError(null));
 
   const toggle = useMutation({
     mutationFn: (r: RoleView) =>
@@ -229,8 +231,16 @@ export function RolesPage() {
 
       {toggleError && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40">
-          <div className="w-full max-w-sm rounded-lg border border-border bg-card p-6 text-card-foreground shadow-lg">
-            <h2 className="mb-2 text-lg font-semibold">Cannot deactivate</h2>
+          <div
+            ref={toggleErrorRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="role-toggle-error-title"
+            className="w-full max-w-sm rounded-lg border border-border bg-card p-6 text-card-foreground shadow-lg"
+          >
+            <h2 id="role-toggle-error-title" className="mb-2 text-lg font-semibold">
+              Cannot deactivate
+            </h2>
             <p className="mb-4 text-sm text-muted-foreground">{toggleError}</p>
             <div className="flex justify-end">
               <Button onClick={() => setToggleError(null)}>OK</Button>
