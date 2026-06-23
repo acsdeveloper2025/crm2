@@ -727,9 +727,15 @@ function HistoryDialog({ rate, onClose }: { rate: RateView; onClose: () => void 
           <table className="rtable w-full text-xs">
             <thead className="text-left uppercase tracking-wide text-muted-foreground">
               <tr>
-                <th className="py-1 pr-4 font-semibold">When</th>
-                <th className="py-1 pr-4 font-semibold">Action</th>
-                <th className="py-1 pr-4 font-semibold">Old → New</th>
+                <th scope="col" className="py-1 pr-4 font-semibold">
+                  When
+                </th>
+                <th scope="col" className="py-1 pr-4 font-semibold">
+                  Action
+                </th>
+                <th scope="col" className="py-1 pr-4 font-semibold">
+                  Old → New
+                </th>
               </tr>
             </thead>
             <tbody>

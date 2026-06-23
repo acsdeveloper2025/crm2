@@ -12,6 +12,7 @@ import { useAuth } from '../../lib/AuthContext.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
 import { Button } from '../../components/ui/Button.js';
 import { DownloadIcon } from '../../components/ui/icons.js';
+import { ScrollRegion } from '../../components/ui/ScrollRegion.js';
 import { toast } from 'sonner';
 
 const DEFAULT_PAGE_SIZE = 50;
@@ -252,12 +253,12 @@ export function MisPage() {
 
       {!generate.isPending && generated && columns.length > 0 && (
         <div className="rounded-lg border border-border bg-card">
-          <div className="overflow-x-auto">
+          <ScrollRegion label="MIS report results">
             <table className="rtable w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase text-muted-foreground">
                   {columns.map((col) => (
-                    <th key={col.key} className="px-3 py-2 font-semibold">
+                    <th scope="col" key={col.key} className="px-3 py-2 font-semibold">
                       {col.header}
                     </th>
                   ))}
@@ -286,7 +287,7 @@ export function MisPage() {
                 )}
               </tbody>
             </table>
-          </div>
+          </ScrollRegion>
 
           {/* Pagination */}
           {totalCount > DEFAULT_PAGE_SIZE && (

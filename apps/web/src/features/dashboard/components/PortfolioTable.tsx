@@ -38,12 +38,24 @@ export function PortfolioTable() {
         <table className="w-full rtable text-sm">
           <thead className="text-left text-xs uppercase tracking-wide text-muted-foreground">
             <tr className="border-b border-border">
-              <th className="px-3 py-2 font-semibold">Client</th>
-              <th className="px-3 py-2 font-semibold">Product</th>
-              <th className="px-3 py-2 text-right font-semibold">Pending</th>
-              <th className="px-3 py-2 text-right font-semibold">Completed</th>
-              <th className="px-3 py-2 text-right font-semibold">Total</th>
-              <th className="px-3 py-2 font-semibold">Progress</th>
+              <th scope="col" className="px-3 py-2 font-semibold">
+                Client
+              </th>
+              <th scope="col" className="px-3 py-2 font-semibold">
+                Product
+              </th>
+              <th scope="col" className="px-3 py-2 text-right font-semibold">
+                Pending
+              </th>
+              <th scope="col" className="px-3 py-2 text-right font-semibold">
+                Completed
+              </th>
+              <th scope="col" className="px-3 py-2 text-right font-semibold">
+                Total
+              </th>
+              <th scope="col" className="px-3 py-2 font-semibold">
+                Progress
+              </th>
             </tr>
           </thead>
           <tbody>

@@ -21,6 +21,7 @@ import { UserPhoto } from '../../components/UserPhoto.js';
 import { PasswordPolicyChecklist, isPasswordStrong } from '../../components/PasswordPolicyChecklist.js';
 import { Button } from '../../components/ui/Button.js';
 import { Input } from '../../components/ui/Input.js';
+import { ScrollRegion } from '../../components/ui/ScrollRegion.js';
 
 const ME = ['me-profile'];
 
@@ -277,30 +278,48 @@ function PolicyAcceptancesCard() {
       ) : !q.data || q.data.length === 0 ? (
         <p className="text-sm text-muted-foreground">You haven&apos;t accepted any policies yet.</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
+        <ScrollRegion label="Policy acceptances">
+          <table className="w-full text-xs rtable">
             <thead>
               <tr className="border-b border-border text-left text-muted-foreground">
-                <th className="py-1 pr-3 font-medium">Policy</th>
-                <th className="py-1 pr-3 font-medium">Version</th>
-                <th className="py-1 pr-3 font-medium">Accepted</th>
-                <th className="py-1 pr-3 font-medium">Device</th>
+                <th scope="col" className="py-1 pr-3 font-medium">
+                  Policy
+                </th>
+                <th scope="col" className="py-1 pr-3 font-medium">
+                  Version
+                </th>
+                <th scope="col" className="py-1 pr-3 font-medium">
+                  Accepted
+                </th>
+                <th scope="col" className="py-1 pr-3 font-medium">
+                  Device
+                </th>
               </tr>
             </thead>
             <tbody>
               {q.data.map((a) => (
                 <tr key={a.id} className="border-b border-border/50">
-                  <td className="py-1 pr-3 text-foreground">{a.policyName ?? a.policyCode ?? '—'}</td>
-                  <td className="py-1 pr-3 font-mono text-muted-foreground">{a.policyVersion}</td>
-                  <td className="py-1 pr-3 text-muted-foreground">{formatDateTime(a.acceptedAt)}</td>
-                  <td className="py-1 pr-3 text-muted-foreground" title={a.userAgent ?? undefined}>
+                  <td data-label="Policy" className="py-1 pr-3 text-foreground">
+                    {a.policyName ?? a.policyCode ?? '—'}
+                  </td>
+                  <td data-label="Version" className="py-1 pr-3 font-mono text-muted-foreground">
+                    {a.policyVersion}
+                  </td>
+                  <td data-label="Accepted" className="py-1 pr-3 text-muted-foreground">
+                    {formatDateTime(a.acceptedAt)}
+                  </td>
+                  <td
+                    data-label="Device"
+                    className="py-1 pr-3 text-muted-foreground"
+                    title={a.userAgent ?? undefined}
+                  >
                     {truncateUa(a.userAgent)}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollRegion>
       )}
     </div>
   );

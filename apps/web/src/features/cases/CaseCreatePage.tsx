@@ -8,6 +8,7 @@ import { useAuth } from '../../lib/AuthContext.js';
 import { Input } from '../../components/ui/Input.js';
 import { TextArea } from '../../components/ui/TextArea.js';
 import { Button } from '../../components/ui/Button.js';
+import { ScrollRegion } from '../../components/ui/ScrollRegion.js';
 import { AddTasksForm } from './AddTasksForm.js';
 import { summarizeDedupe, type DedupeGroup } from './dedupeBatch.js';
 
@@ -328,7 +329,10 @@ export function CaseCreatePage() {
       </div>
 
       {hasSearched && (
-        <div className="overflow-x-auto rounded-lg border border-border bg-card shadow-sm">
+        <ScrollRegion
+          className="rounded-lg border border-border bg-card shadow-sm"
+          label="Dedupe search results"
+        >
           <div className="bg-surface-muted px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Dedupe Search Result — {summary.matchedCaseNumbers.length} match
             {summary.matchedCaseNumbers.length === 1 ? '' : 'es'} across {groups.length} applicant
@@ -351,13 +355,27 @@ export function CaseCreatePage() {
                     <table className="rtable w-full text-sm">
                       <thead className="text-left text-xs uppercase tracking-wide text-muted-foreground">
                         <tr>
-                          <th className="px-3 py-2 font-semibold">Case</th>
-                          <th className="px-3 py-2 font-semibold">Applicant</th>
-                          <th className="px-3 py-2 font-semibold">Mobile</th>
-                          <th className="px-3 py-2 font-semibold">PAN</th>
-                          <th className="px-3 py-2 font-semibold">Client</th>
-                          <th className="px-3 py-2 font-semibold">Status</th>
-                          <th className="px-3 py-2 font-semibold">Matched</th>
+                          <th scope="col" className="px-3 py-2 font-semibold">
+                            Case
+                          </th>
+                          <th scope="col" className="px-3 py-2 font-semibold">
+                            Applicant
+                          </th>
+                          <th scope="col" className="px-3 py-2 font-semibold">
+                            Mobile
+                          </th>
+                          <th scope="col" className="px-3 py-2 font-semibold">
+                            PAN
+                          </th>
+                          <th scope="col" className="px-3 py-2 font-semibold">
+                            Client
+                          </th>
+                          <th scope="col" className="px-3 py-2 font-semibold">
+                            Status
+                          </th>
+                          <th scope="col" className="px-3 py-2 font-semibold">
+                            Matched
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
@@ -413,7 +431,7 @@ export function CaseCreatePage() {
               </div>
             </>
           )}
-        </div>
+        </ScrollRegion>
       )}
 
       {/* Inline continuation: once the case exists, add its documents/tasks right here. */}

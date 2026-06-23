@@ -463,12 +463,24 @@ function UnitManager({ link }: { link: ClientProductView }) {
       <table className="rtable w-full text-sm">
         <thead className="bg-surface-muted text-left text-xs uppercase tracking-wide text-muted-foreground">
           <tr>
-            <th className="px-3 py-2 font-semibold">Unit</th>
-            <th className="px-3 py-2 font-semibold">Effective From</th>
-            <th className="px-3 py-2 font-semibold">Created</th>
-            <th className="px-3 py-2 font-semibold">Updated</th>
-            <th className="px-3 py-2 font-semibold">Status</th>
-            <th className="px-3 py-2 text-right font-semibold">Actions</th>
+            <th scope="col" className="px-3 py-2 font-semibold">
+              Unit
+            </th>
+            <th scope="col" className="px-3 py-2 font-semibold">
+              Effective From
+            </th>
+            <th scope="col" className="px-3 py-2 font-semibold">
+              Created
+            </th>
+            <th scope="col" className="px-3 py-2 font-semibold">
+              Updated
+            </th>
+            <th scope="col" className="px-3 py-2 font-semibold">
+              Status
+            </th>
+            <th scope="col" className="px-3 py-2 text-right font-semibold">
+              Actions
+            </th>
           </tr>
         </thead>
         <tbody>

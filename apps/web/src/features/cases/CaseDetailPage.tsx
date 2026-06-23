@@ -40,6 +40,7 @@ import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
 import { Input } from '../../components/ui/Input.js';
+import { ScrollRegion } from '../../components/ui/ScrollRegion.js';
 import { TextArea } from '../../components/ui/TextArea.js';
 import { Button } from '../../components/ui/Button.js';
 import { WorkStatusChip } from '../../components/WorkStatusChip.js';
@@ -135,18 +136,28 @@ export function CaseDetailPage() {
           evidence → verdict history → the terminal case verdict (LAST). */}
 
       {/* Subjects */}
-      <div className="overflow-x-auto rounded-lg border border-border bg-card shadow-sm">
+      <ScrollRegion className="rounded-lg border border-border bg-card shadow-sm" label="Applicants">
         <div className="bg-surface-muted px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Applicants — {data.applicants.length}
         </div>
         <table className="w-full text-sm rtable">
           <thead className="text-left text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
-              <th className="px-3 py-2 font-semibold">Name</th>
-              <th className="px-3 py-2 font-semibold">Type</th>
-              <th className="px-3 py-2 font-semibold">Mobile</th>
-              <th className="px-3 py-2 font-semibold">PAN</th>
-              <th className="px-3 py-2 font-semibold">Company</th>
+              <th scope="col" className="px-3 py-2 font-semibold">
+                Name
+              </th>
+              <th scope="col" className="px-3 py-2 font-semibold">
+                Type
+              </th>
+              <th scope="col" className="px-3 py-2 font-semibold">
+                Mobile
+              </th>
+              <th scope="col" className="px-3 py-2 font-semibold">
+                PAN
+              </th>
+              <th scope="col" className="px-3 py-2 font-semibold">
+                Company
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -177,7 +188,7 @@ export function CaseDetailPage() {
             <AddApplicantForm caseId={id} />
           </div>
         )}
-      </div>
+      </ScrollRegion>
 
       {/* The work: documents / tasks (create → assign → execute → per-task result); "+ Add Tasks"
           lives in the task card header (canCreate). */}
@@ -544,7 +555,7 @@ function TasksSection({
     band == null ? '—' : band === -1 ? '>48h' : `${band}h`;
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-border bg-card shadow-sm">
+    <ScrollRegion className="rounded-lg border border-border bg-card shadow-sm" label="Tasks">
       <div className="flex items-center justify-between bg-surface-muted px-3 py-2">
         <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Documents / Tasks — {tasks.length}
@@ -599,19 +610,47 @@ function TasksSection({
       <table className="w-full text-sm rtable">
         <thead className="text-left text-xs uppercase tracking-wide text-muted-foreground">
           <tr>
-            <th className="px-3 py-2 font-semibold">Code</th>
-            <th className="px-3 py-2 font-semibold">Verification Unit</th>
-            <th className="px-3 py-2 font-semibold">Status</th>
-            <th className="px-3 py-2 font-semibold">Assignee</th>
-            <th className="px-3 py-2 font-semibold">Visit</th>
-            <th className="px-3 py-2 font-semibold">Rate Type</th>
-            <th className="px-3 py-2 font-semibold">Bill</th>
-            <th className="px-3 py-2 font-semibold">Assigned</th>
-            <th className="px-3 py-2 font-semibold">Completed</th>
-            <th className="px-3 py-2 font-semibold">Completed In</th>
-            <th className="px-3 py-2 font-semibold">Created</th>
-            <th className="px-3 py-2 font-semibold">Updated</th>
-            {canAct && <th className="px-3 py-2 font-semibold">Action</th>}
+            <th scope="col" className="px-3 py-2 font-semibold">
+              Code
+            </th>
+            <th scope="col" className="px-3 py-2 font-semibold">
+              Verification Unit
+            </th>
+            <th scope="col" className="px-3 py-2 font-semibold">
+              Status
+            </th>
+            <th scope="col" className="px-3 py-2 font-semibold">
+              Assignee
+            </th>
+            <th scope="col" className="px-3 py-2 font-semibold">
+              Visit
+            </th>
+            <th scope="col" className="px-3 py-2 font-semibold">
+              Rate Type
+            </th>
+            <th scope="col" className="px-3 py-2 font-semibold">
+              Bill
+            </th>
+            <th scope="col" className="px-3 py-2 font-semibold">
+              Assigned
+            </th>
+            <th scope="col" className="px-3 py-2 font-semibold">
+              Completed
+            </th>
+            <th scope="col" className="px-3 py-2 font-semibold">
+              Completed In
+            </th>
+            <th scope="col" className="px-3 py-2 font-semibold">
+              Created
+            </th>
+            <th scope="col" className="px-3 py-2 font-semibold">
+              Updated
+            </th>
+            {canAct && (
+              <th scope="col" className="px-3 py-2 font-semibold">
+                Action
+              </th>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -878,7 +917,7 @@ function TasksSection({
           }}
         />
       )}
-    </div>
+    </ScrollRegion>
   );
 }
 
@@ -1261,7 +1300,7 @@ function AttachmentsSection({
   const colCount = canUpload ? 7 : 6;
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-border bg-card shadow-sm">
+    <ScrollRegion className="rounded-lg border border-border bg-card shadow-sm" label="Attachments">
       <div className="flex flex-wrap items-center justify-between gap-2 bg-surface-muted px-3 py-2">
         <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Attachments — {rows.length}
@@ -1300,13 +1339,29 @@ function AttachmentsSection({
       <table className="w-full text-sm rtable">
         <thead className="text-left text-xs uppercase tracking-wide text-muted-foreground">
           <tr>
-            <th className="px-3 py-2 font-semibold">Name</th>
-            <th className="px-3 py-2 font-semibold">Attached to</th>
-            <th className="px-3 py-2 font-semibold">Type</th>
-            <th className="px-3 py-2 font-semibold">Size</th>
-            <th className="px-3 py-2 font-semibold">Uploaded by</th>
-            <th className="px-3 py-2 font-semibold">Uploaded</th>
-            {canUpload && <th className="px-3 py-2 font-semibold">Action</th>}
+            <th scope="col" className="px-3 py-2 font-semibold">
+              Name
+            </th>
+            <th scope="col" className="px-3 py-2 font-semibold">
+              Attached to
+            </th>
+            <th scope="col" className="px-3 py-2 font-semibold">
+              Type
+            </th>
+            <th scope="col" className="px-3 py-2 font-semibold">
+              Size
+            </th>
+            <th scope="col" className="px-3 py-2 font-semibold">
+              Uploaded by
+            </th>
+            <th scope="col" className="px-3 py-2 font-semibold">
+              Uploaded
+            </th>
+            {canUpload && (
+              <th scope="col" className="px-3 py-2 font-semibold">
+                Action
+              </th>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -1355,7 +1410,7 @@ function AttachmentsSection({
           )}
         </tbody>
       </table>
-    </div>
+    </ScrollRegion>
   );
 }
 

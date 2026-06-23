@@ -42,16 +42,36 @@ function BillingCaseLines({ caseId }: { caseId: string }) {
     <table className="rtable w-full text-sm">
       <thead>
         <tr className="text-left text-xs uppercase text-muted-foreground">
-          <th className="py-1">Task</th>
-          <th className="py-1">Verification Unit</th>
-          <th className="py-1">Assignee</th>
-          <th className="py-1">Class</th>
-          <th className="py-1">Rate Type</th>
-          <th className="py-1 text-right">TAT Band</th>
-          <th className="py-1 text-right">Units</th>
-          <th className="py-1 text-right">Bill</th>
-          <th className="py-1 text-right">Commission</th>
-          <th className="py-1">Completed</th>
+          <th scope="col" className="py-1">
+            Task
+          </th>
+          <th scope="col" className="py-1">
+            Verification Unit
+          </th>
+          <th scope="col" className="py-1">
+            Assignee
+          </th>
+          <th scope="col" className="py-1">
+            Class
+          </th>
+          <th scope="col" className="py-1">
+            Rate Type
+          </th>
+          <th scope="col" className="py-1 text-right">
+            TAT Band
+          </th>
+          <th scope="col" className="py-1 text-right">
+            Units
+          </th>
+          <th scope="col" className="py-1 text-right">
+            Bill
+          </th>
+          <th scope="col" className="py-1 text-right">
+            Commission
+          </th>
+          <th scope="col" className="py-1">
+            Completed
+          </th>
         </tr>
       </thead>
       <tbody>
@@ -121,11 +141,21 @@ function BillingBreakdownPanels({ clientId }: { clientId: string }) {
         <table className="rtable w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase text-muted-foreground">
-              <th className="py-1">Location</th>
-              <th className="py-1 text-right">Tasks</th>
-              <th className="py-1 text-right">Units</th>
-              <th className="py-1 text-right">Bill</th>
-              <th className="py-1 text-right">Commission</th>
+              <th scope="col" className="py-1">
+                Location
+              </th>
+              <th scope="col" className="py-1 text-right">
+                Tasks
+              </th>
+              <th scope="col" className="py-1 text-right">
+                Units
+              </th>
+              <th scope="col" className="py-1 text-right">
+                Bill
+              </th>
+              <th scope="col" className="py-1 text-right">
+                Commission
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -164,11 +194,21 @@ function BillingBreakdownPanels({ clientId }: { clientId: string }) {
         <table className="rtable w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase text-muted-foreground">
-              <th className="py-1">Band</th>
-              <th className="py-1 text-right">Tasks</th>
-              <th className="py-1 text-right">Units</th>
-              <th className="py-1 text-right">Bill</th>
-              <th className="py-1 text-right">Commission</th>
+              <th scope="col" className="py-1">
+                Band
+              </th>
+              <th scope="col" className="py-1 text-right">
+                Tasks
+              </th>
+              <th scope="col" className="py-1 text-right">
+                Units
+              </th>
+              <th scope="col" className="py-1 text-right">
+                Bill
+              </th>
+              <th scope="col" className="py-1 text-right">
+                Commission
+              </th>
             </tr>
           </thead>
           <tbody>

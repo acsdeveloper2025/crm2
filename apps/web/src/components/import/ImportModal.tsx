@@ -12,6 +12,7 @@ import { apiBlob, apiUpload, ApiError } from '../../lib/sdk.js';
 import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { Button } from '../ui/Button.js';
 import { DownloadIcon, UploadIcon } from '../ui/icons.js';
+import { ScrollRegion } from '../ui/ScrollRegion.js';
 
 /** What an importable list passes in: the API base path, the cache key to refresh, and a label. */
 export interface ImportConfig {
@@ -217,9 +218,15 @@ function ImportModal({ config, onClose }: { config: ImportConfig; onClose: () =>
                   <table className="w-full text-left text-xs">
                     <thead className="text-muted-foreground">
                       <tr>
-                        <th className="px-3 py-1">Row</th>
-                        <th className="px-3 py-1">Column</th>
-                        <th className="px-3 py-1">Error</th>
+                        <th scope="col" className="px-3 py-1">
+                          Row
+                        </th>
+                        <th scope="col" className="px-3 py-1">
+                          Column
+                        </th>
+                        <th scope="col" className="px-3 py-1">
+                          Error
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -241,12 +248,12 @@ function ImportModal({ config, onClose }: { config: ImportConfig; onClose: () =>
                 <div className="border-b border-border bg-muted/40 px-3 py-2 text-xs font-medium">
                   Preview of valid rows
                 </div>
-                <div className="max-h-48 overflow-x-auto">
+                <ScrollRegion className="max-h-48" label="Import preview rows">
                   <table className="w-full text-left text-xs">
                     <thead className="text-muted-foreground">
                       <tr>
                         {headers.map((h) => (
-                          <th key={h} className="px-3 py-1">
+                          <th scope="col" key={h} className="px-3 py-1">
                             {h}
                           </th>
                         ))}
@@ -264,7 +271,7 @@ function ImportModal({ config, onClose }: { config: ImportConfig; onClose: () =>
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </ScrollRegion>
               </div>
             )}
 
