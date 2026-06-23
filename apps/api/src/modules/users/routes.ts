@@ -58,6 +58,12 @@ userRoutes.post(
   raw({ type: () => true, limit: '6mb' }),
   c.meUploadPhoto,
 );
+// Single user by id (the admin record-page loader). Read = USER_VIEW (same audience as `GET /` — the
+// record page itself guards USER_MANAGE for writes, and `PUT /:id` below enforces it). Declared AFTER
+// the static single-segment paths (`/options`, `/export`, `/import-template`) and the `/me/...` paths so
+// none of them is ever captured as `:id`; the `/:id/<subresource>` routes below are distinct two-segment
+// paths (Express matches `/:id` and `/:id/sessions` independently — no shadowing).
+userRoutes.get('/:id', authorize(PERMISSIONS.USER_VIEW), c.getById);
 userRoutes.put('/:id', authorize(PERMISSIONS.USER_MANAGE), c.update);
 userRoutes.post('/:id/password', authorize(PERMISSIONS.USER_MANAGE), c.setPassword);
 // Admin "generate one-time password" (plaintext returned once) + "unlock" (clear a lockout).

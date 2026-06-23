@@ -4522,6 +4522,23 @@
       }
     },
     "/api/v2/users/{id}": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "get_api_v2_users_id",
+        "summary": "GET /api/v2/users/{id}",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
       "put": {
         "tags": [
           "users"

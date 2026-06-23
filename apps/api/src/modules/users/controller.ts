@@ -43,6 +43,16 @@ export const userController = {
     }
   },
 
+  /** A single user by id — the admin record-page loader. Thin: parse the uuid → service → the joined
+   *  `UserView` (same shape as a list row). 404 USER_NOT_FOUND on a miss. */
+  async getById(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json(await svc.getById(parseId(req)));
+    } catch (e) {
+      next(e);
+    }
+  },
+
   async export(req: Request, res: Response, next: NextFunction) {
     try {
       const q = req.query as Record<string, unknown>;

@@ -258,6 +258,16 @@ export const userService = {
     return repo.options();
   },
 
+  /** A single user by id as the joined display view (the admin record-page loader). Read-only: returns
+   *  the SAME `UserView` shape as a list row (so the record-page form seeds from it), 404s an unknown id
+   *  with the same not-found error the update/photo/password paths use. Reuses `repo.profileView` — the
+   *  one-id variant of the list query (no separate finder needed). */
+  async getById(id: string): Promise<UserView> {
+    const view = await repo.profileView(id);
+    if (!view) throw AppError.notFound('USER_NOT_FOUND');
+    return view;
+  },
+
   async create(input: unknown, userId: string): Promise<User> {
     const v = CreateUserSchema.parse(input); // throws ZodError → 400
     // employee_id is minted in the repo; an optional initial password is hashed here (strong policy

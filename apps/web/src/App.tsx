@@ -16,6 +16,7 @@ import { CpvPage } from './features/cpv/CpvPage.js';
 import { RateManagementPage } from './features/rateManagement/RateManagementPage.js';
 import { LocationsPage } from './features/locations/LocationsPage.js';
 import { UsersPage } from './features/users/UsersPage.js';
+import { UserRecordPage } from './features/users/UserRecordPage.js';
 import { DepartmentsPage } from './features/departments/DepartmentsPage.js';
 import { DesignationsPage } from './features/designations/DesignationsPage.js';
 import { RolesPage } from './features/access/RolesPage.js';
@@ -79,6 +80,8 @@ export function App() {
         <Route path="/admin/report-layouts/:id" element={<ReportLayoutRecordPage />} />
         <Route path="/admin/locations" element={<LocationsPage />} />
         <Route path="/admin/users" element={<UsersPage />} />
+        <Route path="/admin/users/new" element={<UserRecordPage />} />
+        <Route path="/admin/users/:id" element={<UserRecordPage />} />
         <Route path="/admin/departments" element={<DepartmentsPage />} />
         <Route path="/admin/designations" element={<DesignationsPage />} />
         <Route path="/admin/rbac" element={<RolesPage />} />

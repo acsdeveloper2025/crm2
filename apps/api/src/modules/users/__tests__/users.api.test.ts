@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
+import type { UserView } from '@crm2/sdk';
 import { createTestDb, userFactory, authHeaderForRole } from '@crm2/test-utils';
 import { createApp } from '../../../http/app.js';
 import { setPool } from '../../../platform/db.js';
@@ -11,6 +12,7 @@ const db = RUN ? createTestDb() : null;
 const app = createApp({ enableTestAuth: true });
 const SA = authHeaderForRole('SUPER_ADMIN');
 const BE = authHeaderForRole('BACKEND_USER');
+const FA = authHeaderForRole('FIELD_AGENT');
 const RANDOM_UUID = '11111111-1111-1111-1111-111111111111';
 
 const newUser = async (over = {}) =>
@@ -182,6 +184,66 @@ describe.skipIf(!RUN)('users API', () => {
   it('GET /options requires auth (401); BACKEND_USER is denied (403)', async () => {
     expect((await request(app).get('/api/v2/users/options')).status).toBe(401);
     expect((await request(app).get('/api/v2/users/options').set(BE)).status).toBe(403);
+  });
+
+  // ── GET /:id (admin record-page loader) ──
+  describe('GET /:id', () => {
+    it('returns the joined view for a created user (200)', async () => {
+      const mgr = await newUser({ username: 'rp_mgr', name: 'RP Manager', role: 'MANAGER' });
+      const created = await request(app)
+        .post('/api/v2/users')
+        .set(SA)
+        .send(
+          userFactory({
+            username: 'rp_target',
+            name: 'RP Target',
+            role: 'FIELD_AGENT',
+            email: 'rp_target@crm2.local',
+            reportsTo: mgr.id,
+          }),
+        );
+      expect(created.status).toBe(201);
+      const id = created.body.id as string;
+
+      const res = await request(app).get(`/api/v2/users/${id}`).set(SA);
+      expect(res.status).toBe(200);
+      const user = res.body as UserView;
+      // identity + the full set of edit-form fields the record page seeds from
+      expect(user.id).toBe(id);
+      expect(user.username).toBe('rp_target');
+      expect(user.name).toBe('RP TARGET'); // ADR-0058: name stored/returned uppercase
+      expect(user.role).toBe('FIELD_AGENT');
+      expect(user.email).toBe('rp_target@crm2.local');
+      expect(user.reportsTo).toBe(mgr.id);
+      expect(user.isActive).toBe(true);
+      expect(typeof user.version).toBe('number');
+      expect(user.employeeId).toBeTruthy();
+      expect(user.effectiveFrom).toBeTruthy();
+      // joined display field — proves it's the VIEW, not the bare row
+      expect(user.reportsToName).toBe('RP MANAGER');
+    });
+
+    it('404s an unknown id', async () => {
+      const res = await request(app).get(`/api/v2/users/${RANDOM_UUID}`).set(SA);
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('USER_NOT_FOUND');
+    });
+
+    it('400s a malformed (non-uuid) id', async () => {
+      const res = await request(app).get('/api/v2/users/not-a-uuid').set(SA);
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('BAD_REQUEST');
+    });
+
+    it('401s an unauthenticated request', async () => {
+      expect((await request(app).get(`/api/v2/users/${RANDOM_UUID}`)).status).toBe(401);
+    });
+
+    it('403s an actor lacking USER_VIEW (page.users is SUPER_ADMIN-only)', async () => {
+      // BACKEND_USER and FIELD_AGENT both lack page.users — same audience gate as `GET /`.
+      expect((await request(app).get(`/api/v2/users/${RANDOM_UUID}`).set(BE)).status).toBe(403);
+      expect((await request(app).get(`/api/v2/users/${RANDOM_UUID}`).set(FA)).status).toBe(403);
+    });
   });
 
   // ── column filters (DATAGRID_STANDARD §6/§7) ──
