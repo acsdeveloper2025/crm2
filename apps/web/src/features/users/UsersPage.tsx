@@ -11,7 +11,8 @@ import {
   type TempPasswordResponse,
   type UserView,
 } from '@crm2/sdk';
-import { api, apiBlob, apiExport, ApiError } from '../../lib/sdk.js';
+import { toast } from 'sonner';
+import { api, apiExport, ApiError } from '../../lib/sdk.js';
 import { formatDateTime } from '../../lib/format.js';
 import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { BulkStatusActions } from '../../components/BulkStatusActions.js';
@@ -185,11 +186,19 @@ export function UsersPage() {
             variant="secondary"
             onClick={async () => {
               try {
-                const { blob, filename } = await apiBlob(`${BASE}/scope/export?mode=all&format=xlsx`);
-                const url = URL.createObjectURL(blob);
+                // Route through apiExport (B-13/B3 contract): a large export ≥ the job threshold
+                // returns 202 + a background job instead of a synchronous blob (mirrors the DataGrid).
+                const out = await apiExport(`${BASE}/scope/export?mode=all&format=xlsx`);
+                if (out.kind === 'job') {
+                  toast('Export started in the background', {
+                    description: 'You’ll be notified when the scope export is ready to download.',
+                  });
+                  return;
+                }
+                const url = URL.createObjectURL(out.blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = filename;
+                a.download = out.filename;
                 document.body.appendChild(a);
                 a.click();
                 a.remove();

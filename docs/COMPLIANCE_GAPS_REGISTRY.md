@@ -991,6 +991,15 @@ which were aligned). The IE-5 P0 (dropped required dimensions / ambiguity) IS fi
 alignment (split Location, emit codes, bare TAT) is a follow-up that conflicts with the FE grid `cols`
 ids and so warrants its own pass. Export is documented in-code as read-for-analysis, not a re-import source.
 
+### IE-DEFER-8 · Report Layouts export — 🟡 DEFERRED (discovered 2026-06-23, design-build B3)
+The Report Layouts admin DataGrid (`/admin/report-layouts`) has no `exportFn` because the `reportLayouts`
+module exposes no `GET /export` route (only `/`, `/by-config`, `/:id`, create/activate/deactivate). Per
+IMPORT_EXPORT_STANDARD (no module writes a bespoke export; the DataGrid is the only export surface), the
+fix is an **additive backend `/report-layouts/export`** (metadata manifest + route gated `TEMPLATE_MANAGE`
++ SDK `.export()` + web `exportFn`), mirroring the report-templates export precedent — its own slice, not
+invented here. The layout *designer artifact* (template body / column-row builder) stays non-importable by
+design (see WONTFIX). Low-risk metadata-only export of the list columns (name/kind/client/product/status/dates).
+
 ### Review-panel verdicts (4-agent, 2026-06-22)
 CTO: NO BLOCKING ISSUES (reuse + additive + contract-safe + tests genuine; round-trip + RBAC traced to
 seed). Security: no P0/P1 in the change; the four (now six) gates correctly close real export-wider-than-read
@@ -1008,6 +1017,90 @@ Report Templates content blob, Report Layouts designer artifact, Saved Views (pe
 System (read-only health), Reference (seeded lookup), Policies content (legal blob) — non-importable by
 design. Audit/Billing/Commission/Notification/System-log history — forbidden import (§4), correctly
 exposing no import endpoint. MIS money-drop (G-4) verified applied on BOTH `/rows` and `/export`.
+
+## Section H — Frontend design-compliance audit (2026-06-19) — dispositions
+
+The authorized 2026-06-19 `apps/web` design audit (deliverable `docs/design-audit-2026-06-19/`, plan
+`docs/plans/2026-06-20-frontend-design-compliance-fix-plan.md`) found **0 P0 · 25 P1 · 56 P2 · 45 P3** —
+all *consistency of primitive adoption* on newer/bespoke pages (no architectural breaks). Remediation is
+additive (adopt existing primitives) under **[ADR-0051](./adr/ADR-0051-inline-grid-editing-no-modal-forms.md)**
+(inline-grid + record-page add/edit) and **[ADR-0052](./adr/ADR-0052-button-action-emphasis-system.md)**
+(button affordance). Foundation + Wave 1 + button-migration + Wave 4 (D3/D4) **shipped to prod**
+(`origin/main 522d5ac`, 2026-06-23). Wave K / D5 closeout dispositioned below.
+
+### H-1 · RBAC-UI client-gating leaks (write controls shown without `useAuth().has()`) — ✅ FIXED
+Foundation F1 centralized `has()` in `useAuth()`; Wave-1 A1 gated Cases `+New`, Rate-Management writes,
+and Templates/RBAC/Policies actions on the server perms. The D4 record-page routes (Policies/ReportLayouts/
+Roles/CommissionRates/Users/VerificationUnits) each **self-guard** (`if (!has('<perm>')) return <Navigate/>`),
+closing the create/edit leak structurally. Shipped `522d5ac`. Server remains authoritative.
+
+### H-2 · Bespoke dialogs/popovers not focus-trapped — ✅ FIXED
+A3 focus-trapped the (then) Commission-Rates dialog; A4/F4 moved the header Jobs/Bell/Account popovers to a
+shared focus-trapped `Popover`. The Commission-Rates add/edit dialog is now moot (D4 record page). Shipped
+`522d5ac`. The RBAC "cannot deactivate" alert gained `role=dialog`+`aria-modal`+`useFocusTrap` (Wave K).
+
+### H-3 · Non-standard loading/error states — ✅ FIXED
+A5 standardized Dashboard/Security/Notifications/CPV/Policies on `HexagonLoader` + error/Retry (no
+silent-empty; MFA no false-OFF pre-load). Shipped `522d5ac`.
+
+### H-7 · Token slips (`text-st-completed` dead, `text-amber-600` raw) — ✅ FIXED
+A2 replaced both with frozen tokens; F5 source-scan guard (`lib/tokens.guard.test.ts`) prevents
+regressions. Shipped `522d5ac`.
+
+### H-9 · Add/edit inconsistency (modal forms) → inline-grid + record-page (ADR-0051) — ✅ FIXED (converted set)
+**Flat → editable DataGrid per-cell inline + add-row:** Departments, Designations, Clients, Products,
+Locations. **Complex → record-page route** `/admin/<entity>/new|:id`: Policies, ReportLayouts, Roles,
+CommissionRates, Users (2-tab), VerificationUnits (3 with additive `GET /:id`). All add/edit `*Dialog`s
+deleted; shipped `522d5ac`. A regression guard (`apps/web/src/lib/adr0051-no-modal-forms.guard.test.ts`)
+fails if any converted entity re-introduces an add/edit modal. Standards updated (`DATAGRID_STANDARD.md §21`,
+`MANAGEMENT_LIST_STANDARD.md`). Kept overlays (ConflictDialog/ImportModal/ResetPasswordDialog/Assign) are
+not add/edit forms.
+- **CPV — 🟡 DEFERRED:** bespoke master-detail accordion (client↔product link + per-unit reschedule); keys
+  immutable, only `effectiveFrom` is reschedulable via a tiny single-date dialog + a sanctioned
+  `renderExpanded` sub-table. ADR-0051's flat-grid model does not fit; left as-is (documented scope).
+- **Templates + Rate-Management (Revise) — 🟡 DEFERRED:** the two remaining popup surfaces outside the
+  converted set. Templates is a small code/name/type/content form; Rate-Management "Revise" is an
+  effective-dated amount change. Converting them (record page / inline) is a follow-up — not in the
+  2026-06-23 converted-set scope.
+
+### H-10 · Keyboard navigation (D15) — ✅ FIXED (P1/P2); 🟡 DEFERRED (P3 tail)
+- **K1 (P1) — ✅ FIXED:** DataGrid sortable headers + `onRowClick` rows are keyboard-operable
+  (tabIndex + Enter/Space, focus-visible ring, `aria-sort` retained) — fixes every grid (Playwright
+  e2e in `datagrid.spec.ts`).
+- **K2/K3 — ✅ FIXED:** `.input` focus ring restored; RateManagement `SearchableSelect` keyboard combobox;
+  skip-to-content link; RBAC deactivate-alert focus-trap (shipped `522d5ac`); MustAcceptPolicies scroll
+  region keyboard-focusable (`role=region`/`tabIndex`, this branch).
+- **DataGrid `role=menu` arrow-key roving — 🟡 DEFERRED (P3):** the column/export/filter menus are already
+  keyboard-operable (focus-trap + Tab + Enter + Escape; axe-green) — arrow-roving is an ARIA best-practice
+  enhancement, not an axe-failing violation. Deferred to avoid destabilizing the critical 1.4k-line shared
+  grid (40 passing grid e2e) for a P3.
+
+### H-11 · Button affordance / action-emphasis (ADR-0052) — ✅ FIXED
+Shared `<Button>` variant system (primary/secondary-tonal/destructive/ghost/link + loading/iconOnly +
+Export ↓ / Import ↑ glyphs), AA-contrast in light+dark, ~130 `.btn` + 21 text-link sites migrated, `.btn`
+CSS retired, dark-mode toggle. Shipped `522d5ac`.
+
+### H-B2 · Bespoke tables a11y/responsive contract — ✅ FIXED (this branch)
+Bespoke (non-DataGrid) tables adopt the keyboard-focusable `<ScrollRegion>` (CaseDetail ×3, CaseCreate,
+MIS, Import, Profile, UserRecord), `scope="col"` on every bespoke `<th>`, and `.rtable`/`data-label` so
+Profile + UserRecord policy-acceptance tables collapse to labelled mobile cards. Browser-verified
+`/cases/:id` (not in the e2e gate); a11y + viewport green.
+
+### H-B3 · Export/pagination contract — ✅ FIXED (code) + 🟡 DEFERRED (missing endpoints)
+- **Users "Export Scope" → `apiExport`** (this branch): was a bare `apiBlob` download; now routes through
+  the job-aware helper so a ≥-threshold export returns a 202 background job (toast) instead of a sync blob.
+- **`exportFn` where the backend `/export` exists:** all admin/master-data DataGrids already wire it. The
+  remaining DataGrids WITHOUT a list-export endpoint are NOT invented (IMPORT_EXPORT_STANDARD — no bespoke
+  export): **Cases** (only `/dedupe-search/export` exists → `IE-DEFER-3`), **Policies** (`IE-DEFER-5`),
+  **ReportLayouts** (`IE-DEFER-8`, new). Each is an additive backend gap, deferred.
+- **CaseDetail task/attachment lists** = array-by-design (per-case bounded sets returned with the case, not
+  separately paginated, like `/cases/available-units`); no DataGrid export — documented, not a gap.
+
+### Remaining design-build items (in progress, this branch — NOT yet pushed)
+- **Wave 2 B1** (record-page forms → inline zod validation via the existing `@crm2/sdk` schema — **not** new
+  `react-hook-form` deps; OCC `ConflictDialog` already wired on every record page).
+- **Wave 3 C2** (URL-state column filters on the remaining lists).
+- Each dispositioned FIXED here as it lands. (K1/K3, D5, B2, C3, B3-code already FIXED above.)
 
 ---
 *Governance ledger. Update — never overwrite — as findings change state. Linked from

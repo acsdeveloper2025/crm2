@@ -192,6 +192,44 @@ The DataGrid supports this with an **additive, opt-in `renderExpanded?: (row) =>
 - This keeps master-detail screens on the **one** table component (no bespoke accordion table), so
   CPV Mapping is now DataGrid-compliant.
 
+## 21 — Inline add/edit (ADR-0051 — no modal forms)
+
+Add/edit is **inline, never a modal/overlay form** ([ADR-0051](./adr/ADR-0051-inline-grid-editing-no-modal-forms.md),
+owner-accepted 2026-06-20 — supersedes the dialog-based CRUD of ADR-0008 / the earlier
+`MANAGEMENT_LIST_STANDARD.md` add/edit modal). Two surfaces only:
+
+1. **Flat entities → editable DataGrid (Twenty-style per-cell editing).** A column opts in with
+   `editable` + a typed `editor` (`text|select|date|checkbox`); clicking a cell (or keyboard-focusing
+   it) opens an inline editor — **Enter / blur commits, Escape cancels** — while sibling cells stay in
+   display mode. New records use an **inline add-row** (toolbar "+ Add row"). The page passes
+   `inlineEdit={{ version, onSave, onCreate?, canEdit? }}`; `onSave` receives only the **changed
+   field** and merges it over the row's raw values for a `version`-checked `PUT` (per-row OCC → 409
+   `STALE_UPDATE` → `ConflictDialog`); omit `onCreate` to keep a bespoke create form (e.g. Locations'
+   multi-area batch create). Persistence reuses the existing list endpoint's `PUT`/`POST` + `version`
+   — the server stays authoritative for scope/ownership + OCC (inline editing is **not** an IDOR
+   vector; FE gating is defense-in-depth). Machinery: `components/ui/data-grid/` (`CellEditor`,
+   `inline-edit.ts`).
+   Converted: **Departments, Designations, Clients, Products** (via `MasterDataCrud`), **Locations**.
+2. **Complex entities → full record-page route.** Forms too rich for cell editing (permission
+   matrices, cascading pickers, multi-tab, kind-driven locked profiles, designers) edit on a
+   dedicated route `/admin/<entity>/new` + `/admin/<entity>/:id` — like Cases — with inline field
+   editing and a `← Back` link. Each route **self-guards** with `useAuth().has('<perm>')` →
+   `<Navigate>` (the server still enforces); the edit route hydrates from `GET /:id` into a
+   `key={id}`-remounted form (state seeds from `useState` initializers, no `useEffect`).
+   Converted: **Policies, ReportLayouts, Roles, CommissionRates, Users** (2-tab), **VerificationUnits**.
+
+**Kept overlays (NOT add/edit forms, unaffected):** OCC `ConflictDialog`, the bulk `ImportModal`,
+confirm prompts, action dialogs (task Assign), the Users list-row `ResetPasswordDialog`, header menus.
+**Not converted (documented scope):** CPV (bespoke master-detail accordion, §20); Templates and
+Rate-Management Revise predate and sit outside the converted set (tracked in
+`COMPLIANCE_GAPS_REGISTRY.md §H`). A regression guard
+(`apps/web/src/lib/adr0051-no-modal-forms.guard.test.ts`) fails if a converted entity re-introduces an
+add/edit `*Dialog`/`*Modal`.
+
+**Keyboard (§19):** sortable headers are `tabIndex` + Enter/Space → sort (keeping `aria-sort`);
+`onRowClick` rows are `tabIndex` + Enter/Space → open, with a focus-visible ring; menus focus-trap +
+Escape-restore.
+
 ---
 
 *Change this frozen standard only via a superseding ADR + CTO + domain-owner sign-off

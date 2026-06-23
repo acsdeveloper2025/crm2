@@ -56,6 +56,28 @@ master/detail:
 Reference implementation: `apps/web/src/features/cpv/CpvPage.tsx` (the `UnitManager`
 inline-expand). Apply this pattern to every future master-detail management screen.
 
+## Add/edit pattern: inline-grid + record-page, NO modal forms (ADR-0051)
+
+Add/edit is **inline, never a centered modal/overlay form**
+([ADR-0051](./adr/ADR-0051-inline-grid-editing-no-modal-forms.md), owner-accepted 2026-06-20). This
+**supersedes the dialog-based create/edit** previously implied here and in ADR-0008. Two surfaces:
+
+- **Flat entities → editable DataGrid (per-cell inline editing + inline add-row).** Click a cell to
+  edit it in place (Enter/blur commits, Escape cancels); "+ Add row" creates. Reuses the list
+  endpoint's `PUT`/`POST` + `version` (per-row OCC → `ConflictDialog`). The Effective From input named
+  above is now an editable `date` cell (or a record-page field), not a dialog field. Reference:
+  `MasterDataCrud` + `components/ui/data-grid/` — Departments, Designations, Clients, Products,
+  Locations.
+- **Complex entities → full record-page route** `/admin/<entity>/new` + `/:id` (RBAC self-guarded,
+  hydrated from `GET /:id`) — Policies, ReportLayouts, Roles, CommissionRates, Users (2-tab),
+  VerificationUnits.
+
+Kept overlays (not add/edit forms): OCC `ConflictDialog`, bulk `ImportModal`, confirm prompts, task
+Assign, the Users list-row `ResetPasswordDialog`. Not converted (scope): CPV (master-detail
+accordion, above), Templates + Rate-Management Revise (`COMPLIANCE_GAPS_REGISTRY.md §H`). See
+`docs/DATAGRID_STANDARD.md §21` for the full inline-edit contract; a guard test
+(`apps/web/src/lib/adr0051-no-modal-forms.guard.test.ts`) prevents regressions.
+
 ## Notes
 
 - The backend already bumps `updated_at = now()` on every write (edit / activate /
