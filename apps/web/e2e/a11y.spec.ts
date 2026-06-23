@@ -75,10 +75,13 @@ for (const spec of PAGES) {
 // The per-page loop above only scans CLOSED pages. These two scan OPEN overlays (a modal dialog and
 // the mobile nav drawer) — the focus-trapped surfaces are otherwise never axe-checked open.
 test('an open modal dialog has no serious/critical a11y violations', async ({ page }) => {
-  await page.goto('/admin/clients');
-  await page.getByRole('button', { name: '+ New' }).click();
-  await expect(page.getByRole('dialog', { name: 'New Client' })).toBeVisible();
-  await expectNoGatedViolations(page, 'New Client dialog (open)');
+  // The flat master-data entities (Clients/Products/Departments/Designations) are now inline-grid
+  // (no add/edit modal — ADR-0051). Verification Units keeps a create dialog (a kind-driven record),
+  // so it's the stable surface for scanning an open focus-trapped modal.
+  await page.goto('/admin/verification-units');
+  await page.getByRole('button', { name: '+ New Unit' }).click();
+  await expect(page.getByRole('dialog', { name: 'New Verification Unit' })).toBeVisible();
+  await expectNoGatedViolations(page, 'New Verification Unit dialog (open)');
 });
 
 test('the open mobile nav drawer has no serious/critical a11y violations', async ({ page }) => {
