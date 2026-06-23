@@ -33,6 +33,7 @@ import { SecurityPage } from './features/security/SecurityPage.js';
 import { ProfilePage } from './features/profile/ProfilePage.js';
 import { BillingPage } from './features/billing/BillingPage.js';
 import { CommissionRatesPage } from './features/commissionRates/CommissionRatesPage.js';
+import { CommissionRateRecordPage } from './features/commissionRates/CommissionRateRecordPage.js';
 import { ReportLayoutsPage } from './features/reportLayouts/ReportLayoutsPage.js';
 import { ReportLayoutRecordPage } from './features/reportLayouts/ReportLayoutRecordPage.js';
 import { MisPage } from './features/mis/MisPage.js';
@@ -71,6 +72,8 @@ export function App() {
         <Route path="/admin/cpv" element={<CpvPage />} />
         <Route path="/admin/rates" element={<RateManagementPage />} />
         <Route path="/admin/commission-rates" element={<CommissionRatesPage />} />
+        <Route path="/admin/commission-rates/new" element={<CommissionRateRecordPage />} />
+        <Route path="/admin/commission-rates/:id" element={<CommissionRateRecordPage />} />
         <Route path="/admin/report-layouts" element={<ReportLayoutsPage />} />
         <Route path="/admin/report-layouts/new" element={<ReportLayoutRecordPage />} />
         <Route path="/admin/report-layouts/:id" element={<ReportLayoutRecordPage />} />

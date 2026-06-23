@@ -209,6 +209,51 @@ describe.skipIf(!RUN)('commission-rates API (ADR-0036)', () => {
     expect(bad.status).toBe(400);
   });
 
+  describe('GET /:id (record-page loader)', () => {
+    it('returns the joined view for a created rate (200)', async () => {
+      const userId = await newUser('cr_get');
+      const dims = await seedDims('get');
+      const created = await request(app)
+        .post('/api/v2/commission-rates')
+        .set(SA)
+        .send(fullRate(userId, dims, { amount: 55 }));
+      expect(created.status).toBe(201);
+      const id = created.body.id as number;
+
+      const res = await request(app).get(`/api/v2/commission-rates/${id}`).set(SA);
+      expect(res.status).toBe(200);
+      const rate = res.body as CommissionRateView;
+      expect(rate.id).toBe(id);
+      expect(rate.amount).toBe(55);
+      expect(typeof rate.amount).toBe('number');
+      expect(rate.userId).toBe(userId);
+      expect(rate.clientId).toBe(dims.clientId);
+      // joined display fields — proves it's the VIEW, not the bare row
+      expect(rate.userName).toBe('CR_GET');
+      expect(rate.clientName).toBeTruthy();
+      expect(rate.productCode).toBeTruthy();
+      expect(rate.verificationUnitName).toBeTruthy();
+      expect(rate.pincode).toBeTruthy();
+    });
+
+    it('404s an unknown id', async () => {
+      const res = await request(app).get('/api/v2/commission-rates/999999').set(SA);
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('COMMISSION_RATE_NOT_FOUND');
+    });
+
+    it('401s an unauthenticated request', async () => {
+      const res = await request(app).get('/api/v2/commission-rates/1');
+      expect(res.status).toBe(401);
+    });
+
+    it('403s an actor without masterdata.manage (comp data is SA-only)', async () => {
+      // FIELD_AGENT holds neither perm; MANAGER holds masterdata.VIEW but NOT masterdata.manage.
+      expect((await request(app).get('/api/v2/commission-rates/1').set(FA)).status).toBe(403);
+      expect((await request(app).get('/api/v2/commission-rates/1').set(MGR)).status).toBe(403);
+    });
+  });
+
   describe('import / export', () => {
     // ADR-0050: every dimension is a required tariff key, so the import file now carries the full set —
     // Rate Type (LOCAL/OGL), Client Code, Location (Pincode + Area), Product Code, Unit Code, TAT Band.

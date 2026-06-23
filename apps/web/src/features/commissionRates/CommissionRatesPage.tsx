@@ -1,14 +1,9 @@
 import { useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   pageQueryToParams,
   exportQueryToParams,
-  COMMISSION_RATE_TYPES,
-  type Option,
-  type UserOption,
-  type VerificationUnitOption,
-  type Location,
-  type TatPolicy,
   type CommissionRate,
   type CommissionRateView,
   type PageQuery,
@@ -16,9 +11,8 @@ import {
   type ExportRequest,
 } from '@crm2/sdk';
 import { api, apiExport, ApiError } from '../../lib/sdk.js';
-import { formatDateTime, formatMoney, toDateInput, toIsoDate } from '../../lib/format.js';
+import { formatDateTime, formatMoney } from '../../lib/format.js';
 import { useAuth } from '../../lib/AuthContext.js';
-import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
 import { ImportButton } from '../../components/import/ImportModal.js';
 import { Button } from '../../components/ui/Button.js';
@@ -28,284 +22,11 @@ const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
   e instanceof ApiError && e.status === HTTP_CONFLICT && e.code === 'STALE_UPDATE';
 
-/** Create (full fields) or Revise (amount + effectiveFrom, version-guarded) a commission rate. */
-function CommissionRateDialog({ row, onClose }: { row: CommissionRateView | null; onClose: () => void }) {
-  const qc = useQueryClient();
-  // Trap focus + close on Escape and restore focus to the opener (a11y P1, mirrors MasterDataDialog).
-  const dialogRef = useFocusTrap<HTMLDivElement>(true, onClose);
-  const isRevise = !!row;
-  const [userId, setUserId] = useState(row?.userId ?? '');
-  const [fieldRateType, setRateType] = useState(row?.fieldRateType ?? '');
-  const [clientId, setClientId] = useState(row?.clientId ? String(row.clientId) : '');
-  const [productId, setProductId] = useState(row?.productId ? String(row.productId) : '');
-  const [unitId, setUnitId] = useState(row?.verificationUnitId ? String(row.verificationUnitId) : '');
-  const [pincode, setPincode] = useState(row?.pincode ?? '');
-  const [locationId, setLocationId] = useState(row?.locationId ? String(row.locationId) : '');
-  const [tatBand, setTatBand] = useState(row?.tatBand != null ? String(row.tatBand) : '');
-  const [amount, setAmount] = useState(row ? String(row.amount) : '');
-  const [effectiveFrom, setEffectiveFrom] = useState(toDateInput(row?.effectiveFrom));
-  const [error, setError] = useState<string | null>(null);
-  const validPincode = /^\d{6}$/.test(pincode);
-
-  const users = useQuery({
-    queryKey: ['user-options'],
-    queryFn: () => api<UserOption[]>('GET', '/api/v2/users/options'),
-  });
-  const clients = useQuery({
-    queryKey: ['client-options'],
-    queryFn: () => api<Option[]>('GET', '/api/v2/clients/options'),
-  });
-  const products = useQuery({
-    queryKey: ['product-options'],
-    queryFn: () => api<Option[]>('GET', '/api/v2/products/options'),
-  });
-  const units = useQuery({
-    queryKey: ['verification-unit-options'],
-    queryFn: () => api<VerificationUnitOption[]>('GET', '/api/v2/verification-units/options'),
-  });
-  // Cascading location: type a pincode (server-search suggestions) → pick the area = a locations row.
-  const pincodes = useQuery({
-    queryKey: ['location-pincodes', pincode],
-    queryFn: () => api<string[]>('GET', `/api/v2/locations/pincodes?q=${encodeURIComponent(pincode)}`),
-    enabled: !isRevise && pincode.length >= 2,
-  });
-  const areas = useQuery({
-    queryKey: ['location-areas', pincode],
-    queryFn: () =>
-      api<Paginated<Location>>('GET', `/api/v2/locations?pincode=${pincode}&limit=200`).then((r) => r.items),
-    enabled: !isRevise && validPincode,
-  });
-  const tatPolicies = useQuery({
-    queryKey: ['tat-policies', 'active'],
-    queryFn: () =>
-      api<Paginated<TatPolicy>>('GET', '/api/v2/tat-policies?active=true&limit=100').then((r) => r.items),
-  });
-
-  const mut = useMutation({
-    mutationFn: () =>
-      isRevise
-        ? api<CommissionRate>('POST', `/api/v2/commission-rates/${row!.id}/revise`, {
-            amount: Number(amount),
-            effectiveFrom: toIsoDate(effectiveFrom),
-            version: row!.version,
-          })
-        : api<CommissionRate>('POST', '/api/v2/commission-rates', {
-            userId,
-            locationId: locationId ? Number(locationId) : null, // required for LOCAL/OGL; null for OFFICE
-            fieldRateType, // LOCAL/OGL (field) or OFFICE (desk)
-            // Universal-able: blank ⇒ null ⇒ matches any (ADR-0050).
-            clientId: clientId ? Number(clientId) : null,
-            productId: productId ? Number(productId) : null,
-            verificationUnitId: unitId ? Number(unitId) : null,
-            tatBand: tatBand === '' ? null : Number(tatBand),
-            amount: Number(amount),
-            effectiveFrom: toIsoDate(effectiveFrom),
-          }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['commission-rates'] });
-      onClose();
-    },
-    onError: (e: unknown) =>
-      setError(
-        isStale(e)
-          ? 'This rate changed since you opened it — reload and retry.'
-          : e instanceof ApiError
-            ? e.code
-            : 'Save failed',
-      ),
-  });
-
-  // ADR-0050: required-specific dims = user + location (area) + rate type; client/product/unit/tat band
-  // are Universal-able (blank ⇒ matches any), so they don't gate Save.
-  // ADR-0050: location required for LOCAL/OGL; OFFICE rates are location-less (flat office commission).
-  const valid = isRevise
-    ? amount !== ''
-    : !!userId && !!fieldRateType && (fieldRateType === 'OFFICE' || !!locationId) && amount !== '';
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40">
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="commission-rate-dialog-title"
-        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg border border-border bg-card p-6 text-card-foreground shadow-lg"
-      >
-        <h2 id="commission-rate-dialog-title" className="mb-4 text-lg font-semibold">
-          {isRevise ? 'Revise Commission Rate' : 'New Commission Rate'}
-        </h2>
-        <div className="space-y-3">
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-foreground">User</span>
-            <select
-              className="input"
-              value={userId}
-              disabled={isRevise}
-              onChange={(e) => setUserId(e.target.value)}
-            >
-              <option value="">Select a user…</option>
-              {(users.data ?? []).map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name} ({u.role.replace(/_/g, ' ')})
-                </option>
-              ))}
-            </select>
-          </label>
-          {!isRevise && (
-            <>
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-foreground">
-                  Client (blank = Universal)
-                </span>
-                <select className="input" value={clientId} onChange={(e) => setClientId(e.target.value)}>
-                  <option value="">Universal (all clients)</option>
-                  {(clients.data ?? []).map((c) => (
-                    <option key={c.id} value={String(c.id)}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-foreground">
-                  Product (blank = Universal)
-                </span>
-                <select className="input" value={productId} onChange={(e) => setProductId(e.target.value)}>
-                  <option value="">Universal (all products)</option>
-                  {(products.data ?? []).map((p) => (
-                    <option key={p.id} value={String(p.id)}>
-                      {p.code} — {p.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-foreground">
-                  Verification Unit (blank = Universal)
-                </span>
-                <select className="input" value={unitId} onChange={(e) => setUnitId(e.target.value)}>
-                  <option value="">Universal (all units)</option>
-                  {(units.data ?? []).map((u) => (
-                    <option key={u.id} value={String(u.id)}>
-                      {u.code} — {u.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-foreground">Pincode</span>
-                <input
-                  className="input"
-                  list="commission-pincodes"
-                  value={pincode}
-                  placeholder="Type ≥2 digits…"
-                  onChange={(e) => {
-                    setPincode(e.target.value);
-                    setLocationId('');
-                  }}
-                />
-                <datalist id="commission-pincodes">
-                  {(pincodes.data ?? []).map((p) => (
-                    <option key={p} value={p} />
-                  ))}
-                </datalist>
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-foreground">Area</span>
-                <select
-                  className="input"
-                  value={locationId}
-                  disabled={!validPincode}
-                  onChange={(e) => setLocationId(e.target.value)}
-                >
-                  <option value="">
-                    {validPincode ? 'Select an area…' : 'Enter a 6-digit pincode first'}
-                  </option>
-                  {(areas.data ?? []).map((l) => (
-                    <option key={l.id} value={String(l.id)}>
-                      {l.area}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-foreground">Rate Type</span>
-                <select className="input" value={fieldRateType} onChange={(e) => setRateType(e.target.value)}>
-                  <option value="">Select a rate type…</option>
-                  {COMMISSION_RATE_TYPES.map((b) => (
-                    <option key={b} value={b}>
-                      {b}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-foreground">
-                  TAT Band (blank = Universal)
-                </span>
-                <select className="input" value={tatBand} onChange={(e) => setTatBand(e.target.value)}>
-                  <option value="">Universal (all bands)</option>
-                  {(tatPolicies.data ?? []).map((tp) => (
-                    <option key={tp.id} value={String(tp.tatHours)}>
-                      {tp.label}
-                    </option>
-                  ))}
-                  <option value="-1">Out of band</option>
-                </select>
-              </label>
-            </>
-          )}
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-foreground">Amount (₹)</span>
-            <input
-              className="input tabular-nums"
-              type="number"
-              min="0"
-              step="0.01"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="50.00"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-foreground">
-              Effective From (blank = now)
-            </span>
-            <input
-              type="date"
-              className="input"
-              value={effectiveFrom}
-              onChange={(e) => setEffectiveFrom(e.target.value)}
-            />
-          </label>
-          {error && <p className="text-sm text-destructive">{error}</p>}
-        </div>
-        <div className="mt-5 flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose} disabled={mut.isPending}>
-            Cancel
-          </Button>
-          <Button
-            onClick={() => {
-              setError(null);
-              mut.mutate();
-            }}
-            loading={mut.isPending}
-            disabled={!valid}
-          >
-            Save
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /** Commission Rates (ADR-0036) — per-user agent-commission config. SUPER_ADMIN only (comp data). */
 export function CommissionRatesPage() {
-  const { user } = useAuth();
-  const has = (perm: string) =>
-    !!user && (user.grantsAll === true || (user.permissions ?? []).includes(perm));
-  const [dialog, setDialog] = useState<{ row: CommissionRateView | null } | null>(null);
+  const navigate = useNavigate();
+  // Mirror the server write guard (masterdata.manage) so viewers don't see write controls (H-1).
+  const { has } = useAuth();
   const [active, setActive] = useState('');
   const qc = useQueryClient();
   // Per-row activate/deactivate (OCC version-guarded; single-row routes — no bulk endpoint exists).
@@ -413,7 +134,11 @@ export function CommissionRatesPage() {
         cell: (r) => (
           <div className="flex justify-end gap-1">
             {r.isActive && (
-              <Button variant="secondary" size="sm" onClick={() => setDialog({ row: r })}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => navigate(`/admin/commission-rates/${r.id}`)}
+              >
                 Revise
               </Button>
             )}
@@ -429,7 +154,7 @@ export function CommissionRatesPage() {
         ),
       },
     ],
-    [toggle],
+    [toggle, navigate],
   );
 
   if (!has('masterdata.manage'))
@@ -454,7 +179,7 @@ export function CommissionRatesPage() {
               entityLabel: 'commission rate',
             }}
           />
-          <Button onClick={() => setDialog({ row: null })}>+ New Commission Rate</Button>
+          <Button onClick={() => navigate('/admin/commission-rates/new')}>+ New Commission Rate</Button>
         </div>
       </div>
       <DataGrid<CommissionRateView>
@@ -490,7 +215,6 @@ export function CommissionRatesPage() {
           </select>
         }
       />
-      {dialog && <CommissionRateDialog row={dialog.row} onClose={() => setDialog(null)} />}
     </div>
   );
 }

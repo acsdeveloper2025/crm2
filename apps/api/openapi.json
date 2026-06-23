@@ -1425,6 +1425,25 @@
         ]
       }
     },
+    "/api/v2/commission-rates/{id}": {
+      "get": {
+        "tags": [
+          "commission-rates"
+        ],
+        "operationId": "get_api_v2_commission_rates_id",
+        "summary": "GET /api/v2/commission-rates/{id}",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v2/commission-rates/{id}/activate": {
       "post": {
         "tags": [

@@ -6,6 +6,7 @@ import {
   type Paginated,
 } from '@crm2/sdk';
 import { commissionRateRepository as repo } from './repository.js';
+import { AppError } from '../../platform/errors.js';
 import { requireVersion } from '../../platform/occ.js';
 import { resolvePage, resolveFilters, buildPage, type PageSpec } from '../../platform/pagination.js';
 import {
@@ -116,6 +117,14 @@ export const commissionRateService = {
     if (r.search !== undefined) filters['search'] = r.search;
     for (const f of columnFilters) filters[`f_${f.field}`] = f.values.join(',');
     return buildPage(items, totalCount, r, filters);
+  },
+
+  /** A single rate by id (the record-page loader). Read-only: returns the full joined view, 404s an
+   *  unknown id with the same not-found error the revise/(de)activate paths use. */
+  async get(id: number): Promise<CommissionRateView> {
+    const rate = await repo.findView(id);
+    if (!rate) throw AppError.notFound('COMMISSION_RATE_NOT_FOUND');
+    return rate;
   },
 
   /** Export rows for the DataGrid (IMPORT_EXPORT_STANDARD) — re-runs the SAME list query. */

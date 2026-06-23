@@ -107,6 +107,28 @@ export const commissionRateRepository = {
     return rows[0] ?? null;
   },
 
+  /** A single rate joined with its display fields (the record-page loader) — mirrors the list SELECT
+   *  filtered by id, so the dimension names (user/client/product/unit/location) come back too. Returns
+   *  any version (current OR superseded): the record page must be able to load a historical row by id. */
+  async findView(id: number): Promise<CommissionRateView | null> {
+    const rows = await query<CommissionRateView>(
+      `SELECT cr.id, cr.user_id, cr.field_rate_type, cr.client_id,
+              cr.location_id, cr.product_id, cr.verification_unit_id, cr.tat_band,
+              cr.amount::float8 AS amount, cr.currency, cr.is_active,
+              cr.effective_from, cr.effective_to, cr.version,
+              cr.created_by, cr.updated_by, cr.created_at, cr.updated_at,
+              u.name AS user_name, u.email AS user_email,
+              c.code AS client_code, c.name AS client_name,
+              p2.code AS product_code, p2.name AS product_name,
+              vu2.name AS verification_unit_name,
+              l2.pincode AS pincode, l2.area AS area
+       ${CR_FROM}
+       WHERE cr.id = $1`,
+      [id],
+    );
+    return rows[0] ?? null;
+  },
+
   async create(input: CreateCommissionRateInput, userId: string): Promise<CommissionRate> {
     try {
       const [row] = await query<CommissionRate>(

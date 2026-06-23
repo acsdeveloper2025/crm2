@@ -22,6 +22,14 @@ export const commissionRateController = {
     }
   },
 
+  async get(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json(await svc.get(parseId(req)));
+    } catch (e) {
+      next(e);
+    }
+  },
+
   async export(req: Request, res: Response, next: NextFunction) {
     try {
       const q = req.query as Record<string, unknown>;

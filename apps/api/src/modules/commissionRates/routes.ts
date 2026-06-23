@@ -16,6 +16,11 @@ commissionRateRoutes.get('/', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.list);
 // `/export` + `/import-template` are literal single-segment paths — declared before the param routes.
 commissionRateRoutes.get('/export', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.export);
 commissionRateRoutes.get('/import-template', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.importTemplate);
+// Single rate by id (the record-page loader). Read = masterdata.manage, consistent with the whole
+// module (commission AMOUNTS are SA-only comp data — viewing one is no less sensitive than the list).
+// Declared AFTER the static single-segment paths above so `/export`, `/import-template` are never
+// captured as a numeric `:id` (and the numeric :id wouldn't match them anyway).
+commissionRateRoutes.get('/:id', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.get);
 commissionRateRoutes.post(
   '/import',
   authorize(PERMISSIONS.MASTERDATA_MANAGE),
