@@ -27,6 +27,7 @@ import { Input } from '../Input.js';
 import { Button } from '../Button.js';
 import { DownloadIcon } from '../icons.js';
 import { SavedViewsPicker } from './SavedViewsPicker.js';
+import { validateDraft, firstError, type CellEditorKind, type EditableField } from './inline-edit.js';
 
 /**
  * The Universal DataGrid (docs/DATAGRID_STANDARD.md) — the ONE table for the platform.
@@ -54,6 +55,22 @@ export interface DataGridColumn<T> {
   /** when set (with `filterable`), the header filter is an Excel-style multi-select (§7) of these
    *  options instead of a text input; selected values are sent comma-joined as `f_<id>` (→ IN). */
   filterOptions?: { value: string; label: string }[];
+  // ── Inline editing (ADR-0051 — editable grid, no modal forms). Requires the grid's `inlineEdit`. ──
+  /** Render this cell as an editor while its row is being edited. */
+  editable?: boolean;
+  /** Editor kind for an `editable` cell (default `text`). */
+  editor?: CellEditorKind;
+  /** Row property the editor reads/writes (also the draft key). Defaults to `id`. */
+  field?: string;
+  editorPlaceholder?: string;
+  /** Block save while this field is blank. */
+  required?: boolean;
+  /** Inline validator → an error message, or null when valid. */
+  validate?: (value: string) => string | null;
+  /** Seed the editor from a row (e.g. to format a date). Defaults to `String(row[field] ?? '')`. */
+  draftValue?: (row: T) => string;
+  /** While the row is edited, render Save/Cancel here instead of `cell` (mark the actions column). */
+  editAction?: boolean;
 }
 
 /**
@@ -131,10 +148,84 @@ export interface DataGridProps<T> {
    * row-body click (the chevron always toggles); pass only one. Used by CPV (the unit manager).
    */
   renderExpanded?: (row: T) => ReactNode;
+  /**
+   * Inline editing (ADR-0051): click an `editable` cell to edit its row in place — Enter saves,
+   * Escape cancels, the `editAction` column shows Save/Cancel. With `onCreate`, a "+ Add row" inserts
+   * a blank editable row at the top. The PAGE implements persistence via its existing PUT/POST with
+   * `version`, so the server still enforces scope/ownership + OCC — the grid is defense-in-depth UI
+   * only. `onSave`/`onCreate` reject to keep edit mode and surface the message inline.
+   */
+  inlineEdit?: {
+    version: (row: T) => number;
+    onSave: (row: T, values: Record<string, string>, version: number) => Promise<void>;
+    onCreate?: (values: Record<string, string>) => Promise<void>;
+  };
 }
 
 const SEARCH_DEBOUNCE_MS = 300;
 const SKELETON_ROWS = 8;
+
+/** A single inline cell editor (ADR-0051). Enter commits the row, Escape cancels. */
+function CellEditor({
+  kind,
+  value,
+  placeholder,
+  autoFocus,
+  onChange,
+  onSubmit,
+  onCancel,
+}: {
+  kind: CellEditorKind;
+  value: string;
+  placeholder: string;
+  autoFocus: boolean;
+  onChange: (v: string) => void;
+  onSubmit: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <input
+      className="input"
+      type={kind === 'date' ? 'date' : 'text'}
+      value={value}
+      placeholder={placeholder}
+      autoFocus={autoFocus}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => onChange(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          onSubmit();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          onCancel();
+        }
+      }}
+    />
+  );
+}
+
+/** Save/Cancel pair shown in the actions cell while a row is being edited inline. */
+function EditActions({
+  saving,
+  onSave,
+  onCancel,
+}: {
+  saving: boolean;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+      <Button variant="ghost" size="sm" onClick={onCancel} disabled={saving}>
+        Cancel
+      </Button>
+      <Button size="sm" onClick={onSave} loading={saving}>
+        Save
+      </Button>
+    </div>
+  );
+}
 
 export function DataGrid<T>({
   columns,
@@ -154,6 +245,7 @@ export function DataGrid<T>({
   selectable,
   bulkActions,
   renderExpanded,
+  inlineEdit,
 }: DataGridProps<T>) {
   const [params, setParams] = useSearchParams();
 
@@ -312,6 +404,79 @@ export function DataGrid<T>({
   const items = useMemo(() => data?.items ?? [], [data]);
   const byId = useMemo(() => new Map(columns.map((c) => [c.id, c])), [columns]);
 
+  // ── Inline editing (ADR-0051) — opt-in via `inlineEdit`. Click an editable cell to edit its row;
+  // the page persists via its existing PUT/POST + `version` (server enforces scope/ownership + OCC). ──
+  const editFields = useMemo<EditableField[]>(
+    () =>
+      columns
+        .filter((c) => c.editable)
+        .map((c) => ({
+          field: c.field ?? c.id,
+          editor: c.editor ?? 'text',
+          ...(c.required ? { required: true } : {}),
+          ...(c.validate ? { validate: c.validate } : {}),
+        })),
+    [columns],
+  );
+  const firstEditableId = useMemo(() => columns.find((c) => c.editable)?.id, [columns]);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [editError, setEditError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const isEditingRow = (id: string) => editId === id && !creating;
+  const cellKey = (c: DataGridColumn<T>) => c.field ?? c.id;
+
+  const seedDraft = (row: T): Record<string, string> => {
+    const d: Record<string, string> = {};
+    for (const c of columns) {
+      if (!c.editable) continue;
+      const f = cellKey(c);
+      d[f] = c.draftValue ? c.draftValue(row) : String((row as Record<string, unknown>)[f] ?? '');
+    }
+    return d;
+  };
+  const resetEdit = () => {
+    setEditId(null);
+    setCreating(false);
+    setDraft({});
+    setEditError(null);
+    setSaving(false);
+  };
+  const startEdit = (row: T) => {
+    if (saving) return;
+    setCreating(false);
+    setEditId(String(rowId(row)));
+    setDraft(seedDraft(row));
+    setEditError(null);
+  };
+  const startCreate = () => {
+    setEditId(null);
+    setCreating(true);
+    setDraft(Object.fromEntries(columns.filter((c) => c.editable).map((c) => [cellKey(c), ''])));
+    setEditError(null);
+  };
+  const setField = (field: string, value: string) => setDraft((d) => ({ ...d, [field]: value }));
+  const submitEdit = async () => {
+    if (saving || !inlineEdit) return;
+    const msg = firstError(validateDraft(draft, editFields));
+    if (msg) {
+      setEditError(msg);
+      return;
+    }
+    const row = creating ? null : items.find((r) => String(rowId(r)) === editId);
+    setSaving(true);
+    setEditError(null);
+    try {
+      if (creating && inlineEdit.onCreate) await inlineEdit.onCreate(draft);
+      else if (row) await inlineEdit.onSave(row, draft, inlineEdit.version(row));
+      resetEdit();
+    } catch (e) {
+      setSaving(false);
+      setEditError(e instanceof Error ? e.message : 'Save failed');
+    }
+  };
+
   const columnHelper = createColumnHelper<T>();
   // Display-only columns: the table model just tracks id/header/visibility/sort — the cell body is
   // rendered directly from `col.cell(row.original)` in the tbody (DataGridColumn.cell is `(row)=>ReactNode`
@@ -436,6 +601,11 @@ export function DataGrid<T>({
             <span className="text-xs text-muted-foreground" aria-live="polite">
               Updating…
             </span>
+          )}
+          {inlineEdit?.onCreate && (
+            <Button size="sm" onClick={startCreate} disabled={creating}>
+              + Add row
+            </Button>
           )}
           {/* Saved views (§10, B-5) — per-user named snapshots of this grid's URL-state. */}
           <SavedViewsPicker resourceKey={queryKey} />
@@ -763,12 +933,49 @@ export function DataGrid<T>({
               </tr>
             )}
 
-            {!isLoading && !isError && items.length === 0 && (
+            {!isLoading && !isError && items.length === 0 && !creating && (
               <tr>
                 <td colSpan={colCount} className="px-3 py-8 text-center text-muted-foreground">
                   No records. Adjust your search or filters.
                 </td>
               </tr>
+            )}
+
+            {inlineEdit && creating && (
+              <Fragment>
+                <tr className="border-t border-border bg-accent/40">
+                  {renderExpanded && <td data-label="" className="px-2 py-2" />}
+                  {selectable && <td data-label="" className="px-3 py-2" />}
+                  {visibleColumns.map((c) => (
+                    <td
+                      key={c.id}
+                      data-label={c.label ?? c.header}
+                      className={`px-3 py-2 ${c.align === 'right' ? 'text-right' : ''}`}
+                    >
+                      {c.editable ? (
+                        <CellEditor
+                          kind={c.editor ?? 'text'}
+                          value={draft[cellKey(c)] ?? ''}
+                          placeholder={c.editorPlaceholder ?? ''}
+                          autoFocus={c.id === firstEditableId}
+                          onChange={(v) => setField(cellKey(c), v)}
+                          onSubmit={() => void submitEdit()}
+                          onCancel={resetEdit}
+                        />
+                      ) : c.editAction ? (
+                        <EditActions saving={saving} onSave={() => void submitEdit()} onCancel={resetEdit} />
+                      ) : null}
+                    </td>
+                  ))}
+                </tr>
+                {editError && (
+                  <tr>
+                    <td colSpan={colCount} className="px-3 pb-2 text-sm text-destructive">
+                      {editError}
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             )}
 
             {!isLoading &&
@@ -815,17 +1022,54 @@ export function DataGrid<T>({
                       )}
                       {row.getVisibleCells().map((cell) => {
                         const col = byId.get(cell.column.id);
+                        const editingThis = !!inlineEdit && isEditingRow(row.id);
+                        const clickToEdit = !!inlineEdit && !editId && !creating && !!col?.editable;
                         return (
                           <td
                             key={cell.id}
                             data-label={col?.label ?? col?.header ?? cell.column.id}
-                            className={`px-3 py-2 ${col?.align === 'right' ? 'text-right' : ''}`}
+                            className={`px-3 py-2 ${col?.align === 'right' ? 'text-right' : ''} ${
+                              clickToEdit ? 'cursor-text' : ''
+                            }`}
+                            onClick={
+                              clickToEdit
+                                ? (e) => {
+                                    e.stopPropagation();
+                                    startEdit(row.original);
+                                  }
+                                : undefined
+                            }
                           >
-                            {col?.cell(row.original)}
+                            {editingThis && col?.editable ? (
+                              <CellEditor
+                                kind={col.editor ?? 'text'}
+                                value={draft[cellKey(col)] ?? ''}
+                                placeholder={col.editorPlaceholder ?? ''}
+                                autoFocus={col.id === firstEditableId}
+                                onChange={(v) => setField(cellKey(col), v)}
+                                onSubmit={() => void submitEdit()}
+                                onCancel={resetEdit}
+                              />
+                            ) : editingThis && col?.editAction ? (
+                              <EditActions
+                                saving={saving}
+                                onSave={() => void submitEdit()}
+                                onCancel={resetEdit}
+                              />
+                            ) : (
+                              col?.cell(row.original)
+                            )}
                           </td>
                         );
                       })}
                     </tr>
+                    {isEditingRow(row.id) && editError && (
+                      <tr>
+                        <td colSpan={colCount} className="px-3 pb-2 text-sm text-destructive">
+                          {editError}
+                        </td>
+                      </tr>
+                    )}
                     {expanded && renderExpanded && (
                       <tr className="border-t border-border bg-surface-muted/40">
                         <td colSpan={colCount} className="px-3 py-3">
