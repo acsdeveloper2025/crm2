@@ -232,10 +232,13 @@ test('DataGrid: selecting rows shows the bulk-action bar with Export Selected, a
 test('DataGrid dialog: New traps focus and Escape closes it, returning focus to the trigger', async ({
   page,
 }) => {
-  await page.goto('/admin/clients');
-  const trigger = page.getByRole('button', { name: '+ New' });
+  // The flat master-data entities (Clients/Products/Departments/Designations) are inline-grid now
+  // (no add/edit modal — ADR-0051). Verification Units keeps a create dialog (a kind-driven record),
+  // so it's the stable surface for the focus-trap contract here.
+  await page.goto('/admin/verification-units');
+  const trigger = page.getByRole('button', { name: '+ New Unit' });
   await trigger.click();
-  const dialog = page.getByRole('dialog', { name: 'New Client' });
+  const dialog = page.getByRole('dialog', { name: 'New Verification Unit' });
   await expect(dialog).toBeVisible();
   // focus landed inside the dialog
   await expect(dialog.getByRole('textbox').first()).toBeFocused();
