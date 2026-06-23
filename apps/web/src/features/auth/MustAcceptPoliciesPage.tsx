@@ -31,7 +31,12 @@ export function MustAcceptPoliciesPage() {
             You must accept the following before using the application.
           </p>
         </div>
-        <div className="flex-1 space-y-6 overflow-y-auto p-6">
+        <div
+          className="flex-1 space-y-6 overflow-y-auto p-6"
+          tabIndex={0}
+          role="region"
+          aria-label="Policy text"
+        >
           {pendingPolicies.map((p) => (
             <section key={p.id}>
               <h2 className="mb-2 text-sm font-semibold">{p.name}</h2>
