@@ -1096,11 +1096,21 @@ Profile + UserRecord policy-acceptance tables collapse to labelled mobile cards.
 - **CaseDetail task/attachment lists** = array-by-design (per-case bounded sets returned with the case, not
   separately paginated, like `/cases/available-units`); no DataGrid export — documented, not a gap.
 
+### H-C2 · URL-state column filters on the remaining lists — ✅ FIXED (server-whitelisted) + 🟡 N/A (no server filter)
+The DataGrid already persists search/sort/page to the URL on every list; C2 exposes the column filters the
+server `*_PAGE_SPEC.filterMap` already whitelists (the `f_<id>` contract): **CommissionRates** (+`user`,
+`client`, `fieldRateType` text filters; dates already wired), **ReportLayouts** (+`client`/`product`/`name`
+text, `kind` Excel multi-select, `createdAt`/`updatedAt` date filters — was 0). **Roles** + **RateManagement**
+already exposed their full filterMap (no change). **CaseDetailPage** task-bucket tab now persists to `?tab=`
+(bookmarkable). Only filters the server whitelists were added (an unwhitelisted `f_*` is silently dropped, so
+none were invented). **FieldMonitoring + Dedupe — 🟡 N/A:** field-monitoring has NO `filterMap` (no column
+filter is server-supported → would need an additive backend spec), and Dedupe's filter surface IS its
+search form (name/PAN/mobile/company), not per-column grid filters — both left as-is by design.
+
 ### Remaining design-build items (in progress, this branch — NOT yet pushed)
 - **Wave 2 B1** (record-page forms → inline zod validation via the existing `@crm2/sdk` schema — **not** new
   `react-hook-form` deps; OCC `ConflictDialog` already wired on every record page).
-- **Wave 3 C2** (URL-state column filters on the remaining lists).
-- Each dispositioned FIXED here as it lands. (K1/K3, D5, B2, C3, B3-code already FIXED above.)
+- Each dispositioned FIXED here as it lands. (K1/K3, D5, B2, C3, B3, C2 already FIXED above.)
 
 ---
 *Governance ledger. Update — never overwrite — as findings change state. Linked from

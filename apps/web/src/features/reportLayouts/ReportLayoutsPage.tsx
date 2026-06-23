@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   pageQueryToParams,
+  LAYOUT_KINDS,
   type LayoutKind,
   type ReportLayout,
   type ReportLayoutView,
@@ -29,6 +30,9 @@ const KIND_LABEL: Record<LayoutKind, string> = {
   // CASE_REPORT layouts are authored in the Case Report designer (S5 slice 3); placeholder label.
   CASE_REPORT: 'Case Report',
 };
+
+// Enum filter options for the `kind` column — reuse KIND_LABEL so the dropdown labels match the cell.
+const LAYOUT_KIND_OPTIONS = LAYOUT_KINDS.map((k) => ({ value: k, label: KIND_LABEL[k] }));
 
 /** MIS Layouts (ADR-0037) — per-(client,product) data-entry / MIS / Billing-MIS column config.
  *  Admin only (report_template.manage). No default format; every layout is built from blank. */
@@ -58,15 +62,17 @@ export function ReportLayoutsPage() {
 
   const columns = useMemo<DataGridColumn<ReportLayoutView>[]>(
     () => [
-      { id: 'client', header: 'Client', sortable: true, cell: (r) => r.clientName },
-      { id: 'product', header: 'Product', sortable: true, cell: (r) => r.productName },
+      { id: 'client', header: 'Client', sortable: true, filterable: true, cell: (r) => r.clientName },
+      { id: 'product', header: 'Product', sortable: true, filterable: true, cell: (r) => r.productName },
       {
         id: 'kind',
         header: 'Kind',
         sortable: true,
+        filterable: true,
+        filterOptions: LAYOUT_KIND_OPTIONS,
         cell: (r) => <span className="text-xs uppercase">{KIND_LABEL[r.kind]}</span>,
       },
-      { id: 'name', header: 'Name', sortable: true, cell: (r) => r.name },
+      { id: 'name', header: 'Name', sortable: true, filterable: true, cell: (r) => r.name },
       { id: 'columns', header: 'Columns', align: 'right', cell: (r) => r.columnCount },
       {
         id: 'status',
@@ -147,6 +153,10 @@ export function ReportLayoutsPage() {
             `/api/v2/report-layouts?${pageQueryToParams(query).toString()}`,
           )
         }
+        dateFilters={[
+          { id: 'createdAt', label: 'Created' },
+          { id: 'updatedAt', label: 'Updated' },
+        ]}
         loadingLabel="MIS Layouts"
       />
     </div>

@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   VISIT_TYPES,
@@ -431,6 +431,9 @@ function VerdictHistory({ caseId }: { caseId: string }) {
   );
 }
 
+const TASK_TABS = ['all', 'tat', 'inprogress', 'complete'] as const;
+type TaskTab = (typeof TASK_TABS)[number];
+
 function TasksSection({
   caseId,
   tasks,
@@ -456,8 +459,21 @@ function TasksSection({
 }) {
   const qc = useQueryClient();
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
-  // Status/TAT tab filter over this case's tasks (ad-hoc tablist pattern, mirrors the pipeline buckets).
-  const [tab, setTab] = useState<'all' | 'tat' | 'inprogress' | 'complete'>('all');
+  // Status/TAT tab filter over this case's tasks — persisted in the URL (`?tab=`) so a filtered view
+  // is bookmarkable/shareable (DATAGRID_STANDARD §12 URL-state). Mirrors the pipeline buckets.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawTab = searchParams.get('tab');
+  const tab: TaskTab = (TASK_TABS as readonly string[]).includes(rawTab ?? '') ? (rawTab as TaskTab) : 'all';
+  const setTab = (t: TaskTab) =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (t === 'all') next.delete('tab');
+        else next.set('tab', t);
+        return next;
+      },
+      { replace: true },
+    );
   // "+ Add Tasks" lives in this card's header (Zion keeps document-add in the case work surface).
   const [addingTasks, setAddingTasks] = useState(false);
   // The task whose inline finalize form is open (ADR-0025) — separate from the assign accordion.

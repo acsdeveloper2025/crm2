@@ -49,17 +49,19 @@ export function CommissionRatesPage() {
   });
   const columns = useMemo<DataGridColumn<CommissionRateView>[]>(
     () => [
-      { id: 'user', header: 'User', sortable: true, cell: (r) => r.userName },
+      { id: 'user', header: 'User', sortable: true, filterable: true, cell: (r) => r.userName },
       {
         id: 'client',
         header: 'Client',
         sortable: true,
+        filterable: true,
         cell: (r) => r.clientName ?? <span className="text-muted-foreground">Universal</span>,
       },
       {
         id: 'fieldRateType',
         header: 'Rate Type',
         sortable: true,
+        filterable: true,
         cell: (r) =>
           r.fieldRateType ? (
             <span className="text-xs uppercase">{r.fieldRateType}</span>
