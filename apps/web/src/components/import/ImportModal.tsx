@@ -38,14 +38,16 @@ function downloadBlob(blob: Blob, filename: string): void {
 
 const TOO_LARGE_MSG = 'Too many rows for a direct import — split the file (background import coming soon).';
 
-/** The Import button + its modal flow (IMPORT_EXPORT_STANDARD §5): Template → Upload → Preview → Confirm → Result. */
-export function ImportButton({ config }: { config: ImportConfig }) {
+/** The Import button + its modal flow (IMPORT_EXPORT_STANDARD §5): Template → Upload → Preview → Confirm → Result.
+ *  `label` defaults to "Import"; pass a distinct label when a page shows more than one importer (e.g. Users
+ *  has both "Import Users" and "Import Scope") so the two buttons are not visually identical. */
+export function ImportButton({ config, label = 'Import' }: { config: ImportConfig; label?: string }) {
   const [open, setOpen] = useState(false);
   return (
     <>
       <Button variant="secondary" onClick={() => setOpen(true)}>
         <UploadIcon />
-        Import
+        {label}
       </Button>
       {open && <ImportModal config={config} onClose={() => setOpen(false)} />}
     </>

@@ -138,7 +138,11 @@ function RoleForm({ initial }: { initial: RoleView | null }) {
         dimensions,
       };
       if (!isEdit) {
-        return api<RoleView>('POST', BASE, { code, ...body, permissions: [...permissions].sort() });
+        return api<RoleView>('POST', BASE, {
+          code: code.toUpperCase(),
+          ...body,
+          permissions: [...permissions].sort(),
+        });
       }
       // edit = config first, then the permission set with the FRESH version from the config write
       const updated = await api<RoleView>('PUT', `${BASE}/${initial!.code}`, { ...body, version });
@@ -164,7 +168,7 @@ function RoleForm({ initial }: { initial: RoleView | null }) {
     },
   });
 
-  const canSave = !!name.trim() && (isEdit || /^[A-Z][A-Z0-9_]{1,19}$/.test(code));
+  const canSave = !!name.trim() && (isEdit || /^[A-Z][A-Z0-9_]{1,19}$/.test(code.toUpperCase()));
 
   return (
     <div className="space-y-4">
@@ -189,7 +193,7 @@ function RoleForm({ initial }: { initial: RoleView | null }) {
               className="input font-mono"
               uppercase={false}
               value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              onChange={(e) => setCode(e.target.value)}
               placeholder="ZONE_AUDITOR"
               readOnly={isEdit}
               disabled={isEdit}

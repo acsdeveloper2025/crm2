@@ -175,10 +175,11 @@ export function UsersPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <ImportButton config={{ basePath: BASE, queryKey: QK, entityLabel: 'user' }} />
+          <ImportButton config={{ basePath: BASE, queryKey: QK, entityLabel: 'user' }} label="Import Users" />
           {/* Bulk assignment (ADR-0022): spreadsheet import + all-assignments export of data scope */}
           <ImportButton
             config={{ basePath: `${BASE}/scope`, queryKey: 'user-scope', entityLabel: 'scope assignment' }}
+            label="Import Scope"
           />
           <Button
             variant="secondary"

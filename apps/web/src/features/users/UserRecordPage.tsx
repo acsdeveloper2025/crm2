@@ -23,6 +23,7 @@ import { UserAccessSection, type StagedScope } from '../../components/UserAccess
 import { Button } from '../../components/ui/Button.js';
 import { Input } from '../../components/ui/Input.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
+import { Tabs } from '../../components/ui/Tabs.js';
 import { ScrollRegion } from '../../components/ui/ScrollRegion.js';
 
 const HTTP_CONFLICT = 409;
@@ -238,23 +239,15 @@ function UserForm({ initial }: { initial: UserView | null }) {
       </div>
 
       <div className="max-w-3xl space-y-3 rounded-lg border border-border bg-card p-6 shadow-sm">
-        <div className="mb-4 flex gap-1 border-b border-border" role="tablist">
-          {(['profile', 'access'] as const).map((t) => (
-            <button
-              key={t}
-              role="tab"
-              aria-selected={tab === t}
-              className={`px-3 py-1.5 text-sm font-medium ${
-                tab === t
-                  ? 'border-b-2 border-primary text-primary'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-              onClick={() => setTab(t)}
-            >
-              {t === 'profile' ? 'Profile' : 'Access'}
-            </button>
-          ))}
-        </div>
+        <Tabs
+          className="mb-4"
+          active={tab}
+          onChange={setTab}
+          tabs={[
+            { key: 'profile', label: 'Profile' },
+            { key: 'access', label: 'Access' },
+          ]}
+        />
         {tab === 'access' && (
           <UserAccessSection
             roleCode={role}

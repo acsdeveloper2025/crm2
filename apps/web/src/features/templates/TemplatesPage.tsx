@@ -205,7 +205,7 @@ function TemplateDialog({ row, onClose }: { row: ReportTemplate | null; onClose:
     mutationFn: () =>
       isEdit
         ? api<ReportTemplate>('PUT', `${BASE}/${row!.id}`, {
-            code,
+            code: code.toUpperCase(),
             name,
             templateType,
             content,
@@ -213,7 +213,7 @@ function TemplateDialog({ row, onClose }: { row: ReportTemplate | null; onClose:
             version,
           })
         : api<ReportTemplate>('POST', BASE, {
-            code,
+            code: code.toUpperCase(),
             name,
             templateType,
             content,
@@ -255,7 +255,7 @@ function TemplateDialog({ row, onClose }: { row: ReportTemplate | null; onClose:
                 className="input"
                 uppercase={false}
                 value={code}
-                onChange={(e) => setCode(e.target.value.toUpperCase())}
+                onChange={(e) => setCode(e.target.value)}
                 placeholder="FIELD_RESIDENCE_V1"
               />
             </label>

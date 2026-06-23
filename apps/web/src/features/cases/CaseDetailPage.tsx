@@ -41,6 +41,7 @@ import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
 import { Input } from '../../components/ui/Input.js';
 import { ScrollRegion } from '../../components/ui/ScrollRegion.js';
+import { Tabs } from '../../components/ui/Tabs.js';
 import { TextArea } from '../../components/ui/TextArea.js';
 import { Button } from '../../components/ui/Button.js';
 import { WorkStatusChip } from '../../components/WorkStatusChip.js';
@@ -583,30 +584,17 @@ function TasksSection({
           />
         </div>
       )}
-      <div className="flex gap-1 border-b border-border px-3" role="tablist">
-        {(
-          [
-            ['all', 'All'],
-            ['tat', 'TAT'],
-            ['inprogress', 'In Progress'],
-            ['complete', 'Complete'],
-          ] as const
-        ).map(([key, label]) => (
-          <button
-            key={key}
-            role="tab"
-            aria-selected={tab === key}
-            className={`px-3 py-1.5 text-sm font-medium ${
-              tab === key
-                ? 'border-b-2 border-primary text-primary'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-            onClick={() => setTab(key)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        className="px-3"
+        active={tab}
+        onChange={setTab}
+        tabs={[
+          { key: 'all', label: 'All' },
+          { key: 'tat', label: 'TAT' },
+          { key: 'inprogress', label: 'In Progress' },
+          { key: 'complete', label: 'Complete' },
+        ]}
+      />
       <table className="w-full text-sm rtable">
         <thead className="text-left text-xs uppercase tracking-wide text-muted-foreground">
           <tr>

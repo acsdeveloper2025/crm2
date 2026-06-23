@@ -48,7 +48,7 @@ export function DedupePage() {
 
   const trimmed: Identifiers = useMemo(() => {
     const pick = (v: string) => (v.trim().length >= MIN_TERM ? v.trim() : undefined);
-    return { name: pick(name), pan: pick(pan), mobile: pick(mobile), company: pick(company) };
+    return { name: pick(name), pan: pick(pan)?.toUpperCase(), mobile: pick(mobile), company: pick(company) };
   }, [name, pan, mobile, company]);
   const canSearch = Boolean(trimmed.name ?? trimmed.pan ?? trimmed.mobile ?? trimmed.company);
 
@@ -132,7 +132,7 @@ export function DedupePage() {
             className="input"
             value={pan}
             maxLength={10}
-            onChange={(e) => setPan(e.target.value.toUpperCase())}
+            onChange={(e) => setPan(e.target.value)}
             placeholder="ABCDE1234F"
           />
         </label>

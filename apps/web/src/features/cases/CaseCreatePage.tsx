@@ -25,13 +25,13 @@ interface ApplicantRow {
 }
 // Field rules shared with the contract (@crm2/sdk). Optional fields are valid when blank.
 const phoneOk = (v: string): boolean => v.trim() === '' || PHONE_REGEX.test(v.trim());
-const panOk = (v: string): boolean => v.trim() === '' || PAN_REGEX.test(v.trim());
+const panOk = (v: string): boolean => v.trim() === '' || PAN_REGEX.test(v.trim().toUpperCase());
 const onlyDigits = (v: string): string => v.replace(/\D/g, '');
 const emptyApplicant = (): ApplicantRow => ({ name: '', mobile: '', pan: '', companyName: '' });
 const trimmed = (a: ApplicantRow) => ({
   name: a.name.trim(),
   ...(a.mobile.trim() ? { mobile: a.mobile.trim() } : {}),
-  ...(a.pan.trim() ? { pan: a.pan.trim() } : {}),
+  ...(a.pan.trim() ? { pan: a.pan.trim().toUpperCase() } : {}),
   ...(a.companyName.trim() ? { companyName: a.companyName.trim() } : {}),
 });
 
@@ -96,7 +96,7 @@ export function CaseCreatePage() {
           matches: await api<DuplicateMatch[]>('POST', '/api/v2/cases/dedupe', {
             ...(a.name.trim() ? { name: a.name.trim() } : {}),
             ...(a.mobile.trim() ? { mobile: a.mobile.trim() } : {}),
-            ...(a.pan.trim() ? { pan: a.pan.trim() } : {}),
+            ...(a.pan.trim() ? { pan: a.pan.trim().toUpperCase() } : {}),
           }),
         })),
       );
@@ -244,7 +244,7 @@ export function CaseCreatePage() {
                     className="input"
                     maxLength={10}
                     value={a.pan}
-                    onChange={(e) => setApplicant(i, { pan: e.target.value.toUpperCase() })}
+                    onChange={(e) => setApplicant(i, { pan: e.target.value })}
                     placeholder="ABCDE1234F"
                   />
                   <span className="mt-1 block min-h-[1rem] text-xs text-destructive">
