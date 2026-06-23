@@ -5,7 +5,7 @@
  * enforces scope/ownership + OCC server-side — the grid is UI only).
  */
 
-export type CellEditorKind = 'text' | 'date';
+export type CellEditorKind = 'text' | 'date' | 'select';
 
 /** One editable column, distilled from a DataGridColumn for the edit machinery. */
 export interface EditableField {

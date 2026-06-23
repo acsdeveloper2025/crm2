@@ -11,15 +11,12 @@ import {
 } from '@crm2/sdk';
 import { api, apiExport, ApiError } from '../../lib/sdk.js';
 import { formatDateTime, toDateInput, toIsoDate } from '../../lib/format.js';
-import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { BulkStatusActions } from '../../components/BulkStatusActions.js';
 import { ImportButton } from '../../components/import/ImportModal.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
 import { Button } from '../../components/ui/Button.js';
-import { Input } from '../../components/ui/Input.js';
-import { TextArea } from '../../components/ui/TextArea.js';
 
 const BASE = '/api/v2/designations';
 const QK = 'designations';
@@ -27,11 +24,27 @@ const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
   e instanceof ApiError && e.status === HTTP_CONFLICT && e.code === 'STALE_UPDATE';
 
+/**
+ * Designations — inline-grid editing (ADR-0051): click a Name/Description/Department/Effective-From
+ * cell to edit it in place, "+ Add row" to create; no modal form. Department is a `select` cell over
+ * the active departments. Persistence reuses the existing PUT/POST + `version` (server owns OCC).
+ */
 export function DesignationsPage() {
   const qc = useQueryClient();
   const [active, setActive] = useState('');
-  const [editing, setEditing] = useState<Designation | null | undefined>(undefined);
   const [toggleConflict, setToggleConflict] = useState<Designation | null>(null);
+
+  const { data: departments = [] } = useQuery({
+    queryKey: ['departments', 'options'],
+    queryFn: () => api<DepartmentOption[]>('GET', '/api/v2/departments/options'),
+  });
+  const deptOptions = useMemo(
+    () => [
+      { value: '', label: '— None —' },
+      ...departments.map((d) => ({ value: String(d.id), label: d.name })),
+    ],
+    [departments],
+  );
 
   const toggle = useMutation({
     mutationFn: (d: Designation) =>
@@ -44,23 +57,88 @@ export function DesignationsPage() {
     },
   });
 
+  // Per-cell commit hands only the CHANGED field(s); merge over the row's raw values for the PUT.
+  const save = async (row: Designation, changed: Record<string, string>, version: number): Promise<void> => {
+    try {
+      await api<Designation>('PUT', `${BASE}/${row.id}`, {
+        name: changed['name'] ?? row.name,
+        description: changed['description'] ?? row.description,
+        departmentId:
+          changed['departmentId'] !== undefined
+            ? changed['departmentId']
+              ? Number(changed['departmentId'])
+              : null
+            : row.departmentId,
+        effectiveFrom:
+          changed['effectiveFrom'] !== undefined ? toIsoDate(changed['effectiveFrom']) : row.effectiveFrom,
+        version,
+      });
+      await qc.invalidateQueries({ queryKey: [QK] });
+    } catch (e) {
+      if (isStale(e)) {
+        await qc.invalidateQueries({ queryKey: [QK] });
+        throw new Error('This row changed since you opened it — refreshed; Save again to re-apply.', {
+          cause: e,
+        });
+      }
+      if (e instanceof ApiError && e.code === 'DESIGNATION_EXISTS')
+        throw new Error('A designation with this name already exists.', { cause: e });
+      throw e instanceof Error ? e : new Error('Save failed');
+    }
+  };
+
+  const create = async (values: Record<string, string>): Promise<void> => {
+    const effectiveFrom = (values['effectiveFrom'] ?? '').trim();
+    try {
+      await api<Designation>('POST', BASE, {
+        name: values['name'] ?? '',
+        description: values['description'] ?? '',
+        departmentId: values['departmentId'] ? Number(values['departmentId']) : null,
+        ...(effectiveFrom ? { effectiveFrom: toIsoDate(effectiveFrom) } : {}),
+      });
+      await qc.invalidateQueries({ queryKey: [QK] });
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'DESIGNATION_EXISTS')
+        throw new Error('A designation with this name already exists.', { cause: e });
+      throw e instanceof Error ? e : new Error('Create failed');
+    }
+  };
+
   const columns = useMemo<DataGridColumn<Designation>[]>(
     () => [
-      { id: 'name', header: 'Name', sortable: true, filterable: true, cell: (d) => d.name },
+      {
+        id: 'name',
+        header: 'Name',
+        sortable: true,
+        filterable: true,
+        editable: true,
+        required: true,
+        editorPlaceholder: 'Senior Field Executive',
+        cell: (d) => d.name,
+      },
       {
         id: 'description',
         header: 'Description',
+        editable: true,
         cell: (d) => <span className="text-muted-foreground">{d.description}</span>,
       },
       {
-        id: 'departmentName',
+        id: 'department',
         header: 'Department',
+        editable: true,
+        editor: 'select',
+        field: 'departmentId',
+        editorOptions: deptOptions,
+        draftValue: (d) => (d.departmentId != null ? String(d.departmentId) : ''),
         cell: (d) => <span className="text-muted-foreground">{d.departmentName ?? '—'}</span>,
       },
       {
         id: 'effectiveFrom',
         header: 'Effective From',
         sortable: true,
+        editable: true,
+        editor: 'date',
+        draftValue: (d) => toDateInput(d.effectiveFrom),
         cell: (d) => <span className="text-xs text-muted-foreground">{formatDateTime(d.effectiveFrom)}</span>,
       },
       {
@@ -85,11 +163,9 @@ export function DesignationsPage() {
         id: 'actions',
         header: 'Actions',
         align: 'right',
+        editAction: true,
         cell: (d) => (
           <div className="flex items-center justify-end gap-2">
-            <Button variant="secondary" size="sm" onClick={() => setEditing(d)}>
-              Edit
-            </Button>
             <Button
               variant={d.isActive ? 'destructive' : 'secondary'}
               size="sm"
@@ -101,7 +177,7 @@ export function DesignationsPage() {
         ),
       },
     ],
-    [toggle],
+    [toggle, deptOptions],
   );
 
   return (
@@ -110,13 +186,11 @@ export function DesignationsPage() {
         <div>
           <h1 className="text-xl font-bold tracking-tight">Designations</h1>
           <p className="text-sm text-muted-foreground">
-            Job titles — a required field on every user; optionally tied to a department.
+            Job titles — a required field on every user; optionally tied to a department. Click a cell to
+            edit; use “+ Add row” to create.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <ImportButton config={{ basePath: BASE, queryKey: QK, entityLabel: 'designation' }} />
-          <Button onClick={() => setEditing(null)}>+ New</Button>
-        </div>
+        <ImportButton config={{ basePath: BASE, queryKey: QK, entityLabel: 'designation' }} />
       </div>
 
       <DataGrid<Designation>
@@ -136,6 +210,7 @@ export function DesignationsPage() {
           { id: 'effectiveFrom', label: 'Effective From' },
         ]}
         exportFn={(req: ExportRequest) => apiExport(`${BASE}/export?${exportQueryToParams(req).toString()}`)}
+        inlineEdit={{ version: (d) => d.version, onSave: save, onCreate: create }}
         toolbar={
           <select
             className="input w-[10rem]"
@@ -150,8 +225,6 @@ export function DesignationsPage() {
         }
       />
 
-      {editing !== undefined && <DesignationDialog row={editing} onClose={() => setEditing(undefined)} />}
-
       {toggleConflict && (
         <ConflictDialog
           entityLabel="designation"
@@ -163,139 +236,6 @@ export function DesignationsPage() {
           onDiscard={() => {
             qc.invalidateQueries({ queryKey: [QK] });
             setToggleConflict(null);
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-function DesignationDialog({ row, onClose }: { row: Designation | null; onClose: () => void }) {
-  const qc = useQueryClient();
-  const isEdit = !!row;
-  const [name, setName] = useState(row?.name ?? '');
-  const [description, setDescription] = useState(row?.description ?? '');
-  const [departmentId, setDepartmentId] = useState(row?.departmentId ? String(row.departmentId) : '');
-  const [effectiveFrom, setEffectiveFrom] = useState(toDateInput(row?.effectiveFrom));
-  const [error, setError] = useState<string | null>(null);
-  const [version, setVersion] = useState(row?.version ?? 0); // OCC token the edit started from
-  const [conflict, setConflict] = useState<{ updatedAt?: string; version?: number } | null>(null);
-  const dialogRef = useFocusTrap<HTMLDivElement>(true, onClose);
-
-  const { data: departments = [] } = useQuery({
-    queryKey: ['departments', 'options'],
-    queryFn: () => api<DepartmentOption[]>('GET', '/api/v2/departments/options'),
-  });
-
-  const mut = useMutation({
-    mutationFn: () => {
-      const body = {
-        name,
-        description,
-        departmentId: departmentId ? Number(departmentId) : null,
-        effectiveFrom: toIsoDate(effectiveFrom),
-      };
-      return isEdit
-        ? api<Designation>('PUT', `${BASE}/${row!.id}`, { ...body, version })
-        : api<Designation>('POST', BASE, body);
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: [QK] });
-      onClose();
-    },
-    onError: (e: unknown) => {
-      if (isStale(e)) {
-        const current = (e.body as { current?: { updatedAt?: string; version?: number } } | null)?.current;
-        setConflict(current ?? {});
-      } else if (e instanceof ApiError && e.code === 'DESIGNATION_EXISTS') {
-        setError('A designation with this name already exists.');
-      } else setError(e instanceof Error ? e.message : 'Save failed');
-    },
-  });
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40">
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="designation-dialog-title"
-        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg border border-border bg-card p-6 text-card-foreground shadow-lg"
-      >
-        <h2 id="designation-dialog-title" className="mb-4 text-lg font-semibold">
-          {isEdit ? 'Edit Designation' : 'New Designation'}
-        </h2>
-        <div className="space-y-3">
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-foreground">Name</span>
-            <Input
-              className="input"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Senior Field Executive"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-foreground">Department (optional)</span>
-            <select className="input" value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}>
-              <option value="">— None —</option>
-              {departments.map((d) => (
-                <option key={d.id} value={String(d.id)}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-foreground">Description</span>
-            <TextArea
-              className="input min-h-[5rem]"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-foreground">
-              Effective From (blank = now)
-            </span>
-            <input
-              type="date"
-              className="input"
-              value={effectiveFrom}
-              onChange={(e) => setEffectiveFrom(e.target.value)}
-            />
-          </label>
-          {error && <p className="text-sm text-destructive">{error}</p>}
-        </div>
-        <div className="mt-5 flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose} disabled={mut.isPending}>
-            Cancel
-          </Button>
-          <Button
-            onClick={() => {
-              setError(null);
-              mut.mutate();
-            }}
-            disabled={!name.trim()}
-            loading={mut.isPending}
-          >
-            Save
-          </Button>
-        </div>
-      </div>
-
-      {conflict && (
-        <ConflictDialog
-          entityLabel="designation"
-          current={conflict}
-          onReload={() => {
-            if (conflict.version !== undefined) setVersion(conflict.version);
-            qc.invalidateQueries({ queryKey: [QK] });
-            setConflict(null);
-          }}
-          onDiscard={() => {
-            qc.invalidateQueries({ queryKey: [QK] });
-            onClose();
           }}
         />
       )}

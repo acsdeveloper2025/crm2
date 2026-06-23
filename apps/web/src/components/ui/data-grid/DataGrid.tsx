@@ -60,6 +60,8 @@ export interface DataGridColumn<T> {
   editable?: boolean;
   /** Editor kind for an `editable` cell (default `text`). */
   editor?: CellEditorKind;
+  /** Options for a `select` editor (include a blank option for an optional field). */
+  editorOptions?: { value: string; label: string }[];
   /** Row property the editor reads/writes (also the draft key). Defaults to `id`. */
   field?: string;
   editorPlaceholder?: string;
@@ -162,6 +164,8 @@ export interface DataGridProps<T> {
     version: (row: T) => number;
     onSave: (row: T, changed: Record<string, string>, version: number) => Promise<void>;
     onCreate?: (values: Record<string, string>) => Promise<void>;
+    /** Gate per-row editing (e.g. locked/system rows). Defaults to editable. */
+    canEdit?: (row: T) => boolean;
   };
 }
 
@@ -181,6 +185,7 @@ function CellEditor({
   commitOnBlur,
   invalid,
   title,
+  options,
   onChange,
   onCommit,
   onCancel,
@@ -192,14 +197,51 @@ function CellEditor({
   commitOnBlur: boolean;
   invalid: boolean;
   title: string;
+  options: { value: string; label: string }[];
   onChange: (v: string) => void;
   onCommit: () => void;
   onCancel: () => void;
 }) {
   const cancelledRef = useRef(false);
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      cancelledRef.current = false;
+      onCommit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelledRef.current = true;
+      onCancel();
+    }
+  };
+  const onBlur = () => {
+    if (commitOnBlur && !cancelledRef.current) onCommit();
+  };
+  const cls = `input ${invalid ? 'border-destructive ring-1 ring-destructive' : ''}`;
+  if (kind === 'select') {
+    return (
+      <select
+        className={cls}
+        value={value}
+        autoFocus={autoFocus}
+        aria-invalid={invalid || undefined}
+        title={title || undefined}
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={onKeyDown}
+        onBlur={onBlur}
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
   return (
     <input
-      className={`input ${invalid ? 'border-destructive ring-1 ring-destructive' : ''}`}
+      className={cls}
       type={kind === 'date' ? 'date' : 'text'}
       value={value}
       placeholder={placeholder}
@@ -208,20 +250,8 @@ function CellEditor({
       title={title || undefined}
       onClick={(e) => e.stopPropagation()}
       onChange={(e) => onChange(e.target.value)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          cancelledRef.current = false;
-          onCommit();
-        } else if (e.key === 'Escape') {
-          e.preventDefault();
-          cancelledRef.current = true;
-          onCancel();
-        }
-      }}
-      onBlur={() => {
-        if (commitOnBlur && !cancelledRef.current) onCommit();
-      }}
+      onKeyDown={onKeyDown}
+      onBlur={onBlur}
     />
   );
 }
@@ -1020,6 +1050,7 @@ export function DataGrid<T>({
                           commitOnBlur={false}
                           invalid={false}
                           title=""
+                          options={c.editorOptions ?? []}
                           onChange={(v) => setField(cellKey(c), v)}
                           onCommit={() => void submitCreate()}
                           onCancel={cancelCreate}
@@ -1094,7 +1125,12 @@ export function DataGrid<T>({
                           !!col?.editable &&
                           editCell?.id === row.id &&
                           editCell.field === field;
-                        const clickToEdit = !!inlineEdit && !editCell && !creating && !!col?.editable;
+                        const clickToEdit =
+                          !!inlineEdit &&
+                          !editCell &&
+                          !creating &&
+                          !!col?.editable &&
+                          (inlineEdit.canEdit?.(row.original) ?? true);
                         return (
                           <td
                             key={cell.id}
@@ -1120,6 +1156,7 @@ export function DataGrid<T>({
                                 commitOnBlur
                                 invalid={!!cellError}
                                 title={cellError ?? ''}
+                                options={col.editorOptions ?? []}
                                 onChange={setEditValue}
                                 onCommit={() => void commitCell()}
                                 onCancel={cancelCell}
