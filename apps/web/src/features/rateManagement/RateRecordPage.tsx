@@ -1,0 +1,401 @@
+import { useState } from 'react';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  CreateRateSchema,
+  ReviseRateSchema,
+  type Option,
+  type VerificationUnitOption,
+  type Rate,
+  type RateView,
+  type RateType,
+  type Location,
+  type Paginated,
+} from '@crm2/sdk';
+import { api, ApiError } from '../../lib/sdk.js';
+import { zodFieldErrors } from '../../lib/zodForm.js';
+import { toDateInput, toIsoDate, formatMoney } from '../../lib/format.js';
+import { useAuth } from '../../lib/AuthContext.js';
+import { ConflictDialog } from '../../components/ConflictDialog.js';
+import { Button } from '../../components/ui/Button.js';
+import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
+import { SearchableSelect, type Opt } from '../../components/ui/SearchableSelect.js';
+
+const BASE = '/api/v2/rates';
+const QK = 'rates';
+const HTTP_CONFLICT = 409;
+const isStale = (e: unknown): e is ApiError =>
+  e instanceof ApiError && e.status === HTTP_CONFLICT && e.code === 'STALE_UPDATE';
+
+/**
+ * Rate create/revise as a full record-page route (ADR-0051 Wave-4 D4 — no modal).
+ * `/admin/rates/new` creates (the full client→product→unit→pincode→area cascade);
+ * `/admin/rates/:id` loads that rate by id and revises it (amount + effective-from only — keys are
+ * immutable, revise appends an effective-dated version). RBAC: `masterdata.manage` only; a viewer who
+ * deep-links here is bounced back to the list.
+ */
+export function RateRecordPage() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { has } = useAuth();
+  const isEdit = !!id;
+  const existing = useQuery({
+    queryKey: ['rate', id],
+    queryFn: () => api<RateView>('GET', `${BASE}/${id}`),
+    enabled: isEdit,
+  });
+
+  if (!has('masterdata.manage')) return <Navigate to="/admin/rates" replace />;
+  if (isEdit && existing.isLoading) {
+    return (
+      <div className="py-10">
+        <HexagonLoader operation="Loading rate" />
+      </div>
+    );
+  }
+  if (isEdit && (existing.isError || !existing.data)) {
+    return (
+      <div className="space-y-3">
+        <Button variant="link" size="sm" onClick={() => navigate('/admin/rates')}>
+          ← Back to rate management
+        </Button>
+        <p className="text-sm text-muted-foreground">Couldn’t load this rate.</p>
+      </div>
+    );
+  }
+  // Re-mount the form per record (key) so its state seeds cleanly from the loaded rate.
+  return <RateForm key={id ?? 'new'} initial={existing.data ?? null} />;
+}
+
+/**
+ * Asymmetric form. CREATE (initial null) renders the full cascade (Universal-able? no — client /
+ * product / unit are required; pincode→area + rate type are field-only, greyed for KYC) and POSTs.
+ * REVISE (initial set) shows every dimension read-only and edits only amount + effective-from,
+ * POSTing to `…/:id/revise` with the OCC version.
+ */
+function RateForm({ initial }: { initial: RateView | null }) {
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const isRevise = !!initial;
+
+  // Create cascade state (unused in revise — every dimension is fixed there).
+  const [clientId, setClientId] = useState('');
+  const [productId, setProductId] = useState('');
+  const [kind, setKind] = useState('FIELD_VISIT');
+  const [unitId, setUnitId] = useState('');
+  const [pincode, setPincode] = useState('');
+  const [pincodeSearch, setPincodeSearch] = useState('');
+  const [locationId, setLocationId] = useState('');
+  const [clientRateType, setRateType] = useState('');
+
+  // Shared (both modes) — amount kept WYSIWYG (string), coerced at submit.
+  const [amount, setAmount] = useState(initial ? String(initial.amount) : '');
+  const [effectiveFrom, setEffectiveFrom] = useState(toDateInput(initial?.effectiveFrom));
+  const [version, setVersion] = useState(initial?.version ?? 0); // OCC token the revise started from
+  const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [conflict, setConflict] = useState<{ updatedAt?: string; version?: number } | null>(null);
+
+  // KYC documents have no geography or rate type — those fields are greyed out and forced null.
+  const isKyc = kind === 'KYC_DOCUMENT';
+  const onKindChange = (k: string) => {
+    setKind(k);
+    setUnitId('');
+    setPincode('');
+    setLocationId('');
+    setRateType('');
+  };
+
+  // Create-only option sources (skipped entirely in revise — every dimension is fixed there).
+  const clients = useQuery({
+    queryKey: ['client-options'],
+    queryFn: () => api<Option[]>('GET', '/api/v2/clients/options'),
+    enabled: !isRevise,
+  });
+  const products = useQuery({
+    queryKey: ['product-options'],
+    queryFn: () => api<Option[]>('GET', '/api/v2/products/options'),
+    enabled: !isRevise,
+  });
+  const units = useQuery({
+    queryKey: ['verification-unit-options'],
+    queryFn: () => api<VerificationUnitOption[]>('GET', '/api/v2/verification-units/options'),
+    enabled: !isRevise,
+  });
+  const clientRateTypes = useQuery({
+    queryKey: ['rate-types'],
+    queryFn: () => api<RateType[]>('GET', '/api/v2/rate-types?active=true'),
+    enabled: !isRevise,
+  });
+  const pincodes = useQuery({
+    queryKey: ['pincodes', pincodeSearch],
+    queryFn: () => api<string[]>('GET', `/api/v2/locations/pincodes?q=${encodeURIComponent(pincodeSearch)}`),
+    enabled: !isRevise && pincodeSearch.length >= 2,
+  });
+  const areas = useQuery({
+    queryKey: ['areas', pincode],
+    queryFn: () =>
+      api<Paginated<Location>>('GET', `/api/v2/locations?pincode=${pincode}&limit=200`).then((r) => r.items),
+    enabled: !isRevise && !!pincode,
+  });
+
+  const mut = useMutation({
+    mutationFn: () =>
+      isRevise
+        ? api<Rate>('POST', `${BASE}/${initial.id}/revise`, {
+            amount: Number(amount),
+            effectiveFrom: toIsoDate(effectiveFrom),
+            version, // OCC: revise the row the user is looking at (ADR-0019)
+          })
+        : api<Rate>('POST', BASE, {
+            clientId: Number(clientId),
+            productId: Number(productId),
+            verificationUnitId: Number(unitId),
+            locationId: isKyc || !locationId ? null : Number(locationId),
+            clientRateType: isKyc ? null : clientRateType || null,
+            amount: Number(amount),
+            effectiveFrom: toIsoDate(effectiveFrom),
+          }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [QK] });
+      navigate('/admin/rates');
+    },
+    onError: (e: unknown) => {
+      if (isStale(e)) {
+        const current = (e.body as { current?: { updatedAt?: string; version?: number } } | null)?.current;
+        setConflict(current ?? {});
+      } else setError(e instanceof ApiError ? e.code : e instanceof Error ? e.message : 'Save failed');
+    },
+  });
+
+  // Create gate: client/product/unit/amount required; field rates also need location + rate type.
+  // Revise gate: only amount (keys are fixed).
+  const valid = isRevise
+    ? amount !== ''
+    : !!clientId && !!productId && !!unitId && amount !== '' && (isKyc || (!!locationId && !!clientRateType));
+
+  const clientOpts: Opt[] = (clients.data ?? []).map((c) => ({
+    value: String(c.id),
+    label: `${c.code} — ${c.name}`,
+  }));
+  const productOpts: Opt[] = (products.data ?? []).map((p) => ({
+    value: String(p.id),
+    label: `${p.code} — ${p.name}`,
+  }));
+  const unitOpts: Opt[] = (units.data ?? [])
+    .filter((u) => u.kind === kind)
+    .map((u) => ({ value: String(u.id), label: u.name }));
+  const kindOpts: Opt[] = [
+    { value: 'FIELD_VISIT', label: 'FIELD VISIT' },
+    { value: 'KYC_DOCUMENT', label: 'KYC DOCUMENT' },
+  ];
+  const pincodeOpts: Opt[] = (pincodes.data ?? []).map((p) => ({ value: p, label: p }));
+  const areaOpts: Opt[] = (areas.data ?? []).map((l) => ({ value: String(l.id), label: l.area }));
+  const clientRateTypeOpts: Opt[] = (clientRateTypes.data ?? []).map((rt) => ({
+    value: rt.code,
+    label: rt.code,
+  }));
+
+  return (
+    <div className="space-y-4">
+      <Button variant="link" size="sm" onClick={() => navigate('/admin/rates')}>
+        ← Back to rate management
+      </Button>
+      <div>
+        <h1 className="text-xl font-bold tracking-tight">{isRevise ? 'Revise' : 'New'} Rate</h1>
+        <p className="text-sm text-muted-foreground">
+          {isRevise
+            ? 'Keys are immutable — revising appends a new effective-dated version (amount & effective-from only). The current row is end-dated, never overwritten.'
+            : 'One rate = client · product · verification unit · pincode/area · rate type · amount. Geography & rate type are blank for KYC units.'}
+        </p>
+      </div>
+
+      <div className="max-w-md space-y-3 rounded-lg border border-border bg-card p-6 shadow-sm">
+        {isRevise ? (
+          <dl className="space-y-2 rounded-md border border-border p-3 text-sm">
+            <ReadOnlyRow label="Client" value={`${initial.clientCode} — ${initial.clientName}`} />
+            <ReadOnlyRow label="Product" value={`${initial.productCode} — ${initial.productName}`} />
+            <ReadOnlyRow label="Verification Unit" value={initial.unitName} />
+            <ReadOnlyRow label="Kind" value={initial.unitKind.replace(/_/g, ' ')} mono />
+            <ReadOnlyRow
+              label="Location"
+              value={`${initial.pincode ?? ''} ${initial.area ?? ''}`.trim() || null}
+            />
+            <ReadOnlyRow label="Rate Type" value={initial.clientRateType} />
+            <ReadOnlyRow label="Current Rate" value={formatMoney(initial.amount)} />
+          </dl>
+        ) : (
+          <>
+            <Field label="Client">
+              <SearchableSelect value={clientId} onChange={setClientId} options={clientOpts} width="w-full" />
+              {fieldErrors['clientId'] && (
+                <span className="mt-1 block text-xs text-destructive">{fieldErrors['clientId']}</span>
+              )}
+            </Field>
+            <Field label="Product">
+              <SearchableSelect
+                value={productId}
+                onChange={setProductId}
+                options={productOpts}
+                width="w-full"
+              />
+              {fieldErrors['productId'] && (
+                <span className="mt-1 block text-xs text-destructive">{fieldErrors['productId']}</span>
+              )}
+            </Field>
+            <Field label="Kind">
+              <SearchableSelect value={kind} onChange={onKindChange} options={kindOpts} width="w-full" />
+            </Field>
+            <Field label="Verification Unit">
+              <SearchableSelect value={unitId} onChange={setUnitId} options={unitOpts} width="w-full" />
+              {fieldErrors['verificationUnitId'] && (
+                <span className="mt-1 block text-xs text-destructive">
+                  {fieldErrors['verificationUnitId']}
+                </span>
+              )}
+            </Field>
+            <Field label="Pincode (search)">
+              <SearchableSelect
+                value={pincode}
+                onChange={(v) => {
+                  setPincode(v);
+                  setLocationId('');
+                }}
+                options={pincodeOpts}
+                onQueryChange={setPincodeSearch}
+                placeholder={isKyc ? 'n/a for KYC' : 'Type ≥2 digits…'}
+                disabled={isKyc}
+                width="w-full"
+              />
+            </Field>
+            <Field label="Area">
+              <SearchableSelect
+                value={locationId}
+                onChange={setLocationId}
+                options={areaOpts}
+                disabled={isKyc || !pincode}
+                placeholder={isKyc ? 'n/a for KYC' : pincode ? 'Select area…' : 'Pick pincode first'}
+                width="w-full"
+              />
+              {fieldErrors['locationId'] && (
+                <span className="mt-1 block text-xs text-destructive">{fieldErrors['locationId']}</span>
+              )}
+            </Field>
+            <Field label="Rate Type">
+              <SearchableSelect
+                value={clientRateType}
+                onChange={setRateType}
+                options={clientRateTypeOpts}
+                disabled={isKyc}
+                placeholder={isKyc ? 'n/a for KYC' : 'Search…'}
+                width="w-full"
+              />
+              {fieldErrors['clientRateType'] && (
+                <span className="mt-1 block text-xs text-destructive">{fieldErrors['clientRateType']}</span>
+              )}
+            </Field>
+          </>
+        )}
+        <Field label="Rate (₹)">
+          <input
+            className="input tabular-nums"
+            type="number"
+            min="0"
+            step="0.01"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="50.00"
+          />
+          {fieldErrors['amount'] && (
+            <span className="mt-1 block text-xs text-destructive">{fieldErrors['amount']}</span>
+          )}
+        </Field>
+        <Field label="Effective From (blank = now)">
+          <input
+            type="date"
+            className="input"
+            value={effectiveFrom}
+            onChange={(e) => setEffectiveFrom(e.target.value)}
+          />
+          {fieldErrors['effectiveFrom'] && (
+            <span className="mt-1 block text-xs text-destructive">{fieldErrors['effectiveFrom']}</span>
+          )}
+        </Field>
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="ghost" onClick={() => navigate('/admin/rates')} disabled={mut.isPending}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              setError(null);
+              // Validate against the canonical SDK schema (the SAME payload the mutationFn POSTs).
+              const effectiveFromIso = toIsoDate(effectiveFrom);
+              const errs = isRevise
+                ? zodFieldErrors(ReviseRateSchema, {
+                    amount: Number(amount),
+                    ...(effectiveFromIso ? { effectiveFrom: effectiveFromIso } : {}),
+                  })
+                : zodFieldErrors(CreateRateSchema, {
+                    clientId: Number(clientId),
+                    productId: Number(productId),
+                    verificationUnitId: Number(unitId),
+                    locationId: isKyc || !locationId ? null : Number(locationId),
+                    clientRateType: isKyc ? null : clientRateType || null,
+                    amount: Number(amount),
+                    ...(effectiveFromIso ? { effectiveFrom: effectiveFromIso } : {}),
+                  });
+              if (Object.keys(errs).length > 0) {
+                setFieldErrors(errs);
+                return;
+              }
+              setFieldErrors({});
+              mut.mutate();
+            }}
+            disabled={!valid}
+            loading={mut.isPending}
+          >
+            Save
+          </Button>
+        </div>
+      </div>
+
+      {conflict && (
+        <ConflictDialog
+          entityLabel="rate"
+          current={conflict}
+          onReload={() => {
+            if (conflict.version !== undefined) setVersion(conflict.version);
+            qc.invalidateQueries({ queryKey: [QK] });
+            setConflict(null);
+          }}
+          onDiscard={() => {
+            qc.invalidateQueries({ queryKey: [QK] });
+            navigate('/admin/rates');
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-medium text-foreground">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+/** One read-only dimension line in the revise summary. */
+function ReadOnlyRow({ label, value, mono }: { label: string; value: string | null; mono?: boolean }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
+      <dd className={`text-right text-foreground${mono ? ' font-mono text-xs uppercase' : ''}`}>
+        {value ?? <span className="text-muted-foreground">—</span>}
+      </dd>
+    </div>
+  );
+}

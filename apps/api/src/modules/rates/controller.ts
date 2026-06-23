@@ -66,6 +66,18 @@ export const rateController = {
     }
   },
 
+  /** A single rate by id — the D4 record-page (revise mode) loader. Thin: parse the numeric id →
+   *  service → the joined `RateView` (same shape as a list row). 404 RATE_NOT_FOUND on a miss. */
+  async get(req: Request, res: Response, next: NextFunction) {
+    try {
+      const view = await svc.get(parseId(req));
+      if (!view) throw AppError.notFound('RATE_NOT_FOUND');
+      res.json(view);
+    } catch (e) {
+      next(e);
+    }
+  },
+
   async create(req: Request, res: Response, next: NextFunction) {
     try {
       res.status(HTTP_STATUS.CREATED).json(await svc.create(req.body, userId(req)));

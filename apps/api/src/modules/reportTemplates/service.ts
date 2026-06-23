@@ -89,6 +89,13 @@ export const reportTemplateService = {
     return buildPage(items, totalCount, r, filters);
   },
 
+  /** Additive single-row read (ADR-0051 D4) — reuses `repo.findById`; 404s the module's standard way. */
+  async get(id: number): Promise<ReportTemplate> {
+    const template = await repo.findById(id);
+    if (!template) throw AppError.notFound('REPORT_TEMPLATE_NOT_FOUND');
+    return template;
+  },
+
   /**
    * Export rows for the DataGrid (IMPORT_EXPORT_STANDARD). Re-runs the SAME list query
    * (templateType/active/search/filters/sort) — `current` = the exact page; `all` = every matching

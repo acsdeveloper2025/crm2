@@ -3423,6 +3423,23 @@
       }
     },
     "/api/v2/rates/{id}": {
+      "get": {
+        "tags": [
+          "rates"
+        ],
+        "operationId": "get_api_v2_rates_id",
+        "summary": "GET /api/v2/rates/{id}",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
       "put": {
         "tags": [
           "rates"
@@ -3816,6 +3833,23 @@
       }
     },
     "/api/v2/report-templates/{id}": {
+      "get": {
+        "tags": [
+          "report-templates"
+        ],
+        "operationId": "get_api_v2_report_templates_id",
+        "summary": "GET /api/v2/report-templates/{id}",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
       "put": {
         "tags": [
           "report-templates"

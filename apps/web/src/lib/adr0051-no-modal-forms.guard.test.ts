@@ -11,9 +11,9 @@ import { describe, it, expect } from 'vitest';
  * Converted (ADR-0051):
  *   D3 flat inline-grid → Departments, Designations, Clients, Products, Locations (+ MasterDataCrud)
  *   D4 record-page route → Policies, ReportLayouts, Roles (access), CommissionRates, Users,
- *                          VerificationUnits
+ *                          VerificationUnits, Templates, RateManagement (+ backend GET /:id)
  * NOT converted (documented scope, tracked in COMPLIANCE_GAPS §H):
- *   CPV (bespoke master-detail accordion), Templates + RateManagement (outside the converted set).
+ *   CPV (bespoke master-detail accordion).
  */
 const CONVERTED_SOURCES = import.meta.glob(
   [
@@ -28,6 +28,8 @@ const CONVERTED_SOURCES = import.meta.glob(
     '../features/clients/**/*.tsx',
     '../features/products/**/*.tsx',
     '../features/locations/**/*.tsx',
+    '../features/templates/**/*.tsx',
+    '../features/rateManagement/**/*.tsx',
     '../components/MasterDataCrud.tsx',
   ],
   { query: '?raw', import: 'default', eager: true },
@@ -36,7 +38,8 @@ const CONVERTED_SOURCES = import.meta.glob(
 // Sanctioned NON-FORM overlays a converted entity may still render (ADR-0051 §4 — kept overlays):
 //   ConflictDialog       OCC stale-update recovery (ADR-0019) — not an add/edit form
 //   ResetPasswordDialog  a Users list-row action — not an add/edit form
-const ALLOWED = new Set(['ConflictDialog', 'ResetPasswordDialog']);
+//   HistoryDialog        Rate Management's READ-ONLY effective-dated history view — not an add/edit form
+const ALLOWED = new Set(['ConflictDialog', 'ResetPasswordDialog', 'HistoryDialog']);
 const DIALOG_USAGE = /<([A-Z][A-Za-z0-9]*(?:Dialog|Modal))\b/g;
 
 describe('ADR-0051: converted entities render no add/edit modal form', () => {

@@ -51,6 +51,28 @@ describe.skipIf(!RUN)('report-templates API', () => {
     expect(list.body.sort).toEqual({ sortBy: 'name', sortOrder: 'asc' });
   });
 
+  // ── GET /:id (additive read, ADR-0051 D4) ──
+  it('GET /:id returns the created template (200 + body) for a TEMPLATE_VIEW caller', async () => {
+    const made = (await create()).body as { id: number };
+    const res = await request(app).get(`/api/v2/report-templates/${made.id}`).set(SA);
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(made.id);
+    expect(res.body.code).toBe('FIELD_RESIDENCE_V1');
+    expect(res.body.templateType).toBe('FIELD_NARRATIVE');
+  });
+
+  it('GET a non-existent id → 404 REPORT_TEMPLATE_NOT_FOUND', async () => {
+    const res = await request(app).get('/api/v2/report-templates/999999').set(SA);
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('REPORT_TEMPLATE_NOT_FOUND');
+  });
+
+  it('GET /:id without TEMPLATE_VIEW (BACKEND_USER) → 403', async () => {
+    const made = (await create()).body as { id: number };
+    const res = await request(app).get(`/api/v2/report-templates/${made.id}`).set(BE);
+    expect(res.status).toBe(403);
+  });
+
   it('rejects an unknown template type (400 VALIDATION)', async () => {
     const res = await create({ templateType: 'SOMETHING_ELSE' });
     expect(res.status).toBe(400);
@@ -367,7 +389,7 @@ describe.skipIf(!RUN)('report-templates API', () => {
         });
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({ okCount: 2, conflictCount: 0, notFoundCount: 0 });
-      // report-templates has no GET /:id → verify via the active=false list
+      // verify via the active=false list (also covered per-row by GET /:id above)
       const inactive = (await request(app).get('/api/v2/report-templates?active=false&limit=100').set(SA))
         .body.items as { id: number; isActive: boolean }[];
       expect(inactive.some((t) => t.id === a.id && !t.isActive)).toBe(true);

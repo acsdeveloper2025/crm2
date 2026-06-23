@@ -1058,10 +1058,18 @@ not add/edit forms.
 - **CPV — 🟡 DEFERRED:** bespoke master-detail accordion (client↔product link + per-unit reschedule); keys
   immutable, only `effectiveFrom` is reschedulable via a tiny single-date dialog + a sanctioned
   `renderExpanded` sub-table. ADR-0051's flat-grid model does not fit; left as-is (documented scope).
-- **Templates + Rate-Management (Revise) — 🟡 DEFERRED:** the two remaining popup surfaces outside the
-  converted set. Templates is a small code/name/type/content form; Rate-Management "Revise" is an
-  effective-dated amount change. Converting them (record page / inline) is a follow-up — not in the
-  2026-06-23 converted-set scope.
+- **Templates + Rate-Management — ✅ FIXED (this branch, 2026-06-23):** the last two popup surfaces, both
+  converted to record-page routes (backend-additive D4, mirroring Policies + CommissionRates). **Templates:**
+  added `GET /api/v2/report-templates/:id` (TEMPLATE_VIEW, reuses `repo.findById`, +integration tests) +
+  `TemplateRecordPage` (`/admin/templates/new|:id`); `TemplateDialog` deleted. **Rate-Management:** added
+  `GET /api/v2/rates/:id` returning the joined `RateView` (MASTERDATA_VIEW, new `repo.findViewById` factored
+  from the list select, +integration tests) + `RateRecordPage` (`/new` create cascade + `/:id` revise =
+  amount+effFrom, dims read-only, `POST /:id/revise`); the inline AddRateForm + Revise modal deleted, the
+  read-only `HistoryDialog` kept, `SearchableSelect` extracted to `components/ui/`. OpenAPI regenerated;
+  the no-modal-form guard test now scans `features/templates` + `features/rateManagement` (HistoryDialog
+  whitelisted as a read-only view). Browser-verified create/edit navigation + `GET /:id` hydration; e2e
+  `templates.spec` + `rateManagement.spec` added (+ idempotent seed rows, verified on an empty DB). **Only
+  CPV remains unconverted** (above) — every other entity is now inline-grid or record-page.
 
 ### H-10 · Keyboard navigation (D15) — ✅ FIXED (P1/P2); 🟡 DEFERRED (P3 tail)
 - **K1 (P1) — ✅ FIXED:** DataGrid sortable headers + `onRowClick` rows are keyboard-operable
@@ -1118,10 +1126,12 @@ specs confirm valid create/edit is not false-blocked. CaseCreate/CaseDetail/Loca
 inline validation — left as-is.
 
 ### Design-build status (this branch — all fix-plan items dispositioned)
-Foundation + Wave 1 + button-migration + Wave 4 (D3/D4) shipped to prod (`522d5ac`). This branch completes
-the remainder: **K1/K3** (keyboard), **D5** (guard + standards), **B2** (tables), **C3** (consistency), **B3**
-(export), **C2** (URL filters), **B1** (form validation) — all FIXED above. Remaining DEFERRED (documented):
-CPV inline-grid, Templates + Rate-Management Revise conversion, DataGrid `role=menu` arrow-roving (P3),
+Foundation + Wave 1 + button-migration + Wave 4 (D3/D4) shipped to prod (`522d5ac`). The follow-up branch
+completed the remainder: **K1/K3** (keyboard), **D5** (guard + standards), **B2** (tables), **C3**
+(consistency), **B3** (export), **C2** (URL filters), **B1** (form validation), and the **last two popup
+conversions — Templates + Rate-Management** (record-page routes + additive `GET /:id`, H-9 above) — all FIXED.
+**ADR-0051 is now complete for every entity except CPV** (bespoke master-detail accordion, intentionally
+left). Remaining DEFERRED (documented): CPV inline-grid; DataGrid `role=menu` arrow-roving (P3);
 Cases/Policies/ReportLayouts/FieldMonitoring additive backend export+filter endpoints (IE-DEFER-3/5/8, H-C2).
 
 ---

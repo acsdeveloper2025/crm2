@@ -356,6 +356,55 @@ describe.skipIf(!RUN)('rates API', () => {
     expect(again.body.error).toBe('STALE_UPDATE');
   });
 
+  // ── D4 record-page loader: GET /:id returns the joined RateView (ADR-0051) ──
+  describe('get by id', () => {
+    const FA = authHeaderForRole('FIELD_AGENT'); // no page.masterdata
+
+    it('returns the created rate as a joined RateView (200 + names) for a MASTERDATA_VIEW caller', async () => {
+      const key = await seedKey('GET1');
+      const locationId = await newLocation('GETAREA');
+      const created = (
+        await request(app)
+          .post('/api/v2/rates')
+          .set(SA)
+          .send({ ...key, locationId, clientRateType: 'OGL', amount: 275 })
+      ).body as { id: number };
+
+      // BACKEND_USER has page.masterdata (read) but cannot write — a valid VIEW-perm caller
+      const res = await request(app).get(`/api/v2/rates/${created.id}`).set(BE);
+      expect(res.status).toBe(200);
+      expect(res.body.id).toBe(created.id);
+      expect(typeof res.body.amount).toBe('number');
+      expect(res.body.amount).toBe(275);
+      // the JOINED view shape (names, not just ids) — what the list returns
+      expect(res.body.clientCode).toBe('C_GET1');
+      expect(res.body.clientName).toBeTruthy();
+      expect(res.body.productCode).toBe('P_GET1');
+      expect(res.body.unitName).toBeTruthy();
+      expect(res.body.pincode).toBe('400001');
+      expect(res.body.area).toBe('GETAREA');
+      expect(res.body.clientRateType).toBe('OGL');
+    });
+
+    it('a non-existent id → 404 RATE_NOT_FOUND', async () => {
+      const res = await request(app).get('/api/v2/rates/999999').set(SA);
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('RATE_NOT_FOUND');
+    });
+
+    it('a caller without page.masterdata cannot read (403); unauth is 401', async () => {
+      const key = await seedKey('GET3');
+      const created = (
+        await request(app)
+          .post('/api/v2/rates')
+          .set(SA)
+          .send({ ...key, amount: 50 })
+      ).body as { id: number };
+      expect((await request(app).get(`/api/v2/rates/${created.id}`).set(FA)).status).toBe(403);
+      expect((await request(app).get(`/api/v2/rates/${created.id}`)).status).toBe(401);
+    });
+  });
+
   // ── B-13 DataGrid export (IMPORT_EXPORT_STANDARD) ──
   describe('export', () => {
     const FA = authHeaderForRole('FIELD_AGENT');

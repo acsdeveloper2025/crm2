@@ -159,6 +159,13 @@ export const rateService = {
     return { rows: items, columns: RATE_EXPORT_COLUMNS };
   },
 
+  /** Single rate as the joined RateView (D4 record-page loader, ADR-0051) — same shape a list row
+   *  returns (client/product/unit/location names), so the revise form seeds its read-only dimensions.
+   *  Returns null on a miss; the controller maps that to 404. */
+  get(id: number): Promise<RateView | null> {
+    return repo.findViewById(id);
+  },
+
   create(input: unknown, userId: string): Promise<Rate> {
     const validated = CreateRateSchema.parse(input); // throws ZodError → 400
     return repo.create(validated, userId);

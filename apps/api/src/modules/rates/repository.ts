@@ -20,6 +20,16 @@ const RATE_FROM = `FROM rates r
   JOIN verification_units vu ON vu.id = r.verification_unit_id
   LEFT JOIN locations l ON l.id = r.location_id`;
 
+// Shared SELECT list for the joined RateView (list page + single-row finder share this so the
+// record-page loader sees the SAME shape — with client/product/unit/location names, not just ids).
+const RATE_VIEW_COLS = `r.id, r.client_id, r.product_id, r.verification_unit_id, r.location_id, r.client_rate_type,
+       r.amount::float8 AS amount, r.currency, r.is_active, r.effective_from, r.effective_to,
+       r.version, r.created_by, r.updated_by, r.created_at, r.updated_at,
+       c.code AS client_code, c.name AS client_name,
+       p.code AS product_code, p.name AS product_name,
+       vu.code AS unit_code, vu.name AS unit_name, vu.kind AS unit_kind,
+       l.pincode, l.area`;
+
 const mapWriteError = (e: unknown): never => {
   if (pgCode(e) === EXCLUSION_VIOLATION)
     throw AppError.conflict('RATE_EXISTS', 'an active rate already overlaps this scope + period');
@@ -82,13 +92,7 @@ export const rateRepository = {
     const totalCount = countRow?.count ?? 0;
     // sortColumn is whitelisted in the service (PageSpec.sortMap) → safe to interpolate.
     const items = await query<RateView>(
-      `SELECT r.id, r.client_id, r.product_id, r.verification_unit_id, r.location_id, r.client_rate_type,
-              r.amount::float8 AS amount, r.currency, r.is_active, r.effective_from, r.effective_to,
-              r.version, r.created_by, r.updated_by, r.created_at, r.updated_at,
-              c.code AS client_code, c.name AS client_name,
-              p.code AS product_code, p.name AS product_name,
-              vu.code AS unit_code, vu.name AS unit_name, vu.kind AS unit_kind,
-              l.pincode, l.area
+      `SELECT ${RATE_VIEW_COLS}
        ${RATE_FROM}
        ${clause}
        ORDER BY ${o.sortColumn} ${o.sortOrder}, r.id ${o.sortOrder}
@@ -100,6 +104,13 @@ export const rateRepository = {
 
   async findById(id: number): Promise<Rate | null> {
     const rows = await query<Rate>(`SELECT ${COLS} FROM rates WHERE id = $1`, [id]);
+    return rows[0] ?? null;
+  },
+
+  /** Single joined RateView (record-page loader) — same SELECT/joins the list returns, scoped to one
+   *  id (bound, never interpolated). Returns the mapped view or null. */
+  async findViewById(id: number): Promise<RateView | null> {
+    const rows = await query<RateView>(`SELECT ${RATE_VIEW_COLS} ${RATE_FROM} WHERE r.id = $1`, [id]);
     return rows[0] ?? null;
   },
 

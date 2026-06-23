@@ -15,6 +15,7 @@ import { ClientsPage } from './features/clients/ClientsPage.js';
 import { ProductsPage } from './features/products/ProductsPage.js';
 import { CpvPage } from './features/cpv/CpvPage.js';
 import { RateManagementPage } from './features/rateManagement/RateManagementPage.js';
+import { RateRecordPage } from './features/rateManagement/RateRecordPage.js';
 import { LocationsPage } from './features/locations/LocationsPage.js';
 import { UsersPage } from './features/users/UsersPage.js';
 import { UserRecordPage } from './features/users/UserRecordPage.js';
@@ -23,6 +24,7 @@ import { DesignationsPage } from './features/designations/DesignationsPage.js';
 import { RolesPage } from './features/access/RolesPage.js';
 import { RoleRecordPage } from './features/access/RoleRecordPage.js';
 import { TemplatesPage } from './features/templates/TemplatesPage.js';
+import { TemplateRecordPage } from './features/templates/TemplateRecordPage.js';
 import { SystemPage } from './features/system/SystemPage.js';
 import { CasesPage } from './features/cases/CasesPage.js';
 import { DashboardPage } from './features/dashboard/DashboardPage.js';
@@ -75,6 +77,8 @@ export function App() {
         <Route path="/admin/products" element={<ProductsPage />} />
         <Route path="/admin/cpv" element={<CpvPage />} />
         <Route path="/admin/rates" element={<RateManagementPage />} />
+        <Route path="/admin/rates/new" element={<RateRecordPage />} />
+        <Route path="/admin/rates/:id" element={<RateRecordPage />} />
         <Route path="/admin/commission-rates" element={<CommissionRatesPage />} />
         <Route path="/admin/commission-rates/new" element={<CommissionRateRecordPage />} />
         <Route path="/admin/commission-rates/:id" element={<CommissionRateRecordPage />} />
@@ -91,6 +95,8 @@ export function App() {
         <Route path="/admin/rbac/new" element={<RoleRecordPage />} />
         <Route path="/admin/rbac/:code" element={<RoleRecordPage />} />
         <Route path="/admin/templates" element={<TemplatesPage />} />
+        <Route path="/admin/templates/new" element={<TemplateRecordPage />} />
+        <Route path="/admin/templates/:id" element={<TemplateRecordPage />} />
         <Route path="/admin/system" element={<SystemPage />} />
         <Route path="/admin/policies" element={<PoliciesPage />} />
         <Route path="/admin/policies/new" element={<PolicyRecordPage />} />

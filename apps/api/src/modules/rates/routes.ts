@@ -22,6 +22,9 @@ rateRoutes.post(
   c.import,
 );
 rateRoutes.get('/:id/history', authorize(PERMISSIONS.MASTERDATA_VIEW), c.history);
+// Bare `GET /:id` (D4 record-page loader, ADR-0051) — declared AFTER the static GETs (`/`, `/export`,
+// `/import-template`) so it never shadows them; the two-segment `/:id/history` is a distinct path.
+rateRoutes.get('/:id', authorize(PERMISSIONS.MASTERDATA_VIEW), c.get);
 rateRoutes.post('/', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.create);
 rateRoutes.put('/:id', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.update);
 rateRoutes.post('/:id/revise', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.revise);

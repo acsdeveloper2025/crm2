@@ -1,15 +1,13 @@
-import { useId, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   pageQueryToParams,
   exportQueryToParams,
   KINDS,
   type Option,
-  type VerificationUnitOption,
   type RateView,
   type RateHistory,
-  type RateType,
-  type Location,
   type PageQuery,
   type Paginated,
   type ExportRequest,
@@ -22,14 +20,13 @@ import { DataGrid, type DataGridColumn, type BulkSelection } from '../../compone
 import { BulkStatusActions } from '../../components/BulkStatusActions.js';
 import { ImportButton } from '../../components/import/ImportModal.js';
 import { Button } from '../../components/ui/Button.js';
+import { SearchableSelect, type Opt } from '../../components/ui/SearchableSelect.js';
 import { useAuth } from '../../lib/AuthContext.js';
 
 const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
   e instanceof ApiError && e.status === HTTP_CONFLICT && e.code === 'STALE_UPDATE';
-const isoOrUndefined = (d: string): string | undefined => (d ? new Date(d).toISOString() : undefined);
 
-type Opt = { value: string; label: string };
 const KIND_LABELS: Record<string, string> = {
   FIELD_VISIT: 'Field Visit',
   KYC_DOCUMENT: 'KYC Document',
@@ -50,141 +47,21 @@ function ActiveChip({ active }: { active: boolean }) {
 }
 
 /**
- * A type-to-search dropdown. Static lists filter client-side; pass `onQueryChange` to let a parent
- * refine the option set server-side (used for the huge pincode list).
- */
-function SearchableSelect({
-  value,
-  onChange,
-  options,
-  placeholder,
-  onQueryChange,
-  disabled,
-  width = 'min-w-[12rem]',
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  options: Opt[];
-  placeholder?: string;
-  onQueryChange?: (q: string) => void;
-  disabled?: boolean;
-  width?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState('');
-  const [highlight, setHighlight] = useState(0);
-  const listId = useId();
-  const selected = options.find((o) => o.value === value);
-  const filtered = onQueryChange
-    ? options
-    : options.filter((o) => o.label.toLowerCase().includes(q.toLowerCase()));
-  // Keep the active option in range as the list shrinks while typing.
-  const hl = filtered.length === 0 ? -1 : Math.min(highlight, filtered.length - 1);
-
-  const commit = (o: Opt) => {
-    onChange(o.value);
-    setOpen(false);
-  };
-
-  // Keyboard combobox (K3): the picker previously committed on onMouseDown only, so keyboard users
-  // could never select an option. Arrow keys move the active option, Enter selects, Escape closes.
-  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      if (!open) setOpen(true);
-      else setHighlight((h) => Math.min(h + 1, filtered.length - 1));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setHighlight((h) => Math.max(h - 1, 0));
-    } else if (e.key === 'Enter') {
-      if (open && hl >= 0 && filtered[hl]) {
-        e.preventDefault();
-        commit(filtered[hl]);
-      }
-    } else if (e.key === 'Escape') {
-      if (open) {
-        e.preventDefault();
-        setOpen(false);
-      }
-    }
-  };
-
-  return (
-    <div className={`relative ${width}`}>
-      <input
-        className="input w-full disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
-        disabled={disabled}
-        placeholder={placeholder ?? 'Search…'}
-        value={open ? q : (selected?.label ?? '')}
-        role="combobox"
-        aria-expanded={open}
-        aria-controls={listId}
-        aria-autocomplete="list"
-        aria-activedescendant={open && hl >= 0 ? `${listId}-opt-${hl}` : undefined}
-        onFocus={() => {
-          setOpen(true);
-          setQ('');
-          setHighlight(0);
-        }}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
-        onKeyDown={onKeyDown}
-        onChange={(e) => {
-          setQ(e.target.value);
-          setHighlight(0);
-          onQueryChange?.(e.target.value);
-        }}
-      />
-      {open && !disabled && (
-        <ul
-          id={listId}
-          role="listbox"
-          className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-md border border-border bg-card shadow-lg"
-        >
-          {filtered.length === 0 && <li className="px-3 py-2 text-xs text-muted-foreground">No matches</li>}
-          {filtered.map((o, i) => (
-            <li key={o.value}>
-              <button
-                id={`${listId}-opt-${i}`}
-                type="button"
-                role="option"
-                aria-selected={i === hl}
-                className={`block w-full px-3 py-1.5 text-left text-sm hover:bg-surface-muted ${
-                  i === hl ? 'bg-surface-muted' : ''
-                }`}
-                onMouseEnter={() => setHighlight(i)}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  commit(o);
-                }}
-              >
-                {o.label}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-/**
  * Rate Management — ONE table (Universal DataGrid), one line per rate (client · product · unit ·
- * pincode · area · rate type · rate · effective from · status). Add inline via a cascading,
- * searchable form: client → product → unit → pincode → area, plus a managed rate-type dropdown.
- * Revise (effective-dated) and History open as dialogs from the row actions.
+ * pincode · area · rate type · rate · effective from · status). Add / Revise are full record-page
+ * routes (`/admin/rates/new`, `/admin/rates/:id`; ADR-0051 Wave-4 D4 — no modal). History opens as a
+ * read-only dialog from the row actions.
  */
 export function RateManagementPage() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   // Writes (add / revise / activate-deactivate / bulk / import) require masterdata.manage; viewing
   // (masterdata.view) does not. Gate the write affordances so a viewer doesn't hit a server 403.
   const { has } = useAuth();
   const canManage = has('masterdata.manage');
   const [clientId, setClientId] = useState('');
   const [productId, setProductId] = useState('');
-  const [adding, setAdding] = useState(false);
-  const [reviseRate, setReviseRate] = useState<RateView | null>(null);
   const [historyRate, setHistoryRate] = useState<RateView | null>(null);
-  const [err, setErr] = useState<string | null>(null);
   const [toggleConflict, setToggleConflict] = useState<RateView | null>(null);
 
   const clients = useQuery({
@@ -194,10 +71,6 @@ export function RateManagementPage() {
   const products = useQuery({
     queryKey: ['products', 'active'],
     queryFn: () => api<Option[]>('GET', '/api/v2/products/options'),
-  });
-  const units = useQuery({
-    queryKey: ['verification-units', 'active'],
-    queryFn: () => api<VerificationUnitOption[]>('GET', '/api/v2/verification-units/options'),
   });
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['rates'] });
@@ -298,7 +171,7 @@ export function RateManagementPage() {
         cell: (r) => (
           <div className="flex gap-2">
             {canManage && (
-              <Button variant="secondary" size="sm" onClick={() => setReviseRate(r)}>
+              <Button variant="secondary" size="sm" onClick={() => navigate(`/admin/rates/${r.id}`)}>
                 Revise
               </Button>
             )}
@@ -318,7 +191,7 @@ export function RateManagementPage() {
         ),
       },
     ],
-    [toggle, canManage],
+    [toggle, canManage, navigate],
   );
 
   return (
@@ -334,25 +207,10 @@ export function RateManagementPage() {
         {canManage && (
           <div className="flex gap-2">
             <ImportButton config={{ basePath: '/api/v2/rates', queryKey: 'rates', entityLabel: 'rate' }} />
-            <Button onClick={() => setAdding((v) => !v)}>{adding ? 'Cancel' : '+ Add rate'}</Button>
+            <Button onClick={() => navigate('/admin/rates/new')}>+ Add rate</Button>
           </div>
         )}
       </div>
-
-      {canManage && adding && (
-        <AddRateForm
-          clientOpts={clientOpts}
-          productOpts={productOpts}
-          units={units.data ?? []}
-          onClose={() => setAdding(false)}
-          onDone={() => {
-            setAdding(false);
-            refresh();
-          }}
-          onError={setErr}
-        />
-      )}
-      {err && <p className="text-sm text-destructive">{err}</p>}
 
       <DataGrid<RateView>
         columns={columns}
@@ -399,18 +257,6 @@ export function RateManagementPage() {
         }
       />
 
-      {reviseRate && (
-        <ReviseDialog
-          rate={reviseRate}
-          onClose={() => setReviseRate(null)}
-          onDone={() => {
-            setReviseRate(null);
-            refresh();
-          }}
-          onError={setErr}
-        />
-      )}
-
       {historyRate && <HistoryDialog rate={historyRate} onClose={() => setHistoryRate(null)} />}
 
       {toggleConflict && (
@@ -424,273 +270,6 @@ export function RateManagementPage() {
           onDiscard={() => {
             refresh();
             setToggleConflict(null);
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-function AddRateForm({
-  clientOpts,
-  productOpts,
-  units,
-  onClose,
-  onDone,
-  onError,
-}: {
-  clientOpts: Opt[];
-  productOpts: Opt[];
-  units: VerificationUnitOption[];
-  onClose: () => void;
-  onDone: () => void;
-  onError: (m: string) => void;
-}) {
-  const [clientId, setClientId] = useState('');
-  const [productId, setProductId] = useState('');
-  const [kind, setKind] = useState('FIELD_VISIT');
-  const [unitId, setUnitId] = useState('');
-  const [pincode, setPincode] = useState('');
-  const [pincodeSearch, setPincodeSearch] = useState('');
-  const [locationId, setLocationId] = useState('');
-  const [clientRateType, setRateType] = useState('');
-  const [amount, setAmount] = useState('');
-  const [effectiveFrom, setEffectiveFrom] = useState('');
-
-  // KYC documents have no geography or rate type — those fields are greyed out and forced null.
-  const isKyc = kind === 'KYC_DOCUMENT';
-  const onKindChange = (k: string) => {
-    setKind(k);
-    setUnitId('');
-    setPincode('');
-    setLocationId('');
-    setRateType('');
-  };
-
-  const clientRateTypes = useQuery({
-    queryKey: ['rate-types'],
-    queryFn: () => api<RateType[]>('GET', '/api/v2/rate-types?active=true'),
-  });
-  const pincodes = useQuery({
-    queryKey: ['pincodes', pincodeSearch],
-    queryFn: () => api<string[]>('GET', `/api/v2/locations/pincodes?q=${encodeURIComponent(pincodeSearch)}`),
-    enabled: pincodeSearch.length >= 2,
-  });
-  const areas = useQuery({
-    queryKey: ['areas', pincode],
-    queryFn: () =>
-      api<Paginated<Location>>('GET', `/api/v2/locations?pincode=${pincode}&limit=200`).then((r) => r.items),
-    enabled: !!pincode,
-  });
-
-  const create = useMutation({
-    mutationFn: () =>
-      api('POST', '/api/v2/rates', {
-        clientId: Number(clientId),
-        productId: Number(productId),
-        verificationUnitId: Number(unitId),
-        locationId: isKyc || !locationId ? null : Number(locationId),
-        clientRateType: isKyc ? null : clientRateType || null,
-        amount: Number(amount),
-        effectiveFrom: isoOrUndefined(effectiveFrom),
-      }),
-    onSuccess: onDone,
-    onError: (e: Error) => onError(e.message),
-  });
-
-  const unitOpts: Opt[] = units
-    .filter((u) => u.kind === kind)
-    .map((u) => ({ value: String(u.id), label: u.name }));
-  const kindOpts: Opt[] = [
-    { value: 'FIELD_VISIT', label: 'FIELD VISIT' },
-    { value: 'KYC_DOCUMENT', label: 'KYC DOCUMENT' },
-  ];
-  const pincodeOpts: Opt[] = (pincodes.data ?? []).map((p) => ({ value: p, label: p }));
-  const areaOpts: Opt[] = (areas.data ?? []).map((l) => ({ value: String(l.id), label: l.area }));
-  const clientRateTypeOpts: Opt[] = (clientRateTypes.data ?? []).map((rt) => ({
-    value: rt.code,
-    label: rt.code,
-  }));
-
-  return (
-    <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-card p-3 shadow-sm">
-      <Field label="Client">
-        <SearchableSelect
-          value={clientId}
-          onChange={setClientId}
-          options={clientOpts}
-          width="min-w-[12rem]"
-        />
-      </Field>
-      <Field label="Product">
-        <SearchableSelect
-          value={productId}
-          onChange={setProductId}
-          options={productOpts}
-          width="min-w-[11rem]"
-        />
-      </Field>
-      <Field label="Kind">
-        <SearchableSelect value={kind} onChange={onKindChange} options={kindOpts} width="min-w-[10rem]" />
-      </Field>
-      <Field label="Verification unit">
-        <SearchableSelect value={unitId} onChange={setUnitId} options={unitOpts} width="min-w-[12rem]" />
-      </Field>
-      <Field label="Pincode (search)">
-        <SearchableSelect
-          value={pincode}
-          onChange={(v) => {
-            setPincode(v);
-            setLocationId('');
-          }}
-          options={pincodeOpts}
-          onQueryChange={setPincodeSearch}
-          placeholder={isKyc ? 'n/a for KYC' : 'Type ≥2 digits…'}
-          disabled={isKyc}
-          width="min-w-[9rem]"
-        />
-      </Field>
-      <Field label="Area">
-        <SearchableSelect
-          value={locationId}
-          onChange={setLocationId}
-          options={areaOpts}
-          disabled={isKyc || !pincode}
-          placeholder={isKyc ? 'n/a for KYC' : pincode ? 'Select area…' : 'Pick pincode first'}
-          width="min-w-[12rem]"
-        />
-      </Field>
-      <Field label="Rate type">
-        <SearchableSelect
-          value={clientRateType}
-          onChange={setRateType}
-          options={clientRateTypeOpts}
-          disabled={isKyc}
-          placeholder={isKyc ? 'n/a for KYC' : 'Search…'}
-          width="min-w-[9rem]"
-        />
-      </Field>
-      <Field label="Rate (₹)">
-        <input
-          type="number"
-          min={0}
-          step="0.01"
-          className="input w-28"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-        />
-      </Field>
-      <Field label="Effective from">
-        <input
-          type="date"
-          className="input"
-          value={effectiveFrom}
-          onChange={(e) => setEffectiveFrom(e.target.value)}
-        />
-      </Field>
-      <Button
-        loading={create.isPending}
-        disabled={
-          !clientId || !productId || !unitId || !amount || (!isKyc && (!locationId || !clientRateType))
-        }
-        onClick={() => create.mutate()}
-      >
-        Add
-      </Button>
-      <Button variant="ghost" onClick={onClose}>
-        Cancel
-      </Button>
-    </div>
-  );
-}
-
-function ReviseDialog({
-  rate,
-  onClose,
-  onDone,
-  onError,
-}: {
-  rate: RateView;
-  onClose: () => void;
-  onDone: () => void;
-  onError: (m: string) => void;
-}) {
-  const [amount, setAmount] = useState(String(rate.amount));
-  const [effectiveFrom, setEffectiveFrom] = useState('');
-  const [conflict, setConflict] = useState(false);
-  const dialogRef = useFocusTrap<HTMLDivElement>(true, onClose);
-  const revise = useMutation({
-    mutationFn: () =>
-      api('POST', `/api/v2/rates/${rate.id}/revise`, {
-        amount: Number(amount),
-        effectiveFrom: isoOrUndefined(effectiveFrom),
-        version: rate.version, // OCC: revise the row the user is looking at (ADR-0019)
-      }),
-    onSuccess: onDone,
-    onError: (e: unknown) => {
-      if (isStale(e)) setConflict(true);
-      else onError(e instanceof Error ? e.message : 'Revision failed');
-    },
-  });
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40">
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="rate-revise-title"
-        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg border border-border bg-card p-6 text-card-foreground shadow-lg"
-      >
-        <h2 id="rate-revise-title" className="mb-1 text-lg font-semibold">
-          Revise Rate
-        </h2>
-        <p className="mb-4 text-xs text-muted-foreground">
-          New version of <b>{rate.unitName}</b>
-          {rate.clientRateType ? ` · ${rate.clientRateType}` : ''}
-          {rate.pincode ? ` · ${rate.pincode}` : ''} (current {formatMoney(rate.amount)}). The current row is
-          end-dated, never overwritten.
-        </p>
-        <div className="space-y-3">
-          <Field label="New rate (₹)">
-            <input
-              type="number"
-              min={0}
-              step="0.01"
-              className="input w-40"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-            />
-          </Field>
-          <Field label="Effective from">
-            <input
-              type="date"
-              className="input"
-              value={effectiveFrom}
-              onChange={(e) => setEffectiveFrom(e.target.value)}
-            />
-          </Field>
-        </div>
-        <div className="mt-5 flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose} disabled={revise.isPending}>
-            Cancel
-          </Button>
-          <Button loading={revise.isPending} disabled={!amount} onClick={() => revise.mutate()}>
-            Save revision
-          </Button>
-        </div>
-      </div>
-
-      {conflict && (
-        <ConflictDialog
-          entityLabel="rate"
-          current={undefined}
-          onReload={() => {
-            setConflict(false);
-            onDone(); // refresh the list to the new current row
-          }}
-          onDiscard={() => {
-            setConflict(false);
-            onClose();
           }}
         />
       )}
@@ -763,14 +342,5 @@ function HistoryDialog({ rate, onClose }: { rate: RateView; onClose: () => void 
         </div>
       </div>
     </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1">
-      <span className="text-xs uppercase tracking-wide text-muted-foreground">{label}</span>
-      {children}
-    </label>
   );
 }
