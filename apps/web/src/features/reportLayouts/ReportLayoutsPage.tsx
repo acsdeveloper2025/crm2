@@ -3,14 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   pageQueryToParams,
+  exportQueryToParams,
   LAYOUT_KINDS,
   type LayoutKind,
   type ReportLayout,
   type ReportLayoutView,
   type PageQuery,
   type Paginated,
+  type ExportRequest,
 } from '@crm2/sdk';
-import { api, ApiError } from '../../lib/sdk.js';
+import { api, apiExport, ApiError } from '../../lib/sdk.js';
 import { formatDateTime } from '../../lib/format.js';
 import { useAuth } from '../../lib/AuthContext.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
@@ -158,6 +160,9 @@ export function ReportLayoutsPage() {
           { id: 'updatedAt', label: 'Updated' },
         ]}
         loadingLabel="MIS Layouts"
+        exportFn={(req: ExportRequest) =>
+          apiExport(`/api/v2/report-layouts/export?${exportQueryToParams(req).toString()}`)
+        }
       />
     </div>
   );

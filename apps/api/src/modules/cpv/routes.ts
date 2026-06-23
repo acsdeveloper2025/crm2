@@ -28,6 +28,18 @@ clientProductRoutes.post('/:id/deactivate', authorize(PERMISSIONS.MASTERDATA_MAN
 
 export const cpvUnitRoutes: Router = Router();
 cpvUnitRoutes.get('/', authorize(PERMISSIONS.MASTERDATA_VIEW), cpv.list);
+// `/export` + `/import` declared before the `/:id` param routes (IMPORT_EXPORT_STANDARD route order).
+// Gates IDENTICAL to the clientProduct leg: export=DATA_EXPORT, import=MASTERDATA_MANAGE (import
+// CREATES enablements, so it needs the same authority as `POST /`). The file is raw bytes; `raw()`
+// is route-scoped so the global json() parser is untouched.
+cpvUnitRoutes.get('/export', authorize(PERMISSIONS.DATA_EXPORT), cpv.export);
+cpvUnitRoutes.get('/import-template', authorize(PERMISSIONS.MASTERDATA_MANAGE), cpv.importTemplate);
+cpvUnitRoutes.post(
+  '/import',
+  authorize(PERMISSIONS.MASTERDATA_MANAGE),
+  raw({ type: () => true, limit: '10mb' }),
+  cpv.import,
+);
 cpvUnitRoutes.post('/', authorize(PERMISSIONS.MASTERDATA_MANAGE), cpv.create);
 cpvUnitRoutes.put('/:id', authorize(PERMISSIONS.MASTERDATA_MANAGE), cpv.update);
 cpvUnitRoutes.post('/:id/activate', authorize(PERMISSIONS.MASTERDATA_MANAGE), cpv.activate);

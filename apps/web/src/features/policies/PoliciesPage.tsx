@@ -1,8 +1,15 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { pageQueryToParams, type PageQuery, type Paginated, type Policy } from '@crm2/sdk';
-import { api, ApiError } from '../../lib/sdk.js';
+import {
+  pageQueryToParams,
+  exportQueryToParams,
+  type ExportRequest,
+  type PageQuery,
+  type Paginated,
+  type Policy,
+} from '@crm2/sdk';
+import { api, apiExport, ApiError } from '../../lib/sdk.js';
 import { useAuth } from '../../lib/AuthContext.js';
 import { formatDateTime } from '../../lib/format.js';
 import { StatusChip } from '../../components/StatusChip.js';
@@ -118,6 +125,9 @@ export function PoliciesPage() {
           api<Paginated<Policy>>('GET', `/api/v2/policies?${pageQueryToParams(query).toString()}`)
         }
         dateFilters={[{ id: 'effectiveFrom', label: 'Effective From' }]}
+        exportFn={(req: ExportRequest) =>
+          apiExport(`/api/v2/policies/export?${exportQueryToParams(req).toString()}`)
+        }
       />
 
       {toggleConflict && (

@@ -996,6 +996,25 @@
         ]
       }
     },
+    "/api/v2/cases/export": {
+      "get": {
+        "tags": [
+          "cases"
+        ],
+        "operationId": "get_api_v2_cases_export",
+        "summary": "GET /api/v2/cases/export",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v2/cases/rate-preview": {
       "get": {
         "tags": [
@@ -1658,6 +1677,63 @@
         ],
         "operationId": "post_api_v2_cpv_units_id_deactivate",
         "summary": "POST /api/v2/cpv-units/{id}/deactivate",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/cpv-units/export": {
+      "get": {
+        "tags": [
+          "cpv-units"
+        ],
+        "operationId": "get_api_v2_cpv_units_export",
+        "summary": "GET /api/v2/cpv-units/export",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/cpv-units/import": {
+      "post": {
+        "tags": [
+          "cpv-units"
+        ],
+        "operationId": "post_api_v2_cpv_units_import",
+        "summary": "POST /api/v2/cpv-units/import",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/cpv-units/import-template": {
+      "get": {
+        "tags": [
+          "cpv-units"
+        ],
+        "operationId": "get_api_v2_cpv_units_import_template",
+        "summary": "GET /api/v2/cpv-units/import-template",
         "responses": {
           "default": {
             "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
@@ -3124,6 +3200,25 @@
         ]
       }
     },
+    "/api/v2/policies/export": {
+      "get": {
+        "tags": [
+          "policies"
+        ],
+        "operationId": "get_api_v2_policies_export",
+        "summary": "GET /api/v2/policies/export",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v2/policies/users/{userId}/acceptances": {
       "get": {
         "tags": [
@@ -3784,6 +3879,25 @@
         ],
         "operationId": "get_api_v2_report_layouts_by_config",
         "summary": "GET /api/v2/report-layouts/by-config",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/report-layouts/export": {
+      "get": {
+        "tags": [
+          "report-layouts"
+        ],
+        "operationId": "get_api_v2_report_layouts_export",
+        "summary": "GET /api/v2/report-layouts/export",
         "responses": {
           "default": {
             "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."

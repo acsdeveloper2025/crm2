@@ -11,6 +11,12 @@ import { reportLayoutRepository as repo } from './repository.js';
 import { AppError } from '../../platform/errors.js';
 import { requireVersion } from '../../platform/occ.js';
 import { resolvePage, resolveFilters, buildPage, type PageSpec } from '../../platform/pagination.js';
+import {
+  assertExportable,
+  exportThreshold,
+  type ExportColumn,
+  type ResolvedExport,
+} from '../../platform/export/index.js';
 
 /** Sortable/filterable columns (apiField → SQL column); only these reach ORDER BY. */
 const LAYOUT_PAGE_SPEC: PageSpec = {
@@ -41,6 +47,23 @@ const toPosInt = (v: unknown): number | undefined => {
 };
 const toKind = (v: unknown): LayoutKind | undefined =>
   typeof v === 'string' && (LAYOUT_KINDS as readonly string[]).includes(v) ? (v as LayoutKind) : undefined;
+
+/**
+ * The DataGrid export manifest (IMPORT_EXPORT_STANDARD). Column `id`s match the FE DataGrid column ids
+ * (ReportLayoutsPage) so the visible-columns (`cols`) selection filters + orders them; the `actions`
+ * column has no data value and is simply absent here. The large designer payload (template body /
+ * column catalog JSON) is deliberately NOT exported — only the header summary + a column count.
+ */
+const REPORT_LAYOUT_EXPORT_COLUMNS: ExportColumn<ReportLayoutView>[] = [
+  { id: 'client', header: 'Client', value: (l) => l.clientName },
+  { id: 'product', header: 'Product', value: (l) => l.productName },
+  { id: 'kind', header: 'Kind', value: (l) => l.kind },
+  { id: 'name', header: 'Name', value: (l) => l.name },
+  { id: 'columns', header: 'Columns', value: (l) => l.columnCount },
+  { id: 'status', header: 'Status', value: (l) => (l.isActive ? 'Active' : 'Inactive') },
+  { id: 'createdAt', header: 'Created', value: (l) => l.createdAt },
+  { id: 'updatedAt', header: 'Updated', value: (l) => l.updatedAt },
+];
 
 /**
  * MIS layout service (ADR-0037) — per-(client,product) data-entry / MIS / Billing-MIS column config.
@@ -76,6 +99,37 @@ export const reportLayoutService = {
     if (r.search !== undefined) filters['search'] = r.search;
     for (const f of columnFilters) filters[`f_${f.field}`] = f.values.join(',');
     return buildPage(items, totalCount, r, filters);
+  },
+
+  /**
+   * Export rows for the DataGrid (IMPORT_EXPORT_STANDARD). Re-runs the SAME list query
+   * (clientId/productId/kind/active/search/filters/sort) — `current` = the exact page; `all` = every
+   * matching row (no page LIMIT, capped at the job threshold → 413 EXPORT_TOO_LARGE above it). The
+   * repo has no per-id list filter, so `selected` is treated as `all` (header-only manifest applies).
+   * Returns rows + the layout column manifest; the controller streams the file.
+   */
+  async exportData(rawQuery: Record<string, unknown>, ex: ResolvedExport) {
+    const r = resolvePage(rawQuery, LAYOUT_PAGE_SPEC);
+    const clientId = toPosInt(rawQuery['clientId']);
+    const productId = toPosInt(rawQuery['productId']);
+    const kind = toKind(rawQuery['kind']);
+    const active = rawQuery['active'] === 'true' ? true : rawQuery['active'] === 'false' ? false : undefined;
+    const columnFilters = resolveFilters(rawQuery, LAYOUT_PAGE_SPEC);
+    const isCurrent = ex.mode === 'current';
+    const { items, totalCount } = await repo.list({
+      ...(clientId !== undefined ? { clientId } : {}),
+      ...(productId !== undefined ? { productId } : {}),
+      ...(kind !== undefined ? { kind } : {}),
+      ...(active !== undefined ? { active } : {}),
+      ...(r.search !== undefined ? { search: r.search } : {}),
+      columnFilters,
+      sortColumn: r.sortColumn,
+      sortOrder: r.sortOrder,
+      limit: isCurrent ? r.limit : exportThreshold(),
+      offset: isCurrent ? r.offset : 0,
+    });
+    if (!isCurrent) assertExportable(totalCount);
+    return { rows: items, columns: REPORT_LAYOUT_EXPORT_COLUMNS };
   },
 
   async get(id: number): Promise<ReportLayoutDetail> {

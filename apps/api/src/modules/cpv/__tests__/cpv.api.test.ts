@@ -575,4 +575,186 @@ describe.skipIf(!RUN)('CPV API', () => {
       expect((await request(app).get('/api/v2/client-products/import-template')).status).toBe(401);
     });
   });
+
+  // ── IE-DEFER-2: cpv-units (enabled verification units) export + import — mirrors the link leg ──
+  // Enable a unit for a client-product, addressed by its client/product/unit CODES (the import keys).
+  const enableUnit = async (clientCode: string, productCode: string, unitCode: string) => {
+    const clientProductId = await newClientProduct(
+      await newClient(clientCode),
+      await newProduct(productCode),
+    );
+    const unitId = await newUnit(unitCode);
+    return (
+      await request(app)
+        .post('/api/v2/cpv-units')
+        .set(SA)
+        .send({ clientProductId, verificationUnitId: unitId })
+    ).body.id as number;
+  };
+
+  describe('cpv-units export', () => {
+    const FA = authHeaderForRole('FIELD_AGENT');
+
+    it('exports the current view as CSV (200 + headers + resolvable code cells, round-trippable)', async () => {
+      await enableUnit('C_UEXP', 'P_UEXP', 'U_UEXP');
+      const res = await request(app).get('/api/v2/cpv-units/export?format=csv&mode=current').set(SA);
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('text/csv');
+      expect(res.headers['content-disposition']).toMatch(/attachment; filename="cpv-units-\d{8}\.csv"/);
+      // codes are their own columns (matching the import 'Client Code'/'Product Code'/'Unit Code') → re-importable.
+      expect(res.text.split('\r\n')[0]).toBe(
+        'Client Code,Client Name,Product Code,Product Name,Unit Code,Unit Name,Effective From,Created,Updated,Status',
+      );
+      expect(res.text).toContain('C_UEXP,'); // the Client Code cell carries the bare code
+      expect(res.text).toContain('U_UEXP'); // the Unit Code cell carries the bare code
+    });
+
+    it('exports all matching as XLSX (200 + PK-zip body)', async () => {
+      await enableUnit('C_UEXX', 'P_UEXX', 'U_UEXX');
+      const res = await request(app)
+        .get('/api/v2/cpv-units/export?format=xlsx&mode=all')
+        .set(SA)
+        .buffer(true)
+        .parse((r, cb) => {
+          const chunks: Buffer[] = [];
+          r.on('data', (c: Buffer) => chunks.push(c));
+          r.on('end', () => cb(null, Buffer.concat(chunks)));
+        });
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('spreadsheetml');
+      expect((res.body as Buffer).subarray(0, 2).toString('latin1')).toBe('PK');
+    });
+
+    it('respects the visible columns (cols) selection', async () => {
+      await enableUnit('C_UEXC', 'P_UEXC', 'U_UEXC');
+      const res = await request(app)
+        .get('/api/v2/cpv-units/export?format=csv&mode=all&cols=unit,status')
+        .set(SA);
+      expect(res.text.split('\r\n')[0]).toBe('Unit Code,Status');
+    });
+
+    it('a role without data.export cannot export (403); unauth is 401', async () => {
+      expect((await request(app).get('/api/v2/cpv-units/export').set(FA)).status).toBe(403);
+      expect((await request(app).get('/api/v2/cpv-units/export')).status).toBe(401);
+    });
+
+    it('the exported CSV re-imports losslessly (round-trip): export → upload → preview validates', async () => {
+      await enableUnit('C_URT', 'P_URT', 'U_URT');
+      const csv = (await request(app).get('/api/v2/cpv-units/export?format=csv&mode=all').set(SA)).text;
+      // Feed the exact exported CSV bytes back into the import preview — the engine maps 'Client Code'/
+      // 'Product Code'/'Unit Code' and ignores the extra Name/audit columns; all resolve → 0 errors.
+      const res = await request(app)
+        .post('/api/v2/cpv-units/import?mode=preview')
+        .set(SA)
+        .set('content-type', 'application/octet-stream')
+        .set('x-filename', 'cpv-units.csv')
+        .send(Buffer.from(csv, 'utf8'));
+      expect(res.status).toBe(200);
+      expect(res.body.errorRows).toBe(0);
+      expect(res.body.validRows).toBe(res.body.totalRows);
+      expect(res.body.totalRows).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  // ── IE-DEFER-2 import (FK-resolving): the file carries client/product/unit CODES → resolve → ids ──
+  describe('cpv-units import', () => {
+    const FA = authHeaderForRole('FIELD_AGENT');
+    const HEADER = ['Client Code', 'Product Code', 'Unit Code', 'Effective From'];
+
+    const mkXlsx = async (rows: (string | number)[][]): Promise<Buffer> => {
+      const ExcelJS = (await import('exceljs')).default;
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Sheet1');
+      ws.addRow(HEADER);
+      for (const r of rows) ws.addRow(r);
+      return Buffer.from(await wb.xlsx.writeBuffer());
+    };
+    const upload = (mode: 'preview' | 'confirm', buf: Buffer, auth = SA) =>
+      request(app)
+        .post(`/api/v2/cpv-units/import?mode=${mode}`)
+        .set(auth)
+        .set('content-type', 'application/octet-stream')
+        .set('x-filename', 'cpv-units.xlsx')
+        .send(buf);
+
+    // Seed a USABLE client-product link (HDFC + HOME_LOAN) and a unit (RESI) the import can resolve.
+    const seedRefs = async () => {
+      await newClientProduct(await newClient('HDFC'), await newProduct('HOME_LOAN'));
+      await newUnit('RESI');
+    };
+
+    it('downloads an XLSX template (200 + PK body + filename)', async () => {
+      const res = await request(app)
+        .get('/api/v2/cpv-units/import-template')
+        .set(SA)
+        .buffer(true)
+        .parse((r, cb) => {
+          const chunks: Buffer[] = [];
+          r.on('data', (c: Buffer) => chunks.push(c));
+          r.on('end', () => cb(null, Buffer.concat(chunks)));
+        });
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('spreadsheetml');
+      expect(res.headers['content-disposition']).toContain('cpv-units-import-template.xlsx');
+      expect((res.body as Buffer).subarray(0, 2).toString('latin1')).toBe('PK');
+    });
+
+    it('preview resolves a known triple (valid) and flags an unknown unit code (errorRows)', async () => {
+      await seedRefs();
+      const res = await upload(
+        'preview',
+        await mkXlsx([
+          ['HDFC', 'HOME_LOAN', 'RESI', ''],
+          ['HDFC', 'HOME_LOAN', 'NOPE', ''],
+        ]),
+      );
+      expect(res.status).toBe(200);
+      expect(res.body.validRows).toBe(1);
+      expect(res.body.errorRows).toBe(1);
+      expect(res.body.errors[0]).toMatchObject({ column: 'Unit Code' });
+    });
+
+    it('preview flags a client+product pair with no usable link', async () => {
+      await seedRefs(); // HDFC + HOME_LOAN linked, RESI exists
+      await newProduct('PERSONAL_LOAN'); // exists but NOT linked to HDFC
+      const res = await upload('preview', await mkXlsx([['HDFC', 'PERSONAL_LOAN', 'RESI', '']]));
+      expect(res.status).toBe(200);
+      expect(res.body.validRows).toBe(0);
+      expect(res.body.errorRows).toBe(1);
+      expect(res.body.errors[0]).toMatchObject({ column: 'Product Code' });
+      expect(res.body.errors[0].message).toContain('no usable client-product link');
+    });
+
+    it('confirm imports the valid row, writes the import_log record, and enables the unit', async () => {
+      await seedRefs();
+      const res = await upload('confirm', await mkXlsx([['HDFC', 'HOME_LOAN', 'RESI', '']]));
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ totalRows: 1, successRows: 1, failedRows: 0 });
+      // the enabled unit shows up on the link's cpv-units list.
+      const links = await request(app).get('/api/v2/client-products?search=HDFC').set(SA);
+      const linkId = links.body.items[0].id as number;
+      const list = await request(app).get(`/api/v2/cpv-units?clientProductId=${linkId}`).set(SA);
+      expect(list.body).toHaveLength(1);
+      expect(list.body[0].unitCode).toBe('RESI');
+      const log = await db!.pool.query(
+        `SELECT resource FROM import_log WHERE resource='client_product_verification_units'`,
+      );
+      expect(log.rows).toHaveLength(1);
+    });
+
+    it('confirm reports a duplicate enablement per-row (failed) without blocking — 409 surfaces as failedRows', async () => {
+      await seedRefs();
+      await upload('confirm', await mkXlsx([['HDFC', 'HOME_LOAN', 'RESI', '']])); // first enablement
+      const res = await upload('confirm', await mkXlsx([['HDFC', 'HOME_LOAN', 'RESI', '']])); // duplicate
+      expect(res.body).toMatchObject({ totalRows: 1, successRows: 0, failedRows: 1 });
+    });
+
+    it('a role without masterdata.manage cannot import or get the template (403); unauth is 401', async () => {
+      expect((await upload('preview', await mkXlsx([['HDFC', 'HOME_LOAN', 'RESI', '']]), FA)).status).toBe(
+        403,
+      );
+      expect((await request(app).get('/api/v2/cpv-units/import-template').set(FA)).status).toBe(403);
+      expect((await request(app).get('/api/v2/cpv-units/import-template')).status).toBe(401);
+    });
+  });
 });

@@ -12,6 +12,11 @@ export const reportLayoutRoutes: Router = Router();
 reportLayoutRoutes.get('/', authorize(PERMISSIONS.TEMPLATE_MANAGE), c.list);
 // `/by-config` is a literal single-segment path — declared before `/:id`.
 reportLayoutRoutes.get('/by-config', authorize(PERMISSIONS.TEMPLATE_MANAGE), c.byConfig);
+// `/export` must precede `/:id` or it'd be captured as id="export". Gated TEMPLATE_MANAGE (the same
+// admin perm every reportLayouts route uses — it IS the list's read perm here): the export streams the
+// SAME layout rows as `GET /`, so it shares the list's audience. A bare data.export gate would WIDEN
+// access. Mirrors the report-templates /export precedent.
+reportLayoutRoutes.get('/export', authorize(PERMISSIONS.TEMPLATE_MANAGE), c.export);
 reportLayoutRoutes.get('/:id', authorize(PERMISSIONS.TEMPLATE_MANAGE), c.get);
 reportLayoutRoutes.post('/', authorize(PERMISSIONS.TEMPLATE_MANAGE), c.create);
 reportLayoutRoutes.put('/:id', authorize(PERMISSIONS.TEMPLATE_MANAGE), c.update);

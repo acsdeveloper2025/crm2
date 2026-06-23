@@ -335,4 +335,66 @@ describe.skipIf(!RUN)('report-layouts API (ADR-0037 slice 1)', () => {
     ).toBe(403);
     expect((await request(app).get('/api/v2/report-layouts/not-an-int').set(SA)).status).toBe(400);
   });
+
+  // ── DataGrid export (IMPORT_EXPORT_STANDARD, IE-DEFER-8) ──
+  describe('export', () => {
+    it('exports the current view as CSV (200 + headers + rows)', async () => {
+      const cp = await seedCp('EXC');
+      const created = await request(app)
+        .post('/api/v2/report-layouts')
+        .set(SA)
+        .send(layoutBody(cp.clientId, cp.productId, { name: 'Export MIS' }));
+      expect(created.status).toBe(201);
+      const res = await request(app).get('/api/v2/report-layouts/export?format=csv&mode=current').set(SA);
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('text/csv');
+      expect(res.headers['content-disposition']).toMatch(/attachment; filename="report-layouts-\d{8}\.csv"/);
+      expect(res.text.split('\r\n')[0]).toBe('Client,Product,Kind,Name,Columns,Status,Created,Updated');
+      // headerLabel → toUpper; the layout name 'Export MIS' is upper-cased on create
+      expect(res.text).toContain('EXPORT MIS');
+      expect(res.text).toContain('MIS');
+    });
+
+    it('exports all matching as XLSX (200 + PK-zip body)', async () => {
+      const cp = await seedCp('EXX');
+      await request(app).post('/api/v2/report-layouts').set(SA).send(layoutBody(cp.clientId, cp.productId));
+      const res = await request(app)
+        .get('/api/v2/report-layouts/export?format=xlsx&mode=all')
+        .set(SA)
+        .buffer(true)
+        .parse((r, cb) => {
+          const chunks: Buffer[] = [];
+          r.on('data', (c: Buffer) => chunks.push(c));
+          r.on('end', () => cb(null, Buffer.concat(chunks)));
+        });
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('spreadsheetml');
+      expect((res.body as Buffer).subarray(0, 2).toString('latin1')).toBe('PK');
+    });
+
+    it('respects the visible columns (cols) selection', async () => {
+      const cp = await seedCp('EXCOL');
+      await request(app).post('/api/v2/report-layouts').set(SA).send(layoutBody(cp.clientId, cp.productId));
+      const res = await request(app)
+        .get('/api/v2/report-layouts/export?format=csv&mode=all&cols=name,kind,status')
+        .set(SA);
+      expect(res.text.split('\r\n')[0]).toBe('Name,Kind,Status');
+    });
+
+    it('rejects an unknown format with 400 BAD_EXPORT_FORMAT', async () => {
+      const res = await request(app).get('/api/v2/report-layouts/export?format=pdf').set(SA);
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('BAD_EXPORT_FORMAT');
+    });
+
+    it('a role without report_template.manage cannot export (403) — export shares the list audience', async () => {
+      // BACKEND_USER is 403 on `GET /` (no report_template.manage); the export must not widen access
+      // beyond who can read the layout list.
+      expect((await request(app).get('/api/v2/report-layouts/export?format=csv').set(BE)).status).toBe(403);
+    });
+
+    it('unauthenticated export is 401', async () => {
+      expect((await request(app).get('/api/v2/report-layouts/export')).status).toBe(401);
+    });
+  });
 });

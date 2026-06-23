@@ -1,7 +1,15 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CASE_STATUSES, pageQueryToParams, type CaseView, type PageQuery, type Paginated } from '@crm2/sdk';
-import { api } from '../../lib/sdk.js';
+import {
+  CASE_STATUSES,
+  pageQueryToParams,
+  exportQueryToParams,
+  type CaseView,
+  type PageQuery,
+  type Paginated,
+  type ExportRequest,
+} from '@crm2/sdk';
+import { api, apiExport } from '../../lib/sdk.js';
 import { formatDateTime } from '../../lib/format.js';
 import { useAuth } from '../../lib/AuthContext.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
@@ -84,6 +92,12 @@ export function CasesPage() {
         fetchPage={(query: PageQuery) =>
           api<Paginated<CaseView>>('GET', `/api/v2/cases?${pageQueryToParams(query).toString()}`)
         }
+        {...(has('data.export')
+          ? {
+              exportFn: (req: ExportRequest) =>
+                apiExport(`/api/v2/cases/export?${exportQueryToParams(req).toString()}`),
+            }
+          : {})}
       />
     </div>
   );

@@ -9,10 +9,30 @@ import { policyRepository as repo } from './repository.js';
 import { AppError } from '../../platform/errors.js';
 import { requireVersion } from '../../platform/occ.js';
 import { resolvePage, resolveFilters, buildPage, type PageSpec } from '../../platform/pagination.js';
+import {
+  assertExportable,
+  exportThreshold,
+  type ExportColumn,
+  type ResolvedExport,
+} from '../../platform/export/index.js';
 
 // uuid path-param shape check (mirrors auth's UUID_RE) — a malformed value becomes a clean 400, not a
 // pg 22P02 → 500 when the bind hits the uuid column.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The DataGrid export manifest (IMPORT_EXPORT_STANDARD). Column `id`s match the FE DataGrid column
+ * ids (PoliciesPage) so the visible-columns (`cols`) selection filters + orders them; the `actions`
+ * column has no data value and is simply absent here. The large `content` legal blob is intentionally
+ * NOT exported.
+ */
+const POLICY_EXPORT_COLUMNS: ExportColumn<Policy>[] = [
+  { id: 'code', header: 'Code', value: (p) => p.code },
+  { id: 'name', header: 'Name', value: (p) => p.name },
+  { id: 'contentVersion', header: 'Version', value: (p) => p.contentVersion },
+  { id: 'effectiveFrom', header: 'Effective From', value: (p) => p.effectiveFrom },
+  { id: 'status', header: 'Status', value: (p) => (p.isActive ? 'Active' : 'Inactive') },
+];
 
 /** Sortable columns (apiField → SQL column); only these reach ORDER BY. Filterable columns below. */
 const POLICY_PAGE_SPEC: PageSpec = {
@@ -60,6 +80,36 @@ export const policyService = {
     if (r.search !== undefined) filters['search'] = r.search;
     for (const f of columnFilters) filters[`f_${f.field}`] = f.values.join(',');
     return buildPage(items, totalCount, r, filters);
+  },
+
+  /**
+   * Export rows for the DataGrid (IMPORT_EXPORT_STANDARD). Re-runs the SAME list query
+   * (active/search/filters/sort) — `current` = the exact page; `all` = every matching row (no page
+   * LIMIT, capped at the job threshold → 413 EXPORT_TOO_LARGE above it); `selected` = the ticked ids.
+   * Returns rows + the policy column manifest; the controller streams the file.
+   */
+  async exportData(rawQuery: Record<string, unknown>, ex: ResolvedExport) {
+    const r = resolvePage(rawQuery, POLICY_PAGE_SPEC);
+    const active = rawQuery['active'] === 'true' ? true : rawQuery['active'] === 'false' ? false : undefined;
+    const columnFilters = resolveFilters(rawQuery, POLICY_PAGE_SPEC);
+    // `selected` restricts to the ticked numeric ids; an empty/invalid set exports nothing (never
+    // falls through to "all").
+    const selectedIds =
+      ex.mode === 'selected' ? ex.ids.map(Number).filter((n) => Number.isInteger(n)) : undefined;
+    if (ex.mode === 'selected' && (!selectedIds || selectedIds.length === 0))
+      return { rows: [], columns: POLICY_EXPORT_COLUMNS };
+    const { items, totalCount } = await repo.list({
+      ...(active !== undefined ? { active } : {}),
+      ...(r.search !== undefined ? { search: r.search } : {}),
+      columnFilters,
+      ...(selectedIds ? { ids: selectedIds } : {}),
+      sortColumn: r.sortColumn,
+      sortOrder: r.sortOrder,
+      limit: ex.mode === 'current' ? r.limit : exportThreshold(),
+      offset: ex.mode === 'current' ? r.offset : 0,
+    });
+    if (ex.mode === 'all') assertExportable(totalCount);
+    return { rows: items, columns: POLICY_EXPORT_COLUMNS };
   },
 
   async get(id: number): Promise<Policy> {

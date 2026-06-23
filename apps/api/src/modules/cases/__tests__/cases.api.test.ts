@@ -420,6 +420,59 @@ describe.skipIf(!RUN)('cases API', () => {
     });
   });
 
+  // ── Main cases-list export (IE-DEFER-3c / H-B3) ──
+  describe('GET /cases/export', () => {
+    it('exports the cases list as CSV with the DataGrid headers (data.export)', async () => {
+      const { clientId, productId } = await seedCpv('CEX');
+      await createCase(clientId, productId, 'EXPORT ALPHA');
+      const csv = await request(app).get('/api/v2/cases/export?format=csv&mode=all').set(SA);
+      expect(csv.status).toBe(200);
+      expect(csv.headers['content-type']).toContain('text/csv');
+      expect(csv.headers['content-disposition']).toContain('attachment; filename="cases-');
+      expect(csv.text.split('\r\n')[0]).toBe('Case No,Customer,Client,Product,Tasks,Status,Created');
+      expect(csv.text).toContain('EXPORT ALPHA');
+    });
+
+    it('defaults to xlsx and exports the current page window (mode=current)', async () => {
+      const { clientId, productId } = await seedCpv('CEXX');
+      await createCase(clientId, productId, 'XLSX PERSON');
+      const xlsx = await request(app).get('/api/v2/cases/export').set(SA); // defaults: xlsx + current
+      expect(xlsx.status).toBe(200);
+      expect(xlsx.headers['content-type']).toContain(
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
+      expect(xlsx.headers['content-disposition']).toContain('.xlsx"');
+    });
+
+    it('is gated by data.export: FIELD_AGENT/KYC_VERIFIER (case.view, no data.export) → 403, unauth → 401', async () => {
+      const url = '/api/v2/cases/export?format=csv&mode=all';
+      expect((await request(app).get(url).set(SA)).status).toBe(200);
+      expect((await request(app).get(url).set(authHeaderForRole('BACKEND_USER'))).status).toBe(200);
+      expect((await request(app).get(url).set(authHeaderForRole('FIELD_AGENT'))).status).toBe(403);
+      expect((await request(app).get(url).set(authHeaderForRole('KYC_VERIFIER'))).status).toBe(403);
+      expect((await request(app).get(url)).status).toBe(401);
+    });
+
+    it('respects the actor case scope — a SELF-scoped user only exports cases in their hierarchy', async () => {
+      const { clientId, productId } = await seedCpv('CEXS');
+      await createCase(clientId, productId, 'OUT OF SCOPE CASE'); // created by SA, owned by SA
+      // a BACKEND_USER (hierarchy SELF) holds data.export but created nothing → no in-scope cases
+      const be = await createUser({ username: 'be_cex_scope', name: 'BE SCOPE', role: 'BACKEND_USER' });
+      // the scoped list is empty for this user…
+      expect((await request(app).get('/api/v2/cases').set(hdr('BACKEND_USER', be))).body.items).toHaveLength(
+        0,
+      );
+      // …and the export inherits that scope — the out-of-scope case is NOT in the file (the header row
+      // is always present, but there are no data rows).
+      const csv = await request(app)
+        .get('/api/v2/cases/export?format=csv&mode=all')
+        .set(hdr('BACKEND_USER', be));
+      expect(csv.status).toBe(200);
+      expect(csv.text).not.toContain('OUT OF SCOPE CASE');
+      expect(csv.text.split('\r\n').filter(Boolean)).toHaveLength(1); // header only, no data rows
+    });
+  });
+
   it('lists CPV-enabled units and rejects an un-enabled unit on add (400 UNIT_NOT_ENABLED)', async () => {
     const ctx = await seedCpv('C');
     const avail = await request(app)

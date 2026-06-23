@@ -9,7 +9,11 @@ import {
   type CpvUnitListQuery,
   type Paginated,
 } from '@crm2/sdk';
-import { clientProductRepository as cpRepo, cpvUnitRepository as cpvRepo } from './repository.js';
+import {
+  clientProductRepository as cpRepo,
+  cpvUnitRepository as cpvRepo,
+  type CpvUnitExportRow,
+} from './repository.js';
 import { requireVersion } from '../../platform/occ.js';
 import { resolvePage, resolveFilters, buildPage, type PageSpec } from '../../platform/pagination.js';
 import {
@@ -19,7 +23,7 @@ import {
   type ResolvedExport,
 } from '../../platform/export/index.js';
 import { buildTemplate, runImportConfirm, runImportPreview } from '../../platform/import/index.js';
-import { buildClientProductSpec, CP_TEMPLATE_SPEC } from './import.js';
+import { buildClientProductSpec, buildCpvUnitSpec, CP_TEMPLATE_SPEC, CPV_TEMPLATE_SPEC } from './import.js';
 
 /**
  * DataGrid export manifest (IMPORT_EXPORT_STANDARD). The `client`/`product` ids match the FE DataGrid
@@ -163,8 +167,100 @@ export const clientProductService = {
   deactivate: (id: number, version: number, userId: string) => cpRepo.setActive(id, false, userId, version),
 };
 
+/**
+ * DataGrid export manifest for the enabled-units leg (IE-DEFER-2). The `unit`/`effectiveFrom`/
+ * `createdAt`/`updatedAt`/`status` ids match CpvPage's enabled-units sub-table column ids so a
+ * visible-columns (`cols`) selection filters + orders them. The export carries the resolvable CODES
+ * (client + product + unit) — the keys the cpv-unit import consumes ('Client Code'/'Product Code'/
+ * 'Unit Code') — so an export re-imports losslessly; the Name columns ride alongside for readability
+ * (the import ignores them). The `actions` column has no data value and is absent.
+ */
+const CPV_UNIT_EXPORT_COLUMNS: ExportColumn<CpvUnitExportRow>[] = [
+  { id: 'client', header: 'Client Code', value: (r) => r.clientCode },
+  { id: 'clientName', header: 'Client Name', value: (r) => r.clientName },
+  { id: 'product', header: 'Product Code', value: (r) => r.productCode },
+  { id: 'productName', header: 'Product Name', value: (r) => r.productName },
+  // id 'unit' matches the FE sub-table 'Unit' column; header is the import key 'Unit Code'.
+  { id: 'unit', header: 'Unit Code', value: (r) => r.unitCode },
+  { id: 'unitName', header: 'Unit Name', value: (r) => r.unitName },
+  { id: 'effectiveFrom', header: 'Effective From', value: (r) => r.effectiveFrom },
+  { id: 'createdAt', header: 'Created', value: (r) => r.createdAt },
+  { id: 'updatedAt', header: 'Updated', value: (r) => r.updatedAt },
+  { id: 'status', header: 'Status', value: (r) => (r.isActive ? 'Active' : 'Inactive') },
+];
+
+/** Sortable + filterable columns for the export list (apiField → SQL column); only these reach ORDER BY / WHERE. */
+const CPV_UNIT_EXPORT_PAGE_SPEC: PageSpec = {
+  // Sort/filter target the CODE (the value shown in each cell) so the column stays coherent.
+  sortMap: {
+    client: 'c.code',
+    product: 'p.code',
+    unit: 'vu.code',
+    status: 'cpvu.is_active',
+    effectiveFrom: 'cpvu.effective_from',
+    createdAt: 'cpvu.created_at',
+    updatedAt: 'cpvu.updated_at',
+  },
+  filterMap: {
+    client: { column: 'c.code', kind: 'text' },
+    product: { column: 'p.code', kind: 'text' },
+    unit: { column: 'vu.code', kind: 'text' },
+    createdAt: { column: 'cpvu.created_at', kind: 'date' },
+    effectiveFrom: { column: 'cpvu.effective_from', kind: 'date' },
+  },
+  defaultSort: 'client',
+  defaultOrder: 'asc',
+};
+
 export const cpvUnitService = {
   list: (q: CpvUnitListQuery) => cpvRepo.list(q),
+
+  /**
+   * Export the enabled-units across ALL client-products (IE-DEFER-2, IMPORT_EXPORT_STANDARD). Mirrors
+   * `clientProductService.exportData`: `current` = the exact page; `all` = every matching row (no page
+   * LIMIT, capped at the job threshold → 413 EXPORT_TOO_LARGE above it). There is no row selection in
+   * the sub-table, so `selected` exports nothing (never falls through to "all"). Returns rows + the
+   * manifest; the controller streams the file.
+   */
+  async exportData(rawQuery: Record<string, unknown>, ex: ResolvedExport) {
+    if (ex.mode === 'selected') return { rows: [], columns: CPV_UNIT_EXPORT_COLUMNS };
+    const r = resolvePage(rawQuery, CPV_UNIT_EXPORT_PAGE_SPEC);
+    const active = rawQuery['active'] === 'true' ? true : rawQuery['active'] === 'false' ? false : undefined;
+    const columnFilters = resolveFilters(rawQuery, CPV_UNIT_EXPORT_PAGE_SPEC);
+    const { items, totalCount } = await cpvRepo.listForExport({
+      ...(active !== undefined ? { active } : {}),
+      ...(r.search !== undefined ? { search: r.search } : {}),
+      columnFilters,
+      sortColumn: r.sortColumn,
+      sortOrder: r.sortOrder,
+      limit: ex.mode === 'current' ? r.limit : exportThreshold(),
+      offset: ex.mode === 'current' ? r.offset : 0,
+    });
+    if (ex.mode === 'all') assertExportable(totalCount);
+    return { rows: items, columns: CPV_UNIT_EXPORT_COLUMNS };
+  },
+
+  /** Import (IE-DEFER-2, FK-resolving): the file carries client/product/unit CODES; `buildCpvUnitSpec`
+   *  preloads the code→id maps + the client_product link map per request and the engine's `resolve`
+   *  maps each row to the numeric-id CreateCpvUnitInput (unknown codes / no usable link surface in
+   *  preview). Confirm reuses the audited `create` per row, so each imported enablement also appends
+   *  audit; a duplicate enablement is reported per-row (409) and never blocks the others. */
+  importTemplate(): Promise<Buffer> {
+    return buildTemplate(CPV_TEMPLATE_SPEC);
+  },
+  async importPreview(file: Buffer) {
+    return runImportPreview(file, await buildCpvUnitSpec());
+  },
+  async importConfirm(file: Buffer, userId: string, fileName: string | undefined) {
+    return runImportConfirm(
+      file,
+      await buildCpvUnitSpec(),
+      async (input) => {
+        await cpvUnitService.create(input, userId);
+      },
+      { userId, fileName },
+    );
+  },
 
   create(input: unknown, userId: string): Promise<ClientProductVerificationUnit> {
     const validated = CreateCpvUnitSchema.parse(input); // throws ZodError → 400

@@ -20,6 +20,30 @@ async function labelsFor(def: DimensionDef, ids: number[]): Promise<Map<number, 
   return new Map(rows.map((r) => [r.id, r.label]));
 }
 
+/**
+ * The SQL expression that re-derives, per ID-kind dimension, the EXACT `Entity` token the bulk-import
+ * resolver (`resolveImportRow`) parses back — so an exported file round-trips through import (IE-DEFER-6):
+ *  • PINCODE → the bare pincode (`resolveImportRow` looks up ALL its area rows);
+ *  • AREA    → `pincode:area` (the `PINCODE:AREA` form `resolveImportRow` splits on `:`);
+ *  • code-keyed catalogs (CLIENT/PRODUCT/VERIFICATION_TYPE) → the catalog `code` (`catalogIdByCode`).
+ * Keyed off the code-owned registry (`dimensionCode`/`catalogTable`, never user input) — safe to
+ * interpolate. VALUE-kind dimensions are excluded: their `entity_value` is already the import token.
+ */
+function importCodeExpr(def: DimensionDef): string {
+  if (def.code === 'PINCODE') return `e.pincode`;
+  if (def.code === 'AREA') return `e.pincode || ':' || e.area`;
+  return `e.code`; // clients / products / verification_units — UPPER_SNAKE code
+}
+
+/** Resolve the round-trippable import `Entity` token for one dimension's ID-kind assignments. */
+async function importCodesFor(def: DimensionDef, ids: number[]): Promise<Map<number, string>> {
+  const rows = await query<{ id: number; code: string }>(
+    `SELECT e.id, ${importCodeExpr(def)} AS code FROM ${def.catalogTable!} e WHERE e.id = ANY($1::int[])`,
+    [ids],
+  );
+  return new Map(rows.map((r) => [r.id, r.code]));
+}
+
 /** One exported assignment row (the all-assignments DataGrid-style export). */
 export interface ScopeExportRow {
   username: string;
@@ -28,7 +52,10 @@ export interface ScopeExportRow {
   dimensionCode: string;
   entityId: number | null;
   entityValue: string | null;
+  /** Human-readable label (display only — NOT importable). */
   label: string;
+  /** The exact `Entity` token the bulk import parses back (code / pincode / pincode:area / value). */
+  entityCode: string;
   createdAt: string;
 }
 
@@ -74,9 +101,14 @@ export const scopeAssignmentRepository = {
     return rows[0]?.id;
   },
 
-  /** Every active assignment joined with its user, labels resolved per dimension (export). */
+  /**
+   * Every active assignment joined with its user, resolved per dimension for export. Each row carries
+   * both a display `label` (human-readable) and an `entityCode` — the exact `Entity` token the bulk
+   * import parses back (IE-DEFER-6 round-trip): the catalog code, the pincode, the `pincode:area`
+   * pair, or the raw value for VALUE-kind dimensions.
+   */
   async allForExport(limit: number): Promise<ScopeExportRow[]> {
-    const raw = await query<Omit<ScopeExportRow, 'label'>>(
+    const raw = await query<Omit<ScopeExportRow, 'label' | 'entityCode'>>(
       `SELECT u.username, u.name, u.role, a.dimension_code, a.entity_id, a.entity_value, a.created_at
        FROM user_scope_assignments a JOIN users u ON u.id = a.user_id
        WHERE a.is_active ORDER BY u.username, a.dimension_code, a.id
@@ -89,13 +121,19 @@ export const scopeAssignmentRepository = {
         idsByDim.set(r.dimensionCode, [...(idsByDim.get(r.dimensionCode) ?? []), r.entityId]);
     }
     const labelMaps = new Map<string, Map<number, string>>();
+    const codeMaps = new Map<string, Map<number, string>>();
     for (const [dim, ids] of idsByDim) {
       const def = dimensionDef(dim);
-      if (def?.catalogTable) labelMaps.set(dim, await labelsFor(def, ids));
+      if (def?.catalogTable) {
+        labelMaps.set(dim, await labelsFor(def, ids));
+        codeMaps.set(dim, await importCodesFor(def, ids));
+      }
     }
     return raw.map((r) => ({
       ...r,
       label: r.entityValue ?? labelMaps.get(r.dimensionCode)?.get(r.entityId ?? -1) ?? String(r.entityId),
+      // VALUE-kind dimensions: entity_value IS the import token; ID-kind: the resolved code/pincode/pair.
+      entityCode: r.entityValue ?? codeMaps.get(r.dimensionCode)?.get(r.entityId ?? -1) ?? String(r.entityId),
     }));
   },
 

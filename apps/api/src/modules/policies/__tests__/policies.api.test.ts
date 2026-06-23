@@ -169,6 +169,84 @@ describe.skipIf(!RUN)('policies admin API', () => {
     expect(res.body.sort.sortBy).toBe('createdAt'); // default, not the injection string
   });
 
+  // ── DataGrid export (IMPORT_EXPORT_STANDARD; compliance IE-DEFER-5) ──
+  describe('GET /policies/export', () => {
+    const FA = authHeaderForRole('FIELD_AGENT');
+
+    it('exports the current view as CSV (200 + headers + a row); content omitted', async () => {
+      await request(app).post('/api/v2/policies').set(SA).send(newPolicy('EXPCSV'));
+      const res = await request(app).get('/api/v2/policies/export?format=csv&mode=current').set(SA);
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('text/csv');
+      expect(res.headers['content-disposition']).toMatch(/attachment; filename="policies-\d{8}\.csv"/);
+      expect(res.text.split('\r\n')[0]).toBe('Code,Name,Version,Effective From,Status');
+      expect(res.text).toContain('EXPCSV');
+      expect(res.text).not.toContain('v1 body'); // the large `content` blob is never exported
+    });
+
+    it('exports all matching as XLSX (200 + PK-zip body)', async () => {
+      await request(app).post('/api/v2/policies').set(SA).send(newPolicy('EXPXLSX'));
+      const res = await request(app)
+        .get('/api/v2/policies/export?format=xlsx&mode=all')
+        .set(SA)
+        .buffer(true)
+        .parse((r, cb) => {
+          const chunks: Buffer[] = [];
+          r.on('data', (c: Buffer) => chunks.push(c));
+          r.on('end', () => cb(null, Buffer.concat(chunks)));
+        });
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('spreadsheetml');
+      expect((res.body as Buffer).subarray(0, 2).toString('latin1')).toBe('PK');
+    });
+
+    it('respects the visible columns (cols) selection', async () => {
+      await request(app).post('/api/v2/policies').set(SA).send(newPolicy('EXPCOLS'));
+      const res = await request(app)
+        .get('/api/v2/policies/export?format=csv&mode=all&cols=code,status')
+        .set(SA);
+      expect(res.text.split('\r\n')[0]).toBe('Code,Status');
+    });
+
+    it('mode=selected exports only the ticked ids (not the whole list)', async () => {
+      const a = (await request(app).post('/api/v2/policies').set(SA).send(newPolicy('SELA'))).body as {
+        id: number;
+      };
+      await request(app).post('/api/v2/policies').set(SA).send(newPolicy('SELB'));
+      const res = await request(app)
+        .get(`/api/v2/policies/export?format=csv&mode=selected&ids=${a.id}`)
+        .set(SA);
+      expect(res.status).toBe(200);
+      expect(res.text).toContain('SELA');
+      expect(res.text).not.toContain('SELB'); // the unticked row is excluded
+    });
+
+    it('mode=selected with no ids exports nothing (never falls through to all)', async () => {
+      await request(app).post('/api/v2/policies').set(SA).send(newPolicy('NOIDS'));
+      const res = await request(app).get('/api/v2/policies/export?format=csv&mode=selected').set(SA);
+      expect(res.status).toBe(200);
+      expect(res.text.split('\r\n')).toHaveLength(1); // header only, zero data rows
+    });
+
+    it('rejects an unknown format with 400 BAD_EXPORT_FORMAT', async () => {
+      const res = await request(app).get('/api/v2/policies/export?format=pdf').set(SA);
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('BAD_EXPORT_FORMAT');
+    });
+
+    it('unauthenticated export is 401', async () => {
+      expect((await request(app).get('/api/v2/policies/export')).status).toBe(401);
+    });
+
+    it('a data.export-only role without page.policies cannot export policies (403) — export shares the list audience', async () => {
+      // BACKEND_USER holds data.export but NOT page.policies (it is 403 on `GET /` above); gating the
+      // export on POLICY_VIEW (not bare data.export) prevents widening read access (compliance IE-1..4).
+      expect((await request(app).get('/api/v2/policies/export?format=csv').set(BE)).status).toBe(403);
+      // FIELD_AGENT holds neither → also 403.
+      expect((await request(app).get('/api/v2/policies/export?format=csv').set(FA)).status).toBe(403);
+    });
+  });
+
   // ── Admin: per-user acceptance log (ADR-0043) — read-only, joins consents → policies.
   describe('GET /policies/users/:userId/acceptances', () => {
     // The seeded admin user (migration 0007) is a stable uuid we can write consents rows against.

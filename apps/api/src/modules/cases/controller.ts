@@ -154,6 +154,27 @@ export const caseController = {
     }
   },
 
+  /** Main cases-list export (IE-DEFER-3c / H-B3): re-runs the SAME scope-filtered list query — the
+   *  export inherits the actor's case scope (Epic F). `current` = the exact page, `all` = the whole
+   *  scoped set capped at the job threshold (413 above it). */
+  async export(req: Request, res: Response, next: NextFunction) {
+    try {
+      const q = req.query as Record<string, unknown>;
+      const ex = resolveExport(q);
+      const { rows, columns } = await svc.exportData(q, ex, actor(req));
+      await writeExport(res, {
+        rows,
+        columns,
+        ex,
+        filenameBase: 'cases',
+        resource: 'cases',
+        actorId: userId(req),
+      });
+    } catch (e) {
+      next(e);
+    }
+  },
+
   async get(req: Request, res: Response, next: NextFunction) {
     try {
       res.json(await svc.get(parseId(req), actor(req)));

@@ -118,6 +118,19 @@ const DEDUPE_EXPORT_COLUMNS: ExportColumn<DuplicateMatch>[] = [
   { id: 'matchType', header: 'Matched On', value: (r) => r.matchType.join(', ') },
 ];
 
+/** Export manifest for the MAIN cases list (IE-DEFER-3c / H-B3) — column ids match the CasesPage
+ *  DataGrid columns so the visible-columns (`cols`) selection filters + orders them. The `actions`
+ *  column has no data value and is simply absent here. */
+const CASES_EXPORT_COLUMNS: ExportColumn<CaseView>[] = [
+  { id: 'caseNumber', header: 'Case No', value: (c) => c.caseNumber },
+  { id: 'primaryName', header: 'Customer', value: (c) => c.primaryName },
+  { id: 'clientName', header: 'Client', value: (c) => c.clientName },
+  { id: 'productName', header: 'Product', value: (c) => c.productName },
+  { id: 'taskCount', header: 'Tasks', value: (c) => c.taskCount },
+  { id: 'status', header: 'Status', value: (c) => c.status },
+  { id: 'createdAt', header: 'Created', value: (c) => c.createdAt },
+];
+
 /** Pull the four dedupe identifiers out of a raw query and validate them (≥1 required, lenient
  *  2–50 char terms) via the shared schema → a ZodError surfaces as 400 VALIDATION. */
 function dedupeIdentifiers(rawQuery: Record<string, unknown>) {
@@ -305,6 +318,41 @@ export const caseService = {
     if (r.search !== undefined) filters['search'] = r.search;
     for (const f of columnFilters) filters[`f_${f.field}`] = f.values.join(',');
     return buildPage(items, totalCount, r, filters);
+  },
+
+  /** Export the MAIN cases list (IE-DEFER-3c / H-B3, data.export): re-runs the SAME scope-filtered
+   *  list query the list endpoint uses, so the export inherits the actor's case scope (Epic F).
+   *  `current` = the exact page window; `all` = every IN-SCOPE matching case (no page LIMIT, capped at
+   *  the job threshold → 413 EXPORT_TOO_LARGE above it; the 413 is on the SCOPED total so it cannot
+   *  leak out-of-scope row existence). `selected` is N/A — repo.list takes no ids (no row-selection
+   *  export is wired for cases) → returns nothing rather than falling through to "all". */
+  async exportData(rawQuery: Record<string, unknown>, ex: ResolvedExport, actor: Actor) {
+    if (ex.mode === 'selected') return { rows: [], columns: CASES_EXPORT_COLUMNS };
+    const r = resolvePage(rawQuery, CASE_PAGE_SPEC);
+    const statusRaw = rawQuery['status'];
+    const status =
+      typeof statusRaw === 'string' && (CASE_STATUSES as readonly string[]).includes(statusRaw)
+        ? statusRaw
+        : undefined;
+    const clientIdRaw = Number(rawQuery['clientId']);
+    const clientId = Number.isInteger(clientIdRaw) && clientIdRaw > 0 ? clientIdRaw : undefined;
+    const columnFilters = resolveFilters(rawQuery, CASE_PAGE_SPEC);
+    // Same data scope as `list` (Epic F): restrict the export to the actor's hierarchy. SUPER_ADMIN → none.
+    const scope = await resolveScope(actor);
+    const { items, totalCount } = await repo.list({
+      ...(status !== undefined ? { status } : {}),
+      ...(clientId !== undefined ? { clientId } : {}),
+      ...(r.search !== undefined ? { search: r.search } : {}),
+      columnFilters,
+      scope,
+      sortColumn: r.sortColumn,
+      sortOrder: r.sortOrder,
+      limit: ex.mode === 'current' ? r.limit : exportThreshold(),
+      offset: ex.mode === 'current' ? r.offset : 0,
+    });
+    // A whole-set export ≥ the job threshold must 413 (IMPORT_EXPORT_STANDARD §2) — on the SCOPED total.
+    if (ex.mode === 'all') assertExportable(totalCount);
+    return { rows: items, columns: CASES_EXPORT_COLUMNS };
   },
 
   async get(id: string, actor: Actor): Promise<CaseDetail> {

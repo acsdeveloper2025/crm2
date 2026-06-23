@@ -256,6 +256,79 @@ describe.skipIf(!RUN)('scope assignments API (ADR-0022 slice 3 — generic, role
     ).toBe(403);
   });
 
+  it('export round-trips through import (IE-DEFER-6): exported file re-imports with 0 errors', async () => {
+    const { p1, p2, clientId } = await seed();
+    // a second area row for 400001 — so a PINCODE assignment spans >1 location id
+    await db!.pool.query(
+      `INSERT INTO locations (pincode, area, city, state, country)
+       VALUES ('400001', 'Ballard Estate', 'Mumbai', 'Maharashtra', 'India')`,
+    );
+
+    // Assign every code-path the importer parses back: PINCODE (bare pincode) + AREA (pincode:area)
+    // to the field user, CLIENT (catalog code) to the backend user.
+    await request(app)
+      .post(`/api/v2/users/${FIELD_USER}/scope-assignments`)
+      .set(SA)
+      .send({ dimension: 'PINCODE', entityIds: [p1] });
+    await request(app)
+      .post(`/api/v2/users/${FIELD_USER}/scope-assignments`)
+      .set(SA)
+      .send({ dimension: 'AREA', entityIds: [p2] });
+    await request(app)
+      .post(`/api/v2/users/${BACKEND}/scope-assignments`)
+      .set(SA)
+      .send({ dimension: 'CLIENT', entityIds: [clientId] });
+
+    // 1) export the whole topology as xlsx
+    const exported = await request(app)
+      .get('/api/v2/users/scope/export?mode=all&format=xlsx')
+      .set(SA)
+      .buffer(true)
+      .parse((res2, cb) => {
+        const chunks: Buffer[] = [];
+        res2.on('data', (c: Buffer) => chunks.push(c));
+        res2.on('end', () => cb(null, Buffer.concat(chunks)));
+      });
+    expect(exported.status).toBe(200);
+
+    // 2) parse the exported workbook back into header + rows
+    const ExcelJS = (await import('exceljs')).default;
+    const wbIn = new ExcelJS.Workbook();
+    // exceljs ships an older @types/node Buffer; the value IS a valid Node Buffer — bridge the skew.
+    await wbIn.xlsx.load(exported.body as unknown as Parameters<typeof wbIn.xlsx.load>[0]);
+    const ws = wbIn.worksheets[0]!;
+    const header = (ws.getRow(1).values as unknown[]).slice(1).map((v) => String(v));
+    const grid: string[][] = [];
+    for (let r = 2; r <= ws.rowCount; r++) {
+      grid.push((ws.getRow(r).values as unknown[]).slice(1).map((v) => (v == null ? '' : String(v))));
+    }
+    // every code path is represented, exactly the rows we assigned
+    expect(grid).toHaveLength(3);
+    const entityCol = header.indexOf('Entity');
+    const dimCol = header.indexOf('Dimension');
+    const cellsByDim = new Map(grid.map((row) => [row[dimCol], row[entityCol]]));
+    expect(cellsByDim.get('PINCODE')).toBe('400001'); // bare pincode, NOT "400001 — Fort, Mumbai"
+    expect(cellsByDim.get('AREA')).toBe('400002:Kalbadevi'); // pincode:area form
+    expect(cellsByDim.get('CLIENT')).toBe('SC1'); // catalog code, NOT the client display name
+
+    // 3) rebuild a workbook from the exported header+rows and feed it back to the import PREVIEW
+    const wbOut = new ExcelJS.Workbook();
+    const wsOut = wbOut.addWorksheet('Sheet1');
+    wsOut.addRow(header);
+    for (const row of grid) wsOut.addRow(row);
+    const reimport = Buffer.from(await wbOut.xlsx.writeBuffer());
+
+    const preview = await request(app)
+      .post('/api/v2/users/scope/import?mode=preview')
+      .set(SA)
+      .set('content-type', 'application/octet-stream')
+      .send(reimport);
+    expect(preview.status).toBe(200);
+    // the exported file is a valid import: every row resolves, zero errors
+    expect(preview.body).toMatchObject({ totalRows: 3, validRows: 3, errorRows: 0 });
+    expect(preview.body.errors).toHaveLength(0);
+  });
+
   it('only SUPER_ADMIN may assign (MANAGER/TEAM_LEADER/FIELD_AGENT → 403, unauth → 401); non-uuid id → 400', async () => {
     await seed();
     const path = `/api/v2/users/${FIELD_USER}/scope-assignments`;

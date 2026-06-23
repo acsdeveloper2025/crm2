@@ -3,6 +3,7 @@ import { reportLayoutService as svc } from './service.js';
 import { AppError } from '../../platform/errors.js';
 import { HTTP_STATUS } from '../../platform/http.js';
 import { requireVersion } from '../../platform/occ.js';
+import { resolveExport, writeExport } from '../../platform/export/index.js';
 
 const parseId = (req: Request): number => {
   const id = Number(req.params['id']);
@@ -15,6 +16,24 @@ export const reportLayoutController = {
   async list(req: Request, res: Response, next: NextFunction) {
     try {
       res.json(await svc.list(req.query as Record<string, unknown>));
+    } catch (e) {
+      next(e);
+    }
+  },
+
+  async export(req: Request, res: Response, next: NextFunction) {
+    try {
+      const q = req.query as Record<string, unknown>;
+      const ex = resolveExport(q);
+      const { rows, columns } = await svc.exportData(q, ex);
+      await writeExport(res, {
+        rows,
+        columns,
+        ex,
+        filenameBase: 'report-layouts',
+        resource: 'report-layouts',
+        actorId: userId(req),
+      });
     } catch (e) {
       next(e);
     }

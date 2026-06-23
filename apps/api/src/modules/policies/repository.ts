@@ -22,6 +22,8 @@ export interface PolicyListOptions {
   search?: string;
   /** whitelisted per-column filters; columns trusted, values bound. */
   columnFilters?: AppliedFilter[];
+  /** restrict to specific ids (export `mode:'selected'`); empty/undefined → no id filter. */
+  ids?: number[];
   sortColumn: string;
   sortOrder: SortOrder;
   limit: number;
@@ -43,6 +45,10 @@ export const policyRepository = {
       where.push(`(code ILIKE $${params.length} OR name ILIKE $${params.length})`);
     }
     where.push(...filterClauses(o.columnFilters ?? [], params));
+    if (o.ids && o.ids.length) {
+      params.push(o.ids);
+      where.push(`id = ANY($${params.length})`);
+    }
     const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
     const [countRow] = await query<{ count: number }>(
       `SELECT count(*)::int AS count FROM policies ${clause}`,

@@ -91,5 +91,12 @@ caseRoutes.post(
 );
 caseRoutes.get('/:id/attachments/:attachmentId/url', authorize(PERMISSIONS.CASE_VIEW), c.attachmentUrl);
 caseRoutes.delete('/:id/attachments/:attachmentId', authorize(PERMISSIONS.CASE_CREATE), c.deleteAttachment);
+// Main cases-list export (compliance IE-DEFER-3c / H-B3). Declared before the bare `/` list and before
+// `/:id` so the static path isn't captured as id="export". Gated data.export (the SAME gate as the
+// dedupe-search export): every data.export holder (SA/MANAGER/TEAM_LEADER/BACKEND_USER) also holds
+// case.view, so this is not wider-than-read — FIELD_AGENT/KYC_VERIFIER (case.view, no data.export) are
+// correctly excluded from bulk export. The export re-runs the SAME scope-filtered list query, so it
+// inherits the actor's case scope (Epic F).
+caseRoutes.get('/export', authorize(PERMISSIONS.DATA_EXPORT), c.export);
 caseRoutes.get('/', authorize(PERMISSIONS.CASE_VIEW), c.list);
 caseRoutes.get('/:id', authorize(PERMISSIONS.CASE_VIEW), c.get);

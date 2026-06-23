@@ -88,6 +88,19 @@ export const clientProductRepository = {
     return rows[0] ?? null;
   },
 
+  /**
+   * USABLE links (active AND in effect — ADR-0017) as `{ id, clientId, productId }`, for the cpv-unit
+   * import to map a client+product CODE pair → the existing client_product id (mirrors the USABLE-only
+   * `options()` feeds the clientProduct import resolves against; a future/inactive link won't resolve).
+   */
+  async linkOptionsForImport(): Promise<{ id: number; clientId: number; productId: number }[]> {
+    return query<{ id: number; clientId: number; productId: number }>(
+      `SELECT id, client_id, product_id FROM client_products
+       WHERE is_active AND effective_from <= now()`,
+      [],
+    );
+  },
+
   async create(
     input: {
       clientId: number;
@@ -193,7 +206,90 @@ export const clientProductRepository = {
   },
 };
 
+/**
+ * One enabled-unit row carrying the resolvable CODES (client/product/unit) — the export shape. The
+ * codes are the keys the cpv-unit import consumes, so an export re-imports losslessly. Names ride
+ * alongside for readability (the import ignores them). Not in @crm2/sdk: this is an API-internal
+ * export projection (additive; no contract change).
+ */
+export interface CpvUnitExportRow {
+  clientCode: string;
+  clientName: string;
+  productCode: string;
+  productName: string;
+  unitCode: string;
+  unitName: string;
+  effectiveFrom: string;
+  createdAt: string;
+  updatedAt: string;
+  isActive: boolean;
+}
+
+/** Resolved, validated export-list options — `sortColumn`/`sortOrder` are whitelisted by the service. */
+export interface CpvUnitExportOptions {
+  active?: boolean;
+  search?: string;
+  /** whitelisted per-column filters (§6); columns trusted (joined cols OK — shared CPV_EXPORT_FROM). */
+  columnFilters?: AppliedFilter[];
+  sortColumn: string;
+  sortOrder: SortOrder;
+  limit: number;
+  offset: number;
+}
+
+// Shared FROM for the export COUNT + items — all 1:1 joins (FK → PK), so count(*) over the join ==
+// #client_product_verification_units rows (no fan-out). Mirrors clientProduct's CP_FROM, one join deeper.
+const CPV_EXPORT_FROM = `FROM client_product_verification_units cpvu
+  JOIN client_products cp ON cp.id = cpvu.client_product_id
+  JOIN clients c ON c.id = cp.client_id
+  JOIN products p ON p.id = cp.product_id
+  JOIN verification_units vu ON vu.id = cpvu.verification_unit_id`;
+
 export const cpvUnitRepository = {
+  /**
+   * Export list across ALL client-products (B-13): joins each enabled unit to its client/product/unit
+   * CODES so the export re-imports losslessly. Mirrors `clientProductRepository.list` shape
+   * (active/search/filters/sort/limit/offset) so the service can drive it with the same export modes.
+   */
+  async listForExport(o: CpvUnitExportOptions): Promise<{ items: CpvUnitExportRow[]; totalCount: number }> {
+    const where: string[] = [];
+    const params: unknown[] = [];
+    if (o.active !== undefined) {
+      params.push(o.active);
+      where.push(`cpvu.is_active = $${params.length}`);
+      // `active=true` means USABLE = active AND in effect (ADR-0017).
+      if (o.active) where.push(`cpvu.effective_from <= now()`);
+    }
+    if (o.search) {
+      params.push(likeContains(o.search));
+      const n = params.length;
+      where.push(
+        `(c.code ILIKE $${n} OR c.name ILIKE $${n} OR p.code ILIKE $${n} OR p.name ILIKE $${n} OR vu.code ILIKE $${n} OR vu.name ILIKE $${n})`,
+      );
+    }
+    where.push(...filterClauses(o.columnFilters ?? [], params));
+    const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const [countRow] = await query<{ count: number }>(
+      `SELECT count(*)::int AS count ${CPV_EXPORT_FROM} ${clause}`,
+      params,
+    );
+    const totalCount = countRow?.count ?? 0;
+    // sortColumn is whitelisted in the service (PageSpec.sortMap) → safe to interpolate. `cpvu.id`
+    // tiebreaker is qualified (bare `id` is ambiguous across the join).
+    const items = await query<CpvUnitExportRow>(
+      `SELECT c.code AS client_code, c.name AS client_name,
+              p.code AS product_code, p.name AS product_name,
+              vu.code AS unit_code, vu.name AS unit_name,
+              cpvu.effective_from, cpvu.created_at, cpvu.updated_at, cpvu.is_active
+       ${CPV_EXPORT_FROM}
+       ${clause}
+       ORDER BY ${o.sortColumn} ${o.sortOrder}, cpvu.id ${o.sortOrder}
+       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, o.limit, o.offset],
+    );
+    return { items, totalCount };
+  },
+
   async list(q: CpvUnitListQuery): Promise<ClientProductVerificationUnitView[]> {
     const params: unknown[] = [q.clientProductId];
     let clause = `WHERE cpvu.client_product_id = $1`;

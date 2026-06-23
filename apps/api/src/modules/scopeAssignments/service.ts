@@ -96,12 +96,20 @@ const SCOPE_IMPORT_SPEC: ImportSpec<ScopeImportFile, ScopeImportInput> = {
   resolve: resolveImportRow,
 };
 
+/**
+ * Export manifest. The header trio `Username` / `Dimension` / `Entity` MATCHES the bulk-import spec
+ * (`SCOPE_IMPORT_SPEC`) so a downloaded file re-imports unchanged (IE-DEFER-6 round-trip): `Entity`
+ * carries the import CODE (catalog code / pincode / `pincode:area` / value), never the display label.
+ * The extra `Name` / `Role` / `Label` / `Assigned At` columns are operator context — the importer
+ * ignores unknown headers, so they never break the round-trip.
+ */
 const SCOPE_EXPORT_COLUMNS: ExportColumn<ScopeExportRow>[] = [
   { id: 'username', header: 'Username', value: (r) => r.username },
   { id: 'name', header: 'Name', value: (r) => r.name },
   { id: 'role', header: 'Role', value: (r) => r.role },
   { id: 'dimension', header: 'Dimension', value: (r) => r.dimensionCode },
-  { id: 'entity', header: 'Entity', value: (r) => r.label },
+  { id: 'entity', header: 'Entity', value: (r) => r.entityCode },
+  { id: 'label', header: 'Label', value: (r) => r.label },
   { id: 'assignedAt', header: 'Assigned At', value: (r) => r.createdAt },
 ];
 
