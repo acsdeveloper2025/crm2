@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  CreateUserSchema,
+  UpdateUserSchema,
   type DepartmentOption,
   type DesignationOption,
   type Paginated,
@@ -13,6 +15,7 @@ import {
   type UserView,
 } from '@crm2/sdk';
 import { api, apiUpload, ApiError } from '../../lib/sdk.js';
+import { zodFieldErrors } from '../../lib/zodForm.js';
 import { useAuth } from '../../lib/AuthContext.js';
 import { formatDateTime, toDateInput, toIsoDate } from '../../lib/format.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
@@ -137,6 +140,7 @@ function UserForm({ initial }: { initial: UserView | null }) {
   const [stagedScope, setStagedScope] = useState<StagedScope>({});
   const [effectiveFrom, setEffectiveFrom] = useState(toDateInput(initial?.effectiveFrom));
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [version, setVersion] = useState(initial?.version ?? 0); // OCC token the edit started from
   const [conflict, setConflict] = useState<{ updatedAt?: string; version?: number } | null>(null);
 
@@ -289,10 +293,16 @@ function UserForm({ initial }: { initial: UserView | null }) {
                   Editable — a login rename (must stay unique).
                 </span>
               )}
+              {fieldErrors['username'] && (
+                <span className="mt-1 block text-xs text-destructive">{fieldErrors['username']}</span>
+              )}
             </label>
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-foreground">Full name</span>
               <Input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+              {fieldErrors['name'] && (
+                <span className="mt-1 block text-xs text-destructive">{fieldErrors['name']}</span>
+              )}
             </label>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -305,6 +315,9 @@ function UserForm({ initial }: { initial: UserView | null }) {
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="+919876543210"
               />
+              {fieldErrors['phone'] && (
+                <span className="mt-1 block text-xs text-destructive">{fieldErrors['phone']}</span>
+              )}
             </label>
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-foreground">Email (optional)</span>
@@ -314,6 +327,9 @@ function UserForm({ initial }: { initial: UserView | null }) {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
+              {fieldErrors['email'] && (
+                <span className="mt-1 block text-xs text-destructive">{fieldErrors['email']}</span>
+              )}
             </label>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -331,6 +347,9 @@ function UserForm({ initial }: { initial: UserView | null }) {
                   </option>
                 ))}
               </select>
+              {fieldErrors['departmentId'] && (
+                <span className="mt-1 block text-xs text-destructive">{fieldErrors['departmentId']}</span>
+              )}
             </label>
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-foreground">Designation</span>
@@ -346,6 +365,9 @@ function UserForm({ initial }: { initial: UserView | null }) {
                   </option>
                 ))}
               </select>
+              {fieldErrors['designationId'] && (
+                <span className="mt-1 block text-xs text-destructive">{fieldErrors['designationId']}</span>
+              )}
             </label>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -366,6 +388,9 @@ function UserForm({ initial }: { initial: UserView | null }) {
                   </option>
                 ))}
               </select>
+              {fieldErrors['role'] && (
+                <span className="mt-1 block text-xs text-destructive">{fieldErrors['role']}</span>
+              )}
             </label>
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-foreground">
@@ -384,6 +409,9 @@ function UserForm({ initial }: { initial: UserView | null }) {
                   </option>
                 ))}
               </select>
+              {fieldErrors['reportsTo'] && (
+                <span className="mt-1 block text-xs text-destructive">{fieldErrors['reportsTo']}</span>
+              )}
             </label>
           </div>
           {!isEdit && (
@@ -402,6 +430,9 @@ function UserForm({ initial }: { initial: UserView | null }) {
                   <PasswordPolicyChecklist password={password} />
                 </div>
               )}
+              {fieldErrors['password'] && (
+                <span className="mt-1 block text-xs text-destructive">{fieldErrors['password']}</span>
+              )}
             </label>
           )}
           <label className="block">
@@ -414,6 +445,9 @@ function UserForm({ initial }: { initial: UserView | null }) {
               value={effectiveFrom}
               onChange={(e) => setEffectiveFrom(e.target.value)}
             />
+            {fieldErrors['effectiveFrom'] && (
+              <span className="mt-1 block text-xs text-destructive">{fieldErrors['effectiveFrom']}</span>
+            )}
           </label>
           {isEdit && (
             <div className="rounded-md border border-border p-3">
@@ -458,6 +492,29 @@ function UserForm({ initial }: { initial: UserView | null }) {
           <Button
             onClick={() => {
               setError(null);
+              // Validate the SAME Profile payload the mutationFn POSTs/PUTs against the canonical schema
+              // (create ⇒ CreateUserSchema, edit ⇒ UpdateUserSchema). `version` is the OCC token, not a
+              // schema field, so it's excluded here. Conditional-spread mirrors the mutationFn exactly so
+              // we never feed `undefined` to an optional field (exactOptionalPropertyTypes).
+              const payload = {
+                username,
+                name,
+                role,
+                phone,
+                departmentId: departmentId ? Number(departmentId) : null,
+                designationId: designationId ? Number(designationId) : null,
+                ...(email ? { email } : isEdit ? { email: null } : {}),
+                ...(managerRole && reportsTo ? { reportsTo } : isEdit ? { reportsTo: null } : {}),
+                ...(toIsoDate(effectiveFrom) ? { effectiveFrom: toIsoDate(effectiveFrom) } : {}),
+                ...(!isEdit && password ? { password } : {}),
+                ...(isEdit ? { mfaRequired } : {}),
+              };
+              const errs = zodFieldErrors(isEdit ? UpdateUserSchema : CreateUserSchema, payload);
+              if (Object.keys(errs).length > 0) {
+                setFieldErrors(errs);
+                return;
+              }
+              setFieldErrors({});
               mut.mutate();
             }}
             disabled={!canSave}

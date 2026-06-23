@@ -15,6 +15,8 @@ import {
   REPORT_PAGE_ORIENTATIONS,
   CASE_REPORT_VARIABLE_CATALOG,
   LAYOUT_KINDS,
+  CreateReportLayoutSchema,
+  UpdateReportLayoutSchema,
   type Option,
   type LayoutKind,
   type SourceType,
@@ -26,6 +28,7 @@ import {
 } from '@crm2/sdk';
 import { api, ApiError } from '../../lib/sdk.js';
 import { useAuth } from '../../lib/AuthContext.js';
+import { zodFieldErrors } from '../../lib/zodForm.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
 import { Button } from '../../components/ui/Button.js';
 import { Input } from '../../components/ui/Input.js';
@@ -183,6 +186,7 @@ function Form({ initial }: { initial: ReportLayoutDetail | null }) {
   );
   const [version] = useState(initial?.version ?? 1); // OCC token the edit started from
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const isFieldReport = kind === 'FIELD_REPORT';
   const isCaseReport = kind === 'CASE_REPORT';
   // CASE_REPORT renders the fixed case context (no column catalog) — it authors an HTML body + page geometry.
@@ -322,6 +326,9 @@ function Form({ initial }: { initial: ReportLayoutDetail | null }) {
                 </option>
               ))}
             </select>
+            {fieldErrors['clientId'] && (
+              <span className="mt-1 block text-xs text-destructive">{fieldErrors['clientId']}</span>
+            )}
           </label>
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-foreground">Product</span>
@@ -338,6 +345,9 @@ function Form({ initial }: { initial: ReportLayoutDetail | null }) {
                 </option>
               ))}
             </select>
+            {fieldErrors['productId'] && (
+              <span className="mt-1 block text-xs text-destructive">{fieldErrors['productId']}</span>
+            )}
           </label>
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-foreground">Kind</span>
@@ -353,6 +363,9 @@ function Form({ initial }: { initial: ReportLayoutDetail | null }) {
                 </option>
               ))}
             </select>
+            {fieldErrors['kind'] && (
+              <span className="mt-1 block text-xs text-destructive">{fieldErrors['kind']}</span>
+            )}
           </label>
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-foreground">Name</span>
@@ -362,6 +375,9 @@ function Form({ initial }: { initial: ReportLayoutDetail | null }) {
               onChange={(e) => setName(e.target.value)}
               placeholder="Axis MIS"
             />
+            {fieldErrors['name'] && (
+              <span className="mt-1 block text-xs text-destructive">{fieldErrors['name']}</span>
+            )}
           </label>
         </div>
 
@@ -382,6 +398,9 @@ function Form({ initial }: { initial: ReportLayoutDetail | null }) {
                   </option>
                 ))}
               </select>
+              {fieldErrors['verificationType'] && (
+                <span className="mt-1 block text-xs text-destructive">{fieldErrors['verificationType']}</span>
+              )}
             </label>
             <label className="block">
               <div className="mb-1 flex items-center justify-between">
@@ -422,6 +441,9 @@ function Form({ initial }: { initial: ReportLayoutDetail | null }) {
                   'Visited {{customer_name}} at {{address}}.\n{{#eq outcome "Positive & Door Open"}}Stay confirmed.{{/eq}}'
                 }
               />
+              {fieldErrors['templateBody'] && (
+                <span className="mt-1 block text-xs text-destructive">{fieldErrors['templateBody']}</span>
+              )}
               <span className="mt-1 block text-[11px] text-muted-foreground">
                 Reference the variables below by their key, e.g.{' '}
                 <span className="font-mono">{'{{customer_name}}'}</span>. Conditionals:{' '}
@@ -447,6 +469,9 @@ function Form({ initial }: { initial: ReportLayoutDetail | null }) {
                     </option>
                   ))}
                 </select>
+                {fieldErrors['pageSize'] && (
+                  <span className="mt-1 block text-xs text-destructive">{fieldErrors['pageSize']}</span>
+                )}
               </label>
               <label className="block">
                 <span className="mb-1 block text-xs font-medium text-foreground">Orientation</span>
@@ -461,6 +486,11 @@ function Form({ initial }: { initial: ReportLayoutDetail | null }) {
                     </option>
                   ))}
                 </select>
+                {fieldErrors['pageOrientation'] && (
+                  <span className="mt-1 block text-xs text-destructive">
+                    {fieldErrors['pageOrientation']}
+                  </span>
+                )}
               </label>
             </div>
             <label className="block">
@@ -489,6 +519,9 @@ function Form({ initial }: { initial: ReportLayoutDetail | null }) {
                   <span className="font-mono">{'{{& }}'}</span>) is not allowed — use{' '}
                   <span className="font-mono">{'{{ }}'}</span> so values are HTML-escaped.
                 </span>
+              )}
+              {!hasRawOutput && fieldErrors['templateBody'] && (
+                <span className="mt-1 block text-xs text-destructive">{fieldErrors['templateBody']}</span>
               )}
               <span className="mt-1 block text-[11px] text-muted-foreground">
                 Values are HTML-escaped automatically. Use{' '}
@@ -529,6 +562,9 @@ function Form({ initial }: { initial: ReportLayoutDetail | null }) {
                 + Add {isFieldReport ? 'Variable' : 'Column'}
               </Button>
             </div>
+            {fieldErrors['columns'] && (
+              <span className="mt-1 block text-xs text-destructive">{fieldErrors['columns']}</span>
+            )}
 
             <div className="mt-2 space-y-2">
               {rows.map((r, i) => {
@@ -695,6 +731,44 @@ function Form({ initial }: { initial: ReportLayoutDetail | null }) {
           <Button
             onClick={() => {
               setError(null);
+              // Validate the EXACT payload the mutationFn posts against the canonical schema.
+              const columns = hasColumns
+                ? rows.map((r, i) => {
+                    const refless = SOURCE_CATALOG[r.sourceType].mode === 'REFLESS';
+                    return {
+                      columnKey: r.columnKey || slug(r.headerLabel),
+                      headerLabel: r.headerLabel,
+                      sourceType: r.sourceType,
+                      sourceRef: refless ? undefined : r.sourceRef || undefined,
+                      dataType: r.dataType,
+                      displayOrder: i,
+                      ...(kind === 'DATA_ENTRY' ? { isRequired: r.isRequired } : {}),
+                      ...(r.section ? { section: r.section } : {}),
+                    };
+                  })
+                : [];
+              const errs = isEdit
+                ? zodFieldErrors(UpdateReportLayoutSchema, {
+                    name,
+                    version,
+                    ...(hasColumns ? { columns } : {}),
+                    ...(isFieldReport ? { templateBody } : {}),
+                    ...(isCaseReport ? { templateBody, pageSize, pageOrientation } : {}),
+                  })
+                : zodFieldErrors(CreateReportLayoutSchema, {
+                    clientId: Number(clientId),
+                    productId: Number(productId),
+                    kind,
+                    name,
+                    columns,
+                    ...(isFieldReport ? { verificationType, templateBody } : {}),
+                    ...(isCaseReport ? { templateBody, pageSize, pageOrientation } : {}),
+                  });
+              if (Object.keys(errs).length > 0) {
+                setFieldErrors(errs);
+                return;
+              }
+              setFieldErrors({});
               save.mutate();
             }}
             disabled={!canSave}

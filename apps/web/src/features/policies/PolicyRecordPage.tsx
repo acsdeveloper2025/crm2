@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Policy } from '@crm2/sdk';
+import { CreatePolicySchema, UpdatePolicySchema } from '@crm2/sdk';
 import { api, ApiError } from '../../lib/sdk.js';
+import { zodFieldErrors } from '../../lib/zodForm.js';
 import { useAuth } from '../../lib/AuthContext.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { Button } from '../../components/ui/Button.js';
@@ -62,6 +64,7 @@ function PolicyForm({ initial }: { initial: Policy | null }) {
   const [content, setContent] = useState(initial?.content ?? '');
   const [version, setVersion] = useState(initial?.version ?? 0); // OCC token the edit started from
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [conflict, setConflict] = useState<{ updatedAt?: string; version?: number } | null>(null);
 
   const mut = useMutation({
@@ -113,13 +116,22 @@ function PolicyForm({ initial }: { initial: Policy | null }) {
               }
               placeholder="PRIVACY_POLICY"
             />
+            {fieldErrors['code'] && (
+              <span className="mt-1 block text-xs text-destructive">{fieldErrors['code']}</span>
+            )}
           </Field>
         )}
         <Field label="Name">
           <Input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+          {fieldErrors['name'] && (
+            <span className="mt-1 block text-xs text-destructive">{fieldErrors['name']}</span>
+          )}
         </Field>
         <Field label="Description (optional)">
           <Input className="input" value={description} onChange={(e) => setDescription(e.target.value)} />
+          {fieldErrors['description'] && (
+            <span className="mt-1 block text-xs text-destructive">{fieldErrors['description']}</span>
+          )}
         </Field>
         <Field label="Content (Markdown)">
           <TextArea
@@ -129,6 +141,9 @@ function PolicyForm({ initial }: { initial: Policy | null }) {
             onChange={(e) => setContent(e.target.value)}
             placeholder="# Policy heading&#10;&#10;Policy body in Markdown…"
           />
+          {fieldErrors['content'] && (
+            <span className="mt-1 block text-xs text-destructive">{fieldErrors['content']}</span>
+          )}
         </Field>
         {error && <p className="text-sm text-destructive">{error}</p>}
         <div className="flex justify-end gap-2 pt-2">
@@ -138,6 +153,17 @@ function PolicyForm({ initial }: { initial: Policy | null }) {
           <Button
             onClick={() => {
               setError(null);
+              // Validate the SAME payload shape the mutationFn posts. The Update schema has no
+              // `version` field (it is the OCC token, sent alongside), so the edit object omits it.
+              const payload = { name, description: description || null, content };
+              const errs = isEdit
+                ? zodFieldErrors(UpdatePolicySchema, payload)
+                : zodFieldErrors(CreatePolicySchema, { ...payload, code });
+              if (Object.keys(errs).length > 0) {
+                setFieldErrors(errs);
+                return;
+              }
+              setFieldErrors({});
               mut.mutate();
             }}
             disabled={!name || !content || (!isEdit && !code)}

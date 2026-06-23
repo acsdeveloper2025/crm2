@@ -1107,10 +1107,22 @@ none were invented). **FieldMonitoring + Dedupe — 🟡 N/A:** field-monitoring
 filter is server-supported → would need an additive backend spec), and Dedupe's filter surface IS its
 search form (name/PAN/mobile/company), not per-column grid filters — both left as-is by design.
 
-### Remaining design-build items (in progress, this branch — NOT yet pushed)
-- **Wave 2 B1** (record-page forms → inline zod validation via the existing `@crm2/sdk` schema — **not** new
-  `react-hook-form` deps; OCC `ConflictDialog` already wired on every record page).
-- Each dispositioned FIXED here as it lands. (K1/K3, D5, B2, C3, B3, C2 already FIXED above.)
+### H-B1 · Record-page form validation → canonical @crm2/sdk zod (no new dep) — ✅ FIXED (this branch)
+Owner-decided (no `react-hook-form`: it isn't in the frozen stack, and OCC `ConflictDialog` is already wired
+on every record page). A small pure helper `apps/web/src/lib/zodForm.ts` `zodFieldErrors(schema, values)`
+(unit-tested) runs the same `Create<X>`/`Update<X>` schema the server enforces and returns field→message;
+the 6 record-page forms (Policy, Role, CommissionRate [create only — Revise has no create-shaped schema],
+User [Profile tab], VerificationUnit, ReportLayout) validate-before-mutate and render inline per-field
+errors. Browser-verified (an invalid amount blocks the submit + shows the inline error) + the 6 entity e2e
+specs confirm valid create/edit is not false-blocked. CaseCreate/CaseDetail/Locations already had rich
+inline validation — left as-is.
+
+### Design-build status (this branch — all fix-plan items dispositioned)
+Foundation + Wave 1 + button-migration + Wave 4 (D3/D4) shipped to prod (`522d5ac`). This branch completes
+the remainder: **K1/K3** (keyboard), **D5** (guard + standards), **B2** (tables), **C3** (consistency), **B3**
+(export), **C2** (URL filters), **B1** (form validation) — all FIXED above. Remaining DEFERRED (documented):
+CPV inline-grid, Templates + Rate-Management Revise conversion, DataGrid `role=menu` arrow-roving (P3),
+Cases/Policies/ReportLayouts/FieldMonitoring additive backend export+filter endpoints (IE-DEFER-3/5/8, H-C2).
 
 ---
 *Governance ledger. Update — never overwrite — as findings change state. Linked from

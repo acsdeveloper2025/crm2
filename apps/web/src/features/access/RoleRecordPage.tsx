@@ -3,6 +3,8 @@ import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ROLE_HIERARCHY_MODES,
+  CreateRoleSchema,
+  UpdateRoleSchema,
   type AccessMatrix,
   type RoleDimensionWiring,
   type RoleHierarchyMode,
@@ -11,6 +13,7 @@ import {
   type ScopeDimensionInfo,
 } from '@crm2/sdk';
 import { api, ApiError } from '../../lib/sdk.js';
+import { zodFieldErrors } from '../../lib/zodForm.js';
 import { useAuth } from '../../lib/AuthContext.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { Button } from '../../components/ui/Button.js';
@@ -110,6 +113,7 @@ function RoleForm({ initial }: { initial: RoleView | null }) {
     new Map((initial?.dimensions ?? []).map((d) => [d.dimension, d.mode])),
   );
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [version, setVersion] = useState(initial?.version ?? 0);
   const [conflict, setConflict] = useState<{ updatedAt?: string; version?: number } | null>(null);
 
@@ -198,10 +202,16 @@ function RoleForm({ initial }: { initial: RoleView | null }) {
               readOnly={isEdit}
               disabled={isEdit}
             />
+            {fieldErrors['code'] && (
+              <span className="mt-1 block text-xs text-destructive">{fieldErrors['code']}</span>
+            )}
           </label>
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-foreground">Name</span>
             <Input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+            {fieldErrors['name'] && (
+              <span className="mt-1 block text-xs text-destructive">{fieldErrors['name']}</span>
+            )}
           </label>
         </div>
         <label className="block">
@@ -211,6 +221,9 @@ function RoleForm({ initial }: { initial: RoleView | null }) {
             value={description ?? ''}
             onChange={(e) => setDescription(e.target.value)}
           />
+          {fieldErrors['description'] && (
+            <span className="mt-1 block text-xs text-destructive">{fieldErrors['description']}</span>
+          )}
         </label>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="block">
@@ -228,6 +241,9 @@ function RoleForm({ initial }: { initial: RoleView | null }) {
                 </option>
               ))}
             </select>
+            {fieldErrors['hierarchyMode'] && (
+              <span className="mt-1 block text-xs text-destructive">{fieldErrors['hierarchyMode']}</span>
+            )}
           </label>
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-foreground">
@@ -247,6 +263,9 @@ function RoleForm({ initial }: { initial: RoleView | null }) {
                   </option>
                 ))}
             </select>
+            {fieldErrors['reportsToRole'] && (
+              <span className="mt-1 block text-xs text-destructive">{fieldErrors['reportsToRole']}</span>
+            )}
           </label>
         </div>
 
@@ -266,6 +285,9 @@ function RoleForm({ initial }: { initial: RoleView | null }) {
           <span className="mt-1 block text-xs text-muted-foreground">
             Leave blank to never expire (e.g. field agents and admins).
           </span>
+          {fieldErrors['passwordExpiryDays'] && (
+            <span className="mt-1 block text-xs text-destructive">{fieldErrors['passwordExpiryDays']}</span>
+          )}
         </label>
 
         <label className="block max-w-xs">
@@ -284,6 +306,9 @@ function RoleForm({ initial }: { initial: RoleView | null }) {
           <span className="mt-1 block text-xs text-muted-foreground">
             Web inactivity timeout. Leave blank to exempt (e.g. field agents).
           </span>
+          {fieldErrors['idleLogoutMinutes'] && (
+            <span className="mt-1 block text-xs text-destructive">{fieldErrors['idleLogoutMinutes']}</span>
+          )}
         </label>
 
         <label className="block max-w-xs">
@@ -302,6 +327,9 @@ function RoleForm({ initial }: { initial: RoleView | null }) {
           <span className="mt-1 block text-xs text-muted-foreground">
             Absolute lifetime; forces re-login even with activity. Leave blank for no cap.
           </span>
+          {fieldErrors['maxSessionMinutes'] && (
+            <span className="mt-1 block text-xs text-destructive">{fieldErrors['maxSessionMinutes']}</span>
+          )}
         </label>
 
         <div className="rounded-md border border-border p-3">
@@ -310,6 +338,9 @@ function RoleForm({ initial }: { initial: RoleView | null }) {
             What an admin can attach to users of this role. EXPAND adds visibility on top of the hierarchy;
             RESTRICT caps it to the assigned set.
           </p>
+          {fieldErrors['dimensions'] && (
+            <span className="mb-2 block text-xs text-destructive">{fieldErrors['dimensions']}</span>
+          )}
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {dimensionCatalog.map((d) => {
               const mode = wiring.get(d.code);
@@ -393,6 +424,29 @@ function RoleForm({ initial }: { initial: RoleView | null }) {
           <Button
             onClick={() => {
               setError(null);
+              // Validate the EXACT payload the mutationFn posts against the canonical schema.
+              const body = {
+                name,
+                description,
+                hierarchyMode,
+                reportsToRole: reportsToRole || null,
+                passwordExpiryDays: pwExpiry.trim() === '' ? null : Number(pwExpiry),
+                idleLogoutMinutes: idleLogout.trim() === '' ? null : Number(idleLogout),
+                maxSessionMinutes: maxSession.trim() === '' ? null : Number(maxSession),
+                dimensions,
+              };
+              const errs = isEdit
+                ? zodFieldErrors(UpdateRoleSchema, { ...body, version })
+                : zodFieldErrors(CreateRoleSchema, {
+                    code: code.toUpperCase(),
+                    ...body,
+                    permissions: [...permissions].sort(),
+                  });
+              if (Object.keys(errs).length > 0) {
+                setFieldErrors(errs);
+                return;
+              }
+              setFieldErrors({});
               mut.mutate();
             }}
             disabled={!canSave}

@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { VerificationUnit } from '@crm2/sdk';
+import { CreateVerificationUnitSchema, UpdateVerificationUnitSchema } from '@crm2/sdk';
 import { api, ApiError } from '../../lib/sdk.js';
 import { useAuth } from '../../lib/AuthContext.js';
 import { toDateInput, toIsoDate } from '../../lib/format.js';
+import { zodFieldErrors } from '../../lib/zodForm.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { Button } from '../../components/ui/Button.js';
 import { Input } from '../../components/ui/Input.js';
@@ -99,6 +101,7 @@ function UnitForm({ initial }: { initial: VerificationUnit | null }) {
   const [description, setDescription] = useState(initial?.description ?? '');
   const [effectiveFrom, setEffectiveFrom] = useState(toDateInput(initial?.effectiveFrom));
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [version, setVersion] = useState(initial?.version ?? 0); // OCC token the edit started from
   const [conflict, setConflict] = useState<{ updatedAt?: string; version?: number } | null>(null);
 
@@ -106,26 +109,32 @@ function UnitForm({ initial }: { initial: VerificationUnit | null }) {
     if (!isEdit) setCategory(kind === 'FIELD_VISIT' ? 'FIELD' : 'IDENTITY');
   }, [kind, isEdit]);
 
+  // The exact write payload (sans OCC `version`) — reused by both the mutation and client validation,
+  // so the inline checks run over the SAME field names the server schema enforces.
+  const buildPayload = () => {
+    const profile = profileFor(kind);
+    return {
+      ...profile,
+      code,
+      name,
+      category,
+      kind,
+      description: description || null,
+      piiSensitive,
+      ...(toIsoDate(effectiveFrom) ? { effectiveFrom: toIsoDate(effectiveFrom) } : {}),
+      ...(kind === 'FIELD_VISIT' ? { requiredFormCode: requiredFormCode || code } : {}),
+    };
+  };
+
   const mut = useMutation({
     mutationFn: () => {
-      const profile = profileFor(kind);
-      const payload = {
-        ...profile,
-        name,
-        category,
-        kind,
-        description: description || null,
-        piiSensitive,
-        ...(toIsoDate(effectiveFrom) ? { effectiveFrom: toIsoDate(effectiveFrom) } : {}),
-        ...(kind === 'FIELD_VISIT' ? { requiredFormCode: requiredFormCode || code } : {}),
-      };
+      const payload = buildPayload();
       return isEdit
         ? api<VerificationUnit>('PUT', `${BASE}/${initial!.id}`, {
             ...payload,
-            code,
             version,
           })
-        : api<VerificationUnit>('POST', BASE, { ...payload, code });
+        : api<VerificationUnit>('POST', BASE, payload);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [QK] });
@@ -169,9 +178,15 @@ function UnitForm({ initial }: { initial: VerificationUnit | null }) {
             }
             placeholder="PAN_CARD"
           />
+          {fieldErrors['code'] && (
+            <span className="mt-1 block text-xs text-destructive">{fieldErrors['code']}</span>
+          )}
         </Field>
         <Field label="Name">
           <Input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+          {fieldErrors['name'] && (
+            <span className="mt-1 block text-xs text-destructive">{fieldErrors['name']}</span>
+          )}
         </Field>
         <Field label="Kind">
           <select
@@ -186,6 +201,9 @@ function UnitForm({ initial }: { initial: VerificationUnit | null }) {
         </Field>
         <Field label="Category">
           <Input className="input" value={category} onChange={(e) => setCategory(e.target.value)} />
+          {fieldErrors['category'] && (
+            <span className="mt-1 block text-xs text-destructive">{fieldErrors['category']}</span>
+          )}
         </Field>
         {kind === 'FIELD_VISIT' && (
           <Field label="Form code">
@@ -196,10 +214,16 @@ function UnitForm({ initial }: { initial: VerificationUnit | null }) {
               onChange={(e) => setRequiredFormCode(e.target.value)}
               placeholder="RESIDENCE_FORM"
             />
+            {fieldErrors['requiredFormCode'] && (
+              <span className="mt-1 block text-xs text-destructive">{fieldErrors['requiredFormCode']}</span>
+            )}
           </Field>
         )}
         <Field label="Description">
           <Input className="input" value={description} onChange={(e) => setDescription(e.target.value)} />
+          {fieldErrors['description'] && (
+            <span className="mt-1 block text-xs text-destructive">{fieldErrors['description']}</span>
+          )}
         </Field>
         <Field label="Effective From (blank = now)">
           <input
@@ -226,6 +250,16 @@ function UnitForm({ initial }: { initial: VerificationUnit | null }) {
           <Button
             onClick={() => {
               setError(null);
+              // Validate the SAME payload the mutationFn posts (sans OCC `version`, not a schema field).
+              const errs = zodFieldErrors(
+                isEdit ? UpdateVerificationUnitSchema : CreateVerificationUnitSchema,
+                buildPayload(),
+              );
+              if (Object.keys(errs).length > 0) {
+                setFieldErrors(errs);
+                return;
+              }
+              setFieldErrors({});
               mut.mutate();
             }}
             disabled={!name || !code}

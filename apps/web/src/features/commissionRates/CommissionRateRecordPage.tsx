@@ -3,6 +3,7 @@ import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   COMMISSION_RATE_TYPES,
+  CreateCommissionRateSchema,
   type Option,
   type UserOption,
   type VerificationUnitOption,
@@ -13,6 +14,7 @@ import {
   type Paginated,
 } from '@crm2/sdk';
 import { api, ApiError } from '../../lib/sdk.js';
+import { zodFieldErrors } from '../../lib/zodForm.js';
 import { toDateInput, toIsoDate } from '../../lib/format.js';
 import { useAuth } from '../../lib/AuthContext.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
@@ -88,6 +90,7 @@ function CommissionRateForm({ initial }: { initial: CommissionRateView | null })
   const [effectiveFrom, setEffectiveFrom] = useState(toDateInput(initial?.effectiveFrom));
   const [version, setVersion] = useState(initial?.version ?? 0); // OCC token the revise started from
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [conflict, setConflict] = useState<{ updatedAt?: string; version?: number } | null>(null);
   const validPincode = /^\d{6}$/.test(pincode);
 
@@ -224,6 +227,9 @@ function CommissionRateForm({ initial }: { initial: CommissionRateView | null })
                   </option>
                 ))}
               </select>
+              {fieldErrors['userId'] && (
+                <span className="mt-1 block text-xs text-destructive">{fieldErrors['userId']}</span>
+              )}
             </Field>
             <Field label="Client (blank = Universal)">
               <select className="input" value={clientId} onChange={(e) => setClientId(e.target.value)}>
@@ -234,6 +240,9 @@ function CommissionRateForm({ initial }: { initial: CommissionRateView | null })
                   </option>
                 ))}
               </select>
+              {fieldErrors['clientId'] && (
+                <span className="mt-1 block text-xs text-destructive">{fieldErrors['clientId']}</span>
+              )}
             </Field>
             <Field label="Product (blank = Universal)">
               <select className="input" value={productId} onChange={(e) => setProductId(e.target.value)}>
@@ -244,6 +253,9 @@ function CommissionRateForm({ initial }: { initial: CommissionRateView | null })
                   </option>
                 ))}
               </select>
+              {fieldErrors['productId'] && (
+                <span className="mt-1 block text-xs text-destructive">{fieldErrors['productId']}</span>
+              )}
             </Field>
             <Field label="Verification Unit (blank = Universal)">
               <select className="input" value={unitId} onChange={(e) => setUnitId(e.target.value)}>
@@ -254,6 +266,11 @@ function CommissionRateForm({ initial }: { initial: CommissionRateView | null })
                   </option>
                 ))}
               </select>
+              {fieldErrors['verificationUnitId'] && (
+                <span className="mt-1 block text-xs text-destructive">
+                  {fieldErrors['verificationUnitId']}
+                </span>
+              )}
             </Field>
             <Field label="Pincode">
               <input
@@ -286,6 +303,9 @@ function CommissionRateForm({ initial }: { initial: CommissionRateView | null })
                   </option>
                 ))}
               </select>
+              {fieldErrors['locationId'] && (
+                <span className="mt-1 block text-xs text-destructive">{fieldErrors['locationId']}</span>
+              )}
             </Field>
             <Field label="Rate Type">
               <select className="input" value={fieldRateType} onChange={(e) => setRateType(e.target.value)}>
@@ -296,6 +316,9 @@ function CommissionRateForm({ initial }: { initial: CommissionRateView | null })
                   </option>
                 ))}
               </select>
+              {fieldErrors['fieldRateType'] && (
+                <span className="mt-1 block text-xs text-destructive">{fieldErrors['fieldRateType']}</span>
+              )}
             </Field>
             <Field label="TAT Band (blank = Universal)">
               <select className="input" value={tatBand} onChange={(e) => setTatBand(e.target.value)}>
@@ -307,6 +330,9 @@ function CommissionRateForm({ initial }: { initial: CommissionRateView | null })
                 ))}
                 <option value="-1">Out of band</option>
               </select>
+              {fieldErrors['tatBand'] && (
+                <span className="mt-1 block text-xs text-destructive">{fieldErrors['tatBand']}</span>
+              )}
             </Field>
           </>
         )}
@@ -320,6 +346,9 @@ function CommissionRateForm({ initial }: { initial: CommissionRateView | null })
             onChange={(e) => setAmount(e.target.value)}
             placeholder="50.00"
           />
+          {fieldErrors['amount'] && (
+            <span className="mt-1 block text-xs text-destructive">{fieldErrors['amount']}</span>
+          )}
         </Field>
         <Field label="Effective From (blank = now)">
           <input
@@ -328,6 +357,9 @@ function CommissionRateForm({ initial }: { initial: CommissionRateView | null })
             value={effectiveFrom}
             onChange={(e) => setEffectiveFrom(e.target.value)}
           />
+          {fieldErrors['effectiveFrom'] && (
+            <span className="mt-1 block text-xs text-destructive">{fieldErrors['effectiveFrom']}</span>
+          )}
         </Field>
         {error && <p className="text-sm text-destructive">{error}</p>}
         <div className="flex justify-end gap-2 pt-2">
@@ -341,6 +373,27 @@ function CommissionRateForm({ initial }: { initial: CommissionRateView | null })
           <Button
             onClick={() => {
               setError(null);
+              // CREATE only: validate the full cascade against the canonical create schema (the SAME
+              // payload the mutationFn POSTs). Revise posts only { amount, effectiveFrom } and has no
+              // matching create schema, so server-side validation stands (amount keeps its disabled gate).
+              if (!isRevise) {
+                const errs = zodFieldErrors(CreateCommissionRateSchema, {
+                  userId,
+                  locationId: locationId ? Number(locationId) : null,
+                  fieldRateType,
+                  clientId: clientId ? Number(clientId) : null,
+                  productId: productId ? Number(productId) : null,
+                  verificationUnitId: unitId ? Number(unitId) : null,
+                  tatBand: tatBand === '' ? null : Number(tatBand),
+                  amount: Number(amount),
+                  effectiveFrom: toIsoDate(effectiveFrom),
+                });
+                if (Object.keys(errs).length > 0) {
+                  setFieldErrors(errs);
+                  return;
+                }
+                setFieldErrors({});
+              }
               mut.mutate();
             }}
             disabled={!valid}
