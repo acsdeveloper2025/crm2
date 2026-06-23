@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   KINDS,
@@ -16,7 +17,6 @@ import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
 import { Button } from '../../components/ui/Button.js';
 import { BulkStatusActions } from '../../components/BulkStatusActions.js';
-import { VerificationUnitDialog } from './VerificationUnitDialog.js';
 import { ImportButton } from '../../components/import/ImportModal.js';
 
 const HTTP_CONFLICT = 409;
@@ -48,8 +48,8 @@ const KIND_OPTIONS = KINDS.map((k) => ({ value: k, label: KIND_LABELS[k] ?? k })
 
 export function VerificationUnitsPage() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [active, setActive] = useState('');
-  const [editing, setEditing] = useState<VerificationUnit | null | undefined>(undefined); // undefined=closed, null=create
   const [toggleConflict, setToggleConflict] = useState<VerificationUnit | null>(null);
 
   const toggle = useMutation({
@@ -157,7 +157,11 @@ export function VerificationUnitsPage() {
             </span>
           ) : (
             <div className="flex items-center justify-end gap-2">
-              <Button variant="secondary" size="sm" onClick={() => setEditing(u)}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => navigate(`/admin/verification-units/${u.id}`)}
+              >
                 Edit
               </Button>
               <Button
@@ -191,7 +195,7 @@ export function VerificationUnitsPage() {
               entityLabel: 'verification unit',
             }}
           />
-          <Button onClick={() => setEditing(null)}>+ New Unit</Button>
+          <Button onClick={() => navigate('/admin/verification-units/new')}>+ New Unit</Button>
         </div>
       </div>
 
@@ -236,10 +240,6 @@ export function VerificationUnitsPage() {
           </select>
         }
       />
-
-      {editing !== undefined && (
-        <VerificationUnitDialog unit={editing} onClose={() => setEditing(undefined)} />
-      )}
 
       {toggleConflict && (
         <ConflictDialog

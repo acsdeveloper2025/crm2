@@ -1,0 +1,265 @@
+import { useEffect, useState } from 'react';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { VerificationUnit } from '@crm2/sdk';
+import { api, ApiError } from '../../lib/sdk.js';
+import { useAuth } from '../../lib/AuthContext.js';
+import { toDateInput, toIsoDate } from '../../lib/format.js';
+import { ConflictDialog } from '../../components/ConflictDialog.js';
+import { Button } from '../../components/ui/Button.js';
+import { Input } from '../../components/ui/Input.js';
+import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
+
+const BASE = '/api/v2/verification-units';
+const LIST = '/admin/verification-units';
+const QK = 'verification-units';
+const HTTP_CONFLICT = 409;
+const isStale = (e: unknown): e is ApiError =>
+  e instanceof ApiError && e.status === HTTP_CONFLICT && e.code === 'STALE_UPDATE';
+
+type Kind = 'FIELD_VISIT' | 'KYC_DOCUMENT';
+
+/** kind → the locked invariant profile (so the UI cannot author an invalid unit). */
+function profileFor(kind: Kind) {
+  return kind === 'FIELD_VISIT'
+    ? {
+        workerRole: 'FIELD_AGENT',
+        assignmentMethod: 'TERRITORY_AUTO',
+        requiredPhotos: 5,
+        requiredGps: true,
+        requiredAttachments: [],
+        billingProfile: 'AGENT_COMMISSION',
+        commissionProfile: 'FIELD_RATE',
+        reportTemplateType: 'FIELD_NARRATIVE',
+        reverificationRule: 'REVISIT_PARENT_RATE',
+      }
+    : {
+        workerRole: 'KYC_VERIFIER',
+        assignmentMethod: 'DESK_POOL',
+        requiredPhotos: 0,
+        requiredGps: false,
+        requiredAttachments: [{ type: 'DOCUMENT', min: 1 }],
+        requiredFormCode: null,
+        billingProfile: 'CLIENT_INVOICE',
+        commissionProfile: 'NONE',
+        reportTemplateType: 'KYC_DOCUMENT',
+        reverificationRule: 'RECHECK_FRESH_RATE',
+      };
+}
+
+/**
+ * Verification-unit create/edit as a full record-page route (ADR-0051 — no modal). `/admin/verification-units/new`
+ * creates; `/admin/verification-units/:id` loads that unit by id and edits it (deep-linkable). RBAC:
+ * `verification_unit.manage` only (the server enforces it on POST/PUT too); a viewer who deep-links here is
+ * bounced back to the list.
+ */
+export function VerificationUnitRecordPage() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { has } = useAuth();
+  const isEdit = !!id;
+  const existing = useQuery({
+    queryKey: [QK, id],
+    queryFn: () => api<VerificationUnit>('GET', `${BASE}/${id}`),
+    enabled: isEdit,
+  });
+
+  if (!has('verification_unit.manage')) return <Navigate to={LIST} replace />;
+  if (isEdit && existing.isLoading) {
+    return (
+      <div className="py-10">
+        <HexagonLoader operation="Loading verification unit" />
+      </div>
+    );
+  }
+  if (isEdit && (existing.isError || !existing.data)) {
+    return (
+      <div className="space-y-3">
+        <Button variant="link" size="sm" onClick={() => navigate(LIST)}>
+          ← Back to verification units
+        </Button>
+        <p className="text-sm text-muted-foreground">Couldn’t load this unit.</p>
+      </div>
+    );
+  }
+  // Re-mount the form per record (key) so its state seeds cleanly from the loaded unit.
+  return <UnitForm key={id ?? 'new'} initial={existing.data ?? null} />;
+}
+
+function UnitForm({ initial }: { initial: VerificationUnit | null }) {
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const isEdit = !!initial;
+  const [code, setCode] = useState(initial?.code ?? '');
+  const [name, setName] = useState(initial?.name ?? '');
+  const [category, setCategory] = useState(initial?.category ?? 'FIELD');
+  const [kind, setKind] = useState<Kind>((initial?.kind as Kind) ?? 'FIELD_VISIT');
+  const [requiredFormCode, setRequiredFormCode] = useState(initial?.requiredFormCode ?? '');
+  const [piiSensitive, setPiiSensitive] = useState(initial?.piiSensitive ?? false);
+  const [description, setDescription] = useState(initial?.description ?? '');
+  const [effectiveFrom, setEffectiveFrom] = useState(toDateInput(initial?.effectiveFrom));
+  const [error, setError] = useState<string | null>(null);
+  const [version, setVersion] = useState(initial?.version ?? 0); // OCC token the edit started from
+  const [conflict, setConflict] = useState<{ updatedAt?: string; version?: number } | null>(null);
+
+  useEffect(() => {
+    if (!isEdit) setCategory(kind === 'FIELD_VISIT' ? 'FIELD' : 'IDENTITY');
+  }, [kind, isEdit]);
+
+  const mut = useMutation({
+    mutationFn: () => {
+      const profile = profileFor(kind);
+      const payload = {
+        ...profile,
+        name,
+        category,
+        kind,
+        description: description || null,
+        piiSensitive,
+        ...(toIsoDate(effectiveFrom) ? { effectiveFrom: toIsoDate(effectiveFrom) } : {}),
+        ...(kind === 'FIELD_VISIT' ? { requiredFormCode: requiredFormCode || code } : {}),
+      };
+      return isEdit
+        ? api<VerificationUnit>('PUT', `${BASE}/${initial!.id}`, {
+            ...payload,
+            code,
+            version,
+          })
+        : api<VerificationUnit>('POST', BASE, { ...payload, code });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [QK] });
+      navigate(LIST);
+    },
+    onError: (e: unknown) => {
+      if (isStale(e)) {
+        const current = (e.body as { current?: { updatedAt?: string; version?: number } } | null)?.current;
+        setConflict(current ?? {});
+      } else if (e instanceof ApiError && e.code === 'CODE_LOCKED') {
+        setError(
+          'This code is in use by other records and can’t be changed. Deactivate and recreate to fix it.',
+        );
+      } else setError(e instanceof Error ? e.message : 'Save failed');
+    },
+  });
+
+  return (
+    <div className="space-y-4">
+      <Button variant="link" size="sm" onClick={() => navigate(LIST)}>
+        ← Back to verification units
+      </Button>
+      <div>
+        <h1 className="text-xl font-bold tracking-tight">{isEdit ? 'Edit' : 'New'} Verification Unit</h1>
+        <p className="text-sm text-muted-foreground">The unified catalog — field visits and KYC documents.</p>
+      </div>
+
+      <div className="max-w-lg space-y-3 rounded-lg border border-border bg-card p-6 shadow-sm">
+        <Field label="Code (UPPER_SNAKE)">
+          <Input
+            className="input"
+            uppercase={false}
+            value={code}
+            onChange={(e) =>
+              setCode(
+                e.target.value
+                  .toUpperCase()
+                  .replace(/[^A-Z0-9]+/g, '_')
+                  .replace(/^_+/, ''),
+              )
+            }
+            placeholder="PAN_CARD"
+          />
+        </Field>
+        <Field label="Name">
+          <Input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+        </Field>
+        <Field label="Kind">
+          <select
+            className="input"
+            value={kind}
+            disabled={isEdit}
+            onChange={(e) => setKind(e.target.value as Kind)}
+          >
+            <option value="FIELD_VISIT">Field Visit</option>
+            <option value="KYC_DOCUMENT">KYC Document</option>
+          </select>
+        </Field>
+        <Field label="Category">
+          <Input className="input" value={category} onChange={(e) => setCategory(e.target.value)} />
+        </Field>
+        {kind === 'FIELD_VISIT' && (
+          <Field label="Form code">
+            <Input
+              className="input"
+              uppercase={false}
+              value={requiredFormCode ?? ''}
+              onChange={(e) => setRequiredFormCode(e.target.value)}
+              placeholder="RESIDENCE_FORM"
+            />
+          </Field>
+        )}
+        <Field label="Description">
+          <Input className="input" value={description} onChange={(e) => setDescription(e.target.value)} />
+        </Field>
+        <Field label="Effective From (blank = now)">
+          <input
+            type="date"
+            className="input"
+            value={effectiveFrom}
+            onChange={(e) => setEffectiveFrom(e.target.value)}
+          />
+        </Field>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={piiSensitive} onChange={(e) => setPiiSensitive(e.target.checked)} />
+          PII sensitive (DPDP masking)
+        </label>
+        <p className="rounded bg-surface-muted p-2 text-xs text-muted-foreground">
+          {kind === 'FIELD_VISIT'
+            ? 'Profile locked: FIELD_AGENT · ≥5 photos · GPS · agent commission · revisit (parent rate).'
+            : 'Profile locked: KYC_VERIFIER · document · client invoice · no commission · recheck (fresh rate).'}
+        </p>
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="ghost" onClick={() => navigate(LIST)} disabled={mut.isPending}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              setError(null);
+              mut.mutate();
+            }}
+            disabled={!name || !code}
+            loading={mut.isPending}
+          >
+            Save
+          </Button>
+        </div>
+      </div>
+
+      {conflict && (
+        <ConflictDialog
+          entityLabel="verification unit"
+          current={conflict}
+          onReload={() => {
+            if (conflict.version !== undefined) setVersion(conflict.version);
+            qc.invalidateQueries({ queryKey: [QK] });
+            setConflict(null);
+          }}
+          onDiscard={() => {
+            qc.invalidateQueries({ queryKey: [QK] });
+            navigate(LIST);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-medium text-foreground">{label}</span>
+      {children}
+    </label>
+  );
+}

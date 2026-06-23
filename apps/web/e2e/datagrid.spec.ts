@@ -229,19 +229,18 @@ test('DataGrid: selecting rows shows the bulk-action bar with Export Selected, a
   await expect(bar).toBeHidden();
 });
 
-test('DataGrid dialog: New traps focus and Escape closes it, returning focus to the trigger', async ({
+test('DataGrid dialog: Import traps focus and Escape closes it, returning focus to the trigger', async ({
   page,
 }) => {
-  // The flat master-data entities (Clients/Products/Departments/Designations) are inline-grid now
-  // (no add/edit modal — ADR-0051). Verification Units keeps a create dialog (a kind-driven record),
-  // so it's the stable surface for the focus-trap contract here.
-  await page.goto('/admin/verification-units');
-  const trigger = page.getByRole('button', { name: '+ New Unit' });
+  // All add/edit modals are gone (ADR-0051 — inline-grid + record-page routes). The bulk-Import modal
+  // (not a D4 target) is the stable focus-trapped overlay opened from a DataGrid list page.
+  await page.goto('/admin/clients');
+  const trigger = page.getByRole('button', { name: 'Import', exact: true });
   await trigger.click();
-  const dialog = page.getByRole('dialog', { name: 'New Verification Unit' });
+  const dialog = page.getByRole('dialog', { name: 'Import clients' });
   await expect(dialog).toBeVisible();
-  // focus landed inside the dialog
-  await expect(dialog.getByRole('textbox').first()).toBeFocused();
+  // focus landed inside the dialog (first focusable — the Download-template button)
+  await expect(dialog.getByRole('button', { name: /Download template/ })).toBeFocused();
   // Escape (onEscape=onClose) dismisses and returns focus to the opener
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();

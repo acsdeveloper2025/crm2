@@ -8,6 +8,7 @@ import { MustChangePasswordPage } from './features/auth/MustChangePasswordPage.j
 import { MustAcceptPoliciesPage } from './features/auth/MustAcceptPoliciesPage.js';
 import { Layout } from './components/Layout.js';
 import { VerificationUnitsPage } from './features/verificationUnits/VerificationUnitsPage.js';
+import { VerificationUnitRecordPage } from './features/verificationUnits/VerificationUnitRecordPage.js';
 import { PoliciesPage } from './features/policies/PoliciesPage.js';
 import { PolicyRecordPage } from './features/policies/PolicyRecordPage.js';
 import { ClientsPage } from './features/clients/ClientsPage.js';
@@ -68,6 +69,8 @@ export function App() {
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/admin/verification-units" element={<VerificationUnitsPage />} />
+        <Route path="/admin/verification-units/new" element={<VerificationUnitRecordPage />} />
+        <Route path="/admin/verification-units/:id" element={<VerificationUnitRecordPage />} />
         <Route path="/admin/clients" element={<ClientsPage />} />
         <Route path="/admin/products" element={<ProductsPage />} />
         <Route path="/admin/cpv" element={<CpvPage />} />
