@@ -1,6 +1,7 @@
 # ADR-0060 — Field-photo GPS-Map-Camera overlay, static-map proxy, and downloads
 
-**Status:** Accepted (2026-06-22) · **Owner-confirmed** (2026-06-22) · **Extends:** ADR-0034 (device
+**Status:** Accepted · **Shipped** (2026-06-22, origin/main `e58d711`; deploy + ci GREEN, external HTTPS
+smoke 200, security-reviewed clean) · **Owner-confirmed** (2026-06-22) · **Extends:** ADR-0034 (device
 field-photo upload), ADR-0040 (reverse-geocode, frozen address), ADR-0041 (case report engine).
 **Migration:** none. **New dependency:** `archiver` (API, server-side zip streaming).
 
