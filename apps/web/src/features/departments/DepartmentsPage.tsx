@@ -45,14 +45,16 @@ export function DepartmentsPage() {
     },
   });
 
-  // PUT the whole record with the row's OCC token; on a 409 refresh the list so a retry picks up the
-  // latest version, and tell the user to re-apply. The thrown message renders inline in the row.
-  const save = async (row: Department, values: Record<string, string>, version: number): Promise<void> => {
+  // Per-cell commit hands us ONLY the changed field(s); merge them over the row's RAW values so an
+  // untouched Effective From keeps its exact server timestamp (the date editor would truncate it).
+  // PUT the whole record with the OCC token; on 409 refresh so a retry picks up the latest version.
+  const save = async (row: Department, changed: Record<string, string>, version: number): Promise<void> => {
     try {
       await api<Department>('PUT', `${BASE}/${row.id}`, {
-        name: values['name'] ?? '',
-        description: values['description'] ?? '',
-        effectiveFrom: toIsoDate(values['effectiveFrom'] ?? ''),
+        name: changed['name'] ?? row.name,
+        description: changed['description'] ?? row.description,
+        effectiveFrom:
+          changed['effectiveFrom'] !== undefined ? toIsoDate(changed['effectiveFrom']) : row.effectiveFrom,
         version,
       });
       await qc.invalidateQueries({ queryKey: [QK] });

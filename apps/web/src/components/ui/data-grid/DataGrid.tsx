@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -149,15 +149,18 @@ export interface DataGridProps<T> {
    */
   renderExpanded?: (row: T) => ReactNode;
   /**
-   * Inline editing (ADR-0051): click an `editable` cell to edit its row in place — Enter saves,
-   * Escape cancels, the `editAction` column shows Save/Cancel. With `onCreate`, a "+ Add row" inserts
-   * a blank editable row at the top. The PAGE implements persistence via its existing PUT/POST with
-   * `version`, so the server still enforces scope/ownership + OCC — the grid is defense-in-depth UI
-   * only. `onSave`/`onCreate` reject to keep edit mode and surface the message inline.
+   * Inline editing (ADR-0051): click an `editable` cell to edit it in place — Enter / blur commits,
+   * Escape cancels (Twenty-style per-cell). With `onCreate`, a "+ Add row" inserts a blank editable
+   * row (a row-fill, since a create needs all required fields) committed via the `editAction` cell's
+   * Save. The PAGE persists via its existing PUT/POST + `version`, so the server still enforces
+   * scope/ownership + OCC — the grid is defense-in-depth UI only; reject to keep edit mode + show the
+   * message inline. `onSave` receives ONLY the CHANGED field(s) (one for a cell edit) — merge them
+   * over the row's raw values for the PUT so untouched fields keep their exact server value;
+   * `onCreate` receives the full new-row draft.
    */
   inlineEdit?: {
     version: (row: T) => number;
-    onSave: (row: T, values: Record<string, string>, version: number) => Promise<void>;
+    onSave: (row: T, changed: Record<string, string>, version: number) => Promise<void>;
     onCreate?: (values: Record<string, string>) => Promise<void>;
   };
 }
@@ -165,41 +168,59 @@ export interface DataGridProps<T> {
 const SEARCH_DEBOUNCE_MS = 300;
 const SKELETON_ROWS = 8;
 
-/** A single inline cell editor (ADR-0051). Enter commits the row, Escape cancels. */
+/**
+ * A single inline cell editor (ADR-0051). Enter commits, Escape cancels. `commitOnBlur` (per-cell
+ * edit) also commits when focus leaves — except right after Escape, tracked via a ref so a cancel
+ * never double-fires a save. `invalid` paints a destructive ring + sets aria-invalid.
+ */
 function CellEditor({
   kind,
   value,
   placeholder,
   autoFocus,
+  commitOnBlur,
+  invalid,
+  title,
   onChange,
-  onSubmit,
+  onCommit,
   onCancel,
 }: {
   kind: CellEditorKind;
   value: string;
   placeholder: string;
   autoFocus: boolean;
+  commitOnBlur: boolean;
+  invalid: boolean;
+  title: string;
   onChange: (v: string) => void;
-  onSubmit: () => void;
+  onCommit: () => void;
   onCancel: () => void;
 }) {
+  const cancelledRef = useRef(false);
   return (
     <input
-      className="input"
+      className={`input ${invalid ? 'border-destructive ring-1 ring-destructive' : ''}`}
       type={kind === 'date' ? 'date' : 'text'}
       value={value}
       placeholder={placeholder}
       autoFocus={autoFocus}
+      aria-invalid={invalid || undefined}
+      title={title || undefined}
       onClick={(e) => e.stopPropagation()}
       onChange={(e) => onChange(e.target.value)}
       onKeyDown={(e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
-          onSubmit();
+          cancelledRef.current = false;
+          onCommit();
         } else if (e.key === 'Escape') {
           e.preventDefault();
+          cancelledRef.current = true;
           onCancel();
         }
+      }}
+      onBlur={() => {
+        if (commitOnBlur && !cancelledRef.current) onCommit();
       }}
     />
   );
@@ -419,61 +440,99 @@ export function DataGrid<T>({
     [columns],
   );
   const firstEditableId = useMemo(() => columns.find((c) => c.editable)?.id, [columns]);
-  const [editId, setEditId] = useState<string | null>(null);
+  const editColByField = useMemo(
+    () => new Map(columns.filter((c) => c.editable).map((c) => [c.field ?? c.id, c])),
+    [columns],
+  );
+  const cellKey = (c: DataGridColumn<T>) => c.field ?? c.id;
+  const seedCell = (row: T, c: DataGridColumn<T>): string =>
+    c.draftValue ? c.draftValue(row) : String((row as Record<string, unknown>)[cellKey(c)] ?? '');
+
+  // Per-cell edit (Twenty-style): one cell at a time. Commit hands the page ONLY the changed field
+  // (+ the row + version); the page merges it over the row's raw values for its PUT, so untouched
+  // fields keep their exact server value and the server still owns OCC + scope.
+  const [editCell, setEditCell] = useState<{ id: string; field: string } | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [cellError, setCellError] = useState<string | null>(null);
+  // Add-row stays a row-fill (all required fields before POST).
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState<Record<string, string>>({});
-  const [editError, setEditError] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const isEditingRow = (id: string) => editId === id && !creating;
-  const cellKey = (c: DataGridColumn<T>) => c.field ?? c.id;
 
-  const seedDraft = (row: T): Record<string, string> => {
-    const d: Record<string, string> = {};
-    for (const c of columns) {
-      if (!c.editable) continue;
-      const f = cellKey(c);
-      d[f] = c.draftValue ? c.draftValue(row) : String((row as Record<string, unknown>)[f] ?? '');
-    }
-    return d;
+  const cancelCell = () => {
+    setEditCell(null);
+    setEditValue('');
+    setCellError(null);
   };
-  const resetEdit = () => {
-    setEditId(null);
-    setCreating(false);
-    setDraft({});
-    setEditError(null);
-    setSaving(false);
+  const startCellEdit = (row: T, c: DataGridColumn<T>) => {
+    if (saving || creating) return;
+    setEditCell({ id: String(rowId(row)), field: cellKey(c) });
+    setEditValue(seedCell(row, c));
+    setCellError(null);
   };
-  const startEdit = (row: T) => {
-    if (saving) return;
-    setCreating(false);
-    setEditId(String(rowId(row)));
-    setDraft(seedDraft(row));
-    setEditError(null);
-  };
-  const startCreate = () => {
-    setEditId(null);
-    setCreating(true);
-    setDraft(Object.fromEntries(columns.filter((c) => c.editable).map((c) => [cellKey(c), ''])));
-    setEditError(null);
-  };
-  const setField = (field: string, value: string) => setDraft((d) => ({ ...d, [field]: value }));
-  const submitEdit = async () => {
-    if (saving || !inlineEdit) return;
-    const msg = firstError(validateDraft(draft, editFields));
-    if (msg) {
-      setEditError(msg);
+  const commitCell = async () => {
+    if (!editCell || !inlineEdit || saving) return;
+    const col = editColByField.get(editCell.field);
+    const row = items.find((r) => String(rowId(r)) === editCell.id);
+    if (!col || !row) {
+      cancelCell();
       return;
     }
-    const row = creating ? null : items.find((r) => String(rowId(r)) === editId);
+    if (editValue === seedCell(row, col)) {
+      cancelCell(); // no change → nothing to persist
+      return;
+    }
+    const msg = firstError(
+      validateDraft(
+        { [editCell.field]: editValue },
+        editFields.filter((f) => f.field === editCell.field),
+      ),
+    );
+    if (msg) {
+      setCellError(msg);
+      return;
+    }
     setSaving(true);
-    setEditError(null);
+    setCellError(null);
     try {
-      if (creating && inlineEdit.onCreate) await inlineEdit.onCreate(draft);
-      else if (row) await inlineEdit.onSave(row, draft, inlineEdit.version(row));
-      resetEdit();
+      await inlineEdit.onSave(row, { [editCell.field]: editValue }, inlineEdit.version(row));
+      setSaving(false);
+      cancelCell(); // the page invalidates → fresh row + version for the next cell
     } catch (e) {
       setSaving(false);
-      setEditError(e instanceof Error ? e.message : 'Save failed');
+      setCellError(e instanceof Error ? e.message : 'Save failed');
+    }
+  };
+
+  const cancelCreate = () => {
+    setCreating(false);
+    setDraft({});
+    setCreateError(null);
+    setSaving(false);
+  };
+  const startCreate = () => {
+    cancelCell();
+    setCreating(true);
+    setDraft(Object.fromEntries(columns.filter((c) => c.editable).map((c) => [cellKey(c), ''])));
+    setCreateError(null);
+  };
+  const setField = (field: string, value: string) => setDraft((d) => ({ ...d, [field]: value }));
+  const submitCreate = async () => {
+    if (saving || !inlineEdit?.onCreate) return;
+    const msg = firstError(validateDraft(draft, editFields));
+    if (msg) {
+      setCreateError(msg);
+      return;
+    }
+    setSaving(true);
+    setCreateError(null);
+    try {
+      await inlineEdit.onCreate(draft);
+      cancelCreate();
+    } catch (e) {
+      setSaving(false);
+      setCreateError(e instanceof Error ? e.message : 'Create failed');
     }
   };
 
@@ -958,20 +1017,27 @@ export function DataGrid<T>({
                           value={draft[cellKey(c)] ?? ''}
                           placeholder={c.editorPlaceholder ?? ''}
                           autoFocus={c.id === firstEditableId}
+                          commitOnBlur={false}
+                          invalid={false}
+                          title=""
                           onChange={(v) => setField(cellKey(c), v)}
-                          onSubmit={() => void submitEdit()}
-                          onCancel={resetEdit}
+                          onCommit={() => void submitCreate()}
+                          onCancel={cancelCreate}
                         />
                       ) : c.editAction ? (
-                        <EditActions saving={saving} onSave={() => void submitEdit()} onCancel={resetEdit} />
+                        <EditActions
+                          saving={saving}
+                          onSave={() => void submitCreate()}
+                          onCancel={cancelCreate}
+                        />
                       ) : null}
                     </td>
                   ))}
                 </tr>
-                {editError && (
+                {createError && (
                   <tr>
                     <td colSpan={colCount} className="px-3 pb-2 text-sm text-destructive">
-                      {editError}
+                      {createError}
                     </td>
                   </tr>
                 )}
@@ -1022,8 +1088,13 @@ export function DataGrid<T>({
                       )}
                       {row.getVisibleCells().map((cell) => {
                         const col = byId.get(cell.column.id);
-                        const editingThis = !!inlineEdit && isEditingRow(row.id);
-                        const clickToEdit = !!inlineEdit && !editId && !creating && !!col?.editable;
+                        const field = col ? cellKey(col) : '';
+                        const editingThisCell =
+                          !!inlineEdit &&
+                          !!col?.editable &&
+                          editCell?.id === row.id &&
+                          editCell.field === field;
+                        const clickToEdit = !!inlineEdit && !editCell && !creating && !!col?.editable;
                         return (
                           <td
                             key={cell.id}
@@ -1032,29 +1103,26 @@ export function DataGrid<T>({
                               clickToEdit ? 'cursor-text' : ''
                             }`}
                             onClick={
-                              clickToEdit
+                              clickToEdit && col
                                 ? (e) => {
                                     e.stopPropagation();
-                                    startEdit(row.original);
+                                    startCellEdit(row.original, col);
                                   }
                                 : undefined
                             }
                           >
-                            {editingThis && col?.editable ? (
+                            {editingThisCell && col ? (
                               <CellEditor
                                 kind={col.editor ?? 'text'}
-                                value={draft[cellKey(col)] ?? ''}
+                                value={editValue}
                                 placeholder={col.editorPlaceholder ?? ''}
-                                autoFocus={col.id === firstEditableId}
-                                onChange={(v) => setField(cellKey(col), v)}
-                                onSubmit={() => void submitEdit()}
-                                onCancel={resetEdit}
-                              />
-                            ) : editingThis && col?.editAction ? (
-                              <EditActions
-                                saving={saving}
-                                onSave={() => void submitEdit()}
-                                onCancel={resetEdit}
+                                autoFocus
+                                commitOnBlur
+                                invalid={!!cellError}
+                                title={cellError ?? ''}
+                                onChange={setEditValue}
+                                onCommit={() => void commitCell()}
+                                onCancel={cancelCell}
                               />
                             ) : (
                               col?.cell(row.original)
@@ -1063,13 +1131,6 @@ export function DataGrid<T>({
                         );
                       })}
                     </tr>
-                    {isEditingRow(row.id) && editError && (
-                      <tr>
-                        <td colSpan={colCount} className="px-3 pb-2 text-sm text-destructive">
-                          {editError}
-                        </td>
-                      </tr>
-                    )}
                     {expanded && renderExpanded && (
                       <tr className="border-t border-border bg-surface-muted/40">
                         <td colSpan={colCount} className="px-3 py-3">
