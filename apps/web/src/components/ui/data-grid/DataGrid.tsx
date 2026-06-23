@@ -943,9 +943,22 @@ export function DataGrid<T>({
                     <th
                       key={h.id}
                       className={`px-3 py-2 font-semibold ${col?.align === 'right' ? 'text-right' : ''} ${
-                        col?.sortable ? 'cursor-pointer select-none hover:text-foreground' : ''
+                        col?.sortable
+                          ? 'cursor-pointer select-none hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring'
+                          : ''
                       }`}
+                      tabIndex={col?.sortable ? 0 : undefined}
                       onClick={() => col && toggleSort(col)}
+                      onKeyDown={
+                        col?.sortable
+                          ? (e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                toggleSort(col);
+                              }
+                            }
+                          : undefined
+                      }
                       aria-sort={sorted ? (sortOrder === 'asc' ? 'ascending' : 'descending') : undefined}
                     >
                       {flexRender(h.column.columnDef.header, h.getContext())}
@@ -1085,13 +1098,28 @@ export function DataGrid<T>({
                     <tr
                       className={`border-t border-border transition-colors ${
                         expanded ? 'bg-accent hover:bg-accent' : 'hover:bg-row-hover'
-                      } ${rowClickable ? 'cursor-pointer' : ''}`}
+                      } ${rowClickable ? 'cursor-pointer' : ''} ${
+                        onRowClick
+                          ? 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring'
+                          : ''
+                      }`}
+                      tabIndex={onRowClick ? 0 : undefined}
                       onClick={
                         onRowClick
                           ? () => onRowClick(row.original)
                           : renderExpanded
                             ? () => toggleExpand(row.id)
                             : undefined
+                      }
+                      onKeyDown={
+                        onRowClick
+                          ? (e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                onRowClick(row.original);
+                              }
+                            }
+                          : undefined
                       }
                     >
                       {renderExpanded && (

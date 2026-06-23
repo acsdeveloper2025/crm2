@@ -193,6 +193,37 @@ test('DataGrid: Columns menu moves focus in, then Escape closes it and returns f
   await expect(trigger).toBeFocused();
 });
 
+// Keyboard operability of the grid itself (Wave K / K1 — DATAGRID_STANDARD §19, axe gate 29):
+// a sortable header must be focusable and toggle sort via Enter/Space (keeping aria-sort), and an
+// onRowClick row must be focusable and open via Enter — not mouse-only.
+test('DataGrid: a sortable header is keyboard-operable (focus + Enter toggles sort + aria-sort)', async ({
+  page,
+}) => {
+  await page.goto('/admin/clients');
+  const codeHeader = page.getByRole('columnheader', { name: /^Code/ });
+  await expect(codeHeader).toBeVisible();
+  await codeHeader.focus();
+  await expect(codeHeader).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(codeHeader).toHaveAttribute('aria-sort', 'ascending');
+  await expect(page).toHaveURL(/dir=asc/);
+  await page.keyboard.press('Enter');
+  await expect(codeHeader).toHaveAttribute('aria-sort', 'descending');
+  await expect(page).toHaveURL(/dir=desc/);
+});
+
+test('DataGrid: an onRowClick row is keyboard-operable (focus + Enter opens the row)', async ({ page }) => {
+  await page.goto('/cases');
+  await page.waitForLoadState('networkidle');
+  const firstRow = page.locator('tbody tr').first();
+  await expect(firstRow).toBeVisible();
+  await expect(firstRow).toHaveAttribute('tabindex', '0');
+  await firstRow.focus();
+  await expect(firstRow).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/\/cases\/[^/]+$/);
+});
+
 // Loading-experience time bands (PAGINATION_AND_LOADING_STANDARDS §6/§7): a list fetch slower
 // than ~1s swaps the skeleton for the Hexagon loader (role=status), which clears once data lands.
 test('DataGrid: a slow load shows the Hexagon loader, which clears when rows arrive', async ({ page }) => {
