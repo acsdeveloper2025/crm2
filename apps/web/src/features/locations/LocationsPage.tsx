@@ -10,7 +10,6 @@ import {
 } from '@crm2/sdk';
 import { api, apiExport, ApiError } from '../../lib/sdk.js';
 import { formatDateTime, toDateInput, toIsoDate } from '../../lib/format.js';
-import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { BulkStatusActions } from '../../components/BulkStatusActions.js';
 import { ImportButton } from '../../components/import/ImportModal.js';
 import { StatusChip } from '../../components/StatusChip.js';
@@ -35,7 +34,6 @@ export function LocationsPage() {
   const [effectiveFrom, setEffectiveFrom] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [editing, setEditing] = useState<Location | null>(null);
   const [toggleConflict, setToggleConflict] = useState<Location | null>(null);
 
   // Commit the typed text (and comma-separated paste) into the area chip list, de-duping locally.
@@ -107,6 +105,38 @@ export function LocationsPage() {
     },
   });
 
+  // Per-cell inline save (ADR-0051): the grid hands us ONLY the changed field; merge it over the row's
+  // raw values so an untouched cell keeps its exact value, then PUT with the row's version (server owns
+  // OCC + scope). A pincode in use by rates is PINCODE_LOCKED — surfaced inline like the old modal.
+  const save = async (row: Location, changed: Record<string, string>, version: number): Promise<void> => {
+    try {
+      await api('PUT', `/api/v2/locations/${row.id}`, {
+        pincode: changed['pincode'] ?? row.pincode,
+        area: changed['area'] ?? row.area,
+        city: changed['city'] ?? row.city,
+        state: changed['state'] ?? row.state,
+        country: changed['country'] ?? row.country,
+        effectiveFrom:
+          changed['effectiveFrom'] !== undefined ? toIsoDate(changed['effectiveFrom']) : row.effectiveFrom,
+        version,
+      });
+      await qc.invalidateQueries({ queryKey: ['locations'] });
+    } catch (e) {
+      if (isStale(e)) {
+        await qc.invalidateQueries({ queryKey: ['locations'] });
+        throw new Error('This row changed since you opened it — refreshed; Save again to re-apply.', {
+          cause: e,
+        });
+      }
+      if (e instanceof ApiError && e.code === 'PINCODE_LOCKED')
+        throw new Error(
+          'This pincode is in use by rates and can’t be changed. Deactivate and recreate to fix it.',
+          { cause: e },
+        );
+      throw e instanceof Error ? e : new Error('Save failed');
+    }
+  };
+
   const columns = useMemo<DataGridColumn<Location>[]>(
     () => [
       {
@@ -114,14 +144,27 @@ export function LocationsPage() {
         header: 'Pincode',
         sortable: true,
         filterable: true,
+        editable: true,
+        required: true,
+        validate: (v) => (/^\d{6}$/.test(v) ? null : 'Pincode must be 6 digits'),
         cell: (l) => <span className="font-mono text-xs">{l.pincode}</span>,
       },
-      { id: 'area', header: 'Area', sortable: true, filterable: true, cell: (l) => l.area },
+      {
+        id: 'area',
+        header: 'Area',
+        sortable: true,
+        filterable: true,
+        editable: true,
+        required: true,
+        cell: (l) => l.area,
+      },
       {
         id: 'city',
         header: 'City',
         sortable: true,
         filterable: true,
+        editable: true,
+        required: true,
         cell: (l) => <span className="text-muted-foreground">{l.city}</span>,
       },
       {
@@ -129,18 +172,25 @@ export function LocationsPage() {
         header: 'State',
         sortable: true,
         filterable: true,
+        editable: true,
+        required: true,
         cell: (l) => <span className="text-muted-foreground">{l.state}</span>,
       },
       {
         id: 'country',
         header: 'Country',
         sortable: true,
+        editable: true,
+        required: true,
         cell: (l) => <span className="text-muted-foreground">{l.country}</span>,
       },
       {
         id: 'effectiveFrom',
         header: 'Effective From',
         sortable: true,
+        editable: true,
+        editor: 'date',
+        draftValue: (l) => toDateInput(l.effectiveFrom),
         cell: (l) => <span className="text-xs text-muted-foreground">{formatDateTime(l.effectiveFrom)}</span>,
       },
       {
@@ -167,9 +217,6 @@ export function LocationsPage() {
         align: 'right',
         cell: (l) => (
           <div className="flex items-center justify-end gap-2">
-            <Button variant="secondary" size="sm" onClick={() => setEditing(l)}>
-              Edit
-            </Button>
             <Button
               variant={l.isActive ? 'destructive' : 'secondary'}
               size="sm"
@@ -315,9 +362,8 @@ export function LocationsPage() {
         exportFn={(req: ExportRequest) =>
           apiExport(`/api/v2/locations/export?${exportQueryToParams(req).toString()}`)
         }
+        inlineEdit={{ version: (l) => l.version, onSave: save }}
       />
-
-      {editing && <EditLocationDialog location={editing} onClose={() => setEditing(null)} />}
 
       {toggleConflict && (
         <ConflictDialog
@@ -330,134 +376,6 @@ export function LocationsPage() {
           onDiscard={() => {
             qc.invalidateQueries({ queryKey: ['locations'] });
             setToggleConflict(null);
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-function EditLocationDialog({ location, onClose }: { location: Location; onClose: () => void }) {
-  const qc = useQueryClient();
-  const [pincode, setPincode] = useState(location.pincode);
-  const [area, setArea] = useState(location.area);
-  const [city, setCity] = useState(location.city);
-  const [state, setState] = useState(location.state);
-  const [country, setCountry] = useState(location.country);
-  const [effectiveFrom, setEffectiveFrom] = useState(toDateInput(location.effectiveFrom));
-  const [error, setError] = useState<string | null>(null);
-  const [version, setVersion] = useState(location.version); // OCC token the edit started from
-  const [conflict, setConflict] = useState<{ updatedAt?: string; version?: number } | null>(null);
-  const dialogRef = useFocusTrap<HTMLDivElement>(true, onClose);
-
-  const mut = useMutation({
-    mutationFn: () =>
-      api('PUT', `/api/v2/locations/${location.id}`, {
-        pincode,
-        area,
-        city,
-        state,
-        country,
-        effectiveFrom: toIsoDate(effectiveFrom),
-        version,
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['locations'] });
-      onClose();
-    },
-    onError: (e: unknown) => {
-      if (isStale(e)) {
-        const current = (e.body as { current?: { updatedAt?: string; version?: number } } | null)?.current;
-        setConflict(current ?? {});
-      } else if (e instanceof ApiError && e.code === 'PINCODE_LOCKED') {
-        setError('This pincode is in use by rates and can’t be changed. Deactivate and recreate to fix it.');
-      } else setError(e instanceof Error ? e.message : 'Save failed');
-    },
-  });
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40">
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="location-dialog-title"
-        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg border border-border bg-card p-6 text-card-foreground shadow-lg"
-      >
-        <h2 id="location-dialog-title" className="mb-4 text-lg font-semibold">
-          Edit Location
-        </h2>
-        <div className="space-y-3">
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-foreground">Pincode (6 digits)</span>
-            <Input
-              uppercase={false}
-              className="input font-mono"
-              value={pincode}
-              onChange={(e) => setPincode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-            />
-            <span className="mt-1 block text-xs text-muted-foreground">
-              Correctable only while unused — locked once referenced by rates (ADR-0020).
-            </span>
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-foreground">Area</span>
-            <Input className="input" value={area} onChange={(e) => setArea(e.target.value)} />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-foreground">City</span>
-            <Input className="input" value={city} onChange={(e) => setCity(e.target.value)} />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-foreground">State</span>
-            <Input className="input" value={state} onChange={(e) => setState(e.target.value)} />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-foreground">Country</span>
-            <Input className="input" value={country} onChange={(e) => setCountry(e.target.value)} />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-foreground">
-              Effective From (blank = now)
-            </span>
-            <input
-              type="date"
-              className="input"
-              value={effectiveFrom}
-              onChange={(e) => setEffectiveFrom(e.target.value)}
-            />
-          </label>
-          {error && <p className="text-sm text-destructive">{error}</p>}
-        </div>
-        <div className="mt-5 flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose} disabled={mut.isPending}>
-            Cancel
-          </Button>
-          <Button
-            disabled={pincode.length !== 6 || !area || !city || !state || !country}
-            loading={mut.isPending}
-            onClick={() => {
-              setError(null);
-              mut.mutate();
-            }}
-          >
-            Save
-          </Button>
-        </div>
-      </div>
-
-      {conflict && (
-        <ConflictDialog
-          entityLabel="location"
-          current={conflict}
-          onReload={() => {
-            if (conflict.version !== undefined) setVersion(conflict.version);
-            qc.invalidateQueries({ queryKey: ['locations'] });
-            setConflict(null);
-          }}
-          onDiscard={() => {
-            qc.invalidateQueries({ queryKey: ['locations'] });
-            onClose();
           }}
         />
       )}
