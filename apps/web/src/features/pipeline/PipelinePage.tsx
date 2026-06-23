@@ -281,9 +281,6 @@ function BulkAssignAction({ selection }: { selection: BulkSelection<TaskView> })
   const [message, setMessage] = useState<string | null>(null);
   const [assignedTo, setAssignedTo] = useState('');
   const [visitType, setVisitType] = useState<VisitType>('FIELD');
-  // ADR-0050: the trip distance band is the executive-commission resolution key — REQUIRED, no default
-  // (a conscious LOCAL/OGL choice shared across the whole selection).
-  const [billCount, setBillCount] = useState(1);
   const [busy, setBusy] = useState(false);
   const [poolError, setPoolError] = useState(false);
   const dialogRef = useFocusTrap<HTMLDivElement>(open, () => setOpen(false));
@@ -318,7 +315,8 @@ function BulkAssignAction({ selection }: { selection: BulkSelection<TaskView> })
         assignedTo,
         visitType,
         // ADR-0056: no fieldRateType — the server derives each task's band from the assignee's commission.
-        billCount,
+        // SHIP-2 (owner 2026-06-23): bill_count fixed at one unit (×1) — no operator input.
+        billCount: 1,
       });
       void qc.invalidateQueries({ queryKey: [QK] });
       const parts = [`${res.okCount} assigned`];
@@ -404,17 +402,6 @@ function BulkAssignAction({ selection }: { selection: BulkSelection<TaskView> })
                 </label>
                 {/* ADR-0056: no field-rate-type picker — the server derives each task's trip band from the
                     assignee's commission at that task's location (NO_FIELD_COMMISSION row if none). */}
-                <label className="flex flex-col gap-1">
-                  <span className="text-xs uppercase tracking-wide text-muted-foreground">Bill count</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={50}
-                    className="h-9 w-24 rounded-md border border-border bg-background px-2 text-sm"
-                    value={billCount}
-                    onChange={(e) => setBillCount(Math.max(0, Number(e.target.value) || 0))}
-                  />
-                </label>
               </div>
             </div>
             <div className="mt-5 flex justify-end gap-2">

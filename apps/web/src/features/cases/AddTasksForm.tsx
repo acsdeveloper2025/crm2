@@ -505,7 +505,7 @@ function TaskRowEditor({
             <span className="font-medium text-foreground">Rate types at this location:</span>{' '}
             <span className="text-muted-foreground">Client</span>{' '}
             <span className="font-mono uppercase">{ratePreview.clientRateType ?? '—'}</span>
-            <span className="mx-2 text-border">·</span>
+            <span className="mx-2 text-muted-foreground">·</span>
             <span className="text-muted-foreground">Field</span>{' '}
             <span className="font-mono uppercase">
               {ratePreview.fieldRateTypes.length ? ratePreview.fieldRateTypes.join(' / ') : '—'}

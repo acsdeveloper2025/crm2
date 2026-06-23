@@ -947,7 +947,6 @@ function AssignForm({
 }) {
   const [assignedTo, setAssignedTo] = useState(task.assignedTo ?? '');
   const [visitType, setVisitType] = useState<VisitType>(task.visitType ?? 'FIELD');
-  const [billCount, setBillCount] = useState(task.billCount || 1);
 
   // ADR-0024: the pool is the chosen visit-type pool ∩ (FIELD) the task's OWN territory — the same
   // model as Add Task, so reassign and create agree. FIELD needs the task to carry a location.
@@ -984,7 +983,8 @@ function AssignForm({
   const submit = () => {
     if (!assignedTo || assignBlocked) return;
     // ADR-0056: no fieldRateType — the server derives it from the assignee's commission at the location.
-    onSubmit({ assignedTo, visitType, billCount });
+    // SHIP-2 (owner 2026-06-23): bill_count is no longer operator-set — every task is one unit (×1).
+    onSubmit({ assignedTo, visitType, billCount: 1 });
   };
 
   return (
@@ -1042,7 +1042,7 @@ function AssignForm({
           <span className="font-medium text-foreground">Rate types at this location:</span>{' '}
           <span className="text-muted-foreground">Client</span>{' '}
           <span className="font-mono uppercase">{ratePreview.clientRateType ?? '—'}</span>
-          <span className="mx-2 text-border">·</span>
+          <span className="mx-2 text-muted-foreground">·</span>
           <span className="text-muted-foreground">Field</span>{' '}
           <span className="font-mono uppercase">
             {ratePreview.fieldRateTypes.length ? ratePreview.fieldRateTypes.join(' / ') : '—'}
@@ -1062,16 +1062,6 @@ function AssignForm({
           )}
         </div>
       )}
-      <Field label="Bill count">
-        <input
-          type="number"
-          min={0}
-          max={50}
-          className="h-9 w-24 rounded-md border border-border bg-background px-2 text-sm"
-          value={billCount}
-          onChange={(e) => setBillCount(Math.max(0, Number(e.target.value) || 0))}
-        />
-      </Field>
       <button
         className="h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground disabled:opacity-50"
         onClick={submit}
