@@ -54,3 +54,29 @@ BEGIN
   INSERT INTO case_tasks (case_id, verification_unit_id, applicant_id, address, task_number, status, visit_type)
   VALUES (v_case_id, v_unit_id, v_applicant, '1 Test Street, Mumbai', 'E2E-0001-1', 'PENDING', 'FIELD');
 END $$;
+
+-- Wave-4 D4/D3 record-page + inline-edit specs each edit the FIRST row of a list, so each needs a row
+-- (the locations / commission_rates / report_layouts tables are otherwise empty here). Idempotent.
+
+-- locations.spec: clicks the Area cell of the first row to edit it inline.
+INSERT INTO locations (pincode, area, city, state, country)
+SELECT '400001', 'Fort', 'Mumbai', 'Maharashtra', 'India'
+WHERE NOT EXISTS (SELECT 1 FROM locations WHERE pincode = '400001' AND area = 'Fort');
+
+-- commissionRates.spec: a row's Revise → /admin/commission-rates/:id. OFFICE = location-less (flat).
+INSERT INTO commission_rates (user_id, field_rate_type, amount)
+SELECT u.id, 'OFFICE', 500
+FROM users u
+WHERE u.username = 'admin'
+  AND NOT EXISTS (
+    SELECT 1 FROM commission_rates cr WHERE cr.user_id = u.id AND cr.field_rate_type = 'OFFICE'
+  );
+
+-- reportLayouts.spec: a row's Edit → /admin/report-layouts/:id. CASE_REPORT needs a template body +
+-- page size/orientation (table CHECK); no columns.
+INSERT INTO report_layouts (client_id, product_id, kind, name, template_body, page_size, page_orientation)
+SELECT c.id, p.id, 'CASE_REPORT', 'E2E Case Report', '<h1>{{caseNumber}}</h1>', 'A4', 'portrait'
+FROM clients c, products p
+WHERE c.code = 'HDFC'
+  AND p.code = 'HL'
+  AND NOT EXISTS (SELECT 1 FROM report_layouts WHERE kind = 'CASE_REPORT' AND name = 'E2E Case Report');
