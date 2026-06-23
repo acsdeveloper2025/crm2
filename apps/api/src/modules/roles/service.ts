@@ -141,6 +141,14 @@ export const roleService = {
     return buildPage(items, totalCount, r, filters);
   },
 
+  /** A single role by code (the record-page loader). Read-only: 404s an unknown code but — unlike
+   *  loadEditable — never ROLE_LOCKEDs grants_all/system roles, so SUPER_ADMIN is viewable. */
+  async get(code: string): Promise<RoleView> {
+    const role = await repo.findView(code);
+    if (!role) throw AppError.notFound('ROLE_NOT_FOUND');
+    return role;
+  },
+
   options: (): Promise<RoleOption[]> => repo.options(),
   dimensions: (): Promise<ScopeDimensionInfo[]> => repo.dimensionCatalog(),
 

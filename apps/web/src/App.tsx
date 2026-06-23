@@ -19,6 +19,7 @@ import { UsersPage } from './features/users/UsersPage.js';
 import { DepartmentsPage } from './features/departments/DepartmentsPage.js';
 import { DesignationsPage } from './features/designations/DesignationsPage.js';
 import { RolesPage } from './features/access/RolesPage.js';
+import { RoleRecordPage } from './features/access/RoleRecordPage.js';
 import { TemplatesPage } from './features/templates/TemplatesPage.js';
 import { SystemPage } from './features/system/SystemPage.js';
 import { CasesPage } from './features/cases/CasesPage.js';
@@ -78,6 +79,8 @@ export function App() {
         <Route path="/admin/departments" element={<DepartmentsPage />} />
         <Route path="/admin/designations" element={<DesignationsPage />} />
         <Route path="/admin/rbac" element={<RolesPage />} />
+        <Route path="/admin/rbac/new" element={<RoleRecordPage />} />
+        <Route path="/admin/rbac/:code" element={<RoleRecordPage />} />
         <Route path="/admin/templates" element={<TemplatesPage />} />
         <Route path="/admin/system" element={<SystemPage />} />
         <Route path="/admin/policies" element={<PoliciesPage />} />

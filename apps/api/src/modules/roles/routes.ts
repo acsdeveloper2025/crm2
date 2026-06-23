@@ -18,6 +18,10 @@ roleRoutes.get('/export', authorize(PERMISSIONS.ACCESS_VIEW), c.export);
 roleRoutes.get('/options', authorize(PERMISSIONS.USER_VIEW), c.options);
 roleRoutes.get('/dimensions', authorize(PERMISSIONS.ACCESS_VIEW), c.dimensions);
 roleRoutes.get('/', authorize(PERMISSIONS.ACCESS_VIEW), c.list);
+// Single role by code (the Roles record-page loader). Read = ACCESS_VIEW (same audience as `GET /`),
+// NOT role.manage — viewing a role is the read surface, not a write. Declared AFTER the static
+// single-segment paths above so `/export`, `/options`, `/dimensions` are never captured as a `:code`.
+roleRoutes.get('/:code', authorize(PERMISSIONS.ACCESS_VIEW), c.get);
 roleRoutes.post('/', authorize(PERMISSIONS.ROLE_MANAGE), c.create);
 roleRoutes.put('/:code', authorize(PERMISSIONS.ROLE_MANAGE), c.update);
 roleRoutes.post('/:code/activate', authorize(PERMISSIONS.ROLE_MANAGE), c.activate);

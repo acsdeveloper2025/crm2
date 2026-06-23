@@ -505,4 +505,65 @@ describe.skipIf(!RUN)('roles API (ADR-0022 slice 2 — editable role→permissio
       ).status,
     ).toBe(400);
   });
+
+  // ── GET /roles/:code — single role by code (the Roles record-page loader). Read = ACCESS_VIEW.
+  describe('GET /roles/:code', () => {
+    it('returns 200 + the full RoleView (permissions + dimension wiring) for a seeded role', async () => {
+      const r = await request(app).get('/api/v2/roles/FIELD_AGENT').set(SA);
+      expect(r.status).toBe(200);
+      expect(r.body.code).toBe('FIELD_AGENT');
+      expect(r.body.isSystem).toBe(true);
+      expect(r.body.permissions).toEqual(FIELD_AGENT_SEED);
+      expect(r.body.dimensions).toEqual([
+        { dimension: 'AREA', mode: 'EXPAND' },
+        { dimension: 'PINCODE', mode: 'EXPAND' },
+      ]);
+    });
+
+    it('reads a grants_all role (SUPER_ADMIN) — never ROLE_LOCKED on a plain read', async () => {
+      const r = await request(app).get('/api/v2/roles/SUPER_ADMIN').set(SA);
+      expect(r.status).toBe(200);
+      expect(r.body).toMatchObject({ code: 'SUPER_ADMIN', grantsAll: true, isSystem: true });
+      expect(r.body.permissions).toEqual([]);
+    });
+
+    it('reads a freshly created custom role by code', async () => {
+      await request(app)
+        .post('/api/v2/roles')
+        .set(SA)
+        .send({
+          code: 'READ_ROLE',
+          name: 'Read Role',
+          hierarchyMode: 'ALL',
+          permissions: ['case.view'],
+          dimensions: [{ dimension: 'PINCODE', mode: 'RESTRICT' }],
+        });
+      const r = await request(app).get('/api/v2/roles/READ_ROLE').set(SA);
+      expect(r.status).toBe(200);
+      expect(r.body).toMatchObject({
+        code: 'READ_ROLE',
+        isSystem: false,
+        permissions: ['case.view'],
+        dimensions: [{ dimension: 'PINCODE', mode: 'RESTRICT' }],
+      });
+    });
+
+    it('404 ROLE_NOT_FOUND for an unknown code', async () => {
+      const r = await request(app).get('/api/v2/roles/NO_SUCH_ROLE').set(SA);
+      expect(r.status).toBe(404);
+      expect(r.body.error).toBe('ROLE_NOT_FOUND');
+    });
+
+    it('400 for a malformed code (never a 500)', async () => {
+      expect((await request(app).get('/api/v2/roles/lower-case!').set(SA)).status).toBe(400);
+    });
+
+    it('unauthenticated request is 401', async () => {
+      expect((await request(app).get('/api/v2/roles/FIELD_AGENT')).status).toBe(401);
+    });
+
+    it('a role lacking page.access cannot read (FIELD_AGENT → 403)', async () => {
+      expect((await request(app).get('/api/v2/roles/FIELD_AGENT').set(FA)).status).toBe(403);
+    });
+  });
 });
