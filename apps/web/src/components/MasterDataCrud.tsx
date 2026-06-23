@@ -9,14 +9,12 @@ import {
 } from '@crm2/sdk';
 import { api, apiExport, ApiError } from '../lib/sdk.js';
 import { formatDateTime, toDateInput, toIsoDate } from '../lib/format.js';
-import { useFocusTrap } from '../lib/useFocusTrap.js';
 import { BulkStatusActions } from './BulkStatusActions.js';
 import { ImportButton } from './import/ImportModal.js';
 import { StatusChip } from './StatusChip.js';
 import { ConflictDialog } from './ConflictDialog.js';
 import { DataGrid, type DataGridColumn } from './ui/data-grid/index.js';
 import { Button } from './ui/Button.js';
-import { Input } from './ui/Input.js';
 
 const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
@@ -45,10 +43,16 @@ interface Config {
   codePlaceholder: string;
 }
 
+/**
+ * The flat code/name master-data manager (Clients, Products) — inline-grid editing (ADR-0051): click
+ * a Code/Name/Effective-From cell to edit it in place, "+ Add row" to create; no modal form. Code is
+ * coerced to UPPER at submit (WYSIWYG while typing). A code in use by other records is CODE_LOCKED —
+ * the server rejects the edit and the message renders inline. Persistence reuses the existing PUT/POST
+ * + `version`, so the server still owns OCC + scope.
+ */
 export function MasterDataCrud({ config }: { config: Config }) {
   const qc = useQueryClient();
   const [active, setActive] = useState('');
-  const [editing, setEditing] = useState<MasterRow | null | undefined>(undefined); // undefined=closed, null=create
   const [toggleConflict, setToggleConflict] = useState<MasterRow | null>(null);
 
   const toggle = useMutation({
@@ -62,6 +66,46 @@ export function MasterDataCrud({ config }: { config: Config }) {
     },
   });
 
+  const save = async (row: MasterRow, changed: Record<string, string>, version: number): Promise<void> => {
+    try {
+      await api<MasterRow>('PUT', `${config.basePath}/${row.id}`, {
+        code: changed['code'] !== undefined ? changed['code'].toUpperCase() : row.code,
+        name: changed['name'] ?? row.name,
+        effectiveFrom:
+          changed['effectiveFrom'] !== undefined ? toIsoDate(changed['effectiveFrom']) : row.effectiveFrom,
+        version,
+      });
+      await qc.invalidateQueries({ queryKey: [config.queryKey] });
+    } catch (e) {
+      if (isStale(e)) {
+        await qc.invalidateQueries({ queryKey: [config.queryKey] });
+        throw new Error('This row changed since you opened it — refreshed; Save again to re-apply.', {
+          cause: e,
+        });
+      }
+      if (e instanceof ApiError && e.code === 'CODE_LOCKED')
+        throw new Error(
+          'This code is in use by other records and can’t be changed. Deactivate and recreate to fix it.',
+          { cause: e },
+        );
+      throw e instanceof Error ? e : new Error('Save failed');
+    }
+  };
+
+  const create = async (values: Record<string, string>): Promise<void> => {
+    const effectiveFrom = (values['effectiveFrom'] ?? '').trim();
+    try {
+      await api<MasterRow>('POST', config.basePath, {
+        code: (values['code'] ?? '').toUpperCase(),
+        name: values['name'] ?? '',
+        ...(effectiveFrom ? { effectiveFrom: toIsoDate(effectiveFrom) } : {}),
+      });
+      await qc.invalidateQueries({ queryKey: [config.queryKey] });
+    } catch (e) {
+      throw e instanceof Error ? e : new Error('Create failed');
+    }
+  };
+
   const columns = useMemo<DataGridColumn<MasterRow>[]>(
     () => [
       {
@@ -69,13 +113,27 @@ export function MasterDataCrud({ config }: { config: Config }) {
         header: 'Code',
         sortable: true,
         filterable: true,
+        editable: true,
+        required: true,
+        editorPlaceholder: config.codePlaceholder,
         cell: (r) => <span className="font-mono text-xs">{r.code}</span>,
       },
-      { id: 'name', header: 'Name', sortable: true, filterable: true, cell: (r) => r.name },
+      {
+        id: 'name',
+        header: 'Name',
+        sortable: true,
+        filterable: true,
+        editable: true,
+        required: true,
+        cell: (r) => r.name,
+      },
       {
         id: 'effectiveFrom',
         header: 'Effective From',
         sortable: true,
+        editable: true,
+        editor: 'date',
+        draftValue: (r) => toDateInput(r.effectiveFrom),
         cell: (r) => <span className="text-xs text-muted-foreground">{formatDateTime(r.effectiveFrom)}</span>,
       },
       {
@@ -100,11 +158,9 @@ export function MasterDataCrud({ config }: { config: Config }) {
         id: 'actions',
         header: 'Actions',
         align: 'right',
+        editAction: true,
         cell: (r) => (
           <div className="flex items-center justify-end gap-2">
-            <Button variant="secondary" size="sm" onClick={() => setEditing(r)}>
-              Edit
-            </Button>
             <Button
               variant={r.isActive ? 'destructive' : 'secondary'}
               size="sm"
@@ -116,7 +172,7 @@ export function MasterDataCrud({ config }: { config: Config }) {
         ),
       },
     ],
-    [toggle],
+    [toggle, config.codePlaceholder],
   );
 
   return (
@@ -126,16 +182,13 @@ export function MasterDataCrud({ config }: { config: Config }) {
           <h1 className="text-xl font-bold tracking-tight">{config.title}</h1>
           <p className="text-sm text-muted-foreground">{config.subtitle}</p>
         </div>
-        <div className="flex items-center gap-2">
-          <ImportButton
-            config={{
-              basePath: config.basePath,
-              queryKey: config.queryKey,
-              entityLabel: config.title.replace(/s$/, '').toLowerCase(),
-            }}
-          />
-          <Button onClick={() => setEditing(null)}>+ New</Button>
-        </div>
+        <ImportButton
+          config={{
+            basePath: config.basePath,
+            queryKey: config.queryKey,
+            entityLabel: config.title.replace(/s$/, '').toLowerCase(),
+          }}
+        />
       </div>
 
       <DataGrid<MasterRow>
@@ -159,6 +212,7 @@ export function MasterDataCrud({ config }: { config: Config }) {
         exportFn={(req: ExportRequest) =>
           apiExport(`${config.basePath}/export?${exportQueryToParams(req).toString()}`)
         }
+        inlineEdit={{ version: (r) => r.version, onSave: save, onCreate: create }}
         toolbar={
           <select
             className="input w-[10rem]"
@@ -173,10 +227,6 @@ export function MasterDataCrud({ config }: { config: Config }) {
         }
       />
 
-      {editing !== undefined && (
-        <MasterDataDialog config={config} row={editing} onClose={() => setEditing(undefined)} />
-      )}
-
       {toggleConflict && (
         <ConflictDialog
           entityLabel={config.title.replace(/s$/, '').toLowerCase()}
@@ -188,133 +238,6 @@ export function MasterDataCrud({ config }: { config: Config }) {
           onDiscard={() => {
             qc.invalidateQueries({ queryKey: [config.queryKey] });
             setToggleConflict(null);
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-function MasterDataDialog({
-  config,
-  row,
-  onClose,
-}: {
-  config: Config;
-  row: MasterRow | null;
-  onClose: () => void;
-}) {
-  const qc = useQueryClient();
-  const isEdit = !!row;
-  const [code, setCode] = useState(row?.code ?? '');
-  const [name, setName] = useState(row?.name ?? '');
-  const [effectiveFrom, setEffectiveFrom] = useState(toDateInput(row?.effectiveFrom));
-  const [error, setError] = useState<string | null>(null);
-  const [version, setVersion] = useState(row?.version ?? 0); // OCC token the edit started from
-  const [conflict, setConflict] = useState<{ updatedAt?: string; version?: number } | null>(null);
-  const dialogRef = useFocusTrap<HTMLDivElement>(true, onClose);
-
-  const mut = useMutation({
-    mutationFn: () =>
-      isEdit
-        ? api<MasterRow>('PUT', `${config.basePath}/${row!.id}`, {
-            code,
-            name,
-            effectiveFrom: toIsoDate(effectiveFrom),
-            version,
-          })
-        : api<MasterRow>('POST', config.basePath, { code, name, effectiveFrom: toIsoDate(effectiveFrom) }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: [config.queryKey] });
-      onClose();
-    },
-    onError: (e: unknown) => {
-      if (isStale(e)) {
-        const current = (e.body as { current?: { updatedAt?: string; version?: number } } | null)?.current;
-        setConflict(current ?? {});
-      } else if (e instanceof ApiError && e.code === 'CODE_LOCKED') {
-        setError(
-          'This code is in use by other records and can’t be changed. Deactivate and recreate to fix it.',
-        );
-      } else setError(e instanceof Error ? e.message : 'Save failed');
-    },
-  });
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40">
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="masterdata-dialog-title"
-        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg border border-border bg-card p-6 text-card-foreground shadow-lg"
-      >
-        <h2 id="masterdata-dialog-title" className="mb-4 text-lg font-semibold">
-          {isEdit ? 'Edit' : 'New'} {config.title.replace(/s$/, '')}
-        </h2>
-        <div className="space-y-3">
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-foreground">Code (UPPER_SNAKE)</span>
-            <Input
-              className="input"
-              uppercase={false}
-              value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase())}
-              placeholder={config.codePlaceholder}
-            />
-            {isEdit && (
-              <span className="mt-1 block text-xs text-muted-foreground">
-                Correctable only while unused — locked once referenced by other records (ADR-0020).
-              </span>
-            )}
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-foreground">Name</span>
-            <Input className="input" value={name} onChange={(e) => setName(e.target.value)} />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-foreground">
-              Effective From (blank = now)
-            </span>
-            <input
-              type="date"
-              className="input"
-              value={effectiveFrom}
-              onChange={(e) => setEffectiveFrom(e.target.value)}
-            />
-          </label>
-          {error && <p className="text-sm text-destructive">{error}</p>}
-        </div>
-        <div className="mt-5 flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose} disabled={mut.isPending}>
-            Cancel
-          </Button>
-          <Button
-            onClick={() => {
-              setError(null);
-              mut.mutate();
-            }}
-            disabled={!name || !code}
-            loading={mut.isPending}
-          >
-            Save
-          </Button>
-        </div>
-      </div>
-
-      {conflict && (
-        <ConflictDialog
-          entityLabel={config.title.replace(/s$/, '').toLowerCase()}
-          current={conflict}
-          onReload={() => {
-            // adopt the latest version, keep the user's edits, let them save again
-            if (conflict.version !== undefined) setVersion(conflict.version);
-            qc.invalidateQueries({ queryKey: [config.queryKey] });
-            setConflict(null);
-          }}
-          onDiscard={() => {
-            qc.invalidateQueries({ queryKey: [config.queryKey] });
-            onClose();
           }}
         />
       )}

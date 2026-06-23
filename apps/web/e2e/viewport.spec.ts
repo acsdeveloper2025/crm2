@@ -19,8 +19,8 @@ interface PageSpec {
 }
 
 const PAGES: PageSpec[] = [
-  { name: 'Clients', path: '/admin/clients', primary: /New/, card: true },
-  { name: 'Products', path: '/admin/products', primary: /New/, card: true },
+  { name: 'Clients', path: '/admin/clients', primary: /Add row/, card: true },
+  { name: 'Products', path: '/admin/products', primary: /Add row/, card: true },
   { name: 'Verification Units', path: '/admin/verification-units', primary: /New/, card: true },
   { name: 'Users', path: '/admin/users', primary: /New/, card: true },
   { name: 'Location Management', path: '/admin/locations', card: true },
