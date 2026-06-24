@@ -507,8 +507,12 @@ export const SECTION_MAP: Record<string, SectionDef[]> = {
       ],
     },
     {
-      title: 'Property / Nameplate',
+      title: 'Property / Structure & Nameplate',
       fields: [
+        { ref: 'addressStructure', label: 'Address Structure (G+)' },
+        { ref: 'addressStructureColor', label: 'Structure Color' },
+        { ref: 'doorColor', label: 'Door Color' },
+        { ref: 'addressFloor', label: 'Address Floor' },
         { ref: 'companyNamePlateStatus', label: 'Company Board Status' },
         { ref: 'nameOnBoard', label: 'Name on Board' },
       ],

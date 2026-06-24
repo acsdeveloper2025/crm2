@@ -266,6 +266,22 @@ describe('field-report sections — mandatory device fields surface in named sec
     expectMapped(out, ['Address Locatable', 'Business Existence (NSP)']);
   });
 
+  it('property-apf: structure fields (addressStructure/Color, doorColor, addressFloor) map (device emits them)', () => {
+    const out = buildSections({
+      'property-apf': {
+        formData: {
+          buildingStatus: 'UNDER_CONSTRUCTION',
+          addressStructure: '4',
+          addressStructureColor: 'White',
+          doorColor: 'Brown',
+          addressFloor: '3',
+        },
+        verificationOutcome: 'POSITIVE',
+      },
+    });
+    expectMapped(out, ['Address Structure (G+)', 'Structure Color', 'Door Color', 'Address Floor']);
+  });
+
   it('property-apf: addressLocatable, tpcConfirmation1, tpcConfirmation2', () => {
     const out = buildSections({
       'property-apf': {
