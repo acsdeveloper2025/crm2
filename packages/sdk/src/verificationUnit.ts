@@ -8,6 +8,15 @@ import { toUpper } from './text.js';
  */
 export const KINDS = ['FIELD_VISIT', 'KYC_DOCUMENT', 'DESK_DOCUMENT'] as const;
 export const WORKER_ROLES = ['FIELD_AGENT', 'KYC_VERIFIER'] as const;
+
+/** The visit type a unit's kind dictates (A2026-0623-05): a FIELD_VISIT unit is verified in the FIELD
+ *  (a physical address visit); every other kind (KYC_DOCUMENT / DESK_DOCUMENT) is desk work, done at the
+ *  OFFICE. The chain kind→worker_role→assignment pool is 1:1 (DB CHECK + assignment_pool_roles), so an
+ *  operator-chosen visitType MUST match this — the server rejects a mismatch at create/assign/bulk.
+ *  Accepts a raw kind string (the value flows up from a DB column) and is total over it. */
+export function visitTypeForKind(kind: string): 'FIELD' | 'OFFICE' {
+  return kind === 'FIELD_VISIT' ? 'FIELD' : 'OFFICE';
+}
 export const ASSIGNMENT_METHODS = ['TERRITORY_AUTO', 'MANUAL', 'DESK_POOL'] as const;
 export const BILLING_PROFILES = ['AGENT_COMMISSION', 'CLIENT_INVOICE'] as const;
 export const COMMISSION_PROFILES = ['FIELD_RATE', 'NONE'] as const;

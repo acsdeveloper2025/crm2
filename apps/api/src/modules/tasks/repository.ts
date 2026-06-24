@@ -241,13 +241,22 @@ export const taskRepository = {
     taskIds: string[],
     scope: Scope | undefined,
   ): Promise<
-    Array<{ id: string; caseId: string; status: string; assignedTo: string | null; version: number }>
+    Array<{
+      id: string;
+      caseId: string;
+      status: string;
+      assignedTo: string | null;
+      version: number;
+      unitKind: string;
+    }>
   > {
     const params: unknown[] = [taskIds];
     const scopePred = taskScopePredicate(params, scope);
     return query(
-      `SELECT ct.id, ct.case_id, ct.status, ct.assigned_to, ct.version
+      // vu.kind feeds the bulk-assign visitType↔kind binding (A2026-0623-05).
+      `SELECT ct.id, ct.case_id, ct.status, ct.assigned_to, ct.version, vu.kind AS unit_kind
        FROM case_tasks ct JOIN cases cs ON cs.id = ct.case_id
+       JOIN verification_units vu ON vu.id = ct.verification_unit_id
        WHERE ct.id = ANY($1::uuid[]) ${scopePred ? `AND ${scopePred}` : ''}`,
       params,
     );

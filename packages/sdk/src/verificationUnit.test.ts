@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { CreateVerificationUnitSchema } from './verificationUnit.js';
+import { CreateVerificationUnitSchema, visitTypeForKind } from './verificationUnit.js';
+
+describe('visitTypeForKind (A2026-0623-05)', () => {
+  it('maps FIELD_VISIT→FIELD and desk kinds (KYC_DOCUMENT / DESK_DOCUMENT)→OFFICE', () => {
+    expect(visitTypeForKind('FIELD_VISIT')).toBe('FIELD');
+    expect(visitTypeForKind('KYC_DOCUMENT')).toBe('OFFICE');
+    expect(visitTypeForKind('DESK_DOCUMENT')).toBe('OFFICE');
+  });
+});
 
 const field = (over: Record<string, unknown> = {}) => ({
   code: 'RESIDENCE',

@@ -2,6 +2,7 @@ import {
   BulkAssignSchema,
   CASE_TASK_STATUSES,
   KINDS,
+  visitTypeForKind,
   type AssignableUser,
   type BulkAssignResult,
   type BulkAssignRowStatus,
@@ -267,6 +268,10 @@ export const taskService = {
         // ADR-0055: bulk assigns only a PENDING task — same rule as single-assign (cases/service.ts).
         // A live ASSIGNED task is never re-pointed in place; the office Revokes (mandatory reason) then
         // reassigns the REVOKED task (reassign-after-revoke, ADR-0033), so every agent change is audited.
+        status = 'NOT_ASSIGNABLE';
+      } else if (visitTypeForKind(row.unitKind) !== v.visitType) {
+        // A2026-0623-05: the bulk visitType must match each task's unit kind (FIELD_VISIT⇒FIELD,
+        // KYC/desk⇒OFFICE). A mismatched row is not assignable under the chosen visit type.
         status = 'NOT_ASSIGNABLE';
       } else if (!eligible.has(item.id)) {
         status = 'INELIGIBLE_ASSIGNEE';

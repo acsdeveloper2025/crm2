@@ -32,7 +32,10 @@ async function createUser(o: { username: string; name: string; role: string }): 
   return res.body.id as string;
 }
 
-async function seedCpvUnit(tag: string): Promise<{ clientId: number; productId: number; unitId: number }> {
+async function seedCpvUnit(
+  tag: string,
+  opts: { kind?: 'FIELD_VISIT' | 'KYC_DOCUMENT' } = {},
+): Promise<{ clientId: number; productId: number; unitId: number }> {
   const clientId = seeded<{ id: number }>(
     await request(app)
       .post('/api/v2/clients')
@@ -45,11 +48,12 @@ async function seedCpvUnit(tag: string): Promise<{ clientId: number; productId: 
       .set(SA)
       .send(productFactory({ code: `DP_${tag}` })),
   ).id;
+  // A KYC unit lets a desk (OFFICE) task pass the visitType↔kind binding (A2026-0623-05).
   const unitId = seeded<{ id: number }>(
     await request(app)
       .post('/api/v2/verification-units')
       .set(SA)
-      .send(verificationUnitFactory({ code: `DU_${tag}` })),
+      .send(verificationUnitFactory({ code: `DU_${tag}`, ...(opts.kind ? { kind: opts.kind } : {}) })),
   ).id;
   const cpId = seeded<{ id: number }>(
     await request(app)
@@ -119,8 +123,9 @@ describe.skipIf(!RUN)('Dashboard overview (ADR-0029)', () => {
     tlId = await createUser({ username: 'dash_tl', name: 'Dash Team Leader', role: 'TEAM_LEADER' });
     kycId = await createUser({ username: 'dash_kyc', name: 'Dash KYC Verifier', role: 'KYC_VERIFIER' });
     const ctx = await seedCpvUnit('DASH');
+    const kycCtx = await seedCpvUnit('DASHK', { kind: 'KYC_DOCUMENT' }); // desk unit for the OFFICE task
     await seedAssignedTask(ctx, agentId); // FIELD task → field agent
-    await seedAssignedTask(ctx, kycId, 'OFFICE'); // OFFICE task → KYC verifier
+    await seedAssignedTask(kycCtx, kycId, 'OFFICE'); // OFFICE task → KYC verifier (KYC unit, binding)
   });
   afterAll(async () => {
     await db!.end();

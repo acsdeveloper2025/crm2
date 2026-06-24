@@ -42,7 +42,10 @@ function seeded<T>(res: request.Response): T {
   return res.body as T;
 }
 
-async function seedCpvUnit(tag: string): Promise<{ clientId: number; productId: number; unitId: number }> {
+async function seedCpvUnit(
+  tag: string,
+  opts: { kind?: 'FIELD_VISIT' | 'KYC_DOCUMENT' } = {},
+): Promise<{ clientId: number; productId: number; unitId: number }> {
   const clientId = seeded<{ id: number }>(
     await request(app)
       .post('/api/v2/clients')
@@ -55,11 +58,12 @@ async function seedCpvUnit(tag: string): Promise<{ clientId: number; productId: 
       .set(SA)
       .send(productFactory({ code: `P_${tag}` })),
   ).id;
+  // A KYC unit lets a desk (OFFICE) task pass the visitType↔kind binding (A2026-0623-05).
   const unitId = seeded<{ id: number }>(
     await request(app)
       .post('/api/v2/verification-units')
       .set(SA)
-      .send(verificationUnitFactory({ code: `U_${tag}` })),
+      .send(verificationUnitFactory({ code: `U_${tag}`, ...(opts.kind ? { kind: opts.kind } : {}) })),
   ).id;
   const cpId = seeded<{ id: number }>(
     await request(app)
@@ -463,7 +467,7 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
   });
 
   it('§4 office (ADR-0050): a flat OFFICE commission resolves for a desk task — auto-stamped field_rate_type=OFFICE, location-less', async () => {
-    const ctx = await seedCpvUnit('OFF');
+    const ctx = await seedCpvUnit('OFF', { kind: 'KYC_DOCUMENT' }); // desk task ⇒ KYC unit (binding)
     // the office executive = the OFFICE assignment pool (relays the task; never completes it).
     const officeExec = await createUser({ username: 'off_kyc', name: 'OFF DESK', role: 'KYC_VERIFIER' });
     // A location-less client rate (the desk task has no trip/location) so the bill resolves, and a FLAT
@@ -515,6 +519,12 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
     );
     expect(stamped!.fieldRateType).toBe('OFFICE'); // desk auto-stamp
 
+    // A KYC desk task needs document evidence before completion (A2026-0623-16).
+    await query(
+      `INSERT INTO case_attachments (case_id, task_id, original_name, mime_type, file_size, storage_key, sha256, uploaded_by)
+       VALUES ($1, $2, 'doc.pdf', 'application/pdf', 10, $3, 'sha', $4)`,
+      [created.id, taskId, `k/${taskId}.pdf`, officeExec],
+    );
     // The closer (SA here; in production BACKEND_USER / MANAGER / TEAM_LEADER) completes → COMPLETED,
     // which freezes the flat OFFICE commission via stampCommissionSnapshot.
     expect(

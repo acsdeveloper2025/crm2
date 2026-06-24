@@ -11,6 +11,7 @@ import {
   ReworkTaskSchema,
   ReassignTaskSchema,
   CASE_STATUSES,
+  visitTypeForKind,
   type Case,
   type CaseApplicant,
   type CaseDetail,
@@ -234,6 +235,18 @@ export const caseService = {
     // Every targeted applicant must belong to THIS case (no cross-case applicant leak).
     const owned = new Set(await repo.caseApplicantIds(caseId));
     if (v.tasks.some((t) => !owned.has(t.applicantId))) throw AppError.badRequest('INVALID_APPLICANT');
+    // A2026-0623-05: a chosen visitType must match the unit's kind (FIELD_VISIT⇒FIELD, KYC/desk⇒OFFICE).
+    // The kind→visit pool is 1:1 (DB CHECK + assignment_pool_roles); a mismatch mis-routes the task.
+    const kinds = await repo.unitKindByIds(unitIds);
+    for (const t of v.tasks) {
+      const kind = kinds.get(t.verificationUnitId);
+      if (t.visitType && kind && visitTypeForKind(kind) !== t.visitType)
+        throw AppError.badRequest('VISIT_TYPE_UNIT_MISMATCH', {
+          verificationUnitId: t.verificationUnitId,
+          kind,
+          visitType: t.visitType,
+        });
+    }
     // Assign-at-create (ADR-0024): re-check each chosen assignee server-side against the SAME pool the
     // FE offered — pool role for the visit type ∩ the actor's hierarchy ∩ (FIELD) the task territory.
     // The schema already guarantees assigneeId ⇒ visitType (+ FIELD ⇒ area+pincode).
@@ -321,6 +334,10 @@ export const caseService = {
     // Revokes it (mandatory reason) and reassigns the REVOKED task (reassign-after-revoke, ADR-0033), so
     // every agent change leaves an auditable reason.
     if (state.status !== 'PENDING') throw AppError.conflict('TASK_NOT_ASSIGNABLE');
+    // A2026-0623-05: the chosen visitType must match the unit's kind (FIELD_VISIT⇒FIELD, KYC/desk⇒OFFICE).
+    const kind = await repo.taskUnitKind(taskId);
+    if (kind && visitTypeForKind(kind) !== v.visitType)
+      throw AppError.badRequest('VISIT_TYPE_UNIT_MISMATCH', { kind, visitType: v.visitType });
     // Eligibility (ADR-0024): the chosen visit-type pool ∩ actor hierarchy ∩ (FIELD) the task's
     // own territory — the SAME model as Add Task, so reassign and create agree.
     const eligible = await taskRepository.eligibleTaskIdsForAssignee(
