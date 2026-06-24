@@ -121,6 +121,27 @@ const assign = (caseId: string, taskId: string, assignedTo: string) =>
     .set(SA)
     .send({ assignedTo, visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 1, version: 1 });
 
+/**
+ * Re-point a live ASSIGNED task to another agent directly in the DB (with the matching append-only
+ * history row). Post-ADR-0055 NO API does an in-place reassign-away — single-assign is PENDING-only,
+ * bulk-assign too (SHIP-1 / A2026-0623-10), and the unassign endpoint is gone; a live task only leaves
+ * an agent via Revoke, which KEEPS the assignee. So the device's purge-orphan signal can now only arise
+ * from out-of-band / legacy writes; this seeds exactly that state to exercise the defensive purge path.
+ */
+async function reassignAwayInPlace(caseId: string, taskId: string, from: string, to: string): Promise<void> {
+  await db!.pool.query(
+    `UPDATE case_tasks SET assigned_to = $1, status = 'ASSIGNED', version = version + 1,
+            updated_by = $1, updated_at = now() WHERE id = $2 AND case_id = $3`,
+    [to, taskId, caseId],
+  );
+  await db!.pool.query(
+    `INSERT INTO task_assignment_history
+       (task_id, case_id, action, assigned_to, previous_assigned_to, visit_type, field_rate_type, bill_count, assigned_by)
+     VALUES ($1, $2, 'REASSIGNED', $3, $4, 'FIELD', 'LOCAL', 1, $3)`,
+    [taskId, caseId, to, from],
+  );
+}
+
 describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
   beforeAll(async () => {
     await db!.migrate();
@@ -332,21 +353,9 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
     const fa2 = await createUser({ username: 'fa_ra2', name: 'FA RA2', role: 'FIELD_AGENT' });
     const t = await seedTask(ctx, { name: 'RA APP', trigger: 'x' });
     expect((await assign(t.caseId, t.taskId, fa1)).status).toBe(200); // version 1 → 2
-    // ADR-0055: single /assign no longer re-points a live task; the in-place reassign-away that produces a
-    // purge signal now flows through bulk-assign (still PENDING|ASSIGNED). Reassign away fa1 → fa2 (version
-    // is now 2) → REASSIGNED history, previous_assigned_to = fa1.
-    const reassign = await request(app)
-      .post('/api/v2/tasks/bulk-assign')
-      .set(SA)
-      .send({
-        items: [{ id: t.taskId, version: 2 }],
-        assignedTo: fa2,
-        visitType: 'FIELD',
-        fieldRateType: 'LOCAL',
-        billCount: 1,
-      });
-    expect(reassign.status).toBe(200);
-    expect(reassign.body.okCount).toBe(1);
+    // Seed an in-place reassign-away (fa1 → fa2) directly: post-ADR-0055 no API does this (see
+    // reassignAwayInPlace), but the device must still purge such an orphan if it ever arises.
+    await reassignAwayInPlace(t.caseId, t.taskId, fa1, fa2);
 
     const seenBy1 = await request(app).get('/api/v2/sync/download').set(hdr('FIELD_AGENT', fa1));
     expect(seenBy1.body.tasks).toEqual([]); // no longer assigned → out of the tasks filter
@@ -501,21 +510,8 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
     const fa2 = await createUser({ username: 'fa_pgd2', name: 'FA PGD2', role: 'FIELD_AGENT' });
     const t = await seedTask(ctx, { name: 'PGD APP', trigger: 'x' });
     expect((await assign(t.caseId, t.taskId, fa1)).status).toBe(200);
-    // ADR-0055: reassign-away via bulk-assign (single /assign no longer re-points a live task).
-    expect(
-      (
-        await request(app)
-          .post('/api/v2/tasks/bulk-assign')
-          .set(SA)
-          .send({
-            items: [{ id: t.taskId, version: 2 }],
-            assignedTo: fa2,
-            visitType: 'FIELD',
-            fieldRateType: 'LOCAL',
-            billCount: 1,
-          })
-      ).status,
-    ).toBe(200);
+    // Seed an in-place reassign-away directly — no API does this post-ADR-0055 (see reassignAwayInPlace).
+    await reassignAwayInPlace(t.caseId, t.taskId, fa1, fa2);
 
     const page0 = await request(app).get('/api/v2/sync/download?offset=0').set(hdr('FIELD_AGENT', fa1));
     expect(page0.body.revokedAssignmentIds).toEqual([t.taskId]);

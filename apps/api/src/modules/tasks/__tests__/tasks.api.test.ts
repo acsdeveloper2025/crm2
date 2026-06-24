@@ -608,6 +608,40 @@ describe.skipIf(!RUN)('tasks API (Pipeline)', () => {
       expect(hist.rowCount).toBe(1);
     });
 
+    it('bulk-assign: a live ASSIGNED task is NOT_ASSIGNABLE — re-point only via revoke (ADR-0055)', async () => {
+      // ADR-0055 consistency with single-assign: bulk must NOT re-point a live ASSIGNED task in place;
+      // the office Revokes (mandatory reason) then reassigns the REVOKED task. (registry SHIP-1 / A2026-0623-10)
+      const ctx = await seedCpv('BLA');
+      const c = await seedCaseTasks(ctx, { name: 'BLA APP', unitIds: [ctx.unitAId] });
+      const fa1 = await createUser({ username: 'bla_fa1', name: 'BLA FA1', role: 'FIELD_AGENT' });
+      const fa2 = await createUser({ username: 'bla_fa2', name: 'BLA FA2', role: 'FIELD_AGENT' });
+      // task is live ASSIGNED to fa1 (version untouched → the OCC token below still matches)
+      await db!.pool.query(`UPDATE case_tasks SET status = 'ASSIGNED', assigned_to = $2 WHERE id = $1`, [
+        c.taskIds[0],
+        fa1,
+      ]);
+
+      const res = await request(app)
+        .post('/api/v2/tasks/bulk-assign')
+        .set(SA)
+        .send({
+          items: [{ id: c.taskIds[0], version: 1 }],
+          assignedTo: fa2,
+          visitType: 'FIELD',
+          fieldRateType: 'LOCAL',
+          billCount: 1,
+        });
+      expect(res.status).toBe(200);
+      expect(res.body.results[0].status).toBe('NOT_ASSIGNABLE');
+      expect(res.body).toMatchObject({ okCount: 0, notAssignableCount: 1 });
+      // never re-pointed in place — fa1 keeps the live task (must Revoke first, ADR-0055)
+      const { rows } = await db!.pool.query<{ status: string; assigned_to: string | null }>(
+        `SELECT status, assigned_to FROM case_tasks WHERE id = $1`,
+        [c.taskIds[0]],
+      );
+      expect(rows[0]).toMatchObject({ status: 'ASSIGNED', assigned_to: fa1 });
+    });
+
     it('bulk-assign reports INELIGIBLE_ASSIGNEE (wrong visit-type pool) and gates on case.assign (403)', async () => {
       const ctx = await seedCpv('BLI');
       const c = await seedCaseTasks(ctx, { name: 'BLI APP', unitIds: [ctx.unitAId] });
