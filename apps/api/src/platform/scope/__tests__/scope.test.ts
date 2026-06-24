@@ -87,6 +87,27 @@ describe.skipIf(!RUN)('data scope engine (ADR-0022 — role attributes, no role 
     expect((await resolveScope({ role: 'KYC_VERIFIER', userId: U.KYC })).expand).toBeUndefined();
   });
 
+  it('KYC_VERIFIER is desk/document-scoped — a pincode/area assignment is inert (ADR-0061, A2026-0623-04 KYC half)', async () => {
+    // KYC verifies DOCUMENTS at a desk (OFFICE pool, territory-less per ADR-0024); it must not gain
+    // case-PII visibility by geography. After mig 0089 the role no longer wires PINCODE/AREA, so any
+    // such assignment is inert (intersected away) → KYC sees only its own assigned/created cases.
+    await db!.pool.query(
+      `INSERT INTO user_scope_assignments (user_id, dimension_code, entity_id)
+       VALUES ($1, 'PINCODE', 7), ($1, 'AREA', 9)`,
+      [U.KYC],
+    );
+    const scope = await resolveScope({ role: 'KYC_VERIFIER', userId: U.KYC });
+    expect(scope.expand).toBeUndefined(); // no territory broadening
+    expect(scope.restrict).toBeUndefined();
+    expect(scope.userIds).toEqual([U.KYC]); // assignment/hierarchy (SELF) visibility only
+    // FIELD_AGENT keeps pincode/area — address verification IS territorial, by design (mig 0031)
+    await db!.pool.query(
+      `INSERT INTO user_scope_assignments (user_id, dimension_code, entity_id) VALUES ($1, 'PINCODE', 7)`,
+      [U.FA],
+    );
+    expect((await resolveScope({ role: 'FIELD_AGENT', userId: U.FA })).expand).toEqual({ PINCODE: [7] });
+  });
+
   it('BACKEND_USER portfolio: CLIENT EXPAND grants the client, PRODUCT RESTRICT caps it (mig 0049)', async () => {
     // The portfolio fix: client GRANTS visibility (a backend reviewer owns no cases, so a cap would
     // show nothing) and product CAPS it — so an assigned product narrows the client's cases instead of
