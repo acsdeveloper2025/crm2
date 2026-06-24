@@ -39,3 +39,25 @@ describe('FIELD_REPORT_DEFAULTS (standard templates)', () => {
     });
   }
 });
+
+// Guard the v2-native device-key corrections (audit A2026-0623-03/08) against regression. These keys are
+// what NEW FIELD_REPORT layouts snapshot into their columns; mig 0088 remaps any pre-fix stored layout.
+describe('FIELD_REPORT_DEFAULTS device-key drift guard', () => {
+  const cols = Object.entries(FIELD_REPORT_DEFAULTS).flatMap(([vtype, def]) =>
+    def.columns.map((c) => ({ vtype, sourceRef: c.sourceRef })),
+  );
+
+  it('no column reads the dead key applicantStayingFloor (residence/RCO floor must be addressFloor)', () => {
+    const stale = cols.filter((c) => c.sourceRef?.endsWith('.formData.applicantStayingFloor'));
+    expect(stale).toEqual([]);
+  });
+
+  it('BUSINESS + RESIDENCE_CUM_OFFICE area read officeApproxArea, not approxArea', () => {
+    const stale = cols.filter(
+      (c) =>
+        (c.vtype === 'BUSINESS' || c.vtype === 'RESIDENCE_CUM_OFFICE') &&
+        c.sourceRef?.endsWith('.formData.approxArea'),
+    );
+    expect(stale).toEqual([]);
+  });
+});
