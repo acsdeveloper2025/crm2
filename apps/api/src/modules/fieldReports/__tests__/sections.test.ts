@@ -215,6 +215,26 @@ describe('field-report sections — mandatory device fields surface in named sec
     expect(additionalLabels(out)).toEqual(expect.not.arrayContaining(labels));
   };
 
+  it('residence: addressLocatable maps to a named section (device emits it, 4 outcomes)', () => {
+    const out = buildSections({
+      residence: {
+        formData: { houseStatus: 'Opened', addressLocatable: 'Easily Locatable', metPersonName: 'X' },
+        verificationOutcome: 'POSITIVE',
+      },
+    });
+    expectMapped(out, ['Address Locatable']);
+  });
+
+  it('office: addressLocatable maps to a named section (device emits it, 4 outcomes)', () => {
+    const out = buildSections({
+      office: {
+        formData: { officeStatus: 'Exists', addressLocatable: 'Easily Locatable', metPersonName: 'X' },
+        verificationOutcome: 'POSITIVE',
+      },
+    });
+    expectMapped(out, ['Address Locatable']);
+  });
+
   it('business: addressLocatable, addressStatus, businessExistance (NSP)', () => {
     const out = buildSections({
       business: {

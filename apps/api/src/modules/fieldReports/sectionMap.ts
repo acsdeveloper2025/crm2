@@ -31,6 +31,7 @@ export const SECTION_MAP: Record<string, SectionDef[]> = {
       title: 'Verification Outcome & Status',
       fields: [
         { ref: 'addressRating', label: 'Address Rating' },
+        { ref: 'addressLocatable', label: 'Address Locatable' },
         { ref: 'houseStatus', label: 'House Status' },
         { ref: 'finalStatus', label: 'Final Status' },
       ],
@@ -118,6 +119,7 @@ export const SECTION_MAP: Record<string, SectionDef[]> = {
       title: 'Verification Outcome & Status',
       fields: [
         { ref: 'addressRating', label: 'Address Rating' },
+        { ref: 'addressLocatable', label: 'Address Locatable' },
         { ref: 'officeStatus', label: 'Office Status' },
         { ref: 'officeExistsStatus', label: 'Office Exists Status' },
         { ref: 'finalStatus', label: 'Final Status' },
