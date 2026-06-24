@@ -57,7 +57,7 @@ describe('RESIDENCE default template renders v1-faithful narratives', () => {
           nameOnSocietyBoard: 'MAYUR',
           locality: 'Commercial Tower',
           addressStructure: '4',
-          applicantStayingFloor: '3',
+          addressFloor: '3', // real device key (mobile builders emit addressFloor) — audit A2026-0623-08
           addressStructureColor: 'Light Grey',
           doorColor: 'Light Grey',
           tpcName1: 'MAYUR',

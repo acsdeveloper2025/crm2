@@ -1,5 +1,6 @@
 import type { FieldReportSection, FieldReportField } from '@crm2/sdk';
 import { SECTION_MAP } from './sectionMap.js';
+import { PERIOD_BASES } from './canonicalize.js';
 
 /**
  * Build the display-ready raw-field sections for a task's submitted `form_data` (ADR-0039 R1 — the v1
@@ -70,6 +71,27 @@ function toValue(v: unknown): string | null {
   }
   if (typeof v === 'object') return null;
   return String(v);
+}
+
+/**
+ * Recombine the device's split tenure fields (`<base>Value` + `<base>Unit`) into the combined `<base>`
+ * token the section map keys, and drop the consumed split keys so they don't spill into the trailing
+ * "Additional Details" catch-all (audit A2026-0623-01). Returns a shallow clone — the stored blob is
+ * never mutated (verbatim-storage freeze). Mirrors the narrative-path recombine in canonicalize.ts so
+ * the raw-sections and narrative report surfaces agree.
+ */
+function recombinePeriods(src: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...src };
+  for (const base of PERIOD_BASES) {
+    if (toValue(out[base]) !== null) continue; // already combined (legacy/v1) → leave splits verbatim
+    const val = toValue(out[`${base}Value`]);
+    if (val === null) continue;
+    const unit = toValue(out[`${base}Unit`]);
+    out[base] = unit !== null ? `${val} ${unit}` : val;
+    delete out[`${base}Value`];
+    delete out[`${base}Unit`];
+  }
+  return out;
 }
 
 /** Flatten one object's primitive fields into display rows (skipping system/bulky keys). */
@@ -151,12 +173,15 @@ export function buildSections(formData: Record<string, unknown> | null | undefin
     const keyed = blob['formData'];
     const fieldsSource =
       keyed && typeof keyed === 'object' && !Array.isArray(keyed) ? (keyed as Record<string, unknown>) : blob;
+    // Recombine split tenure (<base>Value/<base>Unit → <base>) before mapping so named period rows
+    // populate and the split keys don't leak into "Additional Details" (audit A2026-0623-01).
+    const recombined = recombinePeriods(fieldsSource);
     const outcome = toValue(blob['verificationOutcome']);
     const defs = SECTION_MAP[slug];
     if (defs) {
-      sections.push(...mappedSections(defs, fieldsSource, outcome));
+      sections.push(...mappedSections(defs, recombined, outcome));
     } else {
-      const generic = genericSection(slug, fieldsSource, outcome);
+      const generic = genericSection(slug, recombined, outcome);
       if (generic) sections.push(generic);
     }
   }

@@ -36,8 +36,9 @@ const STATUS_FIELD: Record<string, string> = {
  *  custom/admin template structure) is passed through verbatim so its `outcome` vocabulary is its own. */
 const KNOWN_SLUGS: ReadonlySet<string> = new Set([...Object.keys(STATUS_FIELD), 'property-apf']);
 
-/** Tenure bases the templates read combined; the device splits each into `<base>Value` + `<base>Unit`. */
-const PERIOD_BASES = [
+/** Tenure bases the templates read combined; the device splits each into `<base>Value` + `<base>Unit`.
+ *  Exported so the raw-sections view (sections.ts) recombines on the same set (audit A2026-0623-01). */
+export const PERIOD_BASES = [
   'stayingPeriod',
   'shiftedPeriod',
   'businessPeriod',

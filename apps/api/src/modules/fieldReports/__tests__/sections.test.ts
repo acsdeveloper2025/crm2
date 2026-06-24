@@ -62,6 +62,28 @@ describe('field-report sections', () => {
     });
   });
 
+  it('recombines split tenure (<base>Value + <base>Unit) into the named period row, not Additional Details', () => {
+    // The v2-native device (ADR-0054) splits every tenure into `<base>Value` + `<base>Unit`; the report
+    // section map keys the combined `<base>`. buildSections must recombine so the named row populates and
+    // the raw split keys do not spill into the "Additional Details" catch-all (audit A2026-0623-01).
+    const out = buildSections({
+      residence: {
+        formData: {
+          houseStatus: 'OPENED',
+          metPersonName: 'RAJESH',
+          metPersonRelation: 'SELF',
+          stayingPeriodValue: '5',
+          stayingPeriodUnit: 'Years',
+        },
+        verificationOutcome: 'POSITIVE',
+      },
+    });
+    const occupancy = out.find((s) => s.title === 'Met Person & Occupancy');
+    expect(occupancy?.fields).toContainEqual({ label: 'Staying Period', value: '5 Years' });
+    // The raw split keys must NOT leak into "Additional Details".
+    expect(out.find((s) => s.title === 'Additional Details')).toBeUndefined();
+  });
+
   it('a submitted key NOT in the map still appears under "Additional Details" (never-lose-a-field)', () => {
     const out = buildSections({
       residence: {
@@ -177,5 +199,131 @@ describe('field-report sections', () => {
     expect(buildSections({})).toEqual([]);
     expect(buildSections({ residence: { photos: [], metadata: {} } })).toEqual([]);
     expect(buildSections({ customForm: { photos: [], metadata: {} } })).toEqual([]);
+  });
+});
+
+describe('field-report sections — mandatory device fields surface in named sections (not Additional Details)', () => {
+  // Per the source-of-truth rule, every field the mobile form emits for a type×outcome is mandatory; an
+  // unmapped key falls into the "Additional Details" catch-all. These assert the previously-unmapped keys
+  // now map to a named section (audit A2026-0623-14/21/22/23/35/37 + verified siblings).
+  const allLabels = (out: ReturnType<typeof buildSections>) =>
+    out.flatMap((s) => s.fields.map((f) => f.label));
+  const additionalLabels = (out: ReturnType<typeof buildSections>) =>
+    out.find((s) => s.title === 'Additional Details')?.fields.map((f) => f.label) ?? [];
+  const expectMapped = (out: ReturnType<typeof buildSections>, labels: string[]) => {
+    expect(allLabels(out)).toEqual(expect.arrayContaining(labels));
+    expect(additionalLabels(out)).toEqual(expect.not.arrayContaining(labels));
+  };
+
+  it('business: addressLocatable, addressStatus, businessExistance (NSP)', () => {
+    const out = buildSections({
+      business: {
+        formData: {
+          businessStatus: 'Open',
+          addressLocatable: 'Easily Locatable',
+          addressStatus: 'Owned',
+          businessExistance: 'Exists',
+          metPersonName: 'X',
+        },
+        verificationOutcome: 'POSITIVE',
+      },
+    });
+    expectMapped(out, ['Address Locatable', 'Premises Held Status', 'Business Existence (NSP)']);
+  });
+
+  it('noc: addressLocatable, businessExistance (NSP)', () => {
+    const out = buildSections({
+      noc: {
+        formData: {
+          officeStatus: 'Exists',
+          addressLocatable: 'Easily Locatable',
+          businessExistance: 'Exists',
+          metPersonName: 'X',
+        },
+        verificationOutcome: 'NSP',
+      },
+    });
+    expectMapped(out, ['Address Locatable', 'Business Existence (NSP)']);
+  });
+
+  it('property-apf: addressLocatable, tpcConfirmation1, tpcConfirmation2', () => {
+    const out = buildSections({
+      'property-apf': {
+        formData: {
+          buildingStatus: 'UNDER_CONSTRUCTION',
+          addressLocatable: 'Easily Locatable',
+          tpcName1: 'A',
+          tpcConfirmation1: 'Confirmed',
+          tpcName2: 'B',
+          tpcConfirmation2: 'Confirmed',
+        },
+        verificationOutcome: 'POSITIVE',
+      },
+    });
+    expectMapped(out, ['Address Locatable', 'TPC 1 Confirmation', 'TPC 2 Confirmation']);
+  });
+
+  it('property-individual: flatStatus, addressLocatable', () => {
+    const out = buildSections({
+      'property-individual': {
+        formData: {
+          buildingStatus: 'OCCUPIED',
+          flatStatus: 'Occupied',
+          addressLocatable: 'Easily Locatable',
+          metPersonName: 'X',
+        },
+        verificationOutcome: 'POSITIVE',
+      },
+    });
+    expectMapped(out, ['Flat Status', 'Address Locatable']);
+  });
+
+  it('builder: addressLocatable, businessExistance (NSP)', () => {
+    const out = buildSections({
+      builder: {
+        formData: {
+          officeStatus: 'Exists',
+          addressLocatable: 'Easily Locatable',
+          businessExistance: 'Exists',
+          metPersonName: 'X',
+        },
+        verificationOutcome: 'NSP',
+      },
+    });
+    expectMapped(out, ['Address Locatable', 'Business Existence (NSP)']);
+  });
+
+  it('dsa-connector: addressLocatable, businessExistance (NSP)', () => {
+    const out = buildSections({
+      'dsa-connector': {
+        formData: {
+          officeStatus: 'Exists',
+          addressLocatable: 'Easily Locatable',
+          businessExistance: 'Exists',
+          metPersonName: 'X',
+        },
+        verificationOutcome: 'NSP',
+      },
+    });
+    expectMapped(out, ['Address Locatable', 'Business Existence (NSP)']);
+  });
+
+  it('residence-cum-office: officeApproxArea (area key fix), documentType, addressLocatable', () => {
+    const out = buildSections({
+      'residence-cum-office': {
+        formData: {
+          resiCumOfficeStatus: 'Open',
+          officeApproxArea: 500,
+          documentType: 'Aadhaar',
+          addressLocatable: 'Easily Locatable',
+          businessStatus: 'Open',
+          documentShown: 'Showed',
+          metPersonName: 'X',
+        },
+        verificationOutcome: 'POSITIVE',
+      },
+    });
+    // Approx Area now reads the device key officeApproxArea (was approxArea); documentType + addressLocatable mapped.
+    expectMapped(out, ['Approx Area', 'Document Type', 'Address Locatable']);
   });
 });

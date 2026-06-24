@@ -1227,3 +1227,33 @@ Cases/Policies/ReportLayouts/FieldMonitoring additive backend export+filter endp
 - **A2026-0623-78** [INFO/report] (RESIDENCE) — Registry AUDIT-1 / AUDIT-2 are STALE — outcome-code→label and split-period narrative gaps already remediated by canonicalize.ts (ADR-0057);… _(src: RESIDENCE/RESI-F4(C))_ → **RATCHET** — add test/coverage floor; ratchets up only
 - **A2026-0623-79** [INFO/up-sync] (RESIDENCE) — Field-path verification_outcome correctly bypasses chk_case_task_outcome — no field code can violate the column CHECK (NULL-only on field p… _(src: RESIDENCE/RESI-F5(C))_ → **WONTFIX** — by-design / refuted-as-defect; recorded for traceability
 - **A2026-0623-80** [INFO/report] (RESIDENCE_CUM_OFFICE) — RCO has no active FIELD_REPORT layout, so the canonicalized v1 narrative (RCO_BODY) never renders — the raw sectioned view is the whole rep… _(src: RESIDENCE_CUM_OFFICE/RCO-UX-4(D))_ → **DEFER** — deferred — confirmed, owner decision / scheduling pending
+
+
+### Fix log — report-render cluster (2026-06-24)
+
+Built TDD against the mobile builder (`LegacyFormTemplateBuilders.ts` = source of truth: every form field per type×outcome is mandatory, so an empty report row is a report-side key/mapping bug). Full `DATABASE_URL=… pnpm verify` GREEN; `fieldReports` suite 83 tests. Verified per-type via a `report-render-mapping-gaps` workflow (mobile field set vs `sectionMap`/SDK, each gap adversarially re-checked).
+
+**✅ FIXED (raw-sections view; narrative where live):**
+- **A2026-0623-01** split-tenure recombine — `sections.ts` `recombinePeriods` + `canonicalize.ts` `PERIOD_BASES` export (every `<base>Value`+`Unit` now recombines into the named period row; split keys no longer leak to Additional Details).
+- **A2026-0623-03** BUSINESS area reads device `officeApproxArea` — `sectionMap.ts` + SDK `fieldReportDefaults.ts`.
+- **A2026-0623-08** residence/RCO floor reads device `addressFloor` (was `applicantStayingFloor`; killed the `ordinal('')→"0th floor"` fabrication) — `sectionMap.ts` ×2 + SDK ×2.
+- **A2026-0623-14** BUSINESS `addressLocatable` + `addressStatus` mapped.
+- **A2026-0623-21** NOC `addressLocatable` + `businessExistance` (NSP) mapped.
+- **A2026-0623-22** PROPERTY_APF `addressLocatable` + `tpcConfirmation1/2` mapped. *(`finalStatusNegative` part DEFERRED → entangled with A2026-0623-07 APF-NEGATIVE owner decision.)*
+- **A2026-0623-23 / -15** PROPERTY_INDIVIDUAL `flatStatus` (+ `addressLocatable`) mapped.
+- **A2026-0623-27** BUILDER `businessExistance` (NSP) mapped.
+- **A2026-0623-35 / -37** DSA_CONNECTOR `businessExistance` (NSP) + `addressLocatable` mapped.
+
+**✅ NEW siblings found during the fix (same SoT class, were unregistered) — FIXED:**
+- **A2026-0623-03b** RCO business area read `approxArea` but the RCO device emits `officeApproxArea` (mobile builder line 2570; the mapping-gap workflow's RCO agent missed it, confirmed by direct grep) — `sectionMap.ts` + SDK fixed.
+- **A2026-0623-21b** RCO `documentType` + `addressLocatable`, PI `addressLocatable`, BUSINESS/NOC/BUILDER/DSA `businessExistance` (NSP) — all unmapped device keys, now mapped.
+
+**WONTFIX (intentional, documented):**
+- **A2026-0623-50 / -53 / -55 / -61** dead-duplicate `metPersonName` rows — `sectionMap.ts:13-15` documents the ERT-duplicate transcription as deliberate spec parity; `buildSections` dedupes (first-wins) so the second never renders by design. Removing deviates from spec for zero functional gain. (The PI duplicate was also adversarially **refuted**.)
+
+**REFUTED (audit error, no change):**
+- **A2026-0623-62** + the NOC equivalent — claimed `callConfirmation` is a dead field the device never captures; the BUILDER/NOC device **does** emit `callConfirmation`. Verified false.
+
+**DEFERRED:**
+- **A2026-0623-28** BUILDER `feedbackFromNeighbour` ERT-only mislabel — cosmetic; per-slug labels aren't outcome-aware and the value renders correctly.
+- **SDK narrative columns** for the newly-mapped fields — the narrative view is latent for all 8 affected types (no active `FIELD_REPORT` layout) and a column without a template-body reference renders nothing; add when a layout is activated. The live fix is the raw-sections `sectionMap`.
