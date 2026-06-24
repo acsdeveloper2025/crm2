@@ -623,14 +623,22 @@ export const caseService = {
   /** A short-lived signed URL to read an attachment (scope checked here; the URL is the only thing the
    *  client ever sees of the object store — IDOR-safe, the URL expires). */
   async attachmentUrl(caseId: string, attachmentId: string, actor: Actor): Promise<{ url: string }> {
-    const found = await repo.attachmentForAccess(caseId, attachmentId, await resolveScope(actor));
+    const scope = await resolveScope(actor);
+    // A2026-0623-06: gate on case visibility first (as listAttachments does). attachmentForAccess's
+    // task-leg is satisfied by `task_id IS NULL` alone, so a case-level doc (e.g. a KYC PAN/Aadhaar)
+    // would otherwise be reachable by an out-of-scope actor. CASE-invisible ≡ not found (IDOR-safe).
+    if (!(await repo.caseVisible(caseId, scope))) throw AppError.notFound('ATTACHMENT_NOT_FOUND');
+    const found = await repo.attachmentForAccess(caseId, attachmentId, scope);
     if (!found) throw AppError.notFound('ATTACHMENT_NOT_FOUND');
     return { url: await getStorage().signedUrl(found.storageKey) };
   },
 
   /** Soft-delete an attachment (scope checked) + best-effort remove the object. */
   async deleteAttachment(caseId: string, attachmentId: string, actor: Actor): Promise<void> {
-    const found = await repo.attachmentForAccess(caseId, attachmentId, await resolveScope(actor));
+    const scope = await resolveScope(actor);
+    // A2026-0623-06: case-visibility gate before the case-level-doc bypass (see attachmentUrl).
+    if (!(await repo.caseVisible(caseId, scope))) throw AppError.notFound('ATTACHMENT_NOT_FOUND');
+    const found = await repo.attachmentForAccess(caseId, attachmentId, scope);
     if (!found) throw AppError.notFound('ATTACHMENT_NOT_FOUND');
     await repo.softDeleteAttachment(attachmentId);
     await getStorage().remove(found.storageKey); // no-op-safe

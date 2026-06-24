@@ -1437,6 +1437,40 @@ describe.skipIf(!RUN)('cases API', () => {
         403,
       );
     });
+
+    it('IDOR (A2026-0623-06): an out-of-scope actor cannot sign a URL for, or delete, a case-level attachment', async () => {
+      // A case-level (task_id NULL) doc — e.g. a KYC PAN/Aadhaar — was the gap: attachmentForAccess's
+      // task-leg is satisfied by `task_id IS NULL` alone, so /url + DELETE skipped the case-scope guard.
+      const { caseId } = await seedCaseWithTask('AT4');
+      const a1 = await upload(caseId, PDF_BYTES, 'pan-card.pdf');
+      expect(a1.status).toBe(201);
+      expect(a1.body.taskId).toBeNull(); // case-level
+
+      // read IDOR: a KYC verifier on NO case must not sign a URL to the pii_sensitive doc
+      const reader = await createUser({ username: 'kyc_at4_out', name: 'OUT R', role: 'KYC_VERIFIER' });
+      expect(
+        (
+          await request(app)
+            .get(`/api/v2/cases/${caseId}/attachments/${a1.body.id}/url`)
+            .set(hdr('KYC_VERIFIER', reader))
+        ).status,
+      ).toBe(404);
+
+      // delete IDOR: a manager not on the case (has case.create, but out of scope) must not delete it
+      const deleter = await createUser({ username: 'mgr_at4_out', name: 'OUT D', role: 'MANAGER' });
+      expect(
+        (
+          await request(app)
+            .delete(`/api/v2/cases/${caseId}/attachments/${a1.body.id}`)
+            .set(hdr('MANAGER', deleter))
+        ).status,
+      ).toBe(404);
+
+      // the doc survived the blocked delete + an in-scope admin can still sign it
+      expect(
+        (await request(app).get(`/api/v2/cases/${caseId}/attachments/${a1.body.id}/url`).set(SA)).status,
+      ).toBe(200);
+    });
   });
 
   it('assignable-users is hierarchy-scoped: SA=all, MANAGER=subtree, TEAM_LEADER=direct reports', async () => {

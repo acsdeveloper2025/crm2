@@ -100,6 +100,18 @@ const frCol = (columnKey: string, sourceRef: string) => ({
   dataType: 'TEXT',
 });
 
+async function createUser(username: string, role: string): Promise<string> {
+  const res = await request(app).post('/api/v2/users').set(SA).send({ username, name: username, role });
+  expect(res.status).toBe(201);
+  return res.body.id as string;
+}
+const hdr = (role: string, id: string): Record<string, string> => ({ 'x-test-auth': `${role}:${id}` });
+const assignTo = (caseId: string, taskId: string, fa: string) =>
+  request(app)
+    .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
+    .set(SA)
+    .send({ assignedTo: fa, visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 1, version: 1 });
+
 describe.skipIf(!RUN)('field-report API (ADR-0039)', () => {
   beforeAll(async () => {
     await db!.migrate();
@@ -120,6 +132,7 @@ describe.skipIf(!RUN)('field-report API (ADR-0039)', () => {
       'verification_units',
       'clients',
       'products',
+      'users', // CASCADE clears the test users + their assignments/scope (the task-grain scope test seeds these)
     );
   });
 
@@ -198,7 +211,7 @@ describe.skipIf(!RUN)('field-report API (ADR-0039)', () => {
     expect(res.body.verificationType).toBe(ctx.unitCode);
   });
 
-  it('non-uuid → 400; absent task → 404 (scope-guarded via the shared caseScopePredicate)', async () => {
+  it('non-uuid → 400; absent task → 404 (scope-guarded via taskScopePredicate)', async () => {
     const ctx = await seedCpv('GUARD');
     const { caseId } = await seedCaseWithTask(ctx);
     expect(
@@ -216,5 +229,105 @@ describe.skipIf(!RUN)('field-report API (ADR-0039)', () => {
     expect(
       (await request(app).get(`/api/v2/cases/${caseId}/tasks/${other.taskId}/field-report`).set(SA)).status,
     ).toBe(404);
+  });
+
+  it('is TASK-grain, not case-grain: a co-assigned sibling field agent cannot read another task’s report (A2026-0623-09)', async () => {
+    // One case, two tasks on two units, each assigned to a DIFFERENT field agent. fa1 (assigned the
+    // sibling taskA) must NOT be able to read taskB's PII form_data just by sharing the case.
+    const clientId = seeded<{ id: number }>(
+      await request(app)
+        .post('/api/v2/clients')
+        .set(SA)
+        .send(clientFactory({ code: 'C_TG' })),
+    ).id;
+    const productId = seeded<{ id: number }>(
+      await request(app)
+        .post('/api/v2/products')
+        .set(SA)
+        .send(productFactory({ code: 'P_TG' })),
+    ).id;
+    const unitA = seeded<{ id: number }>(
+      await request(app)
+        .post('/api/v2/verification-units')
+        .set(SA)
+        .send(verificationUnitFactory({ code: 'U_TGA' })),
+    ).id;
+    const unitB = seeded<{ id: number }>(
+      await request(app)
+        .post('/api/v2/verification-units')
+        .set(SA)
+        .send(verificationUnitFactory({ code: 'U_TGB' })),
+    ).id;
+    const cpId = seeded<{ id: number }>(
+      await request(app)
+        .post('/api/v2/client-products')
+        .set(SA)
+        .send({ clientId, productId, effectiveFrom: PAST }),
+    ).id;
+    for (const verificationUnitId of [unitA, unitB])
+      seeded(
+        await request(app)
+          .post('/api/v2/cpv-units')
+          .set(SA)
+          .send({ clientProductId: cpId, verificationUnitId, effectiveFrom: PAST }),
+      );
+    const caseId = seeded<{ id: string }>(
+      await request(app)
+        .post('/api/v2/cases')
+        .set(SA)
+        .send({
+          clientId,
+          productId,
+          backendContactNumber: BC,
+          applicants: [{ name: 'RAJESH KUMAR', pan: 'ABCDE1234F' }],
+          dedupeDecision: 'NO_DUPLICATES_FOUND',
+        }),
+    ).id;
+    const applicantId = seeded<{ applicants: { id: string }[] }>(
+      await request(app).get(`/api/v2/cases/${caseId}`).set(SA),
+    ).applicants[0]!.id;
+    seeded(
+      await request(app)
+        .post(`/api/v2/cases/${caseId}/tasks`)
+        .set(SA)
+        .send({
+          tasks: [
+            { verificationUnitId: unitA, applicantId, address: '12 MG ROAD', trigger: 'NEW' },
+            { verificationUnitId: unitB, applicantId, address: '34 BRIGADE RD', trigger: 'NEW' },
+          ],
+        }),
+    );
+    const rows = (
+      await db!.pool.query<{ id: string; verification_unit_id: number }>(
+        'SELECT id, verification_unit_id FROM case_tasks WHERE case_id = $1',
+        [caseId],
+      )
+    ).rows;
+    const taskA = rows.find((r) => r.verification_unit_id === unitA)!.id;
+    const taskB = rows.find((r) => r.verification_unit_id === unitB)!.id;
+    const fa1 = await createUser('fr_tg1', 'FIELD_AGENT');
+    const fa2 = await createUser('fr_tg2', 'FIELD_AGENT');
+    expect((await assignTo(caseId, taskA, fa1)).status).toBe(200);
+    expect((await assignTo(caseId, taskB, fa2)).status).toBe(200);
+    // taskB carries the verifier's PII form_data
+    await db!.pool.query('UPDATE case_tasks SET form_data = $1::jsonb WHERE id = $2', [
+      JSON.stringify({ U_TGB: { formData: { area: 'SECRET AREA' }, verificationOutcome: 'POSITIVE' } }),
+      taskB,
+    ]);
+
+    // fa1 holds the SIBLING task (taskA) — must be denied taskB's report (task-grain, IDOR-safe 404)
+    const leak = await request(app)
+      .get(`/api/v2/cases/${caseId}/tasks/${taskB}/field-report`)
+      .set(hdr('FIELD_AGENT', fa1));
+    expect(leak.status).toBe(404);
+    // fa2 is the actual assignee of taskB → allowed
+    const own = await request(app)
+      .get(`/api/v2/cases/${caseId}/tasks/${taskB}/field-report`)
+      .set(hdr('FIELD_AGENT', fa2));
+    expect(own.status).toBe(200);
+    // admin (ALL scope) reads any task's report
+    expect(
+      (await request(app).get(`/api/v2/cases/${caseId}/tasks/${taskB}/field-report`).set(SA)).status,
+    ).toBe(200);
   });
 });

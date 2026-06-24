@@ -20,15 +20,17 @@ export interface TaskRenderContext {
   applicant: Record<string, unknown>;
 }
 
-/** Case-grain scope predicate (mirrors cases/repository.ts + caseDataEntries) — a case is visible if
- *  the actor created it or is assigned one of its tasks. `cs` is the cases alias. `''` = no filter. */
-function caseScopePredicate(params: unknown[], scope: Scope | undefined): string {
+/** TASK-grain scope predicate for the per-task field report (A2026-0623-09): the report exposes the
+ *  assigned agent's full captured PII, so visibility is THIS task's assignment — NOT case-grain. A
+ *  field agent assigned a SIBLING task in the same case must NOT read this task's report (cross-agent
+ *  IDOR). `cs` is the cases alias, `ct` the requested task (pinned by `ct.id = $1`). `''` = no filter
+ *  (ALL-scope desk/admin roles see every task). Case creator retains visibility. */
+function taskScopePredicate(params: unknown[], scope: Scope | undefined): string {
   if (!scope) return '';
   return composeScopePredicate(
     params,
     scope,
-    (ph) =>
-      `cs.created_by = ANY(${ph}) OR EXISTS (SELECT 1 FROM case_tasks ct2 WHERE ct2.case_id = cs.id AND ct2.assigned_to = ANY(${ph}))`,
+    (ph) => `cs.created_by = ANY(${ph}) OR ct.assigned_to = ANY(${ph})`,
   );
 }
 
@@ -42,7 +44,7 @@ export const fieldReportRepository = {
     scope: Scope | undefined,
   ): Promise<TaskRenderContext | null> {
     const params: unknown[] = [taskId, caseId];
-    const pred = caseScopePredicate(params, scope);
+    const pred = taskScopePredicate(params, scope);
     const rows = await query<{ ctx: TaskRenderContext }>(
       `SELECT json_build_object(
                 'taskId',           ct.id,
