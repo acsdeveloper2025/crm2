@@ -186,6 +186,7 @@ describe('BUSINESS default template renders v1-faithful narratives', () => {
     expect(out).toContain('running the business at the given address for the last 3 Years.'); // pluralize
     expect(out).toContain('Business type is Retail (Owned)'); // ownershipType strips "Is "
     expect(out).toContain('business area is approximately 600 sq. feet'); // area
+    expect(out).toContain('located on the ground floor'); // addressFloor '0' → ground (not "0th floor")
     expect(out).toContain('Business owner: RAJESH KUMAR.');
     expect(out).toContain('Company nameplate displays "ACS TRADERS".');
     expect(out).toContain('Hence the profile is marked as Positive.');
