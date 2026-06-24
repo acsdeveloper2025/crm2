@@ -360,6 +360,15 @@ export const caseService = {
     if (!state) throw AppError.notFound('TASK_NOT_FOUND');
     if (state.status !== 'ASSIGNED' && state.status !== 'SUBMITTED')
       throw AppError.conflict('INVALID_TRANSITION');
+    // A2026-0623-16: a unit that requires document evidence (KYC_DOCUMENT — required_attachments
+    // [{type:DOCUMENT,min:N}]) cannot be finalized without it. FIELD_VISIT units (required_attachments [])
+    // have requiredDocs 0, so this never blocks a field submission.
+    const docs = await repo.taskDocumentRequirement(taskId);
+    if (docs.requiredDocs > 0 && docs.attachedDocs < docs.requiredDocs)
+      throw AppError.badRequest('DOCUMENTS_REQUIRED', {
+        required: docs.requiredDocs,
+        attached: docs.attachedDocs,
+      });
     const task = await repo.completeTask(caseId, taskId, v, actor.userId, version);
     // Producer (ADR-0027): tell the supervisor who dispatched it that it's finalized (skip self-complete).
     if (state.assignedBy && state.assignedBy !== actor.userId) {

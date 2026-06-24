@@ -252,7 +252,7 @@ async function deriveFieldRateTypeForNewTask(
  *  the task's unit — the BEST-available active rate for that CPV, preferring the most specific
  *  location (task area > task pincode > case area > case pincode > a location-less default > any),
  *  honouring the temporal window. Null ONLY when no active rate exists for the CPV at all. */
-const TASK_VIEW_COLS = `ct.id, ct.case_id, cs.case_number, ct.verification_unit_id, vu.code AS unit_code, vu.name AS unit_name,
+const TASK_VIEW_COLS = `ct.id, ct.case_id, cs.case_number, ct.verification_unit_id, vu.code AS unit_code, vu.name AS unit_name, vu.kind AS unit_kind,
          ct.task_number, ct.task_origin, ct.parent_task_id, ct.applicant_id, ap.name AS applicant_name,
          ct.address, ct.trigger, ct.priority,
          ct.status, ct.assigned_to, au.name AS assigned_to_name,
@@ -925,6 +925,25 @@ export const caseRepository = {
       if (pgCode(e) === FK_VIOLATION) throw AppError.badRequest('INVALID_ASSIGNEE');
       throw e;
     }
+  },
+
+  /** A2026-0623-16: a task's required-vs-attached document count, for the completion gate. requiredDocs
+   *  = the largest `min` across its unit's required_attachments DOCUMENT entries (0 ⇒ no requirement, e.g.
+   *  every FIELD_VISIT unit, whose required_attachments is []); attachedDocs = its non-deleted office
+   *  reference docs (kind='OFFICE_REF', i.e. the KYC documents). */
+  async taskDocumentRequirement(taskId: string): Promise<{ requiredDocs: number; attachedDocs: number }> {
+    const [row] = await query<{ requiredDocs: number; attachedDocs: number }>(
+      `SELECT
+         COALESCE((SELECT max((e->>'min')::int)
+                     FROM jsonb_array_elements(vu.required_attachments) e
+                    WHERE e->>'type' = 'DOCUMENT'), 0) AS required_docs,
+         (SELECT count(*)::int FROM case_attachments ca
+            WHERE ca.task_id = ct.id AND ca.kind = 'OFFICE_REF' AND ca.deleted_at IS NULL) AS attached_docs
+       FROM case_tasks ct JOIN verification_units vu ON vu.id = ct.verification_unit_id
+       WHERE ct.id = $1`,
+      [taskId],
+    );
+    return row ?? { requiredDocs: 0, attachedDocs: 0 };
   },
 
   /** OCC-guarded finalize (ADR-0025): records the official result + remark and moves the task to

@@ -761,6 +761,88 @@ describe.skipIf(!RUN)('cases API', () => {
     expect(detail.body.tasks[0].status).toBe('COMPLETED');
   });
 
+  it('A2026-0623-16: a KYC task cannot be completed with zero documents (required_attachments enforced)', async () => {
+    // A KYC_DOCUMENT unit carries required_attachments [{type:DOCUMENT,min:1}]; completing with no
+    // document evidence must be rejected. FIELD_VISIT units (required_attachments []) are unaffected.
+    const clientId = seeded<{ id: number }>(
+      await request(app)
+        .post('/api/v2/clients')
+        .set(SA)
+        .send(clientFactory({ code: 'C_KD' })),
+    ).id;
+    const productId = seeded<{ id: number }>(
+      await request(app)
+        .post('/api/v2/products')
+        .set(SA)
+        .send(productFactory({ code: 'P_KD' })),
+    ).id;
+    const kycUnit = seeded<{ id: number }>(
+      await request(app)
+        .post('/api/v2/verification-units')
+        .set(SA)
+        .send(verificationUnitFactory({ code: 'U_KD', kind: 'KYC_DOCUMENT' })),
+    ).id;
+    const cpId = seeded<{ id: number }>(
+      await request(app)
+        .post('/api/v2/client-products')
+        .set(SA)
+        .send({ clientId, productId, effectiveFrom: PAST }),
+    ).id;
+    seeded(
+      await request(app)
+        .post('/api/v2/cpv-units')
+        .set(SA)
+        .send({ clientProductId: cpId, verificationUnitId: kycUnit, effectiveFrom: PAST }),
+    );
+    const caseId = seeded<{ id: string }>(
+      await request(app)
+        .post('/api/v2/cases')
+        .set(SA)
+        .send({
+          clientId,
+          productId,
+          backendContactNumber: BC,
+          applicants: [{ name: 'KYC DOC' }],
+          dedupeDecision: 'NO_DUPLICATES_FOUND',
+        }),
+    ).id;
+    const taskId = seeded<{ id: string }[]>(await addTaskFor(caseId, kycUnit))[0]!.id;
+    const verifier = await createUser({ username: 'kyc_kd', name: 'DESK KD', role: 'KYC_VERIFIER' });
+    expect(
+      (
+        await request(app)
+          .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
+          .set(SA)
+          .send({ assignedTo: verifier, visitType: 'OFFICE', billCount: 1, version: 1 })
+      ).status,
+    ).toBe(200);
+
+    // complete with ZERO documents → rejected, task stays ASSIGNED
+    const noDocs = await request(app)
+      .post(`/api/v2/cases/${caseId}/tasks/${taskId}/complete`)
+      .set(SA)
+      .send({ result: 'POSITIVE', remark: 'no docs attached', version: 2 });
+    expect(noDocs.status).toBe(400);
+    expect(noDocs.body.error).toBe('DOCUMENTS_REQUIRED');
+    expect(
+      (await db!.pool.query<{ status: string }>(`SELECT status FROM case_tasks WHERE id = $1`, [taskId]))
+        .rows[0]!.status,
+    ).toBe('ASSIGNED');
+
+    // attach one office document → completion now succeeds (kind defaults to OFFICE_REF)
+    await db!.pool.query(
+      `INSERT INTO case_attachments (case_id, task_id, original_name, mime_type, file_size, storage_key, sha256, uploaded_by)
+       VALUES ($1, $2, 'pan.pdf', 'application/pdf', 10, 'k/pan.pdf', 'sha', $3)`,
+      [caseId, taskId, verifier],
+    );
+    const ok = await request(app)
+      .post(`/api/v2/cases/${caseId}/tasks/${taskId}/complete`)
+      .set(SA)
+      .send({ result: 'POSITIVE', remark: 'document verified', version: 2 });
+    expect(ok.status).toBe(200);
+    expect(ok.body.status).toBe('COMPLETED');
+  });
+
   it('finalize guards: read-only verifier 403, out-of-scope 404, remark required 400, stale + terminal 409', async () => {
     const { caseId, taskId } = await seedCaseWithTask('CP2');
     const desk = await createUser({ username: 'kyc_cp2_desk', name: 'DESK V2', role: 'KYC_VERIFIER' });

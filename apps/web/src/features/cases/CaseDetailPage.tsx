@@ -46,6 +46,7 @@ import { TextArea } from '../../components/ui/TextArea.js';
 import { Button } from '../../components/ui/Button.js';
 import { WorkStatusChip } from '../../components/WorkStatusChip.js';
 import { AddTasksForm } from './AddTasksForm.js';
+import { fieldVisitTasks } from './fieldReportTasks.js';
 
 /** Affordances gate on the PERMISSION (ADR-0022) — resolved by /auth/me, never a role name. */
 const CASE_ASSIGN = 'case.assign';
@@ -1769,10 +1770,11 @@ function PickupForm({ caseId, data }: { caseId: string; data: CasePickup }) {
 }
 
 /** #6 Field Report (ADR-0039 R1) — the combined per-task view (v1 OptimizedFormSubmissionViewer parity):
- *  the agent's RAW submitted fields PLUS the auto-generated narrative. One expandable row per task; the
- *  report (fields + narrative) lazy-loads on expand. Photos live in the Field Photos card (#7). */
+ *  the agent's RAW submitted fields PLUS the auto-generated narrative. One expandable row per FIELD task;
+ *  the report (fields + narrative) lazy-loads on expand. Photos live in the Field Photos card (#7). */
 function MobileReportSection({ caseId, tasks }: { caseId: string; tasks: CaseTaskView[] }) {
   const [open, setOpen] = useState(false);
+  const fieldTasks = fieldVisitTasks(tasks);
   return (
     <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
       <div className="flex items-center justify-between">
@@ -1782,11 +1784,11 @@ function MobileReportSection({ caseId, tasks }: { caseId: string; tasks: CaseTas
         </Button>
       </div>
       {open &&
-        (tasks.length === 0 ? (
-          <p className="mt-3 text-sm text-muted-foreground">No tasks on this case.</p>
+        (fieldTasks.length === 0 ? (
+          <p className="mt-3 text-sm text-muted-foreground">No field tasks on this case.</p>
         ) : (
           <div className="mt-3 space-y-2">
-            {tasks.map((t) => (
+            {fieldTasks.map((t) => (
               <TaskFieldReport key={t.id} caseId={caseId} task={t} />
             ))}
           </div>
