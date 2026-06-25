@@ -14,9 +14,13 @@ test.skip(({ viewport }) => (viewport?.width ?? 0) !== LAPTOP_WIDTH, 'Rate Type 
 const combo = (page: Page, label: string) =>
   page.locator('label', { has: page.getByText(label, { exact: true }) }).getByRole('combobox');
 
-// First rate-type checkbox in the first unit row (the "All units (Universal)" row).
+// First rate-type chip in the first unit row (the "All units (Universal)" row). The checkbox is an
+// sr-only (visually-hidden) input inside the chip <label> — read state off the input, but TOGGLE by
+// clicking the visible label (the input itself isn't actionable for Playwright's .check()).
 const firstRateTypeCheckbox = (page: Page) =>
   page.locator('table.rtable td[data-label="Rate Types"] input[type="checkbox"]').first();
+const firstRateTypeChip = (page: Page) =>
+  page.locator('table.rtable td[data-label="Rate Types"] label').first();
 
 async function pickCombo(page: Page): Promise<void> {
   // Client is required; Product defaults to "All products (Universal)" (index 0) — leave it Universal.
@@ -31,8 +35,8 @@ test('Rate Type Assignments: a toggled rate type persists for a combo', async ({
   const firstChip = firstRateTypeCheckbox(page);
   await expect(firstChip).toBeAttached();
 
-  // Ensure the first rate type is ON, then Save and wait for the bulk write to land (200).
-  if (!(await firstChip.isChecked())) await firstChip.check();
+  // Ensure the first rate type is ON (click the visible chip label, not the sr-only input), then Save.
+  if (!(await firstChip.isChecked())) await firstRateTypeChip(page).click();
   const saved = page.waitForResponse(
     (r) =>
       r.url().includes('/api/v2/rate-type-assignments/bulk') &&
