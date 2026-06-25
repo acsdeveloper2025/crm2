@@ -1195,6 +1195,36 @@ Cases/Policies/ReportLayouts/FieldMonitoring additive backend export+filter endp
   Templates UI; `GET /api/v2/report-templates` → 404). Branch `feat/remove-report-templates` (NOT pushed —
   owner-gated; push→main auto-deploys).
 
+## Section SCOPE-RBAC — RBAC + data-scope audit (2026-06-25)
+
+Owner-asked read-only audit of the complete RBAC/scope system (6 disjoint agents + an adversarial verify
++ completeness critic), triggered by "BACKEND_USER cannot create a case/task for their assigned client+
+product." Route×permission coverage came back solid (286 routes, 237 permission-gated, rest documented
+identity-scoped/public; only a dead `BILLING_GENERATE` perm). Reads are clean (no IDOR). The real defects
+were a write-side scope cluster + a role-grant gap. All 7 dimensions are genuinely wired (the
+"assignable-but-inert" hypothesis was disproven).
+
+| id | sev | finding | disposition |
+|----|-----|---------|-------------|
+| SR-1 | HIGH | `POST /cases` accepted any caller-supplied client/product (FK-only, no scope) — cross-tenant create | ✅ **FIXED** (ADR-0065, `888666c`) — `assertClientProductInScope` → 400 |
+| SR-2 | HIGH | `addTasks` mutated a case without a scope check (bare `clientProductOf`) | ✅ **FIXED** (ADR-0065) — `caseVisible` gate → 404 |
+| SR-3 | HIGH | `addApplicant` mutated a case without a scope check | ✅ **FIXED** (ADR-0065) — `caseVisible` gate → 404 |
+| SR-4 | HIGH | BACKEND_USER (+ TEAM_LEADER) lacked `case.create` → the reported bug (403 + FE hides controls) | ✅ **FIXED** (ADR-0065, mig 0095) — granted to both; FE surfaces by perm |
+| SR-5 | MED | `GET /cases/available-units` un-scoped (enumerates any client's CPV catalog) | ✅ **FIXED** (ADR-0065) — portfolio guard |
+| SR-6 | MED | `GET /cases/rate-preview` un-scoped (leaks rate metadata) | ✅ **FIXED** (ADR-0065) — portfolio guard |
+| SR-7 | MED | TEAM_LEADER could not create cases (intent gap) | ✅ **FIXED** (owner 2026-06-25: TLs may create) — granted (ADR-0065, mig 0095) |
+| SR-8 | MED | VERIFICATION_TYPE in RESTRICT mode under-filters at CASE grain (admits the whole case if any one task matches; doesn't hide sibling tasks) | 🟡 **DEFERRED** — no production role wires VERIFICATION_TYPE RESTRICT today; revisit if one does. Precise filtering exists at TASK grain. |
+| SR-9 | LOW | `BILLING_GENERATE` permission is granted to MANAGER but enforced by no route (dead) | 🟡 **DEFERRED** — harmless; remove or implement when the billing-generate endpoint is built. |
+| SR-10 | LOW | STATE/CITY/VERIFICATION_TYPE dimensions are selectable but wired to no system role (functional, untested in prod) | 🟡 **DEFERRED** — not inert (predicate + write-path support them); add integration coverage if a role adopts one. |
+| SR-11 | LOW | Web has no per-route permission guard + some write controls render without a `useAuth().has()` wrap | 🟡 **DEFERRED** — all are backend-gated (`authorize`), so cosmetic/info-leak, not privilege escalation. |
+| SR-12 | LOW | `caseDataEntries` repo methods carry no scope predicate (safe today via the service gate) | 🟡 **DEFERRED** — defense-in-depth; push the predicate into the repo or assert the service-gate invariant. |
+
+Owner picked (AskUserQuestion): fix the HIGH cluster SR-1..6 + grant TEAM_LEADER (SR-7) + build the navbar
+selector; the MED/LOW items SR-8..12 were not selected → DEFERRED above (flagged, not dropped). Built on
+branch `feat/rbac-scope-cluster` (`888666c` cluster + `9238a3c` navbar), full `pnpm verify` + e2e 152 green,
+browser-verified. ADR-0065 (case-create grant + write scope) + ADR-0066 (navbar selector). NOT pushed —
+owner-gated; push→main auto-deploys.
+
 ## Section X-CHECK-2026-06-23 — Compliance-gaps cross-check & close-out
 
 Read-only multi-agent cross-check of EVERY open/DEFERRED/RATCHET/🔴 finding against live code at HEAD
