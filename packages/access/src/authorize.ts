@@ -34,3 +34,23 @@ export function authorize(perm: Permission) {
     next();
   };
 }
+
+/**
+ * Like {@link authorize}, but passes if the role has ANY of the listed permissions (or `grantsAll`).
+ * Used where two legitimate consumer classes both read an endpoint — e.g. the rate-type `available`
+ * resolver, reachable by master-data viewers (Rate Management) AND case creators (case-creation preview).
+ */
+export function authorizeAny(...perms: Permission[]) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const auth = req.auth;
+    if (!auth) {
+      res.status(HTTP_UNAUTHENTICATED).json({ error: 'UNAUTHENTICATED' });
+      return;
+    }
+    if (auth.grantsAll !== true && !perms.some((p) => auth.permissions?.includes(p))) {
+      res.status(HTTP_FORBIDDEN).json({ error: 'FORBIDDEN', requiredPermission: perms });
+      return;
+    }
+    next();
+  };
+}
