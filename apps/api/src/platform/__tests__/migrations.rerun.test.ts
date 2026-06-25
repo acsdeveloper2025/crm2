@@ -6,13 +6,14 @@ import { fileURLToPath } from 'node:url';
 import { Pool } from 'pg';
 
 /**
- * Guardrail for the project's most-bitten prod hazard: the deploy migrate step RE-RUNS every migration
- * in `db/v2/migrations` on EVERY deploy (it is a one-shot replay, not a tracked "apply once"). So a late
- * migration that RENAMEs a column or DROP+ADDs a CHECK can silently break an EARLIER migration that
- * re-executes verbatim on the next deploy — exactly the `0037` (status CHECK) and `0083` (rate-type
- * rename) incidents. The per-file test harness builds its template by applying each migration ONCE, so it
- * can't catch this. Here we simulate THREE consecutive deploys against a fresh scratch DB and assert the
- * full set re-applies cleanly and the schema converges (no resurrected pre-rename columns).
+ * Guardrail for the project's most-bitten prod hazard. The deploy runner (db/v2/migrate.sh) now applies
+ * only NEW or EDITED migrations (tracked in `schema_migrations`), but idempotency is STILL required: (a)
+ * the first deploy after the runner lands replays the full set once, and (b) an EDITED migration
+ * re-applies — so a late migration that RENAMEs a column or DROP+ADDs a CHECK can still break an earlier
+ * one when it re-executes. Exactly the `0037` (status CHECK) and `0083` (rate-type rename) incidents. The
+ * per-file test harness builds its template by applying each migration ONCE, so it can't catch this. Here
+ * we simulate THREE consecutive full applies against a fresh scratch DB and assert the set re-applies
+ * cleanly and the schema converges (no resurrected pre-rename columns).
  */
 const RUN = !!process.env['DATABASE_URL'];
 const HERE = dirname(fileURLToPath(import.meta.url));

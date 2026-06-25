@@ -13,10 +13,8 @@
 #
 # Usage:
 #   docker compose up -d                 # start both (data persists across restarts)
-#   # first time / after a reset, load the dev DB:
-#   for f in db/v2/migrations/*.sql; do psql postgresql://postgres@127.0.0.1:54329/crm2_dev -f "$f"; done
-#   psql postgresql://postgres@127.0.0.1:54329/crm2_dev -f db/v2/seed/locations.seed.sql
-#   psql postgresql://postgres@127.0.0.1:54329/crm2_dev -f db/v2/seed/verification_units.seed.sql
+#   # first time / after a reset, load the dev DB (tracked runner: only new/edited migrations + seeds):
+#   DATABASE_URL=postgresql://postgres@127.0.0.1:54329/crm2_dev sh db/v2/migrate.sh
 #   # (migration 0009 self-seeds the admin/admin123 SUPER_ADMIN)
 #
 # The test-db needs no manual load — `@crm2/test-utils` createTestDb applies the

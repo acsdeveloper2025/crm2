@@ -35,7 +35,7 @@ Local equivalent: `pnpm verify` (typecheck → lint → format → no-suppressio
 | 18 | coverage ENFORCED (coverage.enabled:true + @vitest/coverage-v8) at honest floors, ratcheting up | vitest thresholds (always-on) | api-v2 lines/stmts 85·funcs 90·branch 58 · sdk 90/90/65 · logger 95/80/80 |
 | 20 | dependency control | review against register | `ALLOWED_DEPENDENCIES.md` |
 | 21 | API↔SDK contract drift (ADR-0031, validate-don't-replace) — OpenAPI surface re-emit + git-diff, and the SDK→route contract test; **web & mobile contract tests** (ADR-0011/0012) | `pnpm openapi` + `git diff --exit-code openapi.json` + `platform/openapi` contract test; `contract:web`/`contract:mobile` (CI) | `.github/workflows/ci.yml`, `docs/adr/ADR-0031-*.md`, `MOBILE_API_COMPATIBILITY_MATRIX.md` |
-| 22 | migration applies clean + idempotent | CI re-apply loop | `.github/workflows/ci.yml` |
+| 22 | migration applies clean + idempotent; deploy applies only NEW/EDITED via `schema_migrations` | CI re-apply loop + `migrate.runner` test | `.github/workflows/ci.yml`, `db/v2/migrate.sh` |
 | 23 | N+1 / query-count protection | query-count test harness (per hot list) | added with each list endpoint |
 | 24 | secret detection | gitleaks | `.gitleaks.toml`, CI |
 | 25 | no circular deps | dependency-cruiser `no-circular` | `.dependency-cruiser.cjs` |

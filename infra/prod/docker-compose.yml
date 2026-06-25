@@ -81,17 +81,12 @@ services:
       DATABASE_URL: ${DATABASE_URL}
     volumes:
       - ../../:/repo:ro
+    # Tracked runner (db/v2/migrate.sh): applies only NEW or EDITED migrations via
+    # schema_migrations, then the idempotent data seeds. Replaces the every-deploy full
+    # replay so a late migration can no longer break an earlier one on re-run (0037/0083).
     entrypoint:
       - /bin/sh
-      - -c
-      - |
-        set -e
-        for f in db/v2/migrations/*.sql; do
-          echo "migrate: $$f"; psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$$f"
-        done
-        echo "seed: verification_units"; psql "$$DATABASE_URL" -q -f db/v2/seed/verification_units.seed.sql || echo "  (seed warn)"
-        echo "seed: locations (157k pincodes)"; psql "$$DATABASE_URL" -q -f db/v2/seed/locations.seed.sql || echo "  (seed warn)"
-        echo "migrate: done"
+      - db/v2/migrate.sh
     restart: 'no'
 
   api:
