@@ -354,6 +354,16 @@ describe.skipIf(!RUN)('commission-rates API (ADR-0036)', () => {
       expect(list.body.items[0].clientId).toBeTruthy(); // fully-specified — resolved client dimension
     });
 
+    it('confirm imports an admin-defined catalog rate-type code (ADR-0068) — LOCAL1 was rejected by the old enum', async () => {
+      await newUser('imp_rt_user');
+      // 'local1' (lowercased) exercises the toUpper transform → matches the migration-seeded catalog code LOCAL1.
+      const res = await upload('confirm', await mkXlsx([row('imp_rt_user', 'local1', 77)]));
+      expect(res.status).toBe(200);
+      expect(res.body.successRows).toBe(1);
+      const list = await request(app).get('/api/v2/commission-rates').set(SA);
+      expect(list.body.items[0]).toMatchObject({ fieldRateType: 'LOCAL1', amount: 77 });
+    });
+
     it('export carries comp data → gated masterdata.manage (SA ok), NOT data.export (TEAM_LEADER 403)', async () => {
       const userId = await newUser('exp_user');
       const dims = await seedDims('exp');

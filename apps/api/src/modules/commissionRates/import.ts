@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { COMMISSION_RATE_TYPES, type CreateCommissionRateInput } from '@crm2/sdk';
+import { type CreateCommissionRateInput, toUpper } from '@crm2/sdk';
 import type { ImportColumn, ImportSpec, ResolveResult } from '../../platform/import/index.js';
 import { parseInteger, parseIsoDate, parseNumber } from '../../platform/import/parsers.js';
 import { clientService } from '../clients/service.js';
@@ -18,9 +18,12 @@ import { userService } from '../users/service.js';
  */
 const CommissionRateImportFileSchema = z.object({
   username: z.string().min(1),
-  // ADR-0050: fieldRateType (LOCAL/OGL/OFFICE) is required. Location (pincode+area) is required for
-  // LOCAL/OGL but OPTIONAL for OFFICE (flat office rate). client/product/unit/tatBand are Universal-when-blank.
-  fieldRateType: z.enum(COMMISSION_RATE_TYPES),
+  // fieldRateType is required. Location (pincode+area) is required for non-OFFICE rate types but OPTIONAL
+  // for OFFICE (flat office rate). client/product/unit/tatBand are Universal-when-blank.
+  // ADR-0068: accept ANY active rate_types catalog code (uppercased/trimmed) — mirrors CreateCommissionRateSchema,
+  // not the old LOCAL/OGL/OFFICE enum (the FK + `commissionRateService.create` code→id lookup enforce validity;
+  // an unknown code resolves to a NULL rate_type_id, same as the single-create API).
+  fieldRateType: z.string().trim().min(1).max(40).transform(toUpper),
   pincode: z.string().optional(),
   area: z.string().optional(),
   clientCode: z.string().optional(),
