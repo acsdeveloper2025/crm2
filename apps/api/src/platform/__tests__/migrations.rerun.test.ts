@@ -103,6 +103,20 @@ describe.skipIf(!RUN)('migrations re-run safety (prod re-applies the full set ev
       );
       expect(rtaIdx[0]!.n).toBe('1');
 
+      // ADR-0069: product_id/verification_unit_id become NULLABLE (NULL = Universal) and the unique key is
+      // NULLS NOT DISTINCT (so a Universal NULL row is a single value the bulk upsert dedupes). Survive 3×.
+      const { rows: rtaNull } = await pool.query<{ cols: string }>(
+        `SELECT string_agg(column_name, ',' ORDER BY column_name) AS cols
+           FROM information_schema.columns
+          WHERE table_name = 'rate_type_assignments' AND is_nullable = 'YES'
+            AND column_name IN ('product_id', 'verification_unit_id')`,
+      );
+      expect(rtaNull[0]!.cols).toBe('product_id,verification_unit_id');
+      const { rows: rtaNnd } = await pool.query<{ def: string }>(
+        `SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = 'uq_rate_type_assignment'`,
+      );
+      expect(rtaNnd[0]!.def).toContain('NULLS NOT DISTINCT');
+
       // ADR-0068 Phase C: the rate_type_id FKs must SURVIVE the 3× re-run. This also proves the catalog is
       // NOT dropped+recreated each deploy: 0013's unconditional `DROP TABLE rate_types CASCADE` (now
       // guarded on rate_types.category) would CASCADE-drop these FKs, and 0094's `ADD COLUMN IF NOT EXISTS`
