@@ -28,6 +28,14 @@ export const rateTypeController = {
     }
   },
 
+  async available(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json(await svc.available(req.query as Record<string, unknown>));
+    } catch (e) {
+      next(e);
+    }
+  },
+
   async findById(req: Request, res: Response, next: NextFunction) {
     try {
       const row = await svc.findById(parseId(req));

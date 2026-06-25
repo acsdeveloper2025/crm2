@@ -10,6 +10,14 @@ import { AppError } from '../../platform/errors.js';
 import { requireVersion } from '../../platform/occ.js';
 import { resolvePage, resolveFilters, buildPage, type PageSpec } from '../../platform/pagination.js';
 
+/** Required positive-int query param → its value, else 400 BAD_REQUEST naming the param.
+ *  Shared with the rateTypeAssignments service (the combo lookups validate the same 3 params). */
+export const posIntParam = (q: Record<string, unknown>, name: string): number => {
+  const n = Number(q[name]);
+  if (!Number.isInteger(n) || n <= 0) throw AppError.badRequest('BAD_REQUEST', { param: name });
+  return n;
+};
+
 /** Sortable + filterable columns (apiField → SQL column); only whitelisted columns reach ORDER BY /
  *  the WHERE clause (SQL-injection-safe). `code` is the immutable identity (Phase C FK key). */
 const RATE_TYPE_PAGE_SPEC: PageSpec = {
@@ -52,6 +60,14 @@ export const rateTypeService = {
   },
 
   options: (activeOnly: boolean): Promise<RateTypeOption[]> => repo.options(activeOnly),
+
+  /** Resolve the rate types available for a (client × product × unit) combo (ADR-0067, Phase B). */
+  available(rawQuery: Record<string, unknown>): Promise<RateTypeOption[]> {
+    const clientId = posIntParam(rawQuery, 'clientId');
+    const productId = posIntParam(rawQuery, 'productId');
+    const unitId = posIntParam(rawQuery, 'verificationUnitId');
+    return repo.available(clientId, productId, unitId);
+  },
 
   findById: (id: number): Promise<RateType | null> => repo.findById(id),
 

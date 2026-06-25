@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import request from 'supertest';
-import { createTestDb, authHeaderForRole } from '@crm2/test-utils';
+import {
+  createTestDb,
+  authHeaderForRole,
+  clientFactory,
+  productFactory,
+  verificationUnitFactory,
+} from '@crm2/test-utils';
 import { createApp } from '../../../http/app.js';
 import { setPool } from '../../../platform/db.js';
 
@@ -9,6 +15,8 @@ const db = RUN ? createTestDb() : null;
 const app = createApp({ enableTestAuth: true });
 const SA = authHeaderForRole('SUPER_ADMIN');
 const FA = authHeaderForRole('FIELD_AGENT');
+const MGR = authHeaderForRole('MANAGER'); // has case.create (not page.masterdata-only) — `available` reader
+const KYC = authHeaderForRole('KYC_VERIFIER'); // has neither page.masterdata nor case.create → 403
 
 describe.skipIf(!RUN)('rate-types CRUD (ADR-0064)', () => {
   beforeAll(async () => {
@@ -98,5 +106,89 @@ describe.skipIf(!RUN)('rate-types CRUD (ADR-0064)', () => {
   it('RBAC: a non-masterdata role cannot write (403)', async () => {
     const res = await request(app).post('/api/v2/rate-types').set(FA).send({ code: 'zzno', name: 'no' });
     expect(res.status).toBe(403);
+  });
+
+  // GET /api/v2/rate-types/available — ADR-0067 Phase B combo resolver.
+  describe('GET /available (combo resolver)', () => {
+    let clientId: number;
+    let productId: number;
+    let unitId: number;
+    let activeRt: number; // assigned + active → appears
+    let otherRt: number; // active rate type, NOT assigned → absent
+    let inactiveRt: number; // assigned but its assignment is inactive → absent
+
+    beforeAll(async () => {
+      // Seed master-data via the API (the migrated clone has no clients/products/units).
+      const seedId = async (path: string, body: object): Promise<number> => {
+        const res = await request(app).post(`/api/v2/${path}`).set(SA).send(body);
+        expect(res.status).toBe(201);
+        return res.body.id as number;
+      };
+      clientId = await seedId('clients', clientFactory({ code: 'RT_AVAIL_CLIENT' }));
+      productId = await seedId('products', productFactory({ code: 'RT_AVAIL_PRODUCT' }));
+      unitId = await seedId('verification-units', verificationUnitFactory({ code: 'RT_AVAIL_UNIT' }));
+      const rts = await db!.pool.query<{ id: number }>(
+        `SELECT id FROM rate_types WHERE is_active AND effective_from <= now() ORDER BY sort_order LIMIT 3`,
+      );
+      activeRt = rts.rows[0]!.id;
+      otherRt = rts.rows[1]!.id;
+      inactiveRt = rts.rows[2]!.id;
+      // One active assignment (should appear) + one inactive assignment (should NOT appear).
+      await db!.pool.query(
+        `INSERT INTO rate_type_assignments (client_id, product_id, verification_unit_id, rate_type_id, is_active)
+         VALUES ($1,$2,$3,$4,true), ($1,$2,$3,$5,false)`,
+        [clientId, productId, unitId, activeRt, inactiveRt],
+      );
+    });
+
+    it('returns the active assignments for the combo (and excludes inactive / unassigned)', async () => {
+      const res = await request(app)
+        .get(
+          `/api/v2/rate-types/available?clientId=${clientId}&productId=${productId}&verificationUnitId=${unitId}`,
+        )
+        .set(SA);
+      expect(res.status).toBe(200);
+      const ids = (res.body as { id: number }[]).map((r) => r.id);
+      expect(ids).toContain(activeRt);
+      expect(ids).not.toContain(inactiveRt);
+      expect(ids).not.toContain(otherRt);
+      expect(res.body[0]).toMatchObject({ id: activeRt });
+      expect(res.body[0].code).toBeTypeOf('string');
+    });
+
+    it('a combo with no assignments returns []', async () => {
+      const res = await request(app)
+        .get(
+          `/api/v2/rate-types/available?clientId=${clientId}&productId=${productId}&verificationUnitId=999999`,
+        )
+        .set(SA);
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual([]);
+    });
+
+    it('a missing query param → 400', async () => {
+      const res = await request(app)
+        .get(`/api/v2/rate-types/available?clientId=${clientId}&productId=${productId}`)
+        .set(SA);
+      expect(res.status).toBe(400);
+    });
+
+    it('RBAC: a case.create role (no page.masterdata) gets 200', async () => {
+      const res = await request(app)
+        .get(
+          `/api/v2/rate-types/available?clientId=${clientId}&productId=${productId}&verificationUnitId=${unitId}`,
+        )
+        .set(MGR);
+      expect(res.status).toBe(200);
+    });
+
+    it('RBAC: a role with neither page.masterdata nor case.create gets 403', async () => {
+      const res = await request(app)
+        .get(
+          `/api/v2/rate-types/available?clientId=${clientId}&productId=${productId}&verificationUnitId=${unitId}`,
+        )
+        .set(KYC);
+      expect(res.status).toBe(403);
+    });
   });
 });

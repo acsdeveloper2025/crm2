@@ -31,6 +31,7 @@ import { productRoutes } from '../modules/products/routes.js';
 import { clientProductRoutes, cpvUnitRoutes } from '../modules/cpv/routes.js';
 import { rateRoutes } from '../modules/rates/routes.js';
 import { rateTypeRoutes } from '../modules/rateTypes/routes.js';
+import { rateTypeAssignmentRoutes } from '../modules/rateTypeAssignments/routes.js';
 import { commissionRateRoutes } from '../modules/commissionRates/routes.js';
 import { tatPolicyRoutes } from '../modules/tatPolicies/routes.js';
 import { billingRoutes } from '../modules/billing/routes.js';
@@ -105,6 +106,7 @@ export function createApp(opts: { enableTestAuth?: boolean } = {}): Express {
   mount('/api/v2/cpv-units', cpvUnitRoutes);
   mount('/api/v2/rates', rateRoutes);
   mount('/api/v2/rate-types', rateTypeRoutes);
+  mount('/api/v2/rate-type-assignments', rateTypeAssignmentRoutes);
   mount('/api/v2/commission-rates', commissionRateRoutes);
   mount('/api/v2/tat-policies', tatPolicyRoutes);
   mount('/api/v2/billing', billingRoutes);

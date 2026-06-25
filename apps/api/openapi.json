@@ -3462,6 +3462,44 @@
         ]
       }
     },
+    "/api/v2/rate-type-assignments": {
+      "get": {
+        "tags": [
+          "rate-type-assignments"
+        ],
+        "operationId": "get_api_v2_rate_type_assignments",
+        "summary": "GET /api/v2/rate-type-assignments",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/rate-type-assignments/bulk": {
+      "post": {
+        "tags": [
+          "rate-type-assignments"
+        ],
+        "operationId": "post_api_v2_rate_type_assignments_bulk",
+        "summary": "POST /api/v2/rate-type-assignments/bulk",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v2/rate-types": {
       "get": {
         "tags": [
@@ -3560,6 +3598,25 @@
         ],
         "operationId": "post_api_v2_rate_types_id_deactivate",
         "summary": "POST /api/v2/rate-types/{id}/deactivate",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/rate-types/available": {
+      "get": {
+        "tags": [
+          "rate-types"
+        ],
+        "operationId": "get_api_v2_rate_types_available",
+        "summary": "GET /api/v2/rate-types/available",
         "responses": {
           "default": {
             "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."

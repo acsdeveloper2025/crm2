@@ -88,6 +88,20 @@ export const rateTypeRepository = {
     );
   },
 
+  /** Rate types AVAILABLE for a (client × product × verification_unit) combo (ADR-0067, Phase B):
+   *  the active assignments, intersected with usable (active + in-effect) rate types. */
+  available(clientId: number, productId: number, unitId: number): Promise<RateTypeOption[]> {
+    return query<RateTypeOption>(
+      `SELECT rt.id, rt.code, rt.category
+         FROM rate_type_assignments a
+         JOIN rate_types rt ON rt.id = a.rate_type_id
+        WHERE a.client_id = $1 AND a.product_id = $2 AND a.verification_unit_id = $3
+          AND a.is_active AND rt.is_active AND rt.effective_from <= now()
+        ORDER BY rt.sort_order, rt.code`,
+      [clientId, productId, unitId],
+    );
+  },
+
   async findById(id: number): Promise<RateType | null> {
     const rows = await query<RateType>(`SELECT ${COLS} FROM rate_types WHERE id = $1`, [id]);
     return rows[0] ?? null;
