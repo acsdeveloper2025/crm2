@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  COMMISSION_RATE_TYPES,
   CreateCommissionRateSchema,
   type Option,
   type UserOption,
@@ -11,6 +10,7 @@ import {
   type TatPolicy,
   type CommissionRate,
   type CommissionRateView,
+  type RateTypeOption,
   type Paginated,
 } from '@crm2/sdk';
 import { api, ApiError } from '../../lib/sdk.js';
@@ -134,6 +134,14 @@ function CommissionRateForm({ initial }: { initial: CommissionRateView | null })
     queryKey: ['tat-policies', 'active'],
     queryFn: () =>
       api<Paginated<TatPolicy>>('GET', '/api/v2/tat-policies?active=true&limit=100').then((r) => r.items),
+    enabled: !isRevise,
+  });
+  // Rate-type options now come from the managed catalog (ADR-0064/0068), not the hardcoded
+  // COMMISSION_RATE_TYPES enum. Commission dims are Universal-able, so this is NOT combo-gated —
+  // all active catalog rows are offered. The form still SENDS fieldRateType as the chosen code string.
+  const rateTypes = useQuery({
+    queryKey: ['rate-types', 'options'],
+    queryFn: () => api<RateTypeOption[]>('GET', '/api/v2/rate-types/options?active=true'),
     enabled: !isRevise,
   });
 
@@ -311,14 +319,24 @@ function CommissionRateForm({ initial }: { initial: CommissionRateView | null })
               )}
             </Field>
             <Field label="Rate Type">
-              <select className="input" value={fieldRateType} onChange={(e) => setRateType(e.target.value)}>
-                <option value="">Select a rate type…</option>
-                {COMMISSION_RATE_TYPES.map((b) => (
-                  <option key={b} value={b}>
-                    {b}
+              <select
+                className="input"
+                value={fieldRateType}
+                disabled={rateTypes.isLoading}
+                onChange={(e) => setRateType(e.target.value)}
+              >
+                <option value="">
+                  {rateTypes.isLoading ? 'Loading rate types…' : 'Select a rate type…'}
+                </option>
+                {(rateTypes.data ?? []).map((rt) => (
+                  <option key={rt.id} value={rt.code}>
+                    {rt.code}
                   </option>
                 ))}
               </select>
+              {rateTypes.isError && (
+                <span className="mt-1 block text-xs text-destructive">Couldn’t load rate types.</span>
+              )}
               {fieldErrors['fieldRateType'] && (
                 <span className="mt-1 block text-xs text-destructive">{fieldErrors['fieldRateType']}</span>
               )}

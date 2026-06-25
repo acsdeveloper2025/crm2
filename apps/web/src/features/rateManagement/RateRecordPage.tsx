@@ -122,11 +122,20 @@ function RateForm({ initial }: { initial: RateView | null }) {
     queryFn: () => api<VerificationUnitOption[]>('GET', '/api/v2/verification-units/options'),
     enabled: !isRevise,
   });
+  // Rate types are now assignment-gated by the (client × product × unit) combo (ADR-0067 Phase B
+  // resolver). Enabled only once all three dims are chosen — KYC units have no rate type, so the
+  // field is greyed out and this query stays idle for them too.
+  const comboReady = !isRevise && !isKyc && !!clientId && !!productId && !!unitId;
   const clientRateTypes = useQuery({
-    queryKey: ['rate-types'],
-    queryFn: () => api<RateTypeOption[]>('GET', '/api/v2/rate-types/options?active=true'),
-    enabled: !isRevise,
+    queryKey: ['rate-types-available', clientId, productId, unitId],
+    queryFn: () =>
+      api<RateTypeOption[]>(
+        'GET',
+        `/api/v2/rate-types/available?clientId=${clientId}&productId=${productId}&verificationUnitId=${unitId}`,
+      ),
+    enabled: comboReady,
   });
+  const noRateTypesForCombo = comboReady && clientRateTypes.isSuccess && clientRateTypes.data.length === 0;
   const pincodes = useQuery({
     queryKey: ['pincodes', pincodeSearch],
     queryFn: () => api<string[]>('GET', `/api/v2/locations/pincodes?q=${encodeURIComponent(pincodeSearch)}`),
@@ -286,10 +295,17 @@ function RateForm({ initial }: { initial: RateView | null }) {
                 value={clientRateType}
                 onChange={setRateType}
                 options={clientRateTypeOpts}
-                disabled={isKyc}
-                placeholder={isKyc ? 'n/a for KYC' : 'Search…'}
+                disabled={isKyc || !comboReady}
+                placeholder={
+                  isKyc ? 'n/a for KYC' : comboReady ? 'Search…' : 'Pick client, product & unit first'
+                }
                 width="w-full"
               />
+              {noRateTypesForCombo && (
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  No rate types assigned for this combination — assign them in Admin → Rate Type Assignments.
+                </span>
+              )}
               {fieldErrors['clientRateType'] && (
                 <span className="mt-1 block text-xs text-destructive">{fieldErrors['clientRateType']}</span>
               )}
