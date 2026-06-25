@@ -58,6 +58,12 @@ export interface DataGridColumn<T> {
   // ── Inline editing (ADR-0051 — editable grid, no modal forms). Requires the grid's `inlineEdit`. ──
   /** Render this cell as an editor while its row is being edited. */
   editable?: boolean;
+  /**
+   * Render this column's editor ONLY in the "+ Add row" (create) — never as click-to-edit on an
+   * existing row. For an immutable identity column (e.g. a catalog `code` set once at create and the
+   * FK key thereafter). Seeded into the create draft and enforced by required-on-create validation.
+   */
+  createOnly?: boolean;
   /** Editor kind for an `editable` cell (default `text`). */
   editor?: CellEditorKind;
   /** Options for a `select` editor (include a blank option for an optional field). */
@@ -460,7 +466,7 @@ export function DataGrid<T>({
   const editFields = useMemo<EditableField[]>(
     () =>
       columns
-        .filter((c) => c.editable)
+        .filter((c) => c.editable || c.createOnly)
         .map((c) => ({
           field: c.field ?? c.id,
           editor: c.editor ?? 'text',
@@ -469,7 +475,8 @@ export function DataGrid<T>({
         })),
     [columns],
   );
-  const firstEditableId = useMemo(() => columns.find((c) => c.editable)?.id, [columns]);
+  // First field of the add-row (for autofocus) — includes a `createOnly` column (e.g. code).
+  const firstCreateFieldId = useMemo(() => columns.find((c) => c.editable || c.createOnly)?.id, [columns]);
   const editColByField = useMemo(
     () => new Map(columns.filter((c) => c.editable).map((c) => [c.field ?? c.id, c])),
     [columns],
@@ -544,7 +551,9 @@ export function DataGrid<T>({
   const startCreate = () => {
     cancelCell();
     setCreating(true);
-    setDraft(Object.fromEntries(columns.filter((c) => c.editable).map((c) => [cellKey(c), ''])));
+    setDraft(
+      Object.fromEntries(columns.filter((c) => c.editable || c.createOnly).map((c) => [cellKey(c), ''])),
+    );
     setCreateError(null);
   };
   const setField = (field: string, value: string) => setDraft((d) => ({ ...d, [field]: value }));
@@ -1054,12 +1063,12 @@ export function DataGrid<T>({
                       data-label={c.label ?? c.header}
                       className={`px-3 py-2 ${c.align === 'right' ? 'text-right' : ''}`}
                     >
-                      {c.editable ? (
+                      {c.editable || c.createOnly ? (
                         <CellEditor
                           kind={c.editor ?? 'text'}
                           value={draft[cellKey(c)] ?? ''}
                           placeholder={c.editorPlaceholder ?? ''}
-                          autoFocus={c.id === firstEditableId}
+                          autoFocus={c.id === firstCreateFieldId}
                           commitOnBlur={false}
                           invalid={false}
                           title=""
