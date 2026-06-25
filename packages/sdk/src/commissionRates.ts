@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import { COMMISSION_RATE_TYPES } from './cases.js';
+import { toUpper } from './text.js';
+
+// ADR-0068: fieldRateType accepts any active rate_types catalog code (uppercased/trimmed), not just the
+// LOCAL/OGL/OFFICE enum. The FK + the repo's code→id lookup enforce validity (unknown code ⇒ NULL id).
+// COMMISSION_RATE_TYPES still lives in (and is exported from) ./cases.js for its other consumers.
 
 /**
  * @crm2/sdk — the Commission Rate contract (ADR-0036, billing slice 5a). One row =
@@ -82,9 +86,10 @@ export const CreateCommissionRateSchema = z
     /** executive location dimension — a `locations` area id. REQUIRED for LOCAL/OGL; OPTIONAL for OFFICE
      *  (a flat office rate has no location, ADR-0050). */
     locationId: positiveInt.nullish(),
-    /** the field rate type — resolution key matching the task's `field_rate_type`. LOCAL/OGL for field
-     *  work, OFFICE for desk/KYC work. */
-    fieldRateType: z.enum(COMMISSION_RATE_TYPES),
+    /** the field rate type — resolution key matching the task's `field_rate_type`. Any active
+     *  rate_types catalog code (LOCAL/OGL for field work, OFFICE for desk/KYC, or an admin-defined
+     *  code); uppercased/trimmed. The FK + repo lookup enforce validity (ADR-0068). */
+    fieldRateType: z.string().trim().min(1).max(40).transform(toUpper),
     /** completed-in TAT band: tat_hours, -1 (out of band), or null/absent ⇒ Universal (any band). */
     tatBand: z.number().int().nullish(),
     amount: money,

@@ -34,10 +34,10 @@ describe('CommissionRate contract', () => {
   it('rejects an empty fieldRateType', () => {
     expect(CreateCommissionRateSchema.safeParse({ ...base, fieldRateType: '' }).success).toBe(false);
   });
-  it('rejects a fieldRateType outside LOCAL/OGL/OFFICE (a resolution key, not a free label)', () => {
-    expect(CreateCommissionRateSchema.safeParse({ ...base, fieldRateType: 'OUTSTATION' }).success).toBe(
-      false,
-    );
+  it('accepts any catalog rate-type code, uppercased (ADR-0068: FK-validated server-side, no longer a fixed enum)', () => {
+    const r = CreateCommissionRateSchema.safeParse({ ...base, fieldRateType: 'outstation' });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.fieldRateType).toBe('OUTSTATION');
   });
   it('rejects a payload missing a REQUIRED-specific dimension (user/location/fieldRateType) — ADR-0050', () => {
     for (const dim of ['userId', 'locationId', 'fieldRateType'] as const) {
