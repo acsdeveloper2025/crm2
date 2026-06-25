@@ -31,8 +31,8 @@ The owner wants what v1 had: an **administration page to create rate types** (ea
 ## 2. Locked decisions
 
 1. **Unified catalog = single source of truth.** Promote `rate_types` to a managed, FK-referenced catalog used for both client billing and field/commission rate types.
-2. **FK the value everywhere** (`rate_type_id`): `rates`, `commission_rates`, `case_tasks`. Backfill from existing strings/enums; keep old columns deprecated during transition, then drop (re-run-safe).
-3. **Per-combination assignment** (`rate_type_assignments`): which rate types are available per (client × product × verification_unit); pickers offer only the assigned subset.
+2. **FK the value everywhere** (`rate_type_id`): `rates`, `commission_rates`, `case_tasks`. Backfill from existing strings/enums (auto-promoting any orphan free-text `client_rate_type` into the catalog first), then **drop the old columns in the same migration** (no transition / no dual-write — owner 2026-06-25); idempotent + re-run-safe.
+3. **Per-combination assignment** (`rate_type_assignments`): which rate types are available per (client × product × verification_unit). Rate Management + case-creation availability are assignment-gated; the **Commission picker offers ALL active rate types** (commission dims are Universal-able — owner 2026-06-25, matches v1).
 4. **Resolution preserved (ADR-0050 unchanged):** client bill still resolves **by location** (rate-type is the FK'd label); commission still resolves by **rate-type key + location + Universal dims** (now matching `rate_type_id`). **No `service_zone_rules` / geo→rate-type mapping is reintroduced.**
 5. **OFFICE** becomes a catalog row tagged `category='OFFICE'` (desk; location-less commission branch keys on its id). All other rows are `category='FIELD'`.
 6. **Mobile unaffected** — the sync contract never exposes `field_rate_type` (`sync/service.ts:14-55`, `sdk/sync.ts`); FK-converting `case_tasks.field_rate_type` does not change any mobile-facing field. Verified.
@@ -50,6 +50,7 @@ Add (idempotent `ADD COLUMN IF NOT EXISTS`):
 - `version` integer NOT NULL DEFAULT 1 — OCC token (matches `designations`/`rates` convention).
 - Insert one `OFFICE` row (`code='OFFICE'`, `category='OFFICE'`, `sort_order` low/0) `ON CONFLICT (code) DO NOTHING`.
 - Keep `uq_rate_types_code`. Keep `effective_from`.
+- **The seeded rows (18 + OFFICE) are ordinary editable catalog rows** shown in the admin page — NOT system-locked (unlike the 9 `is_system` verification units). `code` is immutable on edit (it is the FK key); `name`/`description`/`category`/`sort_order`/`is_active` are editable + updatable (owner 2026-06-25).
 
 ### 3.2 Assignment — new `rate_type_assignments` (Phase B, mig 0092)
 ```
@@ -65,15 +66,16 @@ UNIQUE (client_id, product_id, verification_unit_id, rate_type_id)
 Index `(client_id, product_id, verification_unit_id) WHERE is_active` for the availability lookup.
 
 ### 3.3 FK conversion (Phase C, mig 0093+)
-Add `rate_type_id integer REFERENCES rate_types(id)` to `rates`, `commission_rates`, `case_tasks`. Backfill from the existing value:
-- `rates.client_rate_type` (string) → match `rate_types.code` (case-insensitive); unmatched/null stays null (KYC units legitimately have null). **Non-destructive:** the old string column is retained through the transition, so an unmatched value loses nothing; the migration **reports** unmatched distinct values (so a real custom label can be added to the catalog and re-backfilled before the column is dropped).
-- `commission_rates.field_rate_type` / `case_tasks.field_rate_type` (`LOCAL|OGL|OFFICE`) → match `rate_types.code` (these are already the canonical codes, so the match is total).
-- Replace the rates `rates_no_overlap` EXCLUDE's `COALESCE(client_rate_type,'')` term with `COALESCE(rate_type_id,-1)`.
-- Replace the `case_tasks`/`commission_rates` CHECK-on-string with the FK (FK supersedes the enum CHECK).
-- **Keep the old columns** through the transition (dual-write in the API) for one deploy as a rollback safety net, then **drop** them in a later guarded migration.
+Add `rate_type_id integer REFERENCES rate_types(id)` to `rates`, `commission_rates`, `case_tasks`, backfill, swap the constraints, and **drop the old string/enum columns in the SAME migration** (no transition / no dual-write — owner 2026-06-25). Strict order within the one migration:
+1. **Lossless catalog reconciliation first** (so the in-place drop can't lose data). `commission_rates.field_rate_type` / `case_tasks.field_rate_type` are already canonical codes (`LOCAL|OGL|OFFICE`) → total match. `rates.client_rate_type` is free-text → **auto-promote**: `INSERT INTO rate_types(code, name, is_active)` every DISTINCT non-null `UPPER(client_rate_type)` not already present, so every existing label becomes a real catalog row with an id (nothing lost), then match.
+2. Add `rate_type_id`; backfill by `UPPER(old_value) = rate_types.code` (null `client_rate_type` → null id; KYC units legitimately null).
+3. Swap the rates `rates_no_overlap` EXCLUDE term `COALESCE(client_rate_type,'')` → `COALESCE(rate_type_id,-1)`; drop the `case_tasks`/`commission_rates` string CHECK (the FK supersedes the enum CHECK).
+4. `DROP COLUMN IF EXISTS` the three old columns.
+
+Because the drop is in-place, the re-run-safety guarding (§3.4) is the load-bearing risk: the earlier migrations that (re)create/rename these columns on every deploy (0011/0013/0058/0079/0083/0084) must be guarded to no-op once `rate_type_id` exists, or a re-run resurrects the dropped column. `migrations.rerun.test.ts` must prove this.
 
 ### 3.4 ⚠️ Migration re-run safety (HARD invariant)
-Every migration re-runs verbatim on every deploy (the 0037/0083 trap). The FK conversion + eventual column drops MUST:
+Every migration re-runs verbatim on every deploy (the 0037/0083 trap). The FK conversion + the in-place column drops MUST:
 - Be idempotent (`ADD COLUMN IF NOT EXISTS`, guarded constraint add/drop, `DROP COLUMN IF EXISTS`).
 - Guard any earlier-migration reference to a to-be-dropped column on the **new** column's presence (the exact pattern used in 0011/0013/0058/0079 for the 0083 rename).
 - Keep `apps/api/src/platform/__tests__/migrations.rerun.test.ts` green (applies the full set 3× and asserts no resurrected columns / surviving constraints). Add catalog/assignment assertions there.
@@ -84,7 +86,7 @@ Every migration re-runs verbatim on every deploy (the 0037/0083 trap). The FK co
 
 - **`rateTypes` → full CRUD** (was read-only): `GET /` (list, existing), `GET /:id`, `POST /`, `PUT /:id` (OCC `version`), `POST /:id/activate`, `POST /:id/deactivate`. View = `MASTERDATA_VIEW`; mutations = `MASTERDATA_MANAGE`. SDK: extend `RateType`, add `CreateRateTypeSchema`/`UpdateRateTypeSchema`.
 - **`rateTypeAssignments` module (new):** `GET /` (by combo filter), `POST /bulk` (set the assigned set for a combo), and **`GET /api/v2/rate-types/available?clientId&productId&verificationUnitId`** → active rate types assigned to that combo. View `MASTERDATA_VIEW` / `case.create`; manage `MASTERDATA_MANAGE`.
-- **Contracts expose code+id:** `Rate`/`CommissionRate`/`CaseTaskView` carry `rateTypeId` + a derived `rateTypeCode`/`rateTypeName` (JOIN to `rate_types`). Existing `clientRateType`/`fieldRateType` string fields stay populated (from the JOINed code) during the transition so no consumer breaks.
+- **Contracts expose code+id:** `Rate`/`CommissionRate`/`CaseTaskView` carry `rateTypeId` + a derived `rateTypeCode`/`rateTypeName` (JOIN to `rate_types`). The existing `clientRateType`/`fieldRateType` string fields **keep being emitted, now sourced from the JOINed catalog code** (not the dropped column) — so SDK/web/mobile consumers are unaffected by the in-place column drop.
 - **OpenAPI regen** (`pnpm --filter @crm2/api openapi`) + contract test after each module change.
 
 ---
@@ -112,7 +114,7 @@ Every migration re-runs verbatim on every deploy (the 0037/0083 trap). The FK co
 
 - **Phase A — Catalog + admin CRUD.** mig 0091 (extend `rate_types` + OFFICE row + backfill name/description); `rateTypes` CRUD API + SDK schemas + RBAC; Rate Types inline-grid admin page + nav + routes; e2e spec + seed row; `migrations.rerun.test.ts` extended. **No FK/resolution change yet** — fully shippable on its own.
 - **Phase B — Assignment.** mig 0092 (`rate_type_assignments`); assignments API + `available` endpoint + SDK; Assignment matrix page + route; e2e. Pickers can start consuming `available` (still string-valued until C).
-- **Phase C — FK conversion + wiring.** mig 0093+ (add `rate_type_id` to rates/commission_rates/case_tasks, backfill, swap EXCLUDE/CHECK; dual-write; later drop old cols guarded); resolution updated to match by id (display-only for billing); 3 pickers id-valued + assignment-gated; full `pnpm verify` (Postgres :5433) + mobile-safety re-confirm + browser-verify the bill/commission round-trip. A follow-up guarded migration drops the deprecated string columns once stable.
+- **Phase C — FK conversion + wiring.** mig 0093 (auto-promote orphan `client_rate_type` labels → catalog; add `rate_type_id` to rates/commission_rates/case_tasks; backfill; swap the rates EXCLUDE term + drop the case_tasks/commission string CHECK; **DROP the three old columns in the SAME migration**; guard the earlier old-name migrations [0011/0013/0058/0079/0083/0084] so a re-run can't resurrect them; extend `migrations.rerun.test.ts`); resolution matches by id (display-only for billing); pickers wired (Rate Mgmt = assignment-gated select · Commission = all active · case-creation rate-preview); contracts keep emitting the string fields from the catalog JOIN; full `pnpm verify` (Postgres :5433) + mobile-safety re-confirm + browser-verify the bill/commission round-trip.
 
 ADR-0063 authored as the first task of Phase A.
 
