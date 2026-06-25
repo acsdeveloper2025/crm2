@@ -134,9 +134,9 @@ async function seedCommissionRate(o: {
 }): Promise<number> {
   const [row] = await query<{ id: number }>(
     `INSERT INTO commission_rates
-       (user_id, client_id, product_id, verification_unit_id, location_id, field_rate_type, tat_band,
+       (user_id, client_id, product_id, verification_unit_id, location_id, rate_type_id, tat_band,
         amount, currency, effective_from)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'INR', now() - interval '2 days')
+     VALUES ($1, $2, $3, $4, $5, (SELECT id FROM rate_types WHERE code = $6), $7, $8, 'INR', now() - interval '2 days')
      RETURNING id`,
     [
       o.userId,
@@ -473,15 +473,15 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
     // A location-less client rate (the desk task has no trip/location) so the bill resolves, and a FLAT
     // OFFICE commission row (Universal client/product/unit/band, location-less) — e.g. "PAN desk = ₹20".
     await query(
-      `INSERT INTO rates (client_id, product_id, verification_unit_id, location_id, client_rate_type,
+      `INSERT INTO rates (client_id, product_id, verification_unit_id, location_id, rate_type_id,
                           amount, currency, effective_from)
-       VALUES ($1, $2, $3, NULL, 'LOCAL', 300, 'INR', now() - interval '2 days')`,
+       VALUES ($1, $2, $3, NULL, (SELECT id FROM rate_types WHERE code = 'LOCAL'), 300, 'INR', now() - interval '2 days')`,
       [ctx.clientId, ctx.productId, ctx.unitId],
     );
     await query(
       `INSERT INTO commission_rates (user_id, client_id, product_id, verification_unit_id, location_id,
-                                     field_rate_type, tat_band, amount, currency, effective_from)
-       VALUES ($1, NULL, NULL, NULL, NULL, 'OFFICE', NULL, 20, 'INR', now() - interval '2 days')`,
+                                     rate_type_id, tat_band, amount, currency, effective_from)
+       VALUES ($1, NULL, NULL, NULL, NULL, (SELECT id FROM rate_types WHERE code = 'OFFICE'), NULL, 20, 'INR', now() - interval '2 days')`,
       [officeExec],
     );
 
@@ -514,7 +514,8 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
       ).status,
     ).toBe(200);
     const [stamped] = await query<{ fieldRateType: string }>(
-      `SELECT field_rate_type FROM case_tasks WHERE id = $1`,
+      `SELECT (SELECT code FROM rate_types WHERE id = ct.rate_type_id) AS field_rate_type
+         FROM case_tasks ct WHERE ct.id = $1`,
       [taskId],
     );
     expect(stamped!.fieldRateType).toBe('OFFICE'); // desk auto-stamp
@@ -599,8 +600,8 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
       [ctxShared.clientId, ctxShared.productId, ctxShared.unitId, l1Id],
     );
     await query(
-      `INSERT INTO rates (client_id, product_id, verification_unit_id, location_id, client_rate_type, amount, effective_from)
-       VALUES ($1, $2, $3, NULL, 'LOCAL', 100, now() - interval '2 days')`,
+      `INSERT INTO rates (client_id, product_id, verification_unit_id, location_id, rate_type_id, amount, effective_from)
+       VALUES ($1, $2, $3, NULL, (SELECT id FROM rate_types WHERE code = 'LOCAL'), 100, now() - interval '2 days')`,
       [ctxShared.clientId, ctxShared.productId, ctxShared.unitId],
     );
     const lines = await billingRepository.caseTasks(caseId);
