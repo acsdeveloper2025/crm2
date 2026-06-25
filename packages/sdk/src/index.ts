@@ -7,6 +7,7 @@ export * from './products.js';
 export * from './cpv.js';
 export * from './rates.js';
 export * from './rateTypes.js';
+export * from './rateTypeAssignments.js';
 export * from './commissionRates.js';
 export * from './tatPolicies.js';
 export * from './billing.js';
