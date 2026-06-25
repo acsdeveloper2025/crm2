@@ -32,10 +32,17 @@ describe.skipIf(!RUN)('0079 commission_rates dimensions', () => {
     expect(cols.every((c) => c.isNullable === 'YES')).toBe(true);
   });
 
-  it('field_rate_type is now nullable', async () => {
+  // ADR-0068 (mig 0094): the field_rate_type string column was replaced by a nullable rate_type_id FK
+  // into the managed rate_types catalog (KYC rows legitimately carry no rate type ⇒ nullable).
+  it('rate_type_id replaced field_rate_type and is nullable', async () => {
+    const [old] = await query<{ columnName: string }>(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_name = 'commission_rates' AND column_name = 'field_rate_type'`,
+    );
+    expect(old).toBeUndefined(); // old string column dropped in place
     const [rt] = await query<{ isNullable: string }>(
       `SELECT is_nullable FROM information_schema.columns
-       WHERE table_name = 'commission_rates' AND column_name = 'field_rate_type'`,
+       WHERE table_name = 'commission_rates' AND column_name = 'rate_type_id'`,
     );
     expect(rt?.isNullable).toBe('YES');
   });

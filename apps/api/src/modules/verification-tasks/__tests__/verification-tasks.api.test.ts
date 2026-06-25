@@ -114,7 +114,8 @@ async function seedAssignedTask(tag: string): Promise<{
   });
   await db!.pool.query(
     `UPDATE case_tasks
-       SET assigned_to = $1::uuid, status = 'ASSIGNED', field_rate_type = 'LOCAL',
+       SET assigned_to = $1::uuid, status = 'ASSIGNED',
+           rate_type_id = (SELECT id FROM rate_types WHERE code = 'LOCAL'),
            area_id = $3, pincode_id = $3, version = version + 1
      WHERE id = $2`,
     [agent, taskId, locationId],
@@ -207,9 +208,9 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
     // submit-in TAT band (4h — submitted within ~1 min, smallest active migration-seeded band).
     await db!.pool.query(
       `INSERT INTO commission_rates
-         (user_id, client_id, product_id, verification_unit_id, location_id, field_rate_type, tat_band,
+         (user_id, client_id, product_id, verification_unit_id, location_id, rate_type_id, tat_band,
           amount, currency, effective_from)
-       VALUES ($1::uuid, $2, $3, $4, $5, 'LOCAL', 4, 50, 'INR', now() - interval '1 day')`,
+       VALUES ($1::uuid, $2, $3, $4, $5, (SELECT id FROM rate_types WHERE code = 'LOCAL'), 4, 50, 'INR', now() - interval '1 day')`,
       [agent, clientId, productId, unitId, locationId],
     );
     const h = hdr('FIELD_AGENT', agent);
@@ -258,9 +259,9 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
     await db!.pool.query(`INSERT INTO tat_policies (tat_hours, label) VALUES (24, '24h')`);
     await db!.pool.query(
       `INSERT INTO commission_rates
-         (user_id, client_id, product_id, verification_unit_id, location_id, field_rate_type, tat_band,
+         (user_id, client_id, product_id, verification_unit_id, location_id, rate_type_id, tat_band,
           amount, currency, effective_from)
-       VALUES ($1::uuid, $2, $3, $4, $5, 'LOCAL', 24, 88, 'INR', now() - interval '1 day')`,
+       VALUES ($1::uuid, $2, $3, $4, $5, (SELECT id FROM rate_types WHERE code = 'LOCAL'), 24, 88, 'INR', now() - interval '1 day')`,
       [agent, clientId, productId, unitId, locationId],
     );
     const h = hdr('FIELD_AGENT', agent);

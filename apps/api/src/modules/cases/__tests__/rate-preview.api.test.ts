@@ -85,10 +85,17 @@ async function seedRate(o: {
   clientRateType: string;
   amount: number;
 }): Promise<void> {
+  // ADR-0068: rate type is now a rate_types FK. Mirror mig 0094's auto-promotion of any legacy free-text
+  // label (e.g. "STANDARD") into the catalog so an arbitrary fixture code resolves to an id.
   await query(
-    `INSERT INTO rates (client_id, product_id, verification_unit_id, location_id, client_rate_type, amount,
+    `INSERT INTO rate_types (code, name, is_active) VALUES (UPPER($1), UPPER($1), true)
+     ON CONFLICT (code) DO NOTHING`,
+    [o.clientRateType],
+  );
+  await query(
+    `INSERT INTO rates (client_id, product_id, verification_unit_id, location_id, rate_type_id, amount,
        currency, is_active, effective_from)
-     VALUES ($1, $2, $3, $4, $5, $6, 'INR', true, now() - interval '2 days')`,
+     VALUES ($1, $2, $3, $4, (SELECT id FROM rate_types WHERE code = UPPER($5)), $6, 'INR', true, now() - interval '2 days')`,
     [o.clientId, o.productId, o.unitId, o.locationId, o.clientRateType, o.amount],
   );
 }
@@ -106,8 +113,8 @@ async function seedCommission(o: {
 }): Promise<void> {
   await query(
     `INSERT INTO commission_rates (user_id, client_id, product_id, verification_unit_id, location_id,
-       field_rate_type, tat_band, amount, currency, effective_from)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'INR', now() - interval '2 days')`,
+       rate_type_id, tat_band, amount, currency, effective_from)
+     VALUES ($1, $2, $3, $4, $5, (SELECT id FROM rate_types WHERE code = UPPER($6)), $7, $8, 'INR', now() - interval '2 days')`,
     [o.userId, o.clientId, o.productId, o.unitId, o.locationId, o.fieldRateType, o.tatBand ?? null, o.amount],
   );
 }

@@ -18,7 +18,7 @@ const TASK_FIELD_MAP: Readonly<Record<string, string>> = {
   task_number: 'ct.task_number',
   status: 'ct.status',
   visit_type: 'ct.visit_type',
-  field_rate_type: 'ct.field_rate_type',
+  field_rate_type: '(SELECT code FROM rate_types WHERE id = ct.rate_type_id)',
   bill_count: 'ct.bill_count',
   verification_outcome: 'ct.verification_outcome',
   remark: 'ct.remark',

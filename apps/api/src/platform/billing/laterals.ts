@@ -22,8 +22,9 @@
  *  location-less NULL, so a task at an unmatched location would wrongly bill a different-location override
  *  instead of the default (COMPLIANCE §G-8). LIMIT 1 → 1:1 (COUNT/SUM stay exact). */
 export const RATE_LATERAL = `LEFT JOIN LATERAL (
-    SELECT r.client_rate_type, r.amount::float8 AS bill_amount
+    SELECT rt.code AS client_rate_type, r.amount::float8 AS bill_amount
     FROM rates r
+    LEFT JOIN rate_types rt ON rt.id = r.rate_type_id
     WHERE r.client_id = cs.client_id AND r.product_id = cs.product_id
       AND r.verification_unit_id = ct.verification_unit_id AND r.is_active
       AND r.effective_from <= now() AND (r.effective_to IS NULL OR r.effective_to > now())
@@ -57,7 +58,7 @@ export const COMMISSION_LATERAL = `LEFT JOIN LATERAL (
       AND (cmr.client_id IS NULL OR cmr.client_id = cs.client_id)
       AND (cmr.product_id IS NULL OR cmr.product_id = cs.product_id)
       AND (cmr.verification_unit_id IS NULL OR cmr.verification_unit_id = ct.verification_unit_id)
-      AND cmr.field_rate_type = ct.field_rate_type
+      AND cmr.rate_type_id = ct.rate_type_id
       AND (cmr.tat_band IS NULL OR cmr.tat_band = (
             COALESCE(
               (SELECT tp.tat_hours FROM tat_policies tp
@@ -68,7 +69,7 @@ export const COMMISSION_LATERAL = `LEFT JOIN LATERAL (
                  ORDER BY tp.tat_hours ASC LIMIT 1),
               CASE WHEN COALESCE(ct.submitted_elapsed_minutes, ct.completed_elapsed_minutes) IS NULL THEN NULL ELSE -1 END)))
       AND (cmr.location_id IN (ct.area_id, ct.pincode_id, cs.area_id, cs.pincode_id)
-           OR (ct.field_rate_type = 'OFFICE' AND cmr.location_id IS NULL))
+           OR (ct.rate_type_id = (SELECT id FROM rate_types WHERE code = 'OFFICE') AND cmr.location_id IS NULL))
       AND cmr.effective_from <= COALESCE(ct.submitted_at, ct.completed_at, now())
       AND (cmr.effective_to IS NULL OR cmr.effective_to > COALESCE(ct.submitted_at, ct.completed_at, now()))
     ORDER BY cmr.client_id            DESC NULLS LAST,

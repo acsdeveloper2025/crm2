@@ -2240,8 +2240,9 @@ describe.skipIf(!RUN)('cases API', () => {
       const { ctx, loc, caseId, applicantId } = await locatedCase('RT');
       // a location-specific LOCAL rate + a default (location-less) OGL rate → the specific one wins.
       await db!.pool.query(
-        `INSERT INTO rates (client_id, product_id, verification_unit_id, location_id, client_rate_type, amount)
-         VALUES ($1, $2, $3, NULL, 'OGL', 250), ($1, $2, $3, $4, 'LOCAL', 100)`,
+        `INSERT INTO rates (client_id, product_id, verification_unit_id, location_id, rate_type_id, amount)
+         VALUES ($1, $2, $3, NULL, (SELECT id FROM rate_types WHERE code = 'OGL'), 250),
+                ($1, $2, $3, $4, (SELECT id FROM rate_types WHERE code = 'LOCAL'), 100)`,
         [ctx.clientId, ctx.productId, ctx.enabledUnitId, loc],
       );
       const add = await request(app)
@@ -2290,8 +2291,8 @@ describe.skipIf(!RUN)('cases API', () => {
         )
       ).rows[0]!.id;
       await db!.pool.query(
-        `INSERT INTO rates (client_id, product_id, verification_unit_id, location_id, client_rate_type, amount)
-         VALUES ($1, $2, $3, $4, 'OUTSTATION', 400)`,
+        `INSERT INTO rates (client_id, product_id, verification_unit_id, location_id, rate_type_id, amount)
+         VALUES ($1, $2, $3, $4, (SELECT id FROM rate_types WHERE code = 'OUTSTATION'), 400)`,
         [ctx.clientId, ctx.productId, ctx.enabledUnitId, someLoc],
       );
       seeded(

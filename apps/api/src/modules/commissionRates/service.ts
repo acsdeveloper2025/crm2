@@ -24,7 +24,7 @@ const CR_PAGE_SPEC: PageSpec = {
   sortMap: {
     user: 'u.name',
     client: 'c.name',
-    fieldRateType: 'cr.field_rate_type',
+    fieldRateType: 'rt.code',
     amount: 'cr.amount',
     effectiveFrom: 'cr.effective_from',
     status: 'cr.is_active',
@@ -32,7 +32,7 @@ const CR_PAGE_SPEC: PageSpec = {
     updatedAt: 'cr.updated_at',
   },
   filterMap: {
-    fieldRateType: { column: 'cr.field_rate_type', kind: 'text' },
+    fieldRateType: { column: 'rt.code', kind: 'text' },
     user: { column: 'u.name', kind: 'text' },
     client: { column: 'c.name', kind: 'text' },
     createdAt: { column: 'cr.created_at', kind: 'date' },

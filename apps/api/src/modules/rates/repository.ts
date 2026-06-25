@@ -9,7 +9,10 @@ const FK_VIOLATION = '23503';
 const EXCLUSION_VIOLATION = '23P01'; // rates_no_overlap GiST exclusion (overlapping active period)
 
 // amount is numeric(10,2); cast to float8 so pg returns a JS number, not a string.
-const COLS = `id, client_id, product_id, verification_unit_id, location_id, client_rate_type,
+// ADR-0068: client_rate_type is now rate_types.id; resolve the code via a correlated subquery so the
+// bare-table SELECT/RETURNING still emit the string code (works without a JOIN).
+const COLS = `id, client_id, product_id, verification_unit_id, location_id,
+  (SELECT code FROM rate_types WHERE id = rates.rate_type_id) AS client_rate_type,
   amount::float8 AS amount, currency, is_active, effective_from, effective_to,
   version, created_by, updated_by, created_at, updated_at`;
 
@@ -18,11 +21,12 @@ const RATE_FROM = `FROM rates r
   JOIN clients c ON c.id = r.client_id
   JOIN products p ON p.id = r.product_id
   JOIN verification_units vu ON vu.id = r.verification_unit_id
-  LEFT JOIN locations l ON l.id = r.location_id`;
+  LEFT JOIN locations l ON l.id = r.location_id
+  LEFT JOIN rate_types rt ON rt.id = r.rate_type_id`;
 
 // Shared SELECT list for the joined RateView (list page + single-row finder share this so the
 // record-page loader sees the SAME shape — with client/product/unit/location names, not just ids).
-const RATE_VIEW_COLS = `r.id, r.client_id, r.product_id, r.verification_unit_id, r.location_id, r.client_rate_type,
+const RATE_VIEW_COLS = `r.id, r.client_id, r.product_id, r.verification_unit_id, r.location_id, rt.code AS client_rate_type,
        r.amount::float8 AS amount, r.currency, r.is_active, r.effective_from, r.effective_to,
        r.version, r.created_by, r.updated_by, r.created_at, r.updated_at,
        c.code AS client_code, c.name AS client_name,
@@ -72,7 +76,7 @@ export const rateRepository = {
       params.push(likeContains(o.search));
       const n = params.length;
       where.push(
-        `(c.name ILIKE $${n} OR c.code ILIKE $${n} OR p.name ILIKE $${n} OR p.code ILIKE $${n} OR vu.name ILIKE $${n} OR l.pincode ILIKE $${n} OR l.area ILIKE $${n} OR r.client_rate_type ILIKE $${n})`,
+        `(c.name ILIKE $${n} OR c.code ILIKE $${n} OR p.name ILIKE $${n} OR p.code ILIKE $${n} OR vu.name ILIKE $${n} OR l.pincode ILIKE $${n} OR l.area ILIKE $${n} OR rt.code ILIKE $${n})`,
       );
     }
     // Per-column filters (§6/§7/§8) combine with AND; whitelisted columns, bound values.
@@ -118,9 +122,10 @@ export const rateRepository = {
     try {
       return await withTransaction(async (q) => {
         const [row] = await q<Rate>(
+          // ADR-0068: resolve the client_rate_type code → rate_types.id (NULL/blank code → NULL id, e.g. KYC).
           `INSERT INTO rates
-             (client_id, product_id, verification_unit_id, location_id, client_rate_type, amount, currency, effective_from, created_by, updated_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8::timestamptz, now()), $9, $9)
+             (client_id, product_id, verification_unit_id, location_id, rate_type_id, amount, currency, effective_from, created_by, updated_by)
+           VALUES ($1, $2, $3, $4, (SELECT id FROM rate_types WHERE code = UPPER($5)), $6, $7, COALESCE($8::timestamptz, now()), $9, $9)
            RETURNING ${COLS}`,
           [
             input.clientId,
@@ -169,9 +174,10 @@ export const rateRepository = {
           [id, effectiveFrom, userId],
         );
         const [next] = await q<Rate>(
+          // ADR-0068: carry the rate type forward as a code → rate_types.id resolution (NULL code → NULL id).
           `INSERT INTO rates
-             (client_id, product_id, verification_unit_id, location_id, client_rate_type, amount, currency, effective_from, created_by, updated_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8::timestamptz, now()), $9, $9)
+             (client_id, product_id, verification_unit_id, location_id, rate_type_id, amount, currency, effective_from, created_by, updated_by)
+           VALUES ($1, $2, $3, $4, (SELECT id FROM rate_types WHERE code = UPPER($5)), $6, $7, COALESCE($8::timestamptz, now()), $9, $9)
            RETURNING ${COLS}`,
           [
             cur.clientId,
@@ -246,9 +252,9 @@ export const rateRepository = {
        FROM rate_history h
        JOIN rates r ON r.id = h.rate_id
        WHERE (r.client_id, r.product_id, r.verification_unit_id,
-              COALESCE(r.location_id, -1), COALESCE(r.client_rate_type, '')) = (
+              COALESCE(r.location_id, -1), COALESCE(r.rate_type_id, -1)) = (
          SELECT k.client_id, k.product_id, k.verification_unit_id,
-                COALESCE(k.location_id, -1), COALESCE(k.client_rate_type, '')
+                COALESCE(k.location_id, -1), COALESCE(k.rate_type_id, -1)
          FROM rates k WHERE k.id = $1
        )
        ORDER BY h.changed_at DESC, h.id DESC`,

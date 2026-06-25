@@ -75,7 +75,7 @@ const TASK_SELECT_BASE = `
          p.name AS product_name, pa.name AS primary_name,
          ct.verification_unit_id, vu.code AS unit_code, vu.name AS unit_name, vu.kind AS unit_kind,
          ct.status, ct.assigned_to, au.name AS assigned_to_name,
-         ct.visit_type, ct.field_rate_type, ct.bill_count, ct.assigned_at,
+         ct.visit_type, (SELECT code FROM rate_types WHERE id = ct.rate_type_id) AS field_rate_type, ct.bill_count, ct.assigned_at,
          ct.version, ct.created_at, ct.updated_at,
          ct.tat_hours AS tat_hours,
          (ct.assigned_at + (ct.tat_hours * interval '1 hour')) AS due_at,

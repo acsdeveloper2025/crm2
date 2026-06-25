@@ -190,9 +190,9 @@ async function deriveFieldRateTypeForTask(
               cs.client_id, cs.product_id, cs.area_id AS c_area, cs.pincode_id AS c_pincode
        FROM case_tasks ct JOIN cases cs ON cs.id = ct.case_id
        WHERE ct.id = $2 AND ct.case_id = $3)
-     SELECT cmr.field_rate_type FROM commission_rates cmr, t
+     SELECT rt.code AS field_rate_type FROM commission_rates cmr JOIN rate_types rt ON rt.id = cmr.rate_type_id, t
       WHERE cmr.user_id = $1 AND cmr.is_active
-        AND cmr.field_rate_type IS NOT NULL AND cmr.field_rate_type <> 'OFFICE'
+        AND rt.code <> 'OFFICE'
         AND (cmr.client_id IS NULL OR cmr.client_id = t.client_id)
         AND (cmr.product_id IS NULL OR cmr.product_id = t.product_id)
         AND (cmr.verification_unit_id IS NULL OR cmr.verification_unit_id = t.unit)
@@ -226,9 +226,9 @@ async function deriveFieldRateTypeForNewTask(
 ): Promise<string | null> {
   const [row] = await q<{ fieldRateType: string }>(
     `WITH c AS (SELECT client_id, product_id, area_id AS c_area, pincode_id AS c_pincode FROM cases WHERE id = $2)
-     SELECT cmr.field_rate_type FROM commission_rates cmr, c
+     SELECT rt.code AS field_rate_type FROM commission_rates cmr JOIN rate_types rt ON rt.id = cmr.rate_type_id, c
       WHERE cmr.user_id = $1 AND cmr.is_active
-        AND cmr.field_rate_type IS NOT NULL AND cmr.field_rate_type <> 'OFFICE'
+        AND rt.code <> 'OFFICE'
         AND (cmr.client_id IS NULL OR cmr.client_id = c.client_id)
         AND (cmr.product_id IS NULL OR cmr.product_id = c.product_id)
         AND (cmr.verification_unit_id IS NULL OR cmr.verification_unit_id = $3)
@@ -257,8 +257,9 @@ const TASK_VIEW_COLS = `ct.id, ct.case_id, cs.case_number, ct.verification_unit_
          ct.task_number, ct.task_origin, ct.parent_task_id, ct.applicant_id, ap.name AS applicant_name,
          ct.address, ct.trigger, ct.priority,
          ct.status, ct.assigned_to, au.name AS assigned_to_name,
-         ct.visit_type, ct.field_rate_type, ct.bill_count, ct.pincode_id, ct.area_id,
-         (SELECT r.client_rate_type FROM rates r
+         ct.visit_type, (SELECT code FROM rate_types WHERE id = ct.rate_type_id) AS field_rate_type, ct.bill_count, ct.pincode_id, ct.area_id,
+         (SELECT rt.code FROM rates r
+            LEFT JOIN rate_types rt ON rt.id = r.rate_type_id
             WHERE r.client_id = cs.client_id AND r.product_id = cs.product_id
               AND r.verification_unit_id = ct.verification_unit_id AND r.is_active
               AND r.effective_from <= now() AND (r.effective_to IS NULL OR r.effective_to > now())
@@ -533,8 +534,9 @@ export const caseRepository = {
     assigneeId: string | null,
   ): Promise<{ clientRateType: string | null; fieldRateTypes: string[] }> {
     const [clientRow] = await query<{ clientRateType: string | null }>(
-      `SELECT r.client_rate_type
+      `SELECT rt.code AS client_rate_type
          FROM rates r
+         LEFT JOIN rate_types rt ON rt.id = r.rate_type_id
         WHERE r.client_id = $1 AND r.product_id = $2 AND r.verification_unit_id = $3 AND r.is_active
           AND r.effective_from <= now() AND (r.effective_to IS NULL OR r.effective_to > now())
         ORDER BY (CASE WHEN r.location_id = $4 THEN 2 WHEN r.location_id IS NULL THEN 1 ELSE 0 END) DESC,
@@ -543,16 +545,17 @@ export const caseRepository = {
       [clientId, productId, verificationUnitId, locationId],
     );
     const fieldRows = await query<{ fieldRateType: string }>(
-      `SELECT DISTINCT cmr.field_rate_type
+      `SELECT DISTINCT rt.code AS field_rate_type
          FROM commission_rates cmr
-        WHERE cmr.is_active AND cmr.location_id = $4 AND cmr.field_rate_type IS NOT NULL
-          AND cmr.field_rate_type <> 'OFFICE'
+         JOIN rate_types rt ON rt.id = cmr.rate_type_id
+        WHERE cmr.is_active AND cmr.location_id = $4
+          AND rt.code <> 'OFFICE'
           AND ($5::uuid IS NULL OR cmr.user_id = $5::uuid)
           AND cmr.effective_from <= now() AND (cmr.effective_to IS NULL OR cmr.effective_to > now())
           AND (cmr.client_id IS NULL OR cmr.client_id = $1)
           AND (cmr.product_id IS NULL OR cmr.product_id = $2)
           AND (cmr.verification_unit_id IS NULL OR cmr.verification_unit_id = $3)
-        ORDER BY cmr.field_rate_type`,
+        ORDER BY rt.code`,
       [clientId, productId, verificationUnitId, locationId, assigneeId],
     );
     return {
@@ -665,15 +668,16 @@ export const caseRepository = {
           const [inserted] = await q<{ id: string }>(
             `INSERT INTO case_tasks
                (case_id, verification_unit_id, applicant_id, address, trigger, priority,
-                visit_type, field_rate_type, pincode_id, area_id, assigned_to,
+                visit_type, rate_type_id, pincode_id, area_id, assigned_to,
                 assigned_by, assigned_at, status,
                 task_number, created_by, updated_by, latitude, longitude, tat_hours)
              VALUES ($1, $2, $3, $4, $5, $6,
-                     -- ADR-0050: an OFFICE task's field_rate_type is auto-stamped 'OFFICE' (desk work
-                     -- has no LOCAL/OGL trip band); FIELD uses the picked $16 (LOCAL/OGL).
+                     -- ADR-0050/0068: an OFFICE task's rate type is auto-stamped 'OFFICE' (desk work
+                     -- has no LOCAL/OGL trip band); FIELD uses the picked $16 (LOCAL/OGL). The code is
+                     -- resolved to rate_types.id (NULL code → NULL id, e.g. KYC).
                      -- $7::varchar: $7 also feeds the varchar visit_type col above, so the literal
                      -- compare must not re-deduce it as text (else inconsistent types for parameter $7).
-                     $7, CASE WHEN $7::varchar = 'OFFICE' THEN 'OFFICE' ELSE $16 END, $8, $9, $10,
+                     $7, (SELECT id FROM rate_types WHERE code = CASE WHEN $7::varchar = 'OFFICE' THEN 'OFFICE' ELSE $16 END), $8, $9, $10,
                      CASE WHEN $10::uuid IS NULL THEN NULL ELSE $11::uuid END,
                      CASE WHEN $10::uuid IS NULL THEN NULL ELSE now() END,
                      CASE WHEN $10::uuid IS NULL THEN 'PENDING' ELSE 'ASSIGNED' END,
@@ -899,10 +903,11 @@ export const caseRepository = {
         const [updated] = await q<{ id: string; previousAssignedTo: string | null }>(
           `UPDATE case_tasks
            SET assigned_to = $3, status = 'ASSIGNED', visit_type = $4,
-               -- ADR-0050: OFFICE auto-stamps 'OFFICE' (desk work has no LOCAL/OGL); FIELD uses $5.
+               -- ADR-0050/0068: OFFICE auto-stamps 'OFFICE' (desk work has no LOCAL/OGL); FIELD uses $5.
+               -- The code resolves to rate_types.id (NULL code → NULL id).
                -- $4::varchar: $4 also feeds the varchar visit_type col, so the literal compare must
                -- not re-deduce it as text (else inconsistent types for parameter $4).
-               field_rate_type = CASE WHEN $4::varchar = 'OFFICE' THEN 'OFFICE' ELSE $5 END,
+               rate_type_id = (SELECT id FROM rate_types WHERE code = CASE WHEN $4::varchar = 'OFFICE' THEN 'OFFICE' ELSE $5 END),
                bill_count = $6, assigned_by = $7, assigned_at = now(),
                version = version + 1, updated_by = $7, updated_at = now()
            FROM (SELECT id, assigned_to AS prev FROM case_tasks WHERE id = $1 AND case_id = $2) p
@@ -1252,13 +1257,14 @@ export const caseRepository = {
         const [inserted] = await q<{ id: string }>(
           `INSERT INTO case_tasks
              (case_id, verification_unit_id, applicant_id, address, trigger, priority,
-              visit_type, pincode_id, area_id, field_rate_type, bill_count, assigned_to,
+              visit_type, pincode_id, area_id, rate_type_id, bill_count, assigned_to,
               assigned_by, assigned_at, status,
               task_number, parent_task_id, task_origin, created_by, updated_by)
            SELECT p.case_id, p.verification_unit_id, p.applicant_id, p.address, p.trigger, p.priority,
-                  -- ADR-0050: a reassigned OFFICE task also auto-stamps field_rate_type 'OFFICE' (else
-                  -- its desk commission can't resolve). $3::varchar guards the SELECT-list/compare reuse.
-                  $3, p.pincode_id, p.area_id, CASE WHEN $3::varchar = 'OFFICE' THEN 'OFFICE' ELSE $4 END, $5, $6,
+                  -- ADR-0050/0068: a reassigned OFFICE task also auto-stamps 'OFFICE' (else its desk
+                  -- commission can't resolve); the code resolves to rate_types.id (NULL code → NULL id).
+                  -- $3::varchar guards the SELECT-list/compare reuse.
+                  $3, p.pincode_id, p.area_id, (SELECT id FROM rate_types WHERE code = CASE WHEN $3::varchar = 'OFFICE' THEN 'OFFICE' ELSE $4 END), $5, $6,
                   $7, now(), 'ASSIGNED',
                   (SELECT case_number FROM cases WHERE id = $1) || '-' || $8::text,
                   p.id, p.task_origin, $7, $7
