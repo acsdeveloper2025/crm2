@@ -1225,6 +1225,23 @@ branch `feat/rbac-scope-cluster` (`888666c` cluster + `9238a3c` navbar), full `p
 browser-verified. ADR-0065 (case-create grant + write scope) + ADR-0066 (navbar selector). NOT pushed —
 owner-gated; push→main auto-deploys.
 
+## Section RTA-0067 — Rate-Type Assignment (ADR-0067, Phase B) review dispositions (2026-06-25)
+
+3-agent adversarial review (Security · Architecture+DB · Design+Spec) of the per-combination assignment
+layer — all three returned **PASS**. Built on branch `feat/rate-type-assignment` (off origin/main
+`b2cdcf7`); full `pnpm verify` (api 987) + Playwright e2e 157 green; browser-verified persist on `crm2_dev`;
+NOT pushed (owner-gated).
+
+| id | sev | finding | disposition |
+|----|-----|---------|-------------|
+| RTA-1 | LOW | `BulkSetRateTypeAssignmentsSchema.rateTypeIds` had no `.max()` length cap nor element `.max(MAX_PG_INT)` (sole outlier vs the sibling array schemas) — mild authed-admin DoS / unclean 400 on a huge id | ✅ **FIXED** — `z.array(posInt.max(MAX_PG_INT)).max(MAX_BATCH)` (no `.min` — empty array clears the combo) + a cap test |
+| RTA-2 | INFO | `listForCombo` (admin list) shows assignments whose rate type is itself deactivated; the resolver `available` correctly excludes them | ⚪ **WONTFIX (by design)** — the admin must see a stale assignment to clear it; the consumer path (`available`) is safe |
+| RTA-3 | LOW | RBAC self-guard sits after the hooks + `<Navigate to="/">` (sibling record pages guard before their hooks → list page) | ⚪ **WONTFIX** — rules-of-hooks-clean (no `:id` to fetch first), functionally equivalent; reviewer said not required |
+| RTA-4 | LOW | "Saved." confirmation lives in the remounting `MatrixEditor` → lost on a set-changing save (shown only on no-op re-saves) | 🟡 **DEFERRED** — cosmetic; persistence itself is correct + visible via the checkboxes |
+| RTA-5 | INFO | `posIntParam` shared via a `rateTypes/service` import (boundaries-legal); the per-id INSERT loop is N+1 (bounded to a checkbox set) | ⚪ **WONTFIX** — acceptable; promote `posIntParam` to `platform/` if a 3rd consumer appears |
+
+Next: Phase C (ADR-0068, mig 0094) = FK conversion (`rate_type_id` onto rates/commission_rates/case_tasks) + picker wiring.
+
 ## Section X-CHECK-2026-06-23 — Compliance-gaps cross-check & close-out
 
 Read-only multi-agent cross-check of EVERY open/DEFERRED/RATCHET/🔴 finding against live code at HEAD
