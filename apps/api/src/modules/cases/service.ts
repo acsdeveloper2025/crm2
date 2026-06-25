@@ -37,7 +37,7 @@ import { taskRepository } from '../tasks/repository.js';
 import { AppError } from '../../platform/errors.js';
 import { requireVersion } from '../../platform/occ.js';
 import { resolvePage, resolveFilters, buildPage, type PageSpec } from '../../platform/pagination.js';
-import { resolveScope, getScopedUserIds, type Actor } from '../../platform/scope/index.js';
+import { resolveScope, getScopedUserIds, scopedEntityIds, type Actor } from '../../platform/scope/index.js';
 import { getStorage } from '../../platform/storage/index.js';
 import { detectAttachment, MAX_ATTACHMENT_BYTES } from '../../platform/file.js';
 import { logger } from '@crm2/logger';
@@ -56,6 +56,23 @@ function notifySafely(input: NotifyInput): void {
       error: e instanceof Error ? e.message : String(e),
     });
   });
+}
+
+/**
+ * ADR-0065 write-side portfolio scope (audit SR-1/5/6): a chosen client/product must be inside the
+ * actor's CLIENT/PRODUCT scope. `scopedEntityIds` returns the same set that scopes the create form's
+ * dropdowns — `undefined` ⇒ that dimension is unwired for the role (unrestricted; SUPER_ADMIN/MANAGER),
+ * an array (incl. `[]` for a RESTRICT cap with no assignment) ⇒ membership is required. So a write can
+ * only target what the actor could have picked. 400 (not 403) — the actor is authorized for the action;
+ * the specific client/product is just outside their portfolio (mirrors INVALID_ASSIGNEE).
+ */
+async function assertClientProductInScope(actor: Actor, clientId: number, productId: number): Promise<void> {
+  const clientIds = await scopedEntityIds(actor, 'CLIENT');
+  if (clientIds !== undefined && !clientIds.includes(clientId))
+    throw AppError.badRequest('CLIENT_OUT_OF_SCOPE');
+  const productIds = await scopedEntityIds(actor, 'PRODUCT');
+  if (productIds !== undefined && !productIds.includes(productId))
+    throw AppError.badRequest('PRODUCT_OUT_OF_SCOPE');
 }
 
 /** Matches case_attachments.original_name varchar(255) — truncate an over-long client filename. */
@@ -208,36 +225,51 @@ export const caseService = {
     return { rows: items, columns: DEDUPE_EXPORT_COLUMNS };
   },
 
-  create(input: unknown, userId: string): Promise<Case> {
+  async create(input: unknown, actor: Actor): Promise<Case> {
     const v = CreateCaseSchema.parse(input);
-    return repo.create(v, userId);
+    // ADR-0065 (audit SR-1): the case's client+product must be inside the actor's portfolio scope.
+    // Mirrors the scoping of the create form's client/product dropdowns (`scopedEntityIds`), so you can
+    // only create for what you could pick. `undefined` = unrestricted (SUPER_ADMIN/MANAGER/unwired roles).
+    await assertClientProductInScope(actor, v.clientId, v.productId);
+    return repo.create(v, actor.userId);
   },
 
   /** Add a co-applicant to an existing OPEN case (ADR-0053). Dedupe is advisory + captured per
    *  applicant (mirrors create). Allowed only while the case is NEW or IN_PROGRESS. */
-  async addApplicant(caseId: string, input: unknown, userId: string): Promise<CaseApplicant> {
+  async addApplicant(caseId: string, input: unknown, actor: Actor): Promise<CaseApplicant> {
+    // ADR-0065 (audit SR-3): the case must be visible in the actor's scope before mutating it.
+    if (!(await repo.caseVisible(caseId, await resolveScope(actor))))
+      throw AppError.notFound('CASE_NOT_FOUND');
     const v = AddApplicantSchema.parse(input);
     const status = await repo.caseStatusOf(caseId);
     if (!status) throw AppError.notFound('CASE_NOT_FOUND');
     if (status !== 'NEW' && status !== 'IN_PROGRESS') throw AppError.conflict('CASE_NOT_OPEN');
-    return repo.addApplicant(caseId, v, userId);
+    return repo.addApplicant(caseId, v, actor.userId);
   },
 
-  availableUnits(clientId: number, productId: number): Promise<AvailableUnit[]> {
+  async availableUnits(clientId: number, productId: number, actor: Actor): Promise<AvailableUnit[]> {
+    // ADR-0065 (audit SR-5): don't let a case.create holder enumerate units for a client outside its portfolio.
+    await assertClientProductInScope(actor, clientId, productId);
     return repo.availableUnits(clientId, productId);
   },
 
-  ratePreview(
+  async ratePreview(
     clientId: number,
     productId: number,
     verificationUnitId: number,
     locationId: number,
     assigneeId: string | null,
+    actor: Actor,
   ): Promise<{ clientRateType: string | null; fieldRateTypes: string[] }> {
+    // ADR-0065 (audit SR-6): same portfolio gate as available-units (this leaks rate metadata).
+    await assertClientProductInScope(actor, clientId, productId);
     return repo.ratePreview(clientId, productId, verificationUnitId, locationId, assigneeId);
   },
 
   async addTasks(caseId: string, input: unknown, actor: Actor): Promise<CaseTaskView[]> {
+    // ADR-0065 (audit SR-2): the case must be visible in the actor's scope before adding tasks to it.
+    if (!(await repo.caseVisible(caseId, await resolveScope(actor))))
+      throw AppError.notFound('CASE_NOT_FOUND');
     const cp = await repo.clientProductOf(caseId);
     if (!cp) throw AppError.notFound('CASE_NOT_FOUND');
     const v = AddTasksSchema.parse(input);

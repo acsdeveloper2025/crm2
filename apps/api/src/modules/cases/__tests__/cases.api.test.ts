@@ -701,6 +701,122 @@ describe.skipIf(!RUN)('cases API', () => {
     return { caseId, taskId: task.id };
   }
 
+  // ── case-create RBAC + portfolio scope (ADR-0065; audit SR-1..6) ───────────
+  describe('case-create RBAC + portfolio scope (ADR-0065)', () => {
+    async function assignScope(userId: string, dimension: string, entityIds: number[]): Promise<void> {
+      const r = await request(app)
+        .post(`/api/v2/users/${userId}/scope-assignments`)
+        .set(SA)
+        .send({ dimension, entityIds });
+      expect(r.status).toBe(200);
+    }
+    /** A BACKEND_USER scoped to exactly (clientId, productId). BOTH are required: CLIENT is EXPAND but
+     *  PRODUCT is a RESTRICT cap (mig 0049), so a missing product assignment caps creation to nothing. */
+    async function backendScoped(tag: string, clientId: number, productId: number): Promise<string> {
+      const be = await createUser({ username: `be_sc_${tag}`, name: 'BE SCOPE', role: 'BACKEND_USER' });
+      await assignScope(be, 'CLIENT', [clientId]);
+      await assignScope(be, 'PRODUCT', [productId]);
+      return be;
+    }
+    const newCase = (clientId: number, productId: number, name: string) => ({
+      clientId,
+      productId,
+      backendContactNumber: BC,
+      applicants: [{ name }],
+      dedupeDecision: 'NO_DUPLICATES_FOUND' as const,
+    });
+
+    it('BACKEND_USER creates a case for its assigned client+product (case.create now granted)', async () => {
+      const { clientId, productId } = await seedCpv('SCOK');
+      const be = await backendScoped('ok', clientId, productId);
+      const res = await request(app)
+        .post('/api/v2/cases')
+        .set(hdr('BACKEND_USER', be))
+        .send(newCase(clientId, productId, 'IN SCOPE'));
+      expect(res.status).toBe(201);
+    });
+
+    it('BACKEND_USER cannot create a case for a client outside its portfolio (400 CLIENT_OUT_OF_SCOPE)', async () => {
+      const inScope = await seedCpv('SCIN');
+      const out = await seedCpv('SCOUT');
+      const be = await backendScoped('cl', inScope.clientId, inScope.productId);
+      const res = await request(app)
+        .post('/api/v2/cases')
+        .set(hdr('BACKEND_USER', be))
+        .send(newCase(out.clientId, out.productId, 'OUT'));
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('CLIENT_OUT_OF_SCOPE');
+    });
+
+    it('BACKEND_USER cannot create for an out-of-portfolio product (400 PRODUCT_OUT_OF_SCOPE)', async () => {
+      const a = await seedCpv('PRA');
+      const b = await seedCpv('PRB');
+      const be = await backendScoped('pr', a.clientId, a.productId);
+      const res = await request(app)
+        .post('/api/v2/cases')
+        .set(hdr('BACKEND_USER', be))
+        .send(newCase(a.clientId, b.productId, 'OUTPROD'));
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('PRODUCT_OUT_OF_SCOPE');
+    });
+
+    it('BACKEND_USER cannot add tasks to a case outside its scope (404)', async () => {
+      const inScope = await seedCpv('TKIN');
+      const out = await seedCpv('TKOUT');
+      const be = await backendScoped('tk', inScope.clientId, inScope.productId);
+      const caseId = seeded<{ id: string }>(
+        await request(app)
+          .post('/api/v2/cases')
+          .set(SA)
+          .send(newCase(out.clientId, out.productId, 'OUTCASE')),
+      ).id;
+      const detail = await request(app).get(`/api/v2/cases/${caseId}`).set(SA);
+      const applicantId = detail.body.applicants[0].id as string;
+      const res = await request(app)
+        .post(`/api/v2/cases/${caseId}/tasks`)
+        .set(hdr('BACKEND_USER', be))
+        .send({ tasks: [{ verificationUnitId: out.enabledUnitId, applicantId, address: ADDR }] });
+      expect(res.status).toBe(404);
+    });
+
+    it('BACKEND_USER cannot add an applicant to a case outside its scope (404)', async () => {
+      const inScope = await seedCpv('APIN');
+      const out = await seedCpv('APOUT');
+      const be = await backendScoped('ap', inScope.clientId, inScope.productId);
+      const caseId = seeded<{ id: string }>(
+        await request(app)
+          .post('/api/v2/cases')
+          .set(SA)
+          .send(newCase(out.clientId, out.productId, 'OUTCASE2')),
+      ).id;
+      const res = await request(app)
+        .post(`/api/v2/cases/${caseId}/applicants`)
+        .set(hdr('BACKEND_USER', be))
+        .send({ name: 'NEW CO' });
+      expect(res.status).toBe(404);
+    });
+
+    it('available-units rejects an out-of-portfolio client (400)', async () => {
+      const inScope = await seedCpv('AUIN');
+      const out = await seedCpv('AUOUT');
+      const be = await backendScoped('au', inScope.clientId, inScope.productId);
+      const r = await request(app)
+        .get(`/api/v2/cases/available-units?clientId=${out.clientId}&productId=${out.productId}`)
+        .set(hdr('BACKEND_USER', be));
+      expect(r.status).toBe(400);
+    });
+
+    it('TEAM_LEADER can also create a case (case.create granted; unscoped by dimension)', async () => {
+      const { clientId, productId } = await seedCpv('TLOK');
+      const tl = await createUser({ username: 'tl_create', name: 'TEAM LEAD', role: 'TEAM_LEADER' });
+      const res = await request(app)
+        .post('/api/v2/cases')
+        .set(hdr('TEAM_LEADER', tl))
+        .send(newCase(clientId, productId, 'TL CASE'));
+      expect(res.status).toBe(201);
+    });
+  });
+
   it('assigns a task to an executive (status ASSIGNED + visit/distance/bill + assignee name)', async () => {
     const { caseId, taskId } = await seedCaseWithTask('AS1');
     const agent = await createUser({ username: 'fa_as1', name: 'FIELD ONE', role: 'FIELD_AGENT' });

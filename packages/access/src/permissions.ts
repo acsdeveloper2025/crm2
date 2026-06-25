@@ -115,6 +115,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   TEAM_LEADER: [
     PERMISSIONS.MASTERDATA_VIEW,
     PERMISSIONS.CASE_VIEW,
+    // ADR-0065: BACKEND_USER + TEAM_LEADER may open cases for their scope (owner 2026-06-25).
+    PERMISSIONS.CASE_CREATE,
     PERMISSIONS.CASE_ASSIGN,
     // ADR-0050: MANAGER + TEAM_LEADER may also close/finalize desk work (owner 2026-06-20).
     PERMISSIONS.FIELD_REVIEW_COMPLETE,
@@ -128,6 +130,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   BACKEND_USER: [
     PERMISSIONS.MASTERDATA_VIEW,
     PERMISSIONS.CASE_VIEW,
+    // ADR-0065: BACKEND_USER opens cases/tasks for its assigned client+product portfolio (owner 2026-06-25).
+    PERMISSIONS.CASE_CREATE,
     PERMISSIONS.DEDUPE_VIEW,
     PERMISSIONS.FIELD_REVIEW_COMPLETE,
     PERMISSIONS.CASE_FINALIZE,

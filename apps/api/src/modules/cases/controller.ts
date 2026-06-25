@@ -66,7 +66,7 @@ export const caseController = {
       const productId = parsePositiveInt(req.query['productId']);
       if (clientId === undefined || productId === undefined)
         throw AppError.badRequest('BAD_REQUEST', { param: 'clientId, productId' });
-      res.json(await svc.availableUnits(clientId, productId));
+      res.json(await svc.availableUnits(clientId, productId, actor(req)));
     } catch (e) {
       next(e);
     }
@@ -94,7 +94,9 @@ export const caseController = {
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(assigneeRaw)
           ? assigneeRaw
           : null;
-      res.json(await svc.ratePreview(clientId, productId, verificationUnitId, locationId, assigneeId));
+      res.json(
+        await svc.ratePreview(clientId, productId, verificationUnitId, locationId, assigneeId, actor(req)),
+      );
     } catch (e) {
       next(e);
     }
@@ -102,7 +104,7 @@ export const caseController = {
 
   async create(req: Request, res: Response, next: NextFunction) {
     try {
-      res.status(HTTP_STATUS.CREATED).json(await svc.create(req.body, userId(req)));
+      res.status(HTTP_STATUS.CREATED).json(await svc.create(req.body, actor(req)));
     } catch (e) {
       next(e);
     }
@@ -118,7 +120,7 @@ export const caseController = {
 
   async addApplicant(req: Request, res: Response, next: NextFunction) {
     try {
-      res.status(HTTP_STATUS.CREATED).json(await svc.addApplicant(parseId(req), req.body, userId(req)));
+      res.status(HTTP_STATUS.CREATED).json(await svc.addApplicant(parseId(req), req.body, actor(req)));
     } catch (e) {
       next(e);
     }
