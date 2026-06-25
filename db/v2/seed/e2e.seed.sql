@@ -64,12 +64,13 @@ SELECT '400001', 'Fort', 'Mumbai', 'Maharashtra', 'India'
 WHERE NOT EXISTS (SELECT 1 FROM locations WHERE pincode = '400001' AND area = 'Fort');
 
 -- commissionRates.spec: a row's Revise → /admin/commission-rates/:id. OFFICE = location-less (flat).
-INSERT INTO commission_rates (user_id, field_rate_type, amount)
-SELECT u.id, 'OFFICE', 500
+INSERT INTO commission_rates (user_id, rate_type_id, amount)
+SELECT u.id, (SELECT id FROM rate_types WHERE code = 'OFFICE'), 500
 FROM users u
 WHERE u.username = 'admin'
   AND NOT EXISTS (
-    SELECT 1 FROM commission_rates cr WHERE cr.user_id = u.id AND cr.field_rate_type = 'OFFICE'
+    SELECT 1 FROM commission_rates cr
+    WHERE cr.user_id = u.id AND cr.rate_type_id = (SELECT id FROM rate_types WHERE code = 'OFFICE')
   );
 
 -- reportLayouts.spec: a row's Edit → /admin/report-layouts/:id. CASE_REPORT needs a template body +
@@ -84,15 +85,16 @@ WHERE c.code = 'HDFC'
 -- rateManagement.spec: a row's Revise → /admin/rates/:id. A FIELD rate keyed on HDFC/HL × the first
 -- FIELD_VISIT unit × the Fort location (seeded above) with a LOCAL rate type. The no-overlap EXCLUDE
 -- rejects a duplicate, but NOT EXISTS keeps the apply idempotent.
-INSERT INTO rates (client_id, product_id, verification_unit_id, location_id, client_rate_type, amount)
+INSERT INTO rates (client_id, product_id, verification_unit_id, location_id, rate_type_id, amount)
 SELECT
   (SELECT id FROM clients WHERE code = 'HDFC'),
   (SELECT id FROM products WHERE code = 'HL'),
   (SELECT id FROM verification_units WHERE kind = 'FIELD_VISIT' ORDER BY id LIMIT 1),
   (SELECT id FROM locations WHERE pincode = '400001' AND area = 'Fort' LIMIT 1),
-  'LOCAL',
+  (SELECT id FROM rate_types WHERE code = 'LOCAL'),
   250
 WHERE NOT EXISTS (
   SELECT 1 FROM rates r
-  WHERE r.client_id = (SELECT id FROM clients WHERE code = 'HDFC') AND r.client_rate_type = 'LOCAL'
+  WHERE r.client_id = (SELECT id FROM clients WHERE code = 'HDFC')
+    AND r.rate_type_id = (SELECT id FROM rate_types WHERE code = 'LOCAL')
 );
