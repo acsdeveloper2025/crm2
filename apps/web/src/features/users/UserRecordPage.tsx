@@ -160,9 +160,12 @@ function UserForm({ initial }: { initial: UserView | null }) {
       const payload = {
         name,
         role,
-        phone,
-        departmentId: departmentId ? Number(departmentId) : null,
-        designationId: designationId ? Number(designationId) : null,
+        // phone is optional + E.164-validated: send only when filled, null on edit to clear (empty ''
+        // fails E.164 → 400). Optional FKs: CreateUserSchema accepts them OMITTED (not null) so omit on
+        // create; UpdateUserSchema accepts null to clear, so null on edit.
+        ...(phone ? { phone } : isEdit ? { phone: null } : {}),
+        ...(departmentId ? { departmentId: Number(departmentId) } : isEdit ? { departmentId: null } : {}),
+        ...(designationId ? { designationId: Number(designationId) } : isEdit ? { designationId: null } : {}),
         ...(email ? { email } : isEdit ? { email: null } : {}),
         ...(managerRole && reportsTo ? { reportsTo } : isEdit ? { reportsTo: null } : {}),
         ...(toIsoDate(effectiveFrom) ? { effectiveFrom: toIsoDate(effectiveFrom) } : {}),
@@ -500,9 +503,17 @@ function UserForm({ initial }: { initial: UserView | null }) {
                 username,
                 name,
                 role,
-                phone,
-                departmentId: departmentId ? Number(departmentId) : null,
-                designationId: designationId ? Number(designationId) : null,
+                ...(phone ? { phone } : isEdit ? { phone: null } : {}),
+                ...(departmentId
+                  ? { departmentId: Number(departmentId) }
+                  : isEdit
+                    ? { departmentId: null }
+                    : {}),
+                ...(designationId
+                  ? { designationId: Number(designationId) }
+                  : isEdit
+                    ? { designationId: null }
+                    : {}),
                 ...(email ? { email } : isEdit ? { email: null } : {}),
                 ...(managerRole && reportsTo ? { reportsTo } : isEdit ? { reportsTo: null } : {}),
                 ...(toIsoDate(effectiveFrom) ? { effectiveFrom: toIsoDate(effectiveFrom) } : {}),

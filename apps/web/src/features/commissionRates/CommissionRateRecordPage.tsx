@@ -15,7 +15,7 @@ import {
 } from '@crm2/sdk';
 import { api, ApiError } from '../../lib/sdk.js';
 import { zodFieldErrors } from '../../lib/zodForm.js';
-import { toDateInput, toIsoDate } from '../../lib/format.js';
+import { toIsoDate } from '../../lib/format.js';
 import { useAuth } from '../../lib/AuthContext.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { Button } from '../../components/ui/Button.js';
@@ -87,7 +87,10 @@ function CommissionRateForm({ initial }: { initial: CommissionRateView | null })
   const [locationId, setLocationId] = useState(initial?.locationId ? String(initial.locationId) : '');
   const [tatBand, setTatBand] = useState(initial?.tatBand != null ? String(initial.tatBand) : '');
   const [amount, setAmount] = useState(initial ? String(initial.amount) : '');
-  const [effectiveFrom, setEffectiveFrom] = useState(toDateInput(initial?.effectiveFrom));
+  // Effective-From defaults to blank (= now) for BOTH create and revise. Don't seed it from the rate on
+  // revise: <input type=date> truncates the stored timestamp to midnight, which is EARLIER than the rate's
+  // real effective_from, so end-dating the prior row inverts the server tstzrange (lower > upper → 500).
+  const [effectiveFrom, setEffectiveFrom] = useState('');
   const [version, setVersion] = useState(initial?.version ?? 0); // OCC token the revise started from
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});

@@ -84,6 +84,21 @@ export function VerificationUnitRecordPage() {
       </div>
     );
   }
+  // The 9 mobile-hardcoded FIELD_VISIT units are system-locked (their codes drive the mobile form
+  // templates + field mapping). The list hides Edit + the server 409s an edit; block the deep-linked
+  // record route too so the edit form never renders for one.
+  if (isEdit && existing.data?.isSystem) {
+    return (
+      <div className="space-y-3">
+        <Button variant="link" size="sm" onClick={() => navigate(LIST)}>
+          ← Back to verification units
+        </Button>
+        <p className="text-sm text-muted-foreground">
+          This is a system verification unit (linked to the mobile app) and can’t be edited.
+        </p>
+      </div>
+    );
+  }
   // Re-mount the form per record (key) so its state seeds cleanly from the loaded unit.
   return <UnitForm key={id ?? 'new'} initial={existing.data ?? null} />;
 }
