@@ -1,10 +1,10 @@
-# Rate-Type Management — design spec (ADR-0063)
+# Rate-Type Management — design spec (ADR-0064)
 
 - **Date:** 2026-06-25
 - **Status:** Design — owner-approved shape (2026-06-25); spec under review; not yet planned/built.
 - **Owner decisions (2026-06-25):** (1) **Unified catalog, FK'd everywhere** (full v1 parity); (2) **per-combination assignment** layer (v1-style); (3) **preserve current resolution** (FK the rate-type *value*; keep ADR-0050 location-based billing + key+location+dims commission; **no** geo/service-zone rules); (4) **phased ship** (A → B → C, each gated + deployed).
-- **New ADR:** **ADR-0063** — supersedes **ADR-0050 §"client_rate_type is a free-text label"**; relates to **ADR-0056** (field rate-type auto-derived at assignment) and **ADR-0051** (inline-grid admin pattern). Frozen-area change (billing/commission data model) → ADR + owner sign-off per `docs/governance/LONG_TERM_PROTECTION.md`.
-- **Migrations:** Phase A = `0091`, Phase B = `0092`, Phase C = `0093+` (final numbers confirmed at build; next-free today is 0091).
+- **New ADR:** **ADR-0064** — supersedes **ADR-0050 §"client_rate_type is a free-text label"**; relates to **ADR-0056** (field rate-type auto-derived at assignment) and **ADR-0051** (inline-grid admin pattern). Frozen-area change (billing/commission data model) → ADR + owner sign-off per `docs/governance/LONG_TERM_PROTECTION.md`.
+- **Migrations:** Phase A = `0092`, Phase B = `0093`, Phase C = `0094+` (final numbers confirmed at build; next-free today is 0092).
 
 ---
 
@@ -42,7 +42,7 @@ The owner wants what v1 had: an **administration page to create rate types** (ea
 
 ## 3. Data model
 
-### 3.1 Catalog — extend `rate_types` (Phase A, mig 0091)
+### 3.1 Catalog — extend `rate_types` (Phase A, mig 0092)
 Add (idempotent `ADD COLUMN IF NOT EXISTS`):
 - `name` varchar(100) — human label (backfill = title-cased `code` for the 18 seeds).
 - `description` text null.
@@ -52,7 +52,7 @@ Add (idempotent `ADD COLUMN IF NOT EXISTS`):
 - Keep `uq_rate_types_code`. Keep `effective_from`.
 - **The seeded rows (18 + OFFICE) are ordinary editable catalog rows** shown in the admin page — NOT system-locked (unlike the 9 `is_system` verification units). `code` is immutable on edit (it is the FK key); `name`/`description`/`category`/`sort_order`/`is_active` are editable + updatable (owner 2026-06-25).
 
-### 3.2 Assignment — new `rate_type_assignments` (Phase B, mig 0092)
+### 3.2 Assignment — new `rate_type_assignments` (Phase B, mig 0093)
 ```
 id              integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY
 client_id       integer NOT NULL REFERENCES clients(id)
@@ -65,7 +65,7 @@ UNIQUE (client_id, product_id, verification_unit_id, rate_type_id)
 ```
 Index `(client_id, product_id, verification_unit_id) WHERE is_active` for the availability lookup.
 
-### 3.3 FK conversion (Phase C, mig 0093+)
+### 3.3 FK conversion (Phase C, mig 0094+)
 Add `rate_type_id integer REFERENCES rate_types(id)` to `rates`, `commission_rates`, `case_tasks`, backfill, swap the constraints, and **drop the old string/enum columns in the SAME migration** (no transition / no dual-write — owner 2026-06-25). Strict order within the one migration:
 1. **Lossless catalog reconciliation first** (so the in-place drop can't lose data). `commission_rates.field_rate_type` / `case_tasks.field_rate_type` are already canonical codes (`LOCAL|OGL|OFFICE`) → total match. `rates.client_rate_type` is free-text → **auto-promote**: `INSERT INTO rate_types(code, name, is_active)` every DISTINCT non-null `UPPER(client_rate_type)` not already present, so every existing label becomes a real catalog row with an id (nothing lost), then match.
 2. Add `rate_type_id`; backfill by `UPPER(old_value) = rate_types.code` (null `client_rate_type` → null id; KYC units legitimately null).
@@ -112,11 +112,11 @@ Every migration re-runs verbatim on every deploy (the 0037/0083 trap). The FK co
 
 ## 7. Phasing (each = own branch off latest origin/main, gate, browser-verify, deploy on owner OK)
 
-- **Phase A — Catalog + admin CRUD.** mig 0091 (extend `rate_types` + OFFICE row + backfill name/description); `rateTypes` CRUD API + SDK schemas + RBAC; Rate Types inline-grid admin page + nav + routes; e2e spec + seed row; `migrations.rerun.test.ts` extended. **No FK/resolution change yet** — fully shippable on its own.
-- **Phase B — Assignment.** mig 0092 (`rate_type_assignments`); assignments API + `available` endpoint + SDK; Assignment matrix page + route; e2e. Pickers can start consuming `available` (still string-valued until C).
-- **Phase C — FK conversion + wiring.** mig 0093 (auto-promote orphan `client_rate_type` labels → catalog; add `rate_type_id` to rates/commission_rates/case_tasks; backfill; swap the rates EXCLUDE term + drop the case_tasks/commission string CHECK; **DROP the three old columns in the SAME migration**; guard the earlier old-name migrations [0011/0013/0058/0079/0083/0084] so a re-run can't resurrect them; extend `migrations.rerun.test.ts`); resolution matches by id (display-only for billing); pickers wired (Rate Mgmt = assignment-gated select · Commission = all active · case-creation rate-preview); contracts keep emitting the string fields from the catalog JOIN; full `pnpm verify` (Postgres :5433) + mobile-safety re-confirm + browser-verify the bill/commission round-trip.
+- **Phase A — Catalog + admin CRUD.** mig 0092 (extend `rate_types` + OFFICE row + backfill name/description); `rateTypes` CRUD API + SDK schemas + RBAC; Rate Types inline-grid admin page + nav + routes; e2e spec + seed row; `migrations.rerun.test.ts` extended. **No FK/resolution change yet** — fully shippable on its own.
+- **Phase B — Assignment.** mig 0093 (`rate_type_assignments`); assignments API + `available` endpoint + SDK; Assignment matrix page + route; e2e. Pickers can start consuming `available` (still string-valued until C).
+- **Phase C — FK conversion + wiring.** mig 0094 (auto-promote orphan `client_rate_type` labels → catalog; add `rate_type_id` to rates/commission_rates/case_tasks; backfill; swap the rates EXCLUDE term + drop the case_tasks/commission string CHECK; **DROP the three old columns in the SAME migration**; guard the earlier old-name migrations [0011/0013/0058/0079/0083/0084] so a re-run can't resurrect them; extend `migrations.rerun.test.ts`); resolution matches by id (display-only for billing); pickers wired (Rate Mgmt = assignment-gated select · Commission = all active · case-creation rate-preview); contracts keep emitting the string fields from the catalog JOIN; full `pnpm verify` (Postgres :5433) + mobile-safety re-confirm + browser-verify the bill/commission round-trip.
 
-ADR-0063 authored as the first task of Phase A.
+ADR-0064 authored as the first task of Phase A.
 
 ---
 

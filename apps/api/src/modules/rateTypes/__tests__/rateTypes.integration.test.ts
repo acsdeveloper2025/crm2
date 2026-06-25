@@ -10,7 +10,7 @@ const app = createApp({ enableTestAuth: true });
 const SA = authHeaderForRole('SUPER_ADMIN');
 const FA = authHeaderForRole('FIELD_AGENT');
 
-describe.skipIf(!RUN)('rate-types CRUD (ADR-0063)', () => {
+describe.skipIf(!RUN)('rate-types CRUD (ADR-0064)', () => {
   beforeAll(async () => {
     await db!.migrate();
     setPool(db!.pool);

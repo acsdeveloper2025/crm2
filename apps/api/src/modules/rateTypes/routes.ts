@@ -3,7 +3,7 @@ import { authorize, PERMISSIONS } from '@crm2/access';
 import { rateTypeController as c } from './controller.js';
 
 /**
- * /api/v2/rate-types — managed rate-type catalog (ADR-0063).
+ * /api/v2/rate-types — managed rate-type catalog (ADR-0064).
  * View: page.masterdata (MASTERDATA_VIEW). Manage: masterdata.manage (MASTERDATA_MANAGE).
  */
 export const rateTypeRoutes: Router = Router();

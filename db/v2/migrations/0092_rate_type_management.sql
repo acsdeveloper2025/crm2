@@ -1,7 +1,7 @@
--- 0091_rate_type_management.sql — ADR-0063 Phase A. Promote the rate_types catalog (mig 0014) to a
+-- 0092_rate_type_management.sql — ADR-0064 Phase A. Promote the rate_types catalog (mig 0014) to a
 -- managed master-data entity: add name/description/category/version, backfill name for the 18 seeds,
 -- and add the OFFICE row (desk/location-less commission band). Forward-only, idempotent, re-run-safe.
--- NO FK / resolution changes here (that is Phase C, mig 0093).
+-- NO FK / resolution changes here (that is Phase C, mig 0094).
 
 BEGIN;
 

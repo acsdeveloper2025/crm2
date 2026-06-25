@@ -73,7 +73,7 @@ describe.skipIf(!RUN)('migrations re-run safety (prod re-applies the full set ev
       );
       expect(cons.map((c) => c.conname)).toEqual(['commission_rates_no_overlap', 'rates_no_overlap']);
 
-      // ADR-0063 Phase A: rate_types gains name/description/category/version and an OFFICE row,
+      // ADR-0064 Phase A: rate_types gains name/description/category/version and an OFFICE row,
       // and must survive the 3× re-run unchanged (idempotent ADD COLUMN + ON CONFLICT seed).
       const { rows: rtCols } = await pool.query<{ cols: string }>(
         `SELECT string_agg(column_name, ',' ORDER BY column_name) AS cols

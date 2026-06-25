@@ -29,7 +29,7 @@ const RATE_TYPE_PAGE_SPEC: PageSpec = {
   defaultOrder: 'asc',
 };
 
-/** Rate-type service — managed master-data catalog (ADR-0063). `code` is immutable (no import/export/bulk in Phase A). */
+/** Rate-type service — managed master-data catalog (ADR-0064). `code` is immutable (no import/export/bulk in Phase A). */
 export const rateTypeService = {
   async list(rawQuery: Record<string, unknown>): Promise<Paginated<RateType>> {
     const r = resolvePage(rawQuery, RATE_TYPE_PAGE_SPEC);

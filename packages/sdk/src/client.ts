@@ -438,7 +438,7 @@ export function createSdk(opts: SdkOptions) {
     },
 
     rateTypes: {
-      // GET / is now paginated; the lean dropdown lives at /options (ADR-0063).
+      // GET / is now paginated; the lean dropdown lives at /options (ADR-0064).
       list: () => req<RateTypeOption[]>('GET', '/api/v2/rate-types/options?active=true'),
     },
 

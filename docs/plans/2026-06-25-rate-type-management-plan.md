@@ -16,9 +16,9 @@
 
 | File | Create/Modify | Responsibility |
 |---|---|---|
-| `docs/adr/ADR-0063-rate-type-management.md` | Create | The superseding decision record (catalog as managed FK SoT; supersedes ADR-0050 §client-label, relates ADR-0056). |
-| `docs/adr/README.md` | Modify | Index ADR-0063. |
-| `db/v2/migrations/0091_rate_type_management.sql` | Create | Extend `rate_types` (+name/description/category/version), backfill name, insert OFFICE. Idempotent. |
+| `docs/adr/ADR-0064-rate-type-management.md` | Create | The superseding decision record (catalog as managed FK SoT; supersedes ADR-0050 §client-label, relates ADR-0056). |
+| `docs/adr/README.md` | Modify | Index ADR-0064. |
+| `db/v2/migrations/0092_rate_type_management.sql` | Create | Extend `rate_types` (+name/description/category/version), backfill name, insert OFFICE. Idempotent. |
 | `apps/api/src/platform/__tests__/migrations.rerun.test.ts` | Modify | Assert the new columns + OFFICE row survive a 3× re-run (no resurrection risk in A, but lock it in). |
 | `packages/sdk/src/rateTypes.ts` | Modify | Extend `RateType`; add `RATE_TYPE_CATEGORIES`/`RateTypeCategory`, `RateTypeOption`, `Create/UpdateRateTypeSchema`. |
 | `packages/sdk/src/index.ts` | Modify (if needed) | Re-export the new schema symbols (match how `designations` is exported). |
@@ -38,15 +38,15 @@
 
 ---
 
-## Task 1: ADR-0063
+## Task 1: ADR-0064
 
 **Files:**
-- Create: `docs/adr/ADR-0063-rate-type-management.md`
+- Create: `docs/adr/ADR-0064-rate-type-management.md`
 - Modify: `docs/adr/README.md`
 
-- [ ] **Step 1: Write ADR-0063.** Use `docs/adr/_template.md`. Content:
+- [ ] **Step 1: Write ADR-0064.** Use `docs/adr/_template.md`. Content:
   - **Status:** Accepted · owner-directed 2026-06-25. **Supersedes** ADR-0050 §"`client_rate_type` is a free-text display label" (the value source becomes a managed FK catalog). **Relates** ADR-0056 (task field rate-type stays auto-derived) + ADR-0051 (inline-grid admin pattern). Frozen-area change per `docs/governance/LONG_TERM_PROTECTION.md`.
-  - **Decision:** the existing `rate_types` catalog (mig 0014) becomes the managed source of truth for rate types, FK-referenced by `rates`/`commission_rates`/`case_tasks` (Phase C), with a per-(client×product×unit) assignment layer (Phase B). **Resolution preserved**: client bill resolves by location (rate type = FK'd label); commission resolves by rate-type key + location + Universal dims (matching `rate_type_id`); **no** geo/service-zone rules. OFFICE is a catalog row (`category='OFFICE'`). Phased delivery A→B→C; migrations 0091/0092/0093.
+  - **Decision:** the existing `rate_types` catalog (mig 0014) becomes the managed source of truth for rate types, FK-referenced by `rates`/`commission_rates`/`case_tasks` (Phase C), with a per-(client×product×unit) assignment layer (Phase B). **Resolution preserved**: client bill resolves by location (rate type = FK'd label); commission resolves by rate-type key + location + Universal dims (matching `rate_type_id`); **no** geo/service-zone rules. OFFICE is a catalog row (`category='OFFICE'`). Phased delivery A→B→C; migrations 0092/0093/0094.
   - **Alternatives considered:** (a) keep the catalog orphaned + free-text labels — rejected (owner wants v1 parity + proper ids); (b) full v1 resolution (bill keyed by rate-type + reintroduce `service_zone_rules`) — rejected by owner (preserve current resolution); (c) FK only the client side — rejected (owner wants commission + billing unified).
   - **Consequences:** admin can create/curate rate types; OUTSTATION family becomes selectable; the migration set re-run safety (the 0083 trap) is the load-bearing risk in Phase C.
 
@@ -55,22 +55,22 @@
 - [ ] **Step 3: Commit**
 
 ```bash
-git add docs/adr/ADR-0063-rate-type-management.md docs/adr/README.md
-git commit -m "docs(adr): ADR-0063 rate-type management (catalog as managed FK SoT)"
+git add docs/adr/ADR-0064-rate-type-management.md docs/adr/README.md
+git commit -m "docs(adr): ADR-0064 rate-type management (catalog as managed FK SoT)"
 ```
 
 ---
 
-## Task 2: Migration 0091 — extend `rate_types`
+## Task 2: Migration 0092 — extend `rate_types`
 
 **Files:**
-- Create: `db/v2/migrations/0091_rate_type_management.sql`
+- Create: `db/v2/migrations/0092_rate_type_management.sql`
 - Modify: `apps/api/src/platform/__tests__/migrations.rerun.test.ts`
 
 - [ ] **Step 1: Extend the re-run guard test (failing first).** In `migrations.rerun.test.ts`, after the existing constraint assertions (line ~74), add:
 
 ```ts
-    // ADR-0063 Phase A: rate_types gains name/description/category/version and an OFFICE row,
+    // ADR-0064 Phase A: rate_types gains name/description/category/version and an OFFICE row,
     // and must survive the 3× re-run unchanged (idempotent ADD COLUMN + ON CONFLICT seed).
     const { rows: rtCols } = await pool.query<{ cols: string }>(
       `SELECT string_agg(column_name, ',' ORDER BY column_name) AS cols
@@ -89,13 +89,13 @@ git commit -m "docs(adr): ADR-0063 rate-type management (catalog as managed FK S
 Run: `DATABASE_URL=postgresql://postgres@127.0.0.1:5433/acs_v2_test LC_ALL=C pnpm --filter @crm2/api test -- migrations.rerun`
 Expected: FAIL — `rate_types` has no `category`/`name` column yet (migration not written).
 
-- [ ] **Step 3: Write the migration.** Create `db/v2/migrations/0091_rate_type_management.sql`:
+- [ ] **Step 3: Write the migration.** Create `db/v2/migrations/0092_rate_type_management.sql`:
 
 ```sql
--- 0091_rate_type_management.sql — ADR-0063 Phase A. Promote the rate_types catalog (mig 0014) to a
+-- 0092_rate_type_management.sql — ADR-0064 Phase A. Promote the rate_types catalog (mig 0014) to a
 -- managed master-data entity: add name/description/category/version, backfill name for the 18 seeds,
 -- and add the OFFICE row (desk/location-less commission band). Forward-only, idempotent, re-run-safe.
--- NO FK / resolution changes here (that is Phase C, mig 0093).
+-- NO FK / resolution changes here (that is Phase C, mig 0094).
 
 BEGIN;
 
@@ -135,8 +135,8 @@ Expected: PASS (full set applies 3×; new columns present; exactly one OFFICE ro
 - [ ] **Step 5: Commit**
 
 ```bash
-git add db/v2/migrations/0091_rate_type_management.sql apps/api/src/platform/__tests__/migrations.rerun.test.ts
-git commit -m "feat(db): mig 0091 extend rate_types (name/description/category/version + OFFICE) — ADR-0063"
+git add db/v2/migrations/0092_rate_type_management.sql apps/api/src/platform/__tests__/migrations.rerun.test.ts
+git commit -m "feat(db): mig 0092 extend rate_types (name/description/category/version + OFFICE) — ADR-0064"
 ```
 
 ---
@@ -252,7 +252,7 @@ Expected: PASS + typecheck clean.
 
 ```bash
 git add packages/sdk/src/rateTypes.ts packages/sdk/src/__tests__/rateTypes.test.ts packages/sdk/src/index.ts
-git commit -m "feat(sdk): extend RateType + Create/UpdateRateTypeSchema (code immutable) — ADR-0063"
+git commit -m "feat(sdk): extend RateType + Create/UpdateRateTypeSchema (code immutable) — ADR-0064"
 ```
 
 ---
@@ -463,7 +463,7 @@ Mirror `apps/api/src/modules/designations/service.ts` (read it). It owns: the `P
 
 ```ts
 // (shape — align imports/harness with the designations integration test)
-describe('rate-types CRUD (ADR-0063)', () => {
+describe('rate-types CRUD (ADR-0064)', () => {
   it('GET /api/v2/rate-types returns the seeded catalog paginated', async () => {
     const res = await request(app).get('/api/v2/rate-types').set(authHeaderForRole('SUPER_ADMIN'));
     expect(res.status).toBe(200);
@@ -577,7 +577,7 @@ import { Router } from 'express';
 import { authorize, PERMISSIONS } from '@crm2/access';
 import { rateTypeController as c } from './controller.js';
 
-/** /api/v2/rate-types — managed rate-type catalog (ADR-0063). View: page.masterdata. Manage: masterdata.manage. */
+/** /api/v2/rate-types — managed rate-type catalog (ADR-0064). View: page.masterdata. Manage: masterdata.manage. */
 export const rateTypeRoutes: Router = Router();
 
 rateTypeRoutes.get('/options', authorize(PERMISSIONS.MASTERDATA_VIEW), c.options);
@@ -605,7 +605,7 @@ Expected: new paths present; contract test PASS.
 
 ```bash
 git add apps/api/src/modules/rateTypes/ apps/api/openapi.json
-git commit -m "feat(api): rate-types CRUD (list/get/create/update/activate/deactivate) — ADR-0063"
+git commit -m "feat(api): rate-types CRUD (list/get/create/update/activate/deactivate) — ADR-0064"
 ```
 
 ---
@@ -669,7 +669,7 @@ Expected: PASS.
 
 ```bash
 git add apps/web/src/features/rateTypes/ apps/web/src/App.tsx apps/web/src/components/Layout.tsx apps/web/src/features/rateManagement/RateRecordPage.tsx
-git commit -m "feat(web): Rate Types admin page (inline-grid) + nav/route; Rate Mgmt dropdown → /options — ADR-0063"
+git commit -m "feat(web): Rate Types admin page (inline-grid) + nav/route; Rate Mgmt dropdown → /options — ADR-0064"
 ```
 
 ---
@@ -679,7 +679,7 @@ git commit -m "feat(web): Rate Types admin page (inline-grid) + nav/route; Rate 
 **Files:**
 - Create: `apps/web/e2e/rateTypes.spec.ts`
 
-- [ ] **Step 1: Write the e2e spec** mirroring `apps/web/e2e/locations.spec.ts` (Laptop-only; reuses the seeded catalog — mig 0091 seeds 19 rows in CI, so NO extra `e2e.seed.sql` row is needed). Assert: navigate `/admin/rate-types`; the grid shows the `OFFICE` row; clicking the **Name** cell of a row opens an inline editor (no modal); a `code` cell does **not** open an editor (immutable); "+ Add row" is present.
+- [ ] **Step 1: Write the e2e spec** mirroring `apps/web/e2e/locations.spec.ts` (Laptop-only; reuses the seeded catalog — mig 0092 seeds 19 rows in CI, so NO extra `e2e.seed.sql` row is needed). Assert: navigate `/admin/rate-types`; the grid shows the `OFFICE` row; clicking the **Name** cell of a row opens an inline editor (no modal); a `code` cell does **not** open an editor (immutable); "+ Add row" is present.
 
 - [ ] **Step 2: Run the new spec against the worktree web**
 
@@ -704,7 +704,7 @@ Expected: typecheck 8/8 · lint · format · no-suppressions · boundaries · al
 
 ```bash
 git add apps/web/e2e/rateTypes.spec.ts
-git commit -m "test(e2e): rate-types admin inline-grid affordance + edit-persist — ADR-0063"
+git commit -m "test(e2e): rate-types admin inline-grid affordance + edit-persist — ADR-0064"
 ```
 
 - [ ] **Step 6: Update memory + registry, then STOP for owner push approval.** Update `project_rate_type_management_2026_06_25.md` (Phase A DONE), and ask the owner before `git push` (→ auto-deploys). Do NOT push without explicit OK.
