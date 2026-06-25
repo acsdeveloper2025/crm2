@@ -1229,8 +1229,8 @@ owner-gated; push→main auto-deploys.
 
 3-agent adversarial review (Security · Architecture+DB · Design+Spec) of the per-combination assignment
 layer — all three returned **PASS**. Built on branch `feat/rate-type-assignment` (off origin/main
-`b2cdcf7`); full `pnpm verify` (api 987) + Playwright e2e 157 green; browser-verified persist on `crm2_dev`;
-NOT pushed (owner-gated).
+`b2cdcf7`); full `pnpm verify` (api 987) + Playwright e2e 157 green; browser-verified persist on `crm2_dev`.
+**SHIPPED + LIVE on prod 2026-06-25** (origin/main `0f9be26`, deploy `28175316817` + ci green; mig 0093 applied, routes 401-live).
 
 | id | sev | finding | disposition |
 |----|-----|---------|-------------|
