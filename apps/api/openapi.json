@@ -3479,6 +3479,116 @@
             "bearerAuth": []
           }
         ]
+      },
+      "post": {
+        "tags": [
+          "rate-types"
+        ],
+        "operationId": "post_api_v2_rate_types",
+        "summary": "POST /api/v2/rate-types",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/rate-types/{id}": {
+      "get": {
+        "tags": [
+          "rate-types"
+        ],
+        "operationId": "get_api_v2_rate_types_id",
+        "summary": "GET /api/v2/rate-types/{id}",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "rate-types"
+        ],
+        "operationId": "put_api_v2_rate_types_id",
+        "summary": "PUT /api/v2/rate-types/{id}",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/rate-types/{id}/activate": {
+      "post": {
+        "tags": [
+          "rate-types"
+        ],
+        "operationId": "post_api_v2_rate_types_id_activate",
+        "summary": "POST /api/v2/rate-types/{id}/activate",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/rate-types/{id}/deactivate": {
+      "post": {
+        "tags": [
+          "rate-types"
+        ],
+        "operationId": "post_api_v2_rate_types_id_deactivate",
+        "summary": "POST /api/v2/rate-types/{id}/deactivate",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/rate-types/options": {
+      "get": {
+        "tags": [
+          "rate-types"
+        ],
+        "operationId": "get_api_v2_rate_types_options",
+        "summary": "GET /api/v2/rate-types/options",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/api/v2/rates": {
