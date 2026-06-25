@@ -18,6 +18,7 @@ import { RateManagementPage } from './features/rateManagement/RateManagementPage
 import { RateRecordPage } from './features/rateManagement/RateRecordPage.js';
 import { RateTypesPage } from './features/rateTypes/RateTypesPage.js';
 import { RateTypeAssignmentsPage } from './features/rateTypeAssignments/RateTypeAssignmentsPage.js';
+import { RateTypeAssignmentRecordPage } from './features/rateTypeAssignments/RateTypeAssignmentRecordPage.js';
 import { LocationsPage } from './features/locations/LocationsPage.js';
 import { UsersPage } from './features/users/UsersPage.js';
 import { UserRecordPage } from './features/users/UserRecordPage.js';
@@ -81,6 +82,8 @@ export function App() {
         <Route path="/admin/rates/:id" element={<RateRecordPage />} />
         <Route path="/admin/rate-types" element={<RateTypesPage />} />
         <Route path="/admin/rate-type-assignments" element={<RateTypeAssignmentsPage />} />
+        <Route path="/admin/rate-type-assignments/new" element={<RateTypeAssignmentRecordPage />} />
+        <Route path="/admin/rate-type-assignments/:id" element={<RateTypeAssignmentRecordPage />} />
         <Route path="/admin/commission-rates" element={<CommissionRatesPage />} />
         <Route path="/admin/commission-rates/new" element={<CommissionRateRecordPage />} />
         <Route path="/admin/commission-rates/:id" element={<CommissionRateRecordPage />} />
