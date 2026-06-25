@@ -34,6 +34,14 @@ filter, not a security boundary**. In v2 the separation is structural and free:
    part of the grid's react-query key — so changing it refetches automatically (no manual cache plumbing).
    Wired into the **Cases** and **Pipeline** lists. Default (both null) = "all" = the user's full scope.
 
+   **Client→product cascade (v1 parity):** when a client is selected, the product dropdown shows only the
+   products mapped to that client (`client_products` / CPV via `GET /api/v2/client-products?clientId=`),
+   intersected client-side with the scoped product list — so a user sees products that are BOTH mapped to
+   the client AND in their portfolio scope (the CPV list endpoint is not itself user-scoped, so the
+   intersection is what guarantees scope-safety). "All clients" shows the full scoped product list. Changing
+   the client clears the product. (Mirrors v1's `useProductsByClient` → `/clients/:id/products` ∩
+   `user_product_assignments`.)
+
 ## Consequences
 
 ### Positive
