@@ -227,6 +227,32 @@ describe.skipIf(!RUN)('cases API', () => {
     expect((await request(app).get('/api/v2/cases?f_status=CANCELLED').set(SA)).body.totalCount).toBe(0);
   });
 
+  it('filters the cases list by productId (navbar selector domain filter, ADR-0066)', async () => {
+    const a = await seedCpv('PFA');
+    const b = await seedCpv('PFB');
+    const mk = (clientId: number, productId: number, name: string) =>
+      request(app)
+        .post('/api/v2/cases')
+        .set(SA)
+        .send({
+          clientId,
+          productId,
+          backendContactNumber: BC,
+          applicants: [{ name }],
+          dedupeDecision: 'NO_DUPLICATES_FOUND',
+        });
+    expect((await mk(a.clientId, a.productId, 'CASE A')).status).toBe(201);
+    expect((await mk(b.clientId, b.productId, 'CASE B')).status).toBe(201);
+
+    expect((await request(app).get('/api/v2/cases').set(SA)).body.totalCount).toBe(2);
+    const fa = await request(app).get(`/api/v2/cases?productId=${a.productId}`).set(SA);
+    expect(fa.body.totalCount).toBe(1);
+    expect(fa.body.filters.productId).toBe(a.productId);
+    expect((await request(app).get(`/api/v2/cases?productId=${b.productId}`).set(SA)).body.totalCount).toBe(
+      1,
+    );
+  });
+
   it('create requires a dedupe decision (400) and a rationale when CREATE_NEW despite dups (400)', async () => {
     const { clientId, productId } = await seedCpv('F');
     const noDecision = await request(app)

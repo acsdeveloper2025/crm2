@@ -5,6 +5,7 @@ import { useFocusTrap } from '../lib/useFocusTrap.js';
 import { NotificationBell } from './NotificationBell.js';
 import { JobsTray } from './JobsTray.js';
 import { HeaderClock } from './HeaderClock.js';
+import { ActiveSelectionSelector } from './ActiveSelectionSelector.js';
 import { UserMenu } from './UserMenu.js';
 import { ThemeToggle } from './ThemeToggle.js';
 import { useRealtimeNotifications } from '../features/notifications/useNotifications.js';
@@ -226,6 +227,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <PanelLeftIcon />
           </button>
           {!open && <span className="text-base font-bold tracking-tight text-foreground">{BRAND}</span>}
+          {/* Global client+product filter (ADR-0066) — desktop only (hidden <lg to avoid header
+              overflow; auto-hides for single-client users). Convenience narrowing, not a security gate. */}
+          <div className="ml-4 hidden lg:flex">
+            <ActiveSelectionSelector />
+          </div>
           <div className="ml-auto flex items-center gap-4">
             <HeaderClock />
             <ThemeToggle />

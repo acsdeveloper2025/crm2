@@ -23,6 +23,7 @@ const OVERDUE_SQL = `(ct.status IN ('PENDING','ASSIGNED','IN_PROGRESS')
 export interface TaskListOptions {
   status?: string;
   clientId?: number;
+  productId?: number;
   assignedTo?: string;
   unitId?: number;
   search?: string;
@@ -99,6 +100,7 @@ function buildWhere(
     TaskListOptions,
     | 'status'
     | 'clientId'
+    | 'productId'
     | 'assignedTo'
     | 'unitId'
     | 'search'
@@ -118,6 +120,10 @@ function buildWhere(
   if (o.clientId !== undefined) {
     params.push(o.clientId);
     where.push(`cs.client_id = $${params.length}`);
+  }
+  if (o.productId !== undefined) {
+    params.push(o.productId);
+    where.push(`cs.product_id = $${params.length}`);
   }
   if (o.assignedTo) {
     params.push(o.assignedTo);
@@ -188,7 +194,7 @@ export const taskRepository = {
   async stats(
     o: Pick<
       TaskListOptions,
-      'clientId' | 'assignedTo' | 'unitId' | 'search' | 'columnFilters' | 'scope' | 'billing'
+      'clientId' | 'productId' | 'assignedTo' | 'unitId' | 'search' | 'columnFilters' | 'scope' | 'billing'
     >,
   ): Promise<TaskStats> {
     // The status/overdue buckets are cheap, param-free predicates → ONE lateral-free aggregate over

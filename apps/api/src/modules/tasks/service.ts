@@ -96,6 +96,8 @@ function domainParams(rawQuery: Record<string, unknown>) {
       : undefined;
   const clientIdRaw = Number(rawQuery['clientId']);
   const clientId = Number.isInteger(clientIdRaw) && clientIdRaw > 0 ? clientIdRaw : undefined;
+  const productIdRaw = Number(rawQuery['productId']);
+  const productId = Number.isInteger(productIdRaw) && productIdRaw > 0 ? productIdRaw : undefined;
   const unitIdRaw = Number(rawQuery['unitId']);
   const unitId = Number.isInteger(unitIdRaw) && unitIdRaw > 0 ? unitIdRaw : undefined;
   const assignedToRaw = rawQuery['assignedTo'];
@@ -103,7 +105,7 @@ function domainParams(rawQuery: Record<string, unknown>) {
     typeof assignedToRaw === 'string' && UUID_RE.test(assignedToRaw) ? assignedToRaw : undefined;
   const overdue = rawQuery['overdue'] === '1' || rawQuery['overdue'] === 'true';
   const commissionable = rawQuery['commissionable'] === '1' || rawQuery['commissionable'] === 'true';
-  return { status, clientId, unitId, assignedTo, overdue, commissionable };
+  return { status, clientId, productId, unitId, assignedTo, overdue, commissionable };
 }
 
 /**
@@ -131,6 +133,7 @@ export const taskService = {
     const { items, totalCount } = await repo.list({
       ...(d.status !== undefined ? { status: d.status } : {}),
       ...(d.clientId !== undefined ? { clientId: d.clientId } : {}),
+      ...(d.productId !== undefined ? { productId: d.productId } : {}),
       ...(d.unitId !== undefined ? { unitId: d.unitId } : {}),
       ...(d.assignedTo !== undefined ? { assignedTo: d.assignedTo } : {}),
       ...(d.overdue ? { overdue: true, defaultSort } : {}),
@@ -148,6 +151,7 @@ export const taskService = {
     const filters: Record<string, unknown> = {};
     if (d.status !== undefined) filters['status'] = d.status;
     if (d.clientId !== undefined) filters['clientId'] = d.clientId;
+    if (d.productId !== undefined) filters['productId'] = d.productId;
     if (d.unitId !== undefined) filters['unitId'] = d.unitId;
     if (d.assignedTo !== undefined) filters['assignedTo'] = d.assignedTo;
     if (d.overdue) filters['overdue'] = '1';
@@ -168,6 +172,7 @@ export const taskService = {
     // Commissionable bucket count is billing.view-gated (0 otherwise — comp data).
     return repo.stats({
       ...(d.clientId !== undefined ? { clientId: d.clientId } : {}),
+      ...(d.productId !== undefined ? { productId: d.productId } : {}),
       ...(d.unitId !== undefined ? { unitId: d.unitId } : {}),
       ...(d.assignedTo !== undefined ? { assignedTo: d.assignedTo } : {}),
       ...(r.search !== undefined ? { search: r.search } : {}),
@@ -195,6 +200,7 @@ export const taskService = {
     const { items, totalCount } = await repo.list({
       ...(d.status !== undefined ? { status: d.status } : {}),
       ...(d.clientId !== undefined ? { clientId: d.clientId } : {}),
+      ...(d.productId !== undefined ? { productId: d.productId } : {}),
       ...(d.unitId !== undefined ? { unitId: d.unitId } : {}),
       ...(d.assignedTo !== undefined ? { assignedTo: d.assignedTo } : {}),
       ...(canViewBilling && d.commissionable ? { commissionable: true } : {}),

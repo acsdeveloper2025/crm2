@@ -75,6 +75,21 @@ async function assertClientProductInScope(actor: Actor, clientId: number, produc
     throw AppError.badRequest('PRODUCT_OUT_OF_SCOPE');
 }
 
+/** Parse the navbar/domain client+product filter ids (ADR-0066) from a raw query — positive ints only.
+ *  A convenience narrowing applied on top of (ANDed with) the actor's hard data scope, never widening it. */
+function domainFilterIds(rawQuery: Record<string, unknown>): { clientId?: number; productId?: number } {
+  const pos = (v: unknown): number | undefined => {
+    const n = Number(v);
+    return Number.isInteger(n) && n > 0 ? n : undefined;
+  };
+  const clientId = pos(rawQuery['clientId']);
+  const productId = pos(rawQuery['productId']);
+  return {
+    ...(clientId !== undefined ? { clientId } : {}),
+    ...(productId !== undefined ? { productId } : {}),
+  };
+}
+
 /** Matches case_attachments.original_name varchar(255) — truncate an over-long client filename. */
 const MAX_ATTACHMENT_NAME_LEN = 255;
 import {
@@ -328,14 +343,14 @@ export const caseService = {
       typeof statusRaw === 'string' && (CASE_STATUSES as readonly string[]).includes(statusRaw)
         ? statusRaw
         : undefined;
-    const clientIdRaw = Number(rawQuery['clientId']);
-    const clientId = Number.isInteger(clientIdRaw) && clientIdRaw > 0 ? clientIdRaw : undefined;
+    const { clientId, productId } = domainFilterIds(rawQuery);
     const columnFilters = resolveFilters(rawQuery, CASE_PAGE_SPEC);
     // Data scope (Epic F): restrict the visible cases to the actor's hierarchy. SUPER_ADMIN → no filter.
     const scope = await resolveScope(actor);
     const { items, totalCount } = await repo.list({
       ...(status !== undefined ? { status } : {}),
       ...(clientId !== undefined ? { clientId } : {}),
+      ...(productId !== undefined ? { productId } : {}),
       ...(r.search !== undefined ? { search: r.search } : {}),
       columnFilters,
       scope,
@@ -347,6 +362,7 @@ export const caseService = {
     const filters: Record<string, unknown> = {};
     if (status !== undefined) filters['status'] = status;
     if (clientId !== undefined) filters['clientId'] = clientId;
+    if (productId !== undefined) filters['productId'] = productId;
     if (r.search !== undefined) filters['search'] = r.search;
     for (const f of columnFilters) filters[`f_${f.field}`] = f.values.join(',');
     return buildPage(items, totalCount, r, filters);
@@ -366,14 +382,14 @@ export const caseService = {
       typeof statusRaw === 'string' && (CASE_STATUSES as readonly string[]).includes(statusRaw)
         ? statusRaw
         : undefined;
-    const clientIdRaw = Number(rawQuery['clientId']);
-    const clientId = Number.isInteger(clientIdRaw) && clientIdRaw > 0 ? clientIdRaw : undefined;
+    const { clientId, productId } = domainFilterIds(rawQuery);
     const columnFilters = resolveFilters(rawQuery, CASE_PAGE_SPEC);
     // Same data scope as `list` (Epic F): restrict the export to the actor's hierarchy. SUPER_ADMIN → none.
     const scope = await resolveScope(actor);
     const { items, totalCount } = await repo.list({
       ...(status !== undefined ? { status } : {}),
       ...(clientId !== undefined ? { clientId } : {}),
+      ...(productId !== undefined ? { productId } : {}),
       ...(r.search !== undefined ? { search: r.search } : {}),
       columnFilters,
       scope,

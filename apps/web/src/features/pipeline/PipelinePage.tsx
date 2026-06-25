@@ -18,6 +18,7 @@ import {
 } from '@crm2/sdk';
 import { api, apiExport } from '../../lib/sdk.js';
 import { formatDateTime } from '../../lib/format.js';
+import { useActiveSelectionFilters } from '../../lib/ActiveSelectionContext.js';
 import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { DataGrid, type BulkSelection, type DataGridColumn } from '../../components/ui/data-grid/index.js';
 import { Button } from '../../components/ui/Button.js';
@@ -60,6 +61,7 @@ export function PipelinePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const status = searchParams.get('status') ?? '';
   const overdue = searchParams.get('overdue') === '1';
+  const selectionFilters = useActiveSelectionFilters();
   // All buckets are mutually exclusive — selecting one clears the others.
   const selectBucket = (b: { status?: string; overdue?: boolean }) => {
     const next = new URLSearchParams(searchParams);
@@ -251,6 +253,7 @@ export function PipelinePage() {
         filters={{
           status: status || undefined,
           overdue: overdue ? '1' : undefined,
+          ...selectionFilters,
         }}
         fetchPage={(query: PageQuery) =>
           api<Paginated<TaskView>>('GET', `${BASE}?${pageQueryToParams(query).toString()}`)

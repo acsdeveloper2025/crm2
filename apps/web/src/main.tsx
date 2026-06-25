@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
 import { App } from './App.js';
 import { AuthProvider } from './lib/AuthContext.js';
+import { ActiveSelectionProvider } from './lib/ActiveSelectionContext.js';
 import { initTheme } from './lib/theme.js';
 import '@fontsource-variable/inter';
 import '@fontsource-variable/jetbrains-mono';
@@ -28,7 +29,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
        */}
       <BrowserRouter useTransitions={false}>
         <AuthProvider>
-          <App />
+          <ActiveSelectionProvider>
+            <App />
+          </ActiveSelectionProvider>
         </AuthProvider>
       </BrowserRouter>
     </QueryClientProvider>

@@ -207,6 +207,21 @@ describe.skipIf(!RUN)('tasks API (Pipeline)', () => {
     expect(byCase.body.filters.f_caseNumber).toBe(caseNumber);
   });
 
+  it('filters the pipeline by productId (navbar selector domain filter, ADR-0066)', async () => {
+    const a = await seedCpv('PPA');
+    const b = await seedCpv('PPB');
+    await seedCaseTasks(a, { name: 'PIPE A', unitIds: [a.unitAId] });
+    await seedCaseTasks(b, { name: 'PIPE B', unitIds: [b.unitAId] });
+
+    expect((await request(app).get('/api/v2/tasks').set(SA)).body.totalCount).toBe(2);
+    const fa = await request(app).get(`/api/v2/tasks?productId=${a.productId}`).set(SA);
+    expect(fa.body.totalCount).toBe(1);
+    expect(fa.body.filters.productId).toBe(a.productId);
+    expect((await request(app).get(`/api/v2/tasks?productId=${b.productId}`).set(SA)).body.totalCount).toBe(
+      1,
+    );
+  });
+
   it('rejects limit > 500 (gate 41); unknown sortBy falls back (no injection surface)', async () => {
     const big = await request(app).get('/api/v2/tasks?limit=501').set(SA);
     expect(big.status).toBe(400);

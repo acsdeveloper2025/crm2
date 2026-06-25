@@ -12,6 +12,7 @@ import {
 import { api, apiExport } from '../../lib/sdk.js';
 import { formatDateTime } from '../../lib/format.js';
 import { useAuth } from '../../lib/AuthContext.js';
+import { useActiveSelectionFilters } from '../../lib/ActiveSelectionContext.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
 import { Button } from '../../components/ui/Button.js';
 import { WorkStatusChip } from '../../components/WorkStatusChip.js';
@@ -27,6 +28,7 @@ const STATUS_OPTIONS = CASE_STATUSES.map((s) => ({
 export function CasesPage() {
   const navigate = useNavigate();
   const { has } = useAuth();
+  const selectionFilters = useActiveSelectionFilters();
 
   const columns = useMemo<DataGridColumn<CaseView>[]>(
     () => [
@@ -88,6 +90,7 @@ export function CasesPage() {
         defaultSort="createdAt"
         defaultSortOrder="desc"
         searchPlaceholder="Search customer or case no…"
+        filters={selectionFilters}
         onRowClick={(c) => navigate(`/cases/${c.id}`)}
         fetchPage={(query: PageQuery) =>
           api<Paginated<CaseView>>('GET', `/api/v2/cases?${pageQueryToParams(query).toString()}`)

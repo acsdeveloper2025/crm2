@@ -77,6 +77,7 @@ async function stampCommissionSnapshot(q: TxQuery, taskId: string): Promise<void
 export interface CaseListOptions {
   status?: string;
   clientId?: number;
+  productId?: number;
   search?: string;
   /** whitelisted per-column filters (§6/§7); only count-FROM columns (cs/pa) — see CASE_PAGE_SPEC. */
   columnFilters?: AppliedFilter[];
@@ -737,6 +738,10 @@ export const caseRepository = {
     if (o.clientId !== undefined) {
       params.push(o.clientId);
       where.push(`cs.client_id = $${params.length}`);
+    }
+    if (o.productId !== undefined) {
+      params.push(o.productId);
+      where.push(`cs.product_id = $${params.length}`);
     }
     if (o.search) {
       params.push(likeContains(o.search));
