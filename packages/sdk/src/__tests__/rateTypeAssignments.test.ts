@@ -1,73 +1,48 @@
 import { describe, it, expect } from 'vitest';
-import { BulkSetRateTypeAssignmentsSchema } from '../rateTypeAssignments.js';
+import { CreateRateTypeAssignmentSchema } from '../rateTypeAssignments.js';
 
-describe('BulkSetRateTypeAssignmentsSchema', () => {
-  it('parses a valid combo + rate-type id list', () => {
-    const r = BulkSetRateTypeAssignmentsSchema.parse({
+describe('CreateRateTypeAssignmentSchema', () => {
+  it('parses a fully-specified assignment', () => {
+    const r = CreateRateTypeAssignmentSchema.parse({
       clientId: 1,
       productId: 2,
       verificationUnitId: 3,
-      rateTypeIds: [4, 5],
+      rateTypeId: 4,
     });
-    expect(r.rateTypeIds).toEqual([4, 5]);
+    expect(r).toEqual({ clientId: 1, productId: 2, verificationUnitId: 3, rateTypeId: 4 });
   });
   it('accepts a null productId + verificationUnitId (Universal / all)', () => {
-    const r = BulkSetRateTypeAssignmentsSchema.parse({
+    const r = CreateRateTypeAssignmentSchema.parse({
       clientId: 1,
       productId: null,
       verificationUnitId: null,
-      rateTypeIds: [4],
+      rateTypeId: 4,
     });
-    expect(r).toMatchObject({ productId: null, verificationUnitId: null, rateTypeIds: [4] });
+    expect(r).toMatchObject({ productId: null, verificationUnitId: null });
   });
-  it('accepts an empty rateTypeIds array (clearing the combo)', () => {
-    expect(
-      BulkSetRateTypeAssignmentsSchema.parse({
-        clientId: 1,
-        productId: 2,
-        verificationUnitId: 3,
-        rateTypeIds: [],
-      }).rateTypeIds,
-    ).toEqual([]);
-  });
-  it('rejects a zero/negative id', () => {
+  it('rejects a missing clientId or rateTypeId', () => {
     expect(() =>
-      BulkSetRateTypeAssignmentsSchema.parse({
-        clientId: 1,
-        productId: 2,
-        verificationUnitId: 3,
-        rateTypeIds: [0],
+      CreateRateTypeAssignmentSchema.parse({ productId: null, verificationUnitId: null, rateTypeId: 4 }),
+    ).toThrow();
+    expect(() =>
+      CreateRateTypeAssignmentSchema.parse({ clientId: 1, productId: null, verificationUnitId: null }),
+    ).toThrow();
+  });
+  it('rejects a zero/negative or out-of-range id', () => {
+    expect(() =>
+      CreateRateTypeAssignmentSchema.parse({
+        clientId: 0,
+        productId: null,
+        verificationUnitId: null,
+        rateTypeId: 4,
       }),
     ).toThrow();
     expect(() =>
-      BulkSetRateTypeAssignmentsSchema.parse({
-        clientId: -1,
-        productId: 2,
-        verificationUnitId: 3,
-        rateTypeIds: [4],
-      }),
-    ).toThrow();
-  });
-  it('rejects a missing combo key', () => {
-    expect(() =>
-      BulkSetRateTypeAssignmentsSchema.parse({ clientId: 1, productId: 2, rateTypeIds: [4] }),
-    ).toThrow();
-  });
-  it('caps the array length and the id range (parity with sibling array schemas)', () => {
-    expect(() =>
-      BulkSetRateTypeAssignmentsSchema.parse({
+      CreateRateTypeAssignmentSchema.parse({
         clientId: 1,
-        productId: 2,
-        verificationUnitId: 3,
-        rateTypeIds: Array.from({ length: 501 }, (_, i) => i + 1),
-      }),
-    ).toThrow();
-    expect(() =>
-      BulkSetRateTypeAssignmentsSchema.parse({
-        clientId: 1,
-        productId: 2,
-        verificationUnitId: 3,
-        rateTypeIds: [2147483648],
+        productId: null,
+        verificationUnitId: null,
+        rateTypeId: 2147483648,
       }),
     ).toThrow();
   });

@@ -98,3 +98,16 @@ WHERE NOT EXISTS (
   WHERE r.client_id = (SELECT id FROM clients WHERE code = 'HDFC')
     AND r.rate_type_id = (SELECT id FROM rate_types WHERE code = 'LOCAL')
 );
+
+-- rateTypeAssignments.spec: the DataGrid list needs at least one row. A Universal assignment (product +
+-- unit NULL = "Universal") for HDFC × the OFFICE rate type. NULLS-NOT-DISTINCT unique key (mig 0096), so
+-- ON CONFLICT keeps the apply idempotent across re-seeds.
+INSERT INTO rate_type_assignments (client_id, product_id, verification_unit_id, rate_type_id)
+VALUES (
+  (SELECT id FROM clients WHERE code = 'HDFC'),
+  NULL,
+  NULL,
+  (SELECT id FROM rate_types WHERE code = 'OFFICE')
+)
+ON CONFLICT (client_id, product_id, verification_unit_id, rate_type_id)
+DO UPDATE SET is_active = true;

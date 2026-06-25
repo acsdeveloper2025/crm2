@@ -1,11 +1,20 @@
 import { z } from 'zod';
 
-/** A single (client × product × verification_unit → rate_type) availability row (ADR-0067, Phase B). */
+/**
+ * @crm2/sdk — the Rate-Type Assignment contract (ADR-0067 / ADR-0069). One row =
+ * (client [required], product [nullable = Universal], verification_unit [nullable = Universal],
+ * rate_type [required]). It declares which rate type a (client × product × unit) combo may use; the
+ * `/api/v2/rate-types/available` resolver unions a combo's own rows with its Universal (NULL) parents.
+ * A standard CRUD master-data resource (DataGrid list + record-page form), like commission_rates but
+ * simpler — no amount/location/tat/currency/effective-dating/version. Mirrors migration 0093 + 0096.
+ */
 export interface RateTypeAssignment {
   id: number;
   clientId: number;
-  productId: number;
-  verificationUnitId: number;
+  /** null ⇒ Universal (applies to every product) — mig 0096. */
+  productId: number | null;
+  /** null ⇒ Universal (applies to every unit) — mig 0096. */
+  verificationUnitId: number | null;
   rateTypeId: number;
   /** joined from `rate_types` for display */
   rateTypeCode: string;
@@ -18,21 +27,30 @@ export interface RateTypeAssignment {
   updatedAt: string;
 }
 
-const MAX_BATCH = 500; // checkbox set is a handful of catalog rows; cap for parity with sibling schemas
+/** An assignment joined with its client / product / unit display names (the list + record-page view). */
+export interface RateTypeAssignmentView extends RateTypeAssignment {
+  clientCode: string | null;
+  clientName: string | null;
+  /** null when Universal (productId null). */
+  productCode: string | null;
+  productName: string | null;
+  /** null when Universal (verificationUnitId null). */
+  verificationUnitName: string | null;
+}
+
 const MAX_PG_INT = 2147483647; // int4 — ids above this are a pg 22003, not a clean 400
 const posInt = z.number().int().positive().max(MAX_PG_INT);
 
 /**
- * Replace the ACTIVE assigned rate-type set for a combo. An empty `rateTypeIds` clears the combo
- * (deactivates all its assignments). The server upserts+activates the listed ids and deactivates the rest.
+ * Create one rate-type assignment. `clientId` + `rateTypeId` are required; `productId` /
+ * `verificationUnitId` are nullable (null = Universal, stored as NULL with the NULLS-NOT-DISTINCT
+ * unique key so re-creating the same combo re-activates rather than duplicating).
  */
-export const BulkSetRateTypeAssignmentsSchema = z.object({
+export const CreateRateTypeAssignmentSchema = z.object({
   clientId: posInt,
-  // null/omitted = Universal ("all products" / "all units"), stored as NULL (ADR-0069).
   productId: posInt.nullable(),
   verificationUnitId: posInt.nullable(),
-  // No `.min(1)` — an empty array intentionally clears the combo. `.max` mirrors the sibling array schemas.
-  rateTypeIds: z.array(posInt).max(MAX_BATCH),
+  rateTypeId: posInt,
 });
 
-export type BulkSetRateTypeAssignmentsInput = z.infer<typeof BulkSetRateTypeAssignmentsSchema>;
+export type CreateRateTypeAssignmentInput = z.infer<typeof CreateRateTypeAssignmentSchema>;

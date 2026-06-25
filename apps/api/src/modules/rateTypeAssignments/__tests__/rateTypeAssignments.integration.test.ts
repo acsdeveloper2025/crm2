@@ -7,6 +7,7 @@ import {
   productFactory,
   verificationUnitFactory,
 } from '@crm2/test-utils';
+import type { RateTypeAssignmentView } from '@crm2/sdk';
 import { createApp } from '../../../http/app.js';
 import { setPool } from '../../../platform/db.js';
 
@@ -14,175 +15,290 @@ const RUN = !!process.env['DATABASE_URL'];
 const db = RUN ? createTestDb() : null;
 const app = createApp({ enableTestAuth: true });
 const SA = authHeaderForRole('SUPER_ADMIN');
-const FA = authHeaderForRole('FIELD_AGENT'); // lacks masterdata.manage → bulk 403
+const FA = authHeaderForRole('FIELD_AGENT'); // holds neither masterdata perm
+const TL = authHeaderForRole('TEAM_LEADER'); // holds data.export but NOT masterdata.manage
 
-// GET /rate-type-assignments now lists a (client × product|Universal) across all units (no unit param).
-const listQ = (clientId: number, productId: number) => `clientId=${clientId}&productId=${productId}`;
-// /rate-types/available still resolves a full (client × product × unit) combo.
-const combo = (clientId: number, productId: number, unitId: number) =>
-  `clientId=${clientId}&productId=${productId}&verificationUnitId=${unitId}`;
-
-// Seed master-data via the API (mirrors commissionRates.api.test.ts) — the migrated clone seeds
-// rate_types but no clients/products/verification_units.
 const seedId = async (path: string, body: object): Promise<number> => {
   const res = await request(app).post(`/api/v2/${path}`).set(SA).send(body);
   expect(res.status).toBe(201);
   return res.body.id as number;
 };
 
-describe.skipIf(!RUN)('rate-type assignments (ADR-0067 Phase B)', () => {
+describe.skipIf(!RUN)('rate-type assignments CRUD (ADR-0069)', () => {
   let clientId: number;
   let productId: number;
   let unitId: number;
+  let clientCode: string;
+  let productCode: string;
+  let unitCode: string;
   let rtA: number;
-  let rtB: number;
+  let rtCodeA: string;
 
   beforeAll(async () => {
     await db!.migrate();
     setPool(db!.pool);
-    clientId = await seedId('clients', clientFactory({ code: 'RTA_CLIENT' }));
-    productId = await seedId('products', productFactory({ code: 'RTA_PRODUCT' }));
-    unitId = await seedId('verification-units', verificationUnitFactory({ code: 'RTA_UNIT' }));
-    const rts = await db!.pool.query<{ id: number }>(
-      `SELECT id FROM rate_types WHERE is_active AND effective_from <= now() ORDER BY sort_order LIMIT 2`,
-    );
-    rtA = rts.rows[0]!.id;
-    rtB = rts.rows[1]!.id;
   });
   afterAll(async () => {
     await db!.end();
   });
   beforeEach(async () => {
-    await db!.truncate('rate_type_assignments', 'audit_log');
-  });
-
-  it('POST /bulk sets two rate types → returns 2 active; GET / returns the same 2', async () => {
-    const set = await request(app)
-      .post('/api/v2/rate-type-assignments/bulk')
-      .set(SA)
-      .send({ clientId, productId, verificationUnitId: unitId, rateTypeIds: [rtA, rtB] });
-    expect(set.status).toBe(200);
-    expect(set.body).toHaveLength(2);
-    expect((set.body as { rateTypeId: number }[]).map((r) => r.rateTypeId).sort()).toEqual([rtA, rtB].sort());
-    expect(set.body[0]).toMatchObject({ isActive: true });
-    expect(set.body[0].rateTypeCode).toBeTypeOf('string');
-
-    const list = await request(app)
-      .get(`/api/v2/rate-type-assignments?${listQ(clientId, productId)}`)
-      .set(SA);
-    expect(list.status).toBe(200);
-    expect((list.body as { rateTypeId: number }[]).map((r) => r.rateTypeId).sort()).toEqual(
-      [rtA, rtB].sort(),
+    await db!.truncate('rate_type_assignments', 'verification_units', 'products', 'clients', 'audit_log');
+    clientCode = 'RTA_CLIENT';
+    productCode = 'RTA_PRODUCT';
+    unitCode = 'RTA_UNIT';
+    clientId = await seedId('clients', clientFactory({ code: clientCode }));
+    productId = await seedId('products', productFactory({ code: productCode }));
+    unitId = await seedId('verification-units', verificationUnitFactory({ code: unitCode }));
+    const rts = await db!.pool.query<{ id: number; code: string }>(
+      `SELECT id, code FROM rate_types WHERE is_active AND effective_from <= now() ORDER BY sort_order LIMIT 1`,
     );
+    rtA = rts.rows[0]!.id;
+    rtCodeA = rts.rows[0]!.code;
   });
 
-  it('bulk-set a subset (1) deactivates the dropped one (GET → 1; /available no longer lists it)', async () => {
-    await request(app)
-      .post('/api/v2/rate-type-assignments/bulk')
+  it('creates a fully-specified assignment (201) and lists the joined view (paginated)', async () => {
+    const created = await request(app)
+      .post('/api/v2/rate-type-assignments')
       .set(SA)
-      .send({ clientId, productId, verificationUnitId: unitId, rateTypeIds: [rtA, rtB] });
-    const subset = await request(app)
-      .post('/api/v2/rate-type-assignments/bulk')
+      .send({ clientId, productId, verificationUnitId: unitId, rateTypeId: rtA });
+    expect(created.status).toBe(201);
+    expect(created.body.clientId).toBe(clientId);
+    expect(created.body.rateTypeId).toBe(rtA);
+    expect(created.body.isActive).toBe(true);
+    expect(created.body.rateTypeCode).toBeTypeOf('string');
+
+    const list = await request(app).get('/api/v2/rate-type-assignments').set(SA);
+    expect(list.status).toBe(200);
+    expect(list.body.items).toHaveLength(1);
+    const row = list.body.items[0] as RateTypeAssignmentView;
+    expect(row.clientName).toBeTruthy();
+    expect(row.productName).toBeTruthy();
+    expect(row.verificationUnitName).toBeTruthy();
+    expect(list.body.sort).toEqual({ sortBy: 'client', sortOrder: 'asc' });
+  });
+
+  it('creates a Universal assignment (product + unit NULL) — list shows nulls', async () => {
+    const created = await request(app)
+      .post('/api/v2/rate-type-assignments')
       .set(SA)
-      .send({ clientId, productId, verificationUnitId: unitId, rateTypeIds: [rtA] });
-    expect(subset.status).toBe(200);
-    expect(subset.body).toHaveLength(1);
-    expect(subset.body[0].rateTypeId).toBe(rtA);
+      .send({ clientId, productId: null, verificationUnitId: null, rateTypeId: rtA });
+    expect(created.status).toBe(201);
+    expect(created.body.productId).toBeNull();
+    expect(created.body.verificationUnitId).toBeNull();
 
-    const list = await request(app)
-      .get(`/api/v2/rate-type-assignments?${listQ(clientId, productId)}`)
-      .set(SA);
-    expect((list.body as { rateTypeId: number }[]).map((r) => r.rateTypeId)).toEqual([rtA]);
+    const list = await request(app).get('/api/v2/rate-type-assignments').set(SA);
+    const row = list.body.items[0] as RateTypeAssignmentView;
+    expect(row.productId).toBeNull();
+    expect(row.verificationUnitId).toBeNull();
+    expect(row.productName).toBeNull();
+    expect(row.verificationUnitName).toBeNull();
+  });
 
-    // The dropped one is gone from the rate-type availability resolver too.
+  it('NULLS-NOT-DISTINCT: creating the same combo twice re-activates, does not duplicate', async () => {
+    const first = await request(app)
+      .post('/api/v2/rate-type-assignments')
+      .set(SA)
+      .send({ clientId, productId: null, verificationUnitId: null, rateTypeId: rtA });
+    expect(first.status).toBe(201);
+    // Deactivate, then re-create the SAME combo → re-activates the same row (no dup).
+    await request(app).post(`/api/v2/rate-type-assignments/${first.body.id}/deactivate`).set(SA);
+    const second = await request(app)
+      .post('/api/v2/rate-type-assignments')
+      .set(SA)
+      .send({ clientId, productId: null, verificationUnitId: null, rateTypeId: rtA });
+    expect(second.status).toBe(201);
+    expect(second.body.id).toBe(first.body.id); // same row reactivated
+    expect(second.body.isActive).toBe(true);
+
+    const rows = await db!.pool.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM rate_type_assignments WHERE client_id = $1 AND rate_type_id = $2`,
+      [clientId, rtA],
+    );
+    expect(rows.rows[0]!.n).toBe(1); // exactly one row, never duplicated
+  });
+
+  it('a Universal row and a specific row for the same client+rateType coexist', async () => {
+    const uni = await request(app)
+      .post('/api/v2/rate-type-assignments')
+      .set(SA)
+      .send({ clientId, productId: null, verificationUnitId: null, rateTypeId: rtA });
+    expect(uni.status).toBe(201);
+    const specific = await request(app)
+      .post('/api/v2/rate-type-assignments')
+      .set(SA)
+      .send({ clientId, productId, verificationUnitId: unitId, rateTypeId: rtA });
+    expect(specific.status).toBe(201);
+    expect(specific.body.id).not.toBe(uni.body.id);
+    const list = await request(app).get('/api/v2/rate-type-assignments').set(SA);
+    expect(list.body.totalCount).toBe(2);
+  });
+
+  describe('GET /:id (record-page loader)', () => {
+    it('returns the joined view for a created assignment (200)', async () => {
+      const created = await request(app)
+        .post('/api/v2/rate-type-assignments')
+        .set(SA)
+        .send({ clientId, productId, verificationUnitId: unitId, rateTypeId: rtA });
+      const id = created.body.id as number;
+      const res = await request(app).get(`/api/v2/rate-type-assignments/${id}`).set(SA);
+      expect(res.status).toBe(200);
+      const row = res.body as RateTypeAssignmentView;
+      expect(row.id).toBe(id);
+      expect(row.clientName).toBeTruthy();
+      expect(row.productCode).toBeTruthy();
+      expect(row.rateTypeCode).toBeTruthy();
+    });
+    it('404s an unknown id', async () => {
+      const res = await request(app).get('/api/v2/rate-type-assignments/999999').set(SA);
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('RATE_TYPE_ASSIGNMENT_NOT_FOUND');
+    });
+  });
+
+  it('deactivate sets is_active=false (and is gone from /rate-types/available)', async () => {
+    const created = await request(app)
+      .post('/api/v2/rate-type-assignments')
+      .set(SA)
+      .send({ clientId, productId, verificationUnitId: unitId, rateTypeId: rtA });
+    const id = created.body.id as number;
+    const off = await request(app).post(`/api/v2/rate-type-assignments/${id}/deactivate`).set(SA);
+    expect(off.status).toBe(200);
+    expect(off.body.isActive).toBe(false);
+    // 404 on an unknown id
+    expect((await request(app).post('/api/v2/rate-type-assignments/999999/deactivate').set(SA)).status).toBe(
+      404,
+    );
+    // the available resolver no longer lists it
     const avail = await request(app)
-      .get(`/api/v2/rate-types/available?${combo(clientId, productId, unitId)}`)
+      .get(
+        `/api/v2/rate-types/available?clientId=${clientId}&productId=${productId}&verificationUnitId=${unitId}`,
+      )
       .set(SA);
-    const availIds = (avail.body as { id: number }[]).map((r) => r.id);
-    expect(availIds).toContain(rtA);
-    expect(availIds).not.toContain(rtB);
-  });
-
-  it('bulk-set [] clears the combo (returns 0)', async () => {
-    await request(app)
-      .post('/api/v2/rate-type-assignments/bulk')
-      .set(SA)
-      .send({ clientId, productId, verificationUnitId: unitId, rateTypeIds: [rtA, rtB] });
-    const cleared = await request(app)
-      .post('/api/v2/rate-type-assignments/bulk')
-      .set(SA)
-      .send({ clientId, productId, verificationUnitId: unitId, rateTypeIds: [] });
-    expect(cleared.status).toBe(200);
-    expect(cleared.body).toEqual([]);
-    const list = await request(app)
-      .get(`/api/v2/rate-type-assignments?${listQ(clientId, productId)}`)
-      .set(SA);
-    expect(list.body).toEqual([]);
+    expect((avail.body as { id: number }[]).map((r) => r.id)).not.toContain(rtA);
   });
 
   it('a non-existent rateTypeId → 400 INVALID_ASSIGNMENT_REF', async () => {
     const res = await request(app)
-      .post('/api/v2/rate-type-assignments/bulk')
+      .post('/api/v2/rate-type-assignments')
       .set(SA)
-      .send({ clientId, productId, verificationUnitId: unitId, rateTypeIds: [999999] });
+      .send({ clientId, productId, verificationUnitId: unitId, rateTypeId: 999999 });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('INVALID_ASSIGNMENT_REF');
   });
 
-  it('RBAC: a role lacking masterdata.manage cannot POST /bulk (403)', async () => {
+  it('validates input: bad clientId → 400', async () => {
     const res = await request(app)
-      .post('/api/v2/rate-type-assignments/bulk')
-      .set(FA)
-      .send({ clientId, productId, verificationUnitId: unitId, rateTypeIds: [rtA] });
-    expect(res.status).toBe(403);
-  });
-
-  it('GET / with a missing clientId → 400 (clientId is required)', async () => {
-    const res = await request(app).get(`/api/v2/rate-type-assignments?productId=${productId}`).set(SA);
+      .post('/api/v2/rate-type-assignments')
+      .set(SA)
+      .send({ clientId: 'nope', productId: null, verificationUnitId: null, rateTypeId: rtA });
     expect(res.status).toBe(400);
   });
 
-  it('GET / with no productId → Universal-product rows (productId omitted = NULL)', async () => {
-    // Assign a Universal-product row (productId null) + a specific-product row; GET ?clientId (no
-    // productId) returns only the Universal-product set.
-    await request(app)
-      .post('/api/v2/rate-type-assignments/bulk')
-      .set(SA)
-      .send({ clientId, productId: null, verificationUnitId: unitId, rateTypeIds: [rtA] });
-    await request(app)
-      .post('/api/v2/rate-type-assignments/bulk')
-      .set(SA)
-      .send({ clientId, productId, verificationUnitId: unitId, rateTypeIds: [rtB] });
-    const universal = await request(app).get(`/api/v2/rate-type-assignments?clientId=${clientId}`).set(SA);
-    expect(universal.status).toBe(200);
-    const ids = (universal.body as { rateTypeId: number }[]).map((r) => r.rateTypeId);
-    expect(ids).toEqual([rtA]); // the Universal-product row only; the specific-product row is excluded
+  describe('RBAC', () => {
+    it('list/get require page.masterdata; create/deactivate require masterdata.manage', async () => {
+      // FIELD_AGENT holds neither masterdata perm → list 403, create 403
+      expect((await request(app).get('/api/v2/rate-type-assignments').set(FA)).status).toBe(403);
+      const denied = await request(app)
+        .post('/api/v2/rate-type-assignments')
+        .set(FA)
+        .send({ clientId, productId: null, verificationUnitId: null, rateTypeId: rtA });
+      expect(denied.status).toBe(403);
+      // TEAM_LEADER holds page.masterdata (can list) + data.export (can export) but NOT manage → create 403
+      expect((await request(app).get('/api/v2/rate-type-assignments').set(TL)).status).toBe(200);
+      const tlDenied = await request(app)
+        .post('/api/v2/rate-type-assignments')
+        .set(TL)
+        .send({ clientId, productId: null, verificationUnitId: null, rateTypeId: rtA });
+      expect(tlDenied.status).toBe(403);
+    });
   });
 
-  it('a Universal row (product+unit NULL) and a specific row for the same client+rateType coexist', async () => {
-    // NULLS NOT DISTINCT keys the Universal row as a single value; the specific row is a different key.
-    const uni = await request(app)
-      .post('/api/v2/rate-type-assignments/bulk')
-      .set(SA)
-      .send({ clientId, productId: null, verificationUnitId: null, rateTypeIds: [rtA] });
-    expect(uni.status).toBe(200);
-    expect(uni.body).toHaveLength(1);
-    expect(uni.body[0]).toMatchObject({ rateTypeId: rtA, productId: null, verificationUnitId: null });
+  describe('import / export', () => {
+    const HEADER = ['Client Code', 'Product Code', 'Unit Code', 'Rate Type Code'];
+    const mkXlsx = async (rows: (string | number)[][]): Promise<Buffer> => {
+      const ExcelJS = (await import('exceljs')).default;
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Sheet1');
+      ws.addRow(HEADER);
+      for (const r of rows) ws.addRow(r);
+      return Buffer.from(await wb.xlsx.writeBuffer());
+    };
+    const upload = (mode: 'preview' | 'confirm', buf: Buffer, auth = SA) =>
+      request(app)
+        .post(`/api/v2/rate-type-assignments/import?mode=${mode}`)
+        .set(auth)
+        .set('content-type', 'application/octet-stream')
+        .set('x-filename', 'rate-type-assignments.xlsx')
+        .send(buf);
 
-    const specific = await request(app)
-      .post('/api/v2/rate-type-assignments/bulk')
-      .set(SA)
-      .send({ clientId, productId, verificationUnitId: unitId, rateTypeIds: [rtA] });
-    expect(specific.status).toBe(200);
-    expect(specific.body).toHaveLength(1);
-    expect(specific.body[0]).toMatchObject({ rateTypeId: rtA, productId, verificationUnitId: unitId });
+    it('export is gated data.export (TEAM_LEADER ok, FIELD_AGENT 403)', async () => {
+      await request(app)
+        .post('/api/v2/rate-type-assignments')
+        .set(SA)
+        .send({ clientId, productId, verificationUnitId: unitId, rateTypeId: rtA });
+      expect(
+        (await request(app).get('/api/v2/rate-type-assignments/export?format=csv&mode=all').set(TL)).status,
+      ).toBe(200);
+      expect(
+        (await request(app).get('/api/v2/rate-type-assignments/export?format=csv&mode=all').set(FA)).status,
+      ).toBe(403);
+    });
 
-    // Both rows are live: 1 active Universal row + 1 active specific row for the same (client, rtA).
-    const rows = await db!.pool.query<{ n: number }>(
-      `SELECT count(*)::int AS n FROM rate_type_assignments
-        WHERE client_id = $1 AND rate_type_id = $2 AND is_active`,
-      [clientId, rtA],
-    );
-    expect(rows.rows[0]!.n).toBe(2);
+    it('export renders Universal for a NULL product/unit row', async () => {
+      await request(app)
+        .post('/api/v2/rate-type-assignments')
+        .set(SA)
+        .send({ clientId, productId: null, verificationUnitId: null, rateTypeId: rtA });
+      const res = await request(app).get('/api/v2/rate-type-assignments/export?format=csv&mode=all').set(SA);
+      expect(res.status).toBe(200);
+      const [header, firstRow] = res.text.split('\r\n');
+      expect(header).toBe('Client,Product,Unit,Rate Type,Status,Created,Updated');
+      expect(firstRow).toContain('Universal');
+    });
+
+    it('downloads an XLSX template (200 + PK body); template gated masterdata.manage', async () => {
+      const res = await request(app)
+        .get('/api/v2/rate-type-assignments/import-template')
+        .set(SA)
+        .buffer(true)
+        .parse((r, cb) => {
+          const chunks: Buffer[] = [];
+          r.on('data', (c: Buffer) => chunks.push(c));
+          r.on('end', () => cb(null, Buffer.concat(chunks)));
+        });
+      expect(res.status).toBe(200);
+      expect((res.body as Buffer).subarray(0, 2).toString('latin1')).toBe('PK');
+      expect((await request(app).get('/api/v2/rate-type-assignments/import-template').set(FA)).status).toBe(
+        403,
+      );
+    });
+
+    it('preview resolves a known client (valid) and flags an unknown one (errorRows)', async () => {
+      const res = await upload(
+        'preview',
+        await mkXlsx([
+          [clientCode, productCode, unitCode, rtCodeA],
+          ['NOPE_CLIENT', '', '', rtCodeA],
+        ]),
+      );
+      expect(res.status).toBe(200);
+      expect(res.body.validRows).toBe(1);
+      expect(res.body.errorRows).toBe(1);
+      expect(res.body.errors[0]).toMatchObject({ column: 'Client Code' });
+      // preview is read-only — nothing written
+      expect((await request(app).get('/api/v2/rate-type-assignments').set(SA)).body.totalCount).toBe(0);
+    });
+
+    it('confirm imports a Universal row (blank product/unit) and grows the list', async () => {
+      const res = await upload('confirm', await mkXlsx([[clientCode, '', '', rtCodeA]]));
+      expect(res.status).toBe(200);
+      expect(res.body.successRows).toBe(1);
+      const list = await request(app).get('/api/v2/rate-type-assignments').set(SA);
+      expect(list.body.totalCount).toBe(1);
+      const row = list.body.items[0] as RateTypeAssignmentView;
+      expect(row.productId).toBeNull(); // blank product cell → Universal
+      expect(row.verificationUnitId).toBeNull();
+      expect(row.rateTypeId).toBe(rtA);
+    });
   });
 });

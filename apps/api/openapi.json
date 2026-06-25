@@ -3479,15 +3479,108 @@
             "bearerAuth": []
           }
         ]
-      }
-    },
-    "/api/v2/rate-type-assignments/bulk": {
+      },
       "post": {
         "tags": [
           "rate-type-assignments"
         ],
-        "operationId": "post_api_v2_rate_type_assignments_bulk",
-        "summary": "POST /api/v2/rate-type-assignments/bulk",
+        "operationId": "post_api_v2_rate_type_assignments",
+        "summary": "POST /api/v2/rate-type-assignments",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/rate-type-assignments/{id}": {
+      "get": {
+        "tags": [
+          "rate-type-assignments"
+        ],
+        "operationId": "get_api_v2_rate_type_assignments_id",
+        "summary": "GET /api/v2/rate-type-assignments/{id}",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/rate-type-assignments/{id}/deactivate": {
+      "post": {
+        "tags": [
+          "rate-type-assignments"
+        ],
+        "operationId": "post_api_v2_rate_type_assignments_id_deactivate",
+        "summary": "POST /api/v2/rate-type-assignments/{id}/deactivate",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/rate-type-assignments/export": {
+      "get": {
+        "tags": [
+          "rate-type-assignments"
+        ],
+        "operationId": "get_api_v2_rate_type_assignments_export",
+        "summary": "GET /api/v2/rate-type-assignments/export",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/rate-type-assignments/import": {
+      "post": {
+        "tags": [
+          "rate-type-assignments"
+        ],
+        "operationId": "post_api_v2_rate_type_assignments_import",
+        "summary": "POST /api/v2/rate-type-assignments/import",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/rate-type-assignments/import-template": {
+      "get": {
+        "tags": [
+          "rate-type-assignments"
+        ],
+        "operationId": "get_api_v2_rate_type_assignments_import_template",
+        "summary": "GET /api/v2/rate-type-assignments/import-template",
         "responses": {
           "default": {
             "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
