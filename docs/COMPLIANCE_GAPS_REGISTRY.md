@@ -71,10 +71,10 @@ architecture** — simply not built yet. Each is built when its phase lands.
 | B-23 | Row selection + bulk actions (DATAGRID_STANDARD §15) | ✅ **FIXED** (2026-06-09) — shared DataGrid selection (checkbox col + select-all-page + "select all N matching" banner + bulk bar) on all 7 admin lists; built-in **Export Selected** (B-13 mode 2) + **bulk Activate/Deactivate** (per-row OCC per CONCURRENCY_AND_EDITING_STANDARD §1, per-row OK/CONFLICT/NOT_FOUND result) | `docs/DATAGRID_STANDARD.md` §15, `docs/CONCURRENCY_AND_EDITING_STANDARD.md` §1/§7 | Selection captures row `version` (Map) for OCC; `allMatching` disables versioned bulk (export still works). DON'T-REGRESS: scoped-resource bulk must enforce scope inside the per-row apply fn. |
 | B-14 | Universal import engine (`@crm2/import-engine`: template/validator/mapper/processor + flow + validation report + import audit) | DEFERRED | `docs/IMPORT_EXPORT_STANDARD.md` | First import need (Clients/Products/Rates/Pincode/Users…) |
 | B-15 | Authentication (login / JWT-pair + refresh / password set, web) — **SHIPPED** (ADR-0014, mig `0009_auth.sql`): scrypt passwords + `jose` HS256, `/api/v2/auth/{login,refresh,logout}`+`/me`, web login + Bearer + single-flight 401→refresh; dev `x-test-auth` seam is backend-test-only now. | ✅ **FIXED** (ADR-0014) | ADR-0014, ADR-0012 | Remaining: mobile rebase to `/api/v2/auth` (separate repo) + refresh-revoke-on-password-change — tracked, short access TTL mitigates. |
-| B-16 | Report rendering engine (Handlebars/text → PDF) + CPV-scoped template overrides (client+product+vtype) | DEFERRED | BLUEPRINT report-engine section | Reports/operations phase. Superseded/absorbed by B-18 (ADR-0015). |
+| B-16 | Report rendering engine (Handlebars/text → PDF) + CPV-scoped template overrides (client+product+vtype) | DEFERRED | BLUEPRINT report-engine section | Reports/operations phase. Built on `report_layouts` (ADR-0039 FIELD_REPORT / ADR-0041 CASE_REPORT / ADR-0049 MIS), **not** `report_templates` — the 0008 table is retired (ADR-0063, §RT-RM). PDF/Word/Excel download tier still open. |
 | B-17 | Verification Workspace — single page (Zion NewDataQC): per-task data-entry/MIS · assignment · FE-mobile images+data · report entry · auto-gen · Final Status + Case Report | DEFERRED | `docs/CASE_WORKSPACE_AND_REPORTING_FREEZE.md` §1, ADR-0015 | Operations phase — reuse `/cases/:id` behind a flag. Keystone. |
-| B-18 | Per-client+product Reporting Engine — two kinds (MIS_EXCEL + CASE_REPORT), formats PDF/WORD/EXCEL, field/column mapping (FE data+images+seal), 200+ formats config-driven; extends `report_templates` 0008 | DEFERRED | `docs/CASE_WORKSPACE_AND_REPORTING_FREEZE.md` §2, ADR-0015 | Operations phase — generation via report-worker (PDF) + export engine (Excel); seed 200+ via import-engine. |
-| B-19 | Admin Template Designer (design/upload MIS-Excel + Case-Report templates per client+product[+type]; versioned, immutable-once-used) | ✅ **FIXED** (2026-06-23 cross-check, §X-CHECK) — `reportLayouts` module + `ReportLayoutRecordPage.tsx` kind-branched designer (ADR-0037 + ADR-0051 D4) | `docs/CASE_WORKSPACE_AND_REPORTING_FREEZE.md` §2.2, ADR-0015 | Shipped (extends Report Templates) |
+| B-18 | Per-client+product Reporting Engine — two kinds (MIS_EXCEL + CASE_REPORT), formats PDF/WORD/EXCEL, field/column mapping (FE data+images+seal), 200+ formats config-driven; ~~extends `report_templates` 0008~~ **built on `report_layouts`** (ADR-0037/0039/0041/0049); 0008 retired (ADR-0063, §RT-RM) | DEFERRED | `docs/CASE_WORKSPACE_AND_REPORTING_FREEZE.md` §2, ADR-0015 | Operations phase — generation via report-worker (PDF) + export engine (Excel); seed 200+ via import-engine. |
+| B-19 | Admin Template Designer (design/upload MIS-Excel + Case-Report templates per client+product[+type]; versioned, immutable-once-used) | ✅ **FIXED** (2026-06-23 cross-check, §X-CHECK) — `reportLayouts` module + `ReportLayoutRecordPage.tsx` kind-branched designer (ADR-0037 + ADR-0051 D4) | `docs/CASE_WORKSPACE_AND_REPORTING_FREEZE.md` §2.2, ADR-0015 | Shipped (`report_layouts` designer; Report Templates 0008 retired — ADR-0063, §RT-RM) |
 | B-21 | Rate Management — **SHIPPED as the FLAT one-table model** (ADR-0018, migs `0013_rate_management_flatten`+`0014_rate_types_lookup`), NOT the ADR-0016 4-table rebuild: one `rates` row `(client,product,VU,location,rate_type)→amount` effective-dated + a read-only managed `rate_types` lookup. The owner reversed the 4-table design mid-build → `rate_type_eligibility` + `service_zone_rules` + the eligibility trigger were dropped. | ✅ **FIXED** (ADR-0018 supersedes ADR-0016) | ADR-0018; `docs/RATE_MANAGEMENT_FREEZE.md` (superseded banner) | Shipped + browser-verified. Commission (FUCA) later phase. |
 | B-20 | Territory (pincode/area) scoped assignment + assignment-history audit. Task Assignment (`0011`, commit `22a56c0`) ships **hierarchy** scope only (SA/MANAGER subtree/TEAM_LEADER direct reports). True territory matching (FE sees tasks in their pincodes/areas, per `MOBILE_API_COMPATIBILITY_MATRIX.md` `assignedPincodes/Areas`) needs location on cases/users — neither exists in v2 yet. Reassignment overwrites in place (no append-only assignment history). | ✅ **FIXED — generalized far beyond the ask** (ADR-0022 Access Control 2.0): cases carry `pincode_id/area_id` (0031); assignments live in the generic `user_scope_assignments` (0034) wired per ROLE (`role_scope_dimensions`, EXPAND/RESTRICT) across 7 dimensions (PINCODE/AREA/CLIENT/PRODUCT/STATE/CITY/VERIFICATION_TYPE); visibility enforced centrally (`platform/scope`); admin UI (Roles screen + the user dialog Access tab) + bulk import/export; every layer fail-closed + audited. Residual ✅ CLOSED by the Pipeline milestone (2026-06-11, `12ba6b5`/`66d97db`/`fcce76e`): append-only `task_assignment_history` (mig 0036, immutability trigger) + `assignableUsers` = unit.worker_role ∩ hierarchy ∩ territory (per-task + intersection endpoints) + VERIFICATION_TYPE task-grain list legs (`taskPredicate`) live on `/api/v2/tasks`. | ADR-0022; migrations 0030–0035; `noRoleLiterals` gate | Shipped slices AC2.0 1–8 (2026-06-10/11), browser-verified. |
 
@@ -1158,6 +1158,42 @@ conversions — Templates + Rate-Management** (record-page routes + additive `GE
 **ADR-0051 is now complete for every entity except CPV** (bespoke master-detail accordion, intentionally
 left). Remaining DEFERRED (documented): CPV inline-grid; DataGrid `role=menu` arrow-roving (P3);
 Cases/Policies/ReportLayouts/FieldMonitoring additive backend export+filter endpoints (IE-DEFER-3/5/8, H-C2).
+
+## Section RT-RM — Retire the Report Templates module (2026-06-25, ADR-0063)
+
+### RT-RM-1 · Report Templates (`/admin/templates`, `report_templates` mig 0008) is dead/superseded — ✅ FIXED (removed)
+- **Severity:** MEDIUM (dead-code / misleading authoring surface; no security impact)
+- **Finding (owner-asked read-only investigation, 6 disjoint agents incl. an adversarial reader-hunt):**
+  `report_templates` was the type-only (FIELD_NARRATIVE/KYC_DOCUMENT) authoring surface for a render
+  engine that was instead built on `report_layouts` (ADR-0037 MIS → ADR-0039 FIELD_REPORT → ADR-0041
+  CASE_REPORT → ADR-0049 MIS gen). At HEAD **nothing reads `report_templates`** — the render engines
+  (`fieldReports`/`caseReports`/`mis`/`caseDataEntries`) read only `report_layouts`/`report_layout_columns`;
+  `reportTemplates/repository.ts hasDependents()` returned `false`. An admin authoring a template changed
+  nothing → an inert, misleading screen. It is a **pre-freeze** module (mig 0008 shipped 2026-06-04, one
+  day before the ADR-0015 reporting freeze).
+- **Decision (owner 2026-06-25):** REMOVE via superseding **ADR-0063**.
+- **Fix applied (this branch):** dropped the `report_templates` table (**mig 0091**, re-run-safe
+  `DROP TABLE IF EXISTS … CASCADE` — verified by a double full-migration pass + `migrations.rerun.test.ts`);
+  removed the api module (`/api/v2/report-templates`), SDK client+contracts, web pages + 3 routes + nav
+  entry, the `page.templates` (`TEMPLATE_VIEW`) permission + its meta, the system-health `reportTemplates`
+  count, the e2e seed row + `templates.spec.ts`, and the `/admin/templates` references in a11y/datagrid/
+  viewport e2e route lists. OpenAPI regenerated (249 paths, 0 report-templates).
+- **Preserved (MIS Layout designer unaffected — the owner's explicit constraint):** `report_template.manage`
+  (`TEMPLATE_MANAGE`) — the RBAC + nav-visibility anchor for the `reportLayouts` designer (key kept for
+  live `role_permissions` compatibility; only its display label changed to "MIS Layouts — Manage"); and
+  `REPORT_TEMPLATE_TYPES` + `verification_units.report_template_type` (the VU registry's own enum, not an FK).
+- **`/api/v2` narrowing note:** removing `/api/v2/report-templates` + the admin-only `counts.reportTemplates`
+  field is non-additive but consumer-safe — only the admin web pages (updated in lockstep) consumed them;
+  **the mobile `/api/v2` surface is not touched at all** (no mobile route/role references report_templates).
+- **Reconciles:** the stale "extends/superseded by `report_templates` 0008" text on **B-16 / B-18 / B-19**
+  (the engine was built on `report_layouts`, not by extending 0008).
+- **Date:** 2026-06-25
+- **Evidence:** ADR-0063; mig `0091`; full `pnpm verify` green on an isolated `:5433` DB (incl. the
+  MIS-Layout proof: `reportLayouts.api.test.ts` 14 + `reportLayouts.test.ts` 29); Playwright e2e 151
+  passed (incl. "MIS Layouts is responsive" + `reportLayouts.spec`); browser-verified (sidebar has no
+  Templates / has MIS Layouts; `/admin/report-layouts` works; `/admin/templates` no longer renders the
+  Templates UI; `GET /api/v2/report-templates` → 404). Branch `feat/remove-report-templates` (NOT pushed —
+  owner-gated; push→main auto-deploys).
 
 ## Section X-CHECK-2026-06-23 — Compliance-gaps cross-check & close-out
 

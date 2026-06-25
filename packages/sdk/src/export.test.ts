@@ -101,13 +101,11 @@ describe('createSdk — export transport (reqBlob)', () => {
     const s = createSdk({ baseUrl: 'http://x', fetchImpl: impl });
     await s.verificationUnits.export({ format: 'csv', mode: 'all' });
     await s.users.export({ format: 'csv', mode: 'all' });
-    await s.reportTemplates.export({ format: 'csv', mode: 'all' });
     await s.locations.export({ format: 'csv', mode: 'all' });
     await s.rates.export({ format: 'csv', mode: 'all' });
     expect(calls.map((c) => c.url)).toEqual([
       'http://x/api/v2/verification-units/export?format=csv&mode=all',
       'http://x/api/v2/users/export?format=csv&mode=all',
-      'http://x/api/v2/report-templates/export?format=csv&mode=all',
       'http://x/api/v2/locations/export?format=csv&mode=all',
       'http://x/api/v2/rates/export?format=csv&mode=all',
     ]);

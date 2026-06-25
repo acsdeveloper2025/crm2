@@ -9,15 +9,7 @@ const db = RUN ? createTestDb() : null;
 const app = createApp({ enableTestAuth: true });
 const SA = authHeaderForRole('SUPER_ADMIN');
 const BE = authHeaderForRole('BACKEND_USER');
-const COUNT_KEYS = [
-  'clients',
-  'products',
-  'verificationUnits',
-  'users',
-  'reportTemplates',
-  'rates',
-  'locations',
-];
+const COUNT_KEYS = ['clients', 'products', 'verificationUnits', 'users', 'rates', 'locations'];
 
 describe('system API', () => {
   beforeAll(async () => {

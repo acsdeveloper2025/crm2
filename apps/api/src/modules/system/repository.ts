@@ -24,7 +24,6 @@ export const systemRepository = {
          (SELECT count(*) FROM products)::int           AS products,
          (SELECT count(*) FROM verification_units)::int AS verification_units,
          (SELECT count(*) FROM users)::int              AS users,
-         (SELECT count(*) FROM report_templates)::int   AS report_templates,
          (SELECT count(*) FROM rates)::int              AS rates,
          (SELECT count(*) FROM locations)::int          AS locations,
          (SELECT count(*) FROM notification_tokens WHERE is_active)::int AS active_tokens,

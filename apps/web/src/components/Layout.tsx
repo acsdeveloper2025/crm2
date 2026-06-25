@@ -57,7 +57,6 @@ const ADMINISTRATION: { label: string; to: string; perm: string }[] = [
   { label: 'Departments', to: '/admin/departments', perm: 'page.users' },
   { label: 'Designations', to: '/admin/designations', perm: 'page.users' },
   { label: 'Access Control', to: '/admin/rbac', perm: 'page.access' },
-  { label: 'Templates', to: '/admin/templates', perm: 'page.templates' },
   { label: 'Policies', to: '/admin/policies', perm: 'page.policies' },
   { label: 'System', to: '/admin/system', perm: 'page.system' },
 ];

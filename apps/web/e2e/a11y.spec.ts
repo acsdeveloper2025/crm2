@@ -25,7 +25,6 @@ const PAGES: { name: string; path: string }[] = [
   // by viewport.spec for the responsive (overflow/nav) gate.
   { name: 'Rate Management', path: '/admin/rates' },
   { name: 'CPV Mapping', path: '/admin/cpv' },
-  { name: 'Templates', path: '/admin/templates' },
   { name: 'Access Control', path: '/admin/rbac' },
   { name: 'System', path: '/admin/system' },
   { name: 'Cases', path: '/cases' },

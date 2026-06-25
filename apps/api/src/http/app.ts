@@ -39,7 +39,6 @@ import { locationRoutes } from '../modules/locations/routes.js';
 import { userRoutes } from '../modules/users/routes.js';
 import { accessRoutes } from '../modules/access/routes.js';
 import { roleRoutes } from '../modules/roles/routes.js';
-import { reportTemplateRoutes } from '../modules/reportTemplates/routes.js';
 import { reportLayoutRoutes } from '../modules/reportLayouts/routes.js';
 import { caseDataEntryRoutes } from '../modules/caseDataEntries/routes.js';
 import { departmentRoutes } from '../modules/departments/routes.js';
@@ -114,7 +113,6 @@ export function createApp(opts: { enableTestAuth?: boolean } = {}): Express {
   mount('/api/v2/users', userRoutes);
   mount('/api/v2/access', accessRoutes);
   mount('/api/v2/roles', roleRoutes);
-  mount('/api/v2/report-templates', reportTemplateRoutes);
   mount('/api/v2/report-layouts', reportLayoutRoutes);
   mount('/api/v2/data-entry', caseDataEntryRoutes);
   mount('/api/v2/departments', departmentRoutes);

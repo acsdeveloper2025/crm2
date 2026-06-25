@@ -10,7 +10,6 @@ const COUNT_LABELS: { key: keyof SystemHealth['counts']; label: string }[] = [
   { key: 'rates', label: 'Rates' },
   { key: 'locations', label: 'Locations (Areas)' },
   { key: 'users', label: 'Users' },
-  { key: 'reportTemplates', label: 'Report Templates' },
 ];
 
 const REFETCH_MS = 15000;

@@ -69,11 +69,6 @@ import type {
   UpdateRolePermissionsInput,
 } from './roles.js';
 import type {
-  ReportTemplate,
-  CreateReportTemplateInput,
-  UpdateReportTemplateInput,
-} from './reportTemplates.js';
-import type {
   Department,
   DepartmentOption,
   CreateDepartmentInput,
@@ -558,24 +553,6 @@ export function createSdk(opts: SdkOptions) {
 
     access: {
       matrix: () => req<AccessMatrix>('GET', '/api/v2/access/matrix'),
-    },
-
-    reportTemplates: {
-      list: (q: PageQuery = {}) => {
-        const qs = pageQueryToParams(q).toString();
-        return req<Paginated<ReportTemplate>>('GET', `/api/v2/report-templates${qs ? `?${qs}` : ''}`);
-      },
-      create: (input: CreateReportTemplateInput) =>
-        req<ReportTemplate>('POST', '/api/v2/report-templates', input),
-      // OCC (ADR-0019): edits/(de)activations carry the expected `version`; 409 STALE_UPDATE on conflict.
-      update: (id: number, input: UpdateReportTemplateInput & { version: number }) =>
-        req<ReportTemplate>('PUT', `/api/v2/report-templates/${id}`, input),
-      activate: (id: number, version: number) =>
-        req<ReportTemplate>('POST', `/api/v2/report-templates/${id}/activate`, { version }),
-      deactivate: (id: number, version: number) =>
-        req<ReportTemplate>('POST', `/api/v2/report-templates/${id}/deactivate`, { version }),
-      /** DataGrid export (IMPORT_EXPORT_STANDARD): same list query + format/mode → a file blob. */
-      export: (r: ExportRequest) => reqBlob('report-templates', r),
     },
 
     departments: {

@@ -8,7 +8,6 @@ export interface SystemHealthCounts {
   products: number;
   verificationUnits: number;
   users: number;
-  reportTemplates: number;
   rates: number;
   locations: number;
 }

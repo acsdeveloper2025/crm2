@@ -22,7 +22,8 @@ export const PERMISSIONS = {
   USER_VIEW: 'page.users',
   USER_MANAGE: 'user.manage',
   ACCESS_VIEW: 'page.access',
-  TEMPLATE_VIEW: 'page.templates',
+  // Anchors the Report/MIS Layout designer (modules/reportLayouts) — key kept for RBAC-data
+  // compatibility (live role_permissions reference the string); ADR-0063 retired Report Templates.
   TEMPLATE_MANAGE: 'report_template.manage',
   SYSTEM_VIEW: 'page.system',
   POLICY_VIEW: 'page.policies',
@@ -150,8 +151,7 @@ export const PERMISSION_META: Record<Permission, { label: string; group: string 
   'page.users': { label: 'User Management — View', group: 'Administration' },
   'user.manage': { label: 'User Management — Manage', group: 'Administration' },
   'page.access': { label: 'Access Control — View', group: 'Administration' },
-  'page.templates': { label: 'Report Templates — View', group: 'Administration' },
-  'report_template.manage': { label: 'Report Templates — Manage', group: 'Administration' },
+  'report_template.manage': { label: 'MIS Layouts — Manage', group: 'Administration' },
   'page.system': { label: 'System Health — View', group: 'Administration' },
   'page.policies': { label: 'Policies — View', group: 'Administration' },
   'policy.manage': { label: 'Policies — Manage', group: 'Administration' },

@@ -10,7 +10,6 @@ const ZERO_COUNTS: SystemHealthCounts = {
   products: 0,
   verificationUnits: 0,
   users: 0,
-  reportTemplates: 0,
   rates: 0,
   locations: 0,
 };

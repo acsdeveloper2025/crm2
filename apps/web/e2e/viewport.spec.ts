@@ -26,7 +26,6 @@ const PAGES: PageSpec[] = [
   { name: 'Location Management', path: '/admin/locations', card: true },
   { name: 'Rate Management', path: '/admin/rates', card: true },
   { name: 'CPV Mapping', path: '/admin/cpv', card: true },
-  { name: 'Templates', path: '/admin/templates', primary: /New/, card: true },
   { name: 'Access Control', path: '/admin/rbac' },
   { name: 'System', path: '/admin/system' },
   { name: 'Cases', path: '/cases', primary: /New/, card: true },

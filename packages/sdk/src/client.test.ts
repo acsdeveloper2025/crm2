@@ -232,11 +232,6 @@ describe('createSdk — transport', () => {
       s.users.activate('00000000-0000-0000-0000-000000000001', 1),
       s.users.deactivate('00000000-0000-0000-0000-000000000001', 1),
       s.access.matrix(),
-      s.reportTemplates.list({ search: 'res', filters: { templateType: 'FIELD_NARRATIVE', active: true } }),
-      s.reportTemplates.create({ code: 'T', name: 'N', templateType: 'FIELD_NARRATIVE' }),
-      s.reportTemplates.update(1, { name: 'N', templateType: 'KYC_DOCUMENT', content: 'x', version: 1 }),
-      s.reportTemplates.activate(1, 1),
-      s.reportTemplates.deactivate(1, 1),
       s.departments.list({ search: 'ops' }),
       s.departments.options(),
       s.departments.create({ name: 'Operations' }),
@@ -376,7 +371,7 @@ describe('createSdk — transport', () => {
       s.savedViews.remove('00000000-0000-0000-0000-0000000000aa'),
       s.savedViews.setDefault('00000000-0000-0000-0000-0000000000aa', true),
     ]);
-    expect(calls.length).toBe(161); // ADR-0055: removed cases.unassignTask
+    expect(calls.length).toBe(156); // ADR-0063: removed reportTemplates.{list,create,update,activate,deactivate}
     expect(calls.some((c) => c.url === 'http://x/api/v2/commission-rates')).toBe(true);
     expect(calls.some((c) => c.url === 'http://x/api/v2/tat-policies')).toBe(true);
     expect(calls.some((c) => c.url === 'http://x/api/v2/report-layouts')).toBe(true);

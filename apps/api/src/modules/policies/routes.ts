@@ -13,7 +13,7 @@ policyRoutes.get('/', authorize(PERMISSIONS.POLICY_VIEW), c.list);
 // `/export` must precede `/:id` (and `/users/...`) or it'd be captured as id="export".
 // Gated POLICY_VIEW (NOT bare data.export): the export streams the SAME policy rows as `GET /`
 // (page.policies), so it must share the list's audience. data.export alone would WIDEN access —
-// MANAGER/TEAM_LEADER/BACKEND_USER hold it but cannot read policies. Mirrors report-templates /export.
+// MANAGER/TEAM_LEADER/BACKEND_USER hold it but cannot read policies. Export shares the list audience.
 policyRoutes.get('/export', authorize(PERMISSIONS.POLICY_VIEW), c.export);
 // Admin: a user's policy-acceptance log. Mounted BEFORE /:id so the literal `users` segment doesn't
 // collide with the numeric :id path-param. Gated by page.users (user-management surface).

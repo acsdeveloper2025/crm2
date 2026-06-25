@@ -161,7 +161,6 @@ const ENVELOPE_PAGES = [
   '/admin/locations',
   '/admin/rates',
   '/admin/cpv',
-  '/admin/templates',
   '/cases',
   '/cases/new',
 ];

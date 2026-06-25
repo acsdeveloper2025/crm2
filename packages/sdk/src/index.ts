@@ -15,7 +15,6 @@ export * from './users.js';
 export * from './userAssignments.js';
 export * from './access.js';
 export * from './roles.js';
-export * from './reportTemplates.js';
 export * from './reportLayouts.js';
 export * from './fieldReportDefaults.js';
 export * from './caseReports.js';

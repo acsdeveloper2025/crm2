@@ -81,11 +81,6 @@ WHERE c.code = 'HDFC'
   AND p.code = 'HL'
   AND NOT EXISTS (SELECT 1 FROM report_layouts WHERE kind = 'CASE_REPORT' AND name = 'E2E Case Report');
 
--- templates.spec: a row's Edit → /admin/templates/:id. Flat (code/name/type/content), no FKs.
-INSERT INTO report_templates (code, name, template_type, content)
-SELECT 'E2E_FIELD_TPL', 'E2E Field Template', 'FIELD_NARRATIVE', 'Body {{name}}'
-WHERE NOT EXISTS (SELECT 1 FROM report_templates WHERE code = 'E2E_FIELD_TPL');
-
 -- rateManagement.spec: a row's Revise → /admin/rates/:id. A FIELD rate keyed on HDFC/HL × the first
 -- FIELD_VISIT unit × the Fort location (seeded above) with a LOCAL rate type. The no-overlap EXCLUDE
 -- rejects a duplicate, but NOT EXISTS keeps the apply idempotent.
