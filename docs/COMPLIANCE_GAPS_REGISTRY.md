@@ -61,7 +61,7 @@ architecture** — simply not built yet. Each is built when its phase lands.
 | B-4 | Excel-style header filters (§7 multi-select) | ✅ **FIXED + ROLLED OUT** (2026-06-06) — `in` contract + grid `ColumnFilterSelect`; enum header multi-selects live on VU kind · users role · templates type · rates kind · cases status (replaced the old toolbar single-selects) | `docs/DATAGRID_STANDARD.md` | Shipped across admin + cases |
 | B-5 | Saved views | ✅ **FIXED** (2026-06-15) — server-backed `saved_views` (mig 0051, own-user scoped like notifications/jobs); `/api/v2/saved-views` list/create/update/delete/set-default; `@crm2/sdk` `savedViews.*`; `SavedViewsPicker` in the DataGrid toolbar (reuses the grid's `queryKey` as resourceKey → all ~15 grids, zero per-page edits); captures every URL key except `page`, switch applies, default auto-loads on clean open. Audit Panel 4 PASS + 1 BLOCK (phantom `btn-primary`→`btn`) fixed | `docs/DATAGRID_STANDARD.md` §10 | Browser-verified on /admin/locations (create→switch→set-default→reload-auto-applies→delete). CARRY: delete confirm/undo; 23505 constraint-discrimination (unreachable today) |
 | B-6 | Column visibility | ✅ **FIXED** (2026-06-06, Slice 2) — Columns menu on the universal grid; hidden ids persist in the `cols` URL key (§9/§12 interim before the saved-views store §10); all 7 migrated lists inherit it | `docs/DATAGRID_STANDARD.md` | Shipped |
-| B-7 | Background-job UX | DEFERRED | `docs/PAGINATION_AND_LOADING_STANDARDS.md` §10–11 | Exports / workers phase |
+| B-7 | Background-job UX | ✅ **FIXED** (2026-06-23 cross-check, §X-CHECK) — `JobsTray.tsx` determinate HexagonLoader % + download-on-SUCCEEDED + error/cap; realtime `useJobs` | `docs/PAGINATION_AND_LOADING_STANDARDS.md` §10–11 | Shipped |
 | B-8 | Skeleton loading | ✅ **FIXED** (2026-06-09, Slice 9) — skeleton now band-gated to 300 ms–1 s (§6); 0–300 ms renders nothing (no flicker) | `docs/PAGINATION_AND_LOADING_STANDARDS.md` §6/§9 | Full §6 time-band ladder live in the DataGrid (`>8s`=background job stays DEFERRED → B-7) |
 | B-9 | Hexagon loader (real %) | ✅ **FIXED** (2026-06-09, Slice 9) — `components/ui/HexagonLoader.tsx`; geometric hexagon, determinate (real % for staged jobs) + indeterminate (single-stage waits); reduced-motion-safe | `UI_STANDARDS.md`, `docs/PAGINATION_AND_LOADING_STANDARDS.md` §7/§8 | Indeterminate wired to the list-fetch now; determinate-% path awaits the operations/worker jobs (reports/MIS/export) |
 | B-10 | Playwright E2E + axe a11y | DEFERRED | `docs/CI_CD_STANDARDS.md` (19/29) | First UI flow; CI step already stubbed |
@@ -74,7 +74,7 @@ architecture** — simply not built yet. Each is built when its phase lands.
 | B-16 | Report rendering engine (Handlebars/text → PDF) + CPV-scoped template overrides (client+product+vtype) | DEFERRED | BLUEPRINT report-engine section | Reports/operations phase. Superseded/absorbed by B-18 (ADR-0015). |
 | B-17 | Verification Workspace — single page (Zion NewDataQC): per-task data-entry/MIS · assignment · FE-mobile images+data · report entry · auto-gen · Final Status + Case Report | DEFERRED | `docs/CASE_WORKSPACE_AND_REPORTING_FREEZE.md` §1, ADR-0015 | Operations phase — reuse `/cases/:id` behind a flag. Keystone. |
 | B-18 | Per-client+product Reporting Engine — two kinds (MIS_EXCEL + CASE_REPORT), formats PDF/WORD/EXCEL, field/column mapping (FE data+images+seal), 200+ formats config-driven; extends `report_templates` 0008 | DEFERRED | `docs/CASE_WORKSPACE_AND_REPORTING_FREEZE.md` §2, ADR-0015 | Operations phase — generation via report-worker (PDF) + export engine (Excel); seed 200+ via import-engine. |
-| B-19 | Admin Template Designer (design/upload MIS-Excel + Case-Report templates per client+product[+type]; versioned, immutable-once-used) | DEFERRED | `docs/CASE_WORKSPACE_AND_REPORTING_FREEZE.md` §2.2, ADR-0015 | Administration — extends the shipped Report Templates module. |
+| B-19 | Admin Template Designer (design/upload MIS-Excel + Case-Report templates per client+product[+type]; versioned, immutable-once-used) | ✅ **FIXED** (2026-06-23 cross-check, §X-CHECK) — `reportLayouts` module + `ReportLayoutRecordPage.tsx` kind-branched designer (ADR-0037 + ADR-0051 D4) | `docs/CASE_WORKSPACE_AND_REPORTING_FREEZE.md` §2.2, ADR-0015 | Shipped (extends Report Templates) |
 | B-21 | Rate Management — **SHIPPED as the FLAT one-table model** (ADR-0018, migs `0013_rate_management_flatten`+`0014_rate_types_lookup`), NOT the ADR-0016 4-table rebuild: one `rates` row `(client,product,VU,location,rate_type)→amount` effective-dated + a read-only managed `rate_types` lookup. The owner reversed the 4-table design mid-build → `rate_type_eligibility` + `service_zone_rules` + the eligibility trigger were dropped. | ✅ **FIXED** (ADR-0018 supersedes ADR-0016) | ADR-0018; `docs/RATE_MANAGEMENT_FREEZE.md` (superseded banner) | Shipped + browser-verified. Commission (FUCA) later phase. |
 | B-20 | Territory (pincode/area) scoped assignment + assignment-history audit. Task Assignment (`0011`, commit `22a56c0`) ships **hierarchy** scope only (SA/MANAGER subtree/TEAM_LEADER direct reports). True territory matching (FE sees tasks in their pincodes/areas, per `MOBILE_API_COMPATIBILITY_MATRIX.md` `assignedPincodes/Areas`) needs location on cases/users — neither exists in v2 yet. Reassignment overwrites in place (no append-only assignment history). | ✅ **FIXED — generalized far beyond the ask** (ADR-0022 Access Control 2.0): cases carry `pincode_id/area_id` (0031); assignments live in the generic `user_scope_assignments` (0034) wired per ROLE (`role_scope_dimensions`, EXPAND/RESTRICT) across 7 dimensions (PINCODE/AREA/CLIENT/PRODUCT/STATE/CITY/VERIFICATION_TYPE); visibility enforced centrally (`platform/scope`); admin UI (Roles screen + the user dialog Access tab) + bulk import/export; every layer fail-closed + audited. Residual ✅ CLOSED by the Pipeline milestone (2026-06-11, `12ba6b5`/`66d97db`/`fcce76e`): append-only `task_assignment_history` (mig 0036, immutability trigger) + `assignableUsers` = unit.worker_role ∩ hierarchy ∩ territory (per-task + intersection endpoints) + VERIFICATION_TYPE task-grain list legs (`taskPredicate`) live on `/api/v2/tasks`. | ADR-0022; migrations 0030–0035; `noRoleLiterals` gate | Shipped slices AC2.0 1–8 (2026-06-10/11), browser-verified. |
 
@@ -605,7 +605,7 @@ verify on the prod-dev box post-deploy or via a local preview. New discovery →
   TAT design decisions (clock start, wall-clock vs business-hours, completion-time source,
   target-vs-actual band, full-ADR-0044 vs minimal) pending owner lock in the TAT design phase.
 
-### G-8 · `RATE_LATERAL` location ladder ranks a non-matching scoped rate above the location-less default — 🟡 DEFERRED (discovered 2026-06-19 during ADR-0046)
+### G-8 · `RATE_LATERAL` location ladder ranks a non-matching scoped rate above the location-less default — ✅ FIXED (ADR-0048 CASE-rank `87f5f88`; verified at HEAD 2026-06-23 — see §X-CHECK)
 - **Severity:** MEDIUM (latent client-bill correctness). **Finding:** `RATE_LATERAL`
   (`apps/api/src/platform/billing/laterals.ts:21-32`) orders by `(r.location_id = ct.area_id) DESC NULLS
   LAST, …, (r.location_id IS NULL) DESC`. Under Postgres, a row scoped to a **non-matching** location
@@ -680,10 +680,11 @@ The two-actor relay (KYC_VERIFIER downloads→emails source→forwards response;
 per-task Excel export affordance and no "sent/received" timestamp, so an ASSIGNED office task is
 indistinguishable from a stuck one on aging surfaces. First post-launch ask; not a blocker.
 
-### R0050-6 · Design nits — 🟡 DEFERRED
-`AddTasksForm.tsx` separator uses `text-border` as a text color (only such use; prefer
-`text-muted-foreground`); FIELD assign-at-create has no client-side guard for the now-required
-`fieldRateType` (server 400s — consistent with the form's existing server-refine reliance).
+### R0050-6 · Design nits — ✅ FIXED (2026-06-23, cross-check §X-CHECK)
+`AddTasksForm.tsx` + `CaseDetailPage.tsx` separator `·` used `text-border` (a border color) as a text
+color → `text-muted-foreground` (the only two such uses). The second nit — "FIELD assign-at-create has no
+client-side guard for the now-required `fieldRateType`" — was re-verified RESOLVED: the form already blocks
+submit via the blocked-row / rate-preview mechanism (R0056-2/3), so no change needed there.
 
 ### Verified PASS (Security — no finding)
 COMMISSION_LATERAL: `cmr.user_id = ct.assigned_to` is a top-level AND (enforced on the OFFICE branch too);
@@ -825,19 +826,21 @@ Single-assign (`cases/service.assignTask`) is now PENDING-only, but pipeline **b
 (`tasks/service.ts:266`) still admits `ASSIGNED` rows and re-points them in place via
 `caseRepository.assignTask`, bypassing the gate. Flagged by BOTH the revoke + field-rate sessions as a
 coordinated follow-up (the file is the field-rate session's). Restrict bulk to PENDING-only for full
-ADR-0055 consistency — owner decision pending (it changes the pipeline bulk-reassign behavior).
+ADR-0055 consistency.
 **FIXED 2026-06-24 (= A2026-0623-10):** `tasks/service.ts` bulk guard changed from
 `status !== 'PENDING' && status !== 'ASSIGNED'` → `status !== 'PENDING'`, so a live `ASSIGNED` row now
 returns `NOT_ASSIGNABLE` (never reaches `caseRepository.assignTask`) — mirrors the single-assign
-`TASK_NOT_ASSIGNABLE` rule. Owner-approved this session. TDD: new test
-`bulk-assign: a live ASSIGNED task is NOT_ASSIGNABLE` (`tasks.api.test.ts`) asserts the row is
-`NOT_ASSIGNABLE` and the live assignment is never re-pointed in place. Re-disposition A2026-0623-10 → FIXED.
+`TASK_NOT_ASSIGNABLE` rule. TDD: `tasks.api.test.ts` asserts the ASSIGNED row is `NOT_ASSIGNABLE` and the
+live assignment is never re-pointed. (Independently re-implemented in the 2026-06-23 cross-check session —
+identical one-line gate — but the upstream fix landed first, so the cross-check's SHIP-1 commit was dropped
+on rebase.)
 
-### SHIP-2 · "Bill count" is an inconsistent billing multiplier — 🟡 DEFERRED (owner decision pending)
-`bill_count` multiplies BOTH the client bill and the commission (`billing/repository.ts:121-122`), but the
-**create** form never collects it (defaults to 1) while the inline **Assign** + **bulk** forms do; every
-task is `1` in practice. Owner to decide: remove from the assign forms (always ×1, consistent with create) /
-keep / add to create. No code change yet.
+### SHIP-2 · "Bill count" is an inconsistent billing multiplier — ✅ FIXED (2026-06-23) — input removed (every task ×1); see §X-CHECK
+**Owner decision 2026-06-23: REMOVE the input** (CRM2 is export-only — see the billing-scope WONTFIX in
+§X-CHECK). The operator-set bill_count box is gone from the inline Assign form (`CaseDetailPage`) + Pipeline
+bulk-assign (`PipelinePage`); both now send `billCount: 1`. The `case_tasks.bill_count` column + the billing
+`× bill_count` math are unchanged (always 1 now) — full retirement of the column/multiplier + the read-only
+"Bills" display columns is a later cleanup. Web gate green.
 
 ### SHIP-3 · Stranded location-less PENDING tasks after "remove Assign later" — 🟡 DEFERRED (going-forward fix)
 ADR-0056's "remove Assign later" (require visit type + FIELD location at create) is **going-forward** — any
@@ -853,7 +856,7 @@ files). Mobile capture, backend storage, frontend raw-field display, and the fie
 lat/long→reverse-geocoded-address chain all **PASS** for all 9 types. The break is the **FIELD_REPORT
 narrative generator** only — and raw captured fields always still display, so no data is lost.
 
-### AUDIT-1 · FIELD_REPORT narrative renders empty — outcome-vocabulary mismatch — 🔴 CONFIRMED, owner decision pending
+### AUDIT-1 · FIELD_REPORT narrative renders empty — outcome-vocabulary mismatch — ✅ FIXED (ADR-0057 `098f409`; verified at HEAD 2026-06-23 — see §X-CHECK)
 Default templates branch (strict `===`) on v1 verbose labels (`"Positive & Door Open"`, `"ERT"`,
 `"Untraceable"`, …); the v2 app submits 5 uppercase CODES in `verificationOutcome`
 (`POSITIVE`/`SHIFTED`/`NSP`/`ENTRY_RESTRICTED`/`UNTRACEABLE`, `FormSubmissionService.ts:81`,
@@ -864,17 +867,17 @@ labels were the historical vocabulary; the v2 mobile rewrite (`LegacyFormTemplat
 collapsed them to codes. **Latent until an admin activates a FIELD_REPORT layout prefilled from the
 defaults** (`ReportLayoutsPage.tsx:374-378` one-click). Evidence: `docs/audit-2026-06-22/layer4-template-mapping.md`.
 
-### AUDIT-2 · FIELD_REPORT tenure clauses empty — composite period-key arity — 🔴 CONFIRMED, owner decision pending
+### AUDIT-2 · FIELD_REPORT tenure clauses empty — composite period-key arity — ✅ FIXED (ADR-0057 period recombination `098f409`; verified at HEAD 2026-06-23 — see §X-CHECK)
 Templates read a single `<period>` ref; the app emits split `<period>Value` + `<period>Unit` (~20
 instances, 8 types) → empty "for the last … years" clauses. No `concat` helper, so needs a real resolver/
 helper, not a rename. Tests mask it by feeding the combined string.
 
-### AUDIT-3 · Secondary per-field ref drifts — 🟡 DEFERRED (P2, medium confidence)
+### AUDIT-3 · Secondary per-field ref drifts — ✅ RESOLVED (no live drift in crm2 templates at HEAD 2026-06-23 — see §X-CHECK)
 `applicantStayingFloor` vs mobile `addressFloor` (floor clause), `callConfirmation` absence for
 BUILDER/NOC, `finalStatusNegative` captured-but-never-printed (APF), `businessExistance` misspelled twin.
 Isolated; raw view still shows them; fix after AUDIT-1/2. Confirm each against the exact mobile form.
 
-### AUDIT-4 · Test debt masks the whole class — 🟡 DEFERRED (must fix alongside AUDIT-1/2)
+### AUDIT-4 · Test debt masks the whole class — ✅ FIXED (canonicalize.render.test.ts device-blob contract + RED regression; verified 2026-06-23 — see §X-CHECK)
 `defaults.*.render.test.ts` feed v1-shaped fixtures (verbose-label outcome + combined period) the v2
 device never sends → `pnpm verify` stays green while real reports are blank. Add a contract test that
 renders a default template from a **real captured device blob** and asserts a non-empty body.
@@ -947,30 +950,47 @@ so ALL preview validation (username/email/phone/role/password) is preserved; an 
 error against the Department/Designation column (no silent null). A designation/user export now re-imports
 losslessly (round-trip tests assert 0 errors). `designations/service.ts`, `users/service.ts`.
 
-### IE-DEFER-2 · CPV unit-enablement leg (`client_product_verification_units`) import/export — 🟡 DEFERRED
-The per-mapping unit-enablement leg (`cpvUnitService`) has no bulk import/export. The PRIMARY "CPV
-Mapping" surface (client↔product, `client_products`) IS fully covered (down-graded P0→P1). A new
-surface (manifest + route + controller + SDK + web + client/product/unit code resolve) — its own slice.
+### IE-DEFER-2 · CPV unit-enablement leg (`client_product_verification_units`) import/export — ✅ FIXED (2026-06-23, §X-CHECK)
+The unit-enablement leg now has bulk **export + import** mirroring the sibling `client_products` leg:
+`GET /cpv-units/export` (DATA_EXPORT), `GET /cpv-units/import-template` + `POST /cpv-units/import`
+(MASTERDATA_MANAGE). The export emits the resolvable client/product/unit **codes** so a downloaded file
+re-imports losslessly (round-trip test green); the import resolves codes→ids via the existing options/link
+maps. Web: "Import Units" + "Export Units" controls in the CPV page header (the enablements span all links
+→ a global import/export, not per-row in the sub-table). `cpv.api.test.ts` covers export 200/403/401 +
+import preview/confirm/round-trip. Full `pnpm verify` green.
 
-### IE-DEFER-3 · Case Creation bulk import · Bulk Assignment file import · Cases grid export — 🟡 DEFERRED
-Case-creation bulk import does not exist (import-mandatory §4) and needs its own ADR — it must reuse
-`CreateCaseSchema` and honour ADR-0053 (multi-applicant batch dedupe) + ADR-0056 (visit-type + FIELD
-location + derived field-rate) + the dedupe gate. Bulk Assignment is an in-grid JSON action
-(`POST /tasks/bulk-assign`), not a spreadsheet import. Cases DataGrid has no `exportFn`; several
-case/task fields export nowhere. ALL deferred: the `cases`/`tasks` modules are under concurrent
-parallel-session WIP (do not collide), and case-creation import is a feature, not a coverage patch.
+### IE-DEFER-3 · Case Creation bulk import (DEFERRED) · Bulk Assignment file import (WONTFIX) · Cases grid export (✅ FIXED 2026-06-23)
+- **Cases grid export → ✅ FIXED (2026-06-23, IE-DEFER-3c, §X-CHECK):** added `GET /cases/export`
+  (DATA_EXPORT; holders ⊆ CASE_VIEW so not wider-than-read; FIELD/KYC excluded from bulk export) reusing the
+  SAME scope-filtered cases `list` query (the export inherits the actor's case scope; the 413 is computed on
+  the SCOPED count so it can't leak out-of-scope existence) + the CASES_EXPORT_COLUMNS manifest + web
+  `exportFn` on the Cases DataGrid (gated `has('data.export')` so the button hides for KYC). `cases.api.test.ts`
+  covers 200 / 403 (FIELD+KYC) / 401 + a scope test. Full `pnpm verify` green.
+- **Bulk Assignment file import → 🟢 WONTFIX:** it is an in-grid JSON action (`POST /tasks/bulk-assign`),
+  not a spreadsheet import surface; correct as-is (no import endpoint by design).
+- **Case-creation bulk import → 🟡 DEFERRED (IE-DEFER-3a):** does not exist (import-mandatory §4) and needs
+  its own ADR (ADR-0059, Proposed) — must reuse `CreateCaseSchema` + honour ADR-0053 (multi-applicant batch
+  dedupe) + ADR-0056 (visit-type + FIELD location + derived field-rate) + the dedupe gate. A feature, not a
+  coverage patch; build on ADR-0059 greenlight (depends on the universal import-engine B-14).
 
 ### IE-DEFER-4 · MIS/Billing/Field-Monitoring ≥10k export → background job — 🟡 DEFERRED
 `mode:all` ≥10k returns 413 `EXPORT_TOO_LARGE` instead of enqueuing a job (standard §2); only
 `locations` registers an async export builder. Incremental rollout — register builders per surface.
 
-### IE-DEFER-5 · Policies export — 🟡 DEFERRED
-The Policies admin DataGrid has no export (standard §1). Low-risk additive (metadata manifest + route +
-SDK + web). Policies *content* stays non-importable (versioned legal blob — WONTFIX).
+### IE-DEFER-5 · Policies export — ✅ FIXED (2026-06-23, §X-CHECK)
+Added `GET /policies/export` **gated `POLICY_VIEW`** (SA-only — NOT bare `data.export`, which MANAGER/TL/
+BACKEND_USER hold but cannot read policies → would be wider-than-read, the IE-1..4 class) + the
+POLICY_EXPORT_COLUMNS manifest (the large `content` legal blob is deliberately excluded) + web `exportFn`
+on the Policies DataGrid. `policies.api.test.ts` covers 200 (SA) / 403 (BACKEND_USER) / 401. Policies
+*content* stays non-importable (versioned legal blob — WONTFIX). Full `pnpm verify` green.
 
-### IE-DEFER-6 · Scope-assignments export honours filters + emits codes + web surface — 🟡 DEFERRED
-The `/users/scope/export` ignores the DataGrid filter/sort, emits resolved labels (import wants codes),
-and has API routes but no web button. P1 round-trip/correctness; bundle with IE-DEFER-1.
+### IE-DEFER-6 · Scope-assignments export honours filters + emits codes + web surface — ✅ FIXED (2026-06-23, §X-CHECK)
+The `/users/scope/export` now emits the **codes** the import resolver parses (PINCODE → bare pincode, AREA →
+`PINCODE:AREA`, CLIENT/PRODUCT/VERIFICATION_TYPE → catalog code, STATE/CITY → raw value; username + dimension
+were already round-trippable) so a downloaded file re-imports — a round-trip test feeds the export back to the
+import preview with 0 errors. A separate `Label` column keeps operator context (the importer ignores unknown
+headers). The web "Export Scope" button already exists (UsersPage). (Filter/sort honouring stays the existing
+whole-topology dump — the primary fix was codes for round-trip; not over-engineered.) Full `pnpm verify` green.
 
 ### IE-8 · Departments + Designations export gated wider than their list — ✅ FIXED (2026-06-22, review-panel)
 The Security reviewer caught a miss in the IE-1..4 gate sweep: `GET /departments/export` and
@@ -988,7 +1008,7 @@ structure they cannot read. Same export-wider-than-read class as IE-1..4. Low im
 - **Design P3-1:** commission export rendered "applies to any" three ways (`Universal` for client, blank
   for the other dims); now renders `Universal` for all Universal-able dimensions (no blank-vs-missing ambiguity).
 
-### IE-DEFER-7 · Commission-rate export ⇏ commission import template (round-trip shape mismatch) — 🟡 DEFERRED
+### IE-DEFER-7 · Commission-rate export ⇏ commission import template (round-trip shape mismatch) — 🟢 WONTFIX (owner 2026-06-23: keep export analysis-only; bulk-load via the import template — see §X-CHECK)
 The Design reviewer noted commission rates have BOTH export and import, but the export is display-oriented
 (combined `Location` "411001 Fort", `Product` code+name, `Unit` name, `User` display name, `TAT` "24h")
 while the import template is code/pincode-keyed (`Username`, `Location Pincode`+`Area`, `Product Code`,
@@ -997,14 +1017,12 @@ which were aligned). The IE-5 P0 (dropped required dimensions / ambiguity) IS fi
 alignment (split Location, emit codes, bare TAT) is a follow-up that conflicts with the FE grid `cols`
 ids and so warrants its own pass. Export is documented in-code as read-for-analysis, not a re-import source.
 
-### IE-DEFER-8 · Report Layouts export — 🟡 DEFERRED (discovered 2026-06-23, design-build B3)
-The Report Layouts admin DataGrid (`/admin/report-layouts`) has no `exportFn` because the `reportLayouts`
-module exposes no `GET /export` route (only `/`, `/by-config`, `/:id`, create/activate/deactivate). Per
-IMPORT_EXPORT_STANDARD (no module writes a bespoke export; the DataGrid is the only export surface), the
-fix is an **additive backend `/report-layouts/export`** (metadata manifest + route gated `TEMPLATE_MANAGE`
-+ SDK `.export()` + web `exportFn`), mirroring the report-templates export precedent — its own slice, not
-invented here. The layout *designer artifact* (template body / column-row builder) stays non-importable by
-design (see WONTFIX). Low-risk metadata-only export of the list columns (name/kind/client/product/status/dates).
+### IE-DEFER-8 · Report Layouts export — ✅ FIXED (2026-06-23, §X-CHECK)
+Added `GET /report-layouts/export` **gated `TEMPLATE_MANAGE`** (the module's list read perm — export shares
+the list audience) + the REPORT_LAYOUT_EXPORT_COLUMNS manifest (name/kind/client/product/status/dates; the
+large designer body/columns JSON is excluded) + web `exportFn` on the Report Layouts DataGrid.
+`reportLayouts.api.test.ts` covers 200 / 403 (BACKEND_USER) / 401. The layout *designer artifact* (template
+body / column-row builder) stays non-importable by design (WONTFIX). Full `pnpm verify` green.
 
 ### Review-panel verdicts (4-agent, 2026-06-22)
 CTO: NO BLOCKING ISSUES (reuse + additive + contract-safe + tests genuine; round-trip + RBAC traced to
@@ -1100,13 +1118,14 @@ MIS, Import, Profile, UserRecord), `scope="col"` on every bespoke `<th>`, and `.
 Profile + UserRecord policy-acceptance tables collapse to labelled mobile cards. Browser-verified
 `/cases/:id` (not in the e2e gate); a11y + viewport green.
 
-### H-B3 · Export/pagination contract — ✅ FIXED (code) + 🟡 DEFERRED (missing endpoints)
-- **Users "Export Scope" → `apiExport`** (this branch): was a bare `apiBlob` download; now routes through
+### H-B3 · Export/pagination contract — ✅ FIXED (the deferred endpoints landed 2026-06-23, §X-CHECK)
+- **Users "Export Scope" → `apiExport`** (design-build): was a bare `apiBlob` download; now routes through
   the job-aware helper so a ≥-threshold export returns a 202 background job (toast) instead of a sync blob.
-- **`exportFn` where the backend `/export` exists:** all admin/master-data DataGrids already wire it. The
-  remaining DataGrids WITHOUT a list-export endpoint are NOT invented (IMPORT_EXPORT_STANDARD — no bespoke
-  export): **Cases** (only `/dedupe-search/export` exists → `IE-DEFER-3`), **Policies** (`IE-DEFER-5`),
-  **ReportLayouts** (`IE-DEFER-8`, new). Each is an additive backend gap, deferred.
+- **`exportFn` where the backend `/export` exists:** all admin/master-data DataGrids wire it. The three
+  DataGrids that previously LACKED a list-export endpoint now have additive ones (2026-06-23 cross-check):
+  **Cases** (`GET /cases/export`, IE-DEFER-3c), **Policies** (`GET /policies/export`, IE-DEFER-5),
+  **ReportLayouts** (`GET /report-layouts/export`, IE-DEFER-8) — each gated by its list's read perm, with the
+  `exportFn` now wired on the page.
 - **CaseDetail task/attachment lists** = array-by-design (per-case bounded sets returned with the case, not
   separately paginated, like `/cases/available-units`); no DataGrid export — documented, not a gap.
 
@@ -1139,6 +1158,85 @@ conversions — Templates + Rate-Management** (record-page routes + additive `GE
 **ADR-0051 is now complete for every entity except CPV** (bespoke master-detail accordion, intentionally
 left). Remaining DEFERRED (documented): CPV inline-grid; DataGrid `role=menu` arrow-roving (P3);
 Cases/Policies/ReportLayouts/FieldMonitoring additive backend export+filter endpoints (IE-DEFER-3/5/8, H-C2).
+
+## Section X-CHECK-2026-06-23 — Compliance-gaps cross-check & close-out
+
+Read-only multi-agent cross-check of EVERY open/DEFERRED/RATCHET/🔴 finding against live code at HEAD
+`1b8c547`, then an owner-approved build of the closeable subset (branch
+`worktree-compliance-gaps-crosscheck`). Method: 7 read-only verifier agents (disjoint registry sections)
+→ triage A/B/C/D → owner sign-off on scope + the 3 product decisions → build. Every finding carries a
+disposition below; none dropped.
+
+### Already FIXED by parallel sessions — registry was STALE (verified at HEAD, no build)
+- **AUDIT-1 / AUDIT-2 / AUDIT-4 → ✅ FIXED (ADR-0057, `098f409`/`836fed3`, in HEAD).** The FIELD_REPORT
+  outcome code→label + split-period recombination shim `apps/api/src/modules/fieldReports/canonicalize.ts`
+  is wired in `service.ts` before `renderNarrative`; `canonicalize.render.test.ts` (29 device-blob tests +
+  a RED regression proving raw CODE → empty body) closes the test-debt (AUDIT-4). The "🔴 owner-decision-
+  pending" framing was pre-fix; the owner chose option-3 (preserve the 8-way labels, derive on the backend)
+  and it shipped + deployed 2026-06-22.
+- **AUDIT-3 → ✅ RESOLVED (no live drift).** Re-verified `packages/sdk/src/fieldReportDefaults.ts` +
+  canonicalize: `applicantStayingFloor`/`addressFloor` both present (no drift), `callConfirmation` present
+  for BUILDER+NOC, `finalStatusNegative` handled in canonicalize, no `businessExistance` misspelling. (A
+  final exact-mobile-form confirm remains a mobile-repo check, but the crm2 templates are correct.)
+- **G-8 → ✅ FIXED (ADR-0048, `87f5f88`).** `RATE_LATERAL` (and the `cases/repository.ts` rate_type mirror)
+  use the single `CASE` rank (match > location-less > non-matching), NOT the FALSE>NULL `DESC NULLS LAST`
+  ladder. The superseding ADR §G-8 said was needed was written + shipped; §G-8 above is now stale.
+- **B-7 → ✅ FIXED.** Background-job UX is live: `apps/web/src/components/JobsTray.tsx` (determinate
+  HexagonLoader %, download on SUCCEEDED, error/cap display) + realtime `useJobs`.
+- **B-19 → ✅ FIXED.** Admin Template Designer = `apps/web/src/features/reportLayouts/ReportLayoutRecordPage.tsx`
+  (per-client+product, kind-branched designer; ADR-0037 + the ADR-0051 D4 record-page conversion).
+- **ADR-0047 two-stage handoff → ✅ DONE.** Commission snapshot is stamped at the SUBMIT transition
+  (`submitTaskByDevice` → `stampCommissionSnapshot`; mig 0081 `submitted_at`/`submitted_elapsed_minutes`;
+  the billing read-model gate includes SUBMITTED).
+- **C-9 → ✅ effectively COMPLETE.** `apps/web/e2e/viewport.spec.ts` (4 bands) + `.rtable`/`data-label`
+  table→card + the axe gate 29 are all live across the app (the F-3 "next-wave" items all landed).
+
+### Owner decisions (2026-06-23) on the confirmed-bug / mismatch findings
+- **SHIP-1 → FIX (owner: yes).** Restrict pipeline bulk-assign to PENDING-only so a live ASSIGNED task can
+  only move off an agent via Revoke-with-reason (ADR-0055 consistency). [owner-approved; building this session]
+- **SHIP-2 → REMOVE the bill_count input (owner: every task ×1).** Drop the bill_count field from the inline
+  Assign + Pipeline bulk-assign forms; create never collected it. The `case_tasks.bill_count` column +
+  billing `× bill_count` math stay (always 1; full retirement is a later cleanup). [owner-approved; building this session]
+- **IE-DEFER-7 → 🟢 WONTFIX (owner: keep export analysis-only).** The commission-rate export stays a
+  read-for-analysis file; bulk-load uses the code/pincode-keyed import template. Already documented in-code.
+- **BILLING SCOPE → 🟢 WONTFIX (owner 2026-06-25): CRM2 never invoices/GST/pays.** Billing & commission
+  are **export-only** — the shipped `/billing` read-model (`/cases`·`/cases/:id/tasks`·`/breakdown`·
+  `/export`) + the MIS export ARE the final deliverable. Invoice generation + GST live externally (Tally);
+  commission is **exported and paid outside the CRM**. So ADR-0036 §4–5's `invoice + GST + PDF` and the
+  `commission payout run (PENDING→APPROVED→PAID)` are **removed from the backlog (NOT a gap)** — see
+  ADR-0036 §4, `OPEN_ITEMS_2026-06-17` billing row, and the slice-5 plan banner. Optional-only leftovers:
+  billed-marker + double-bill guard + a case-detail financial-summary card.
+
+### Approved for build this session (small additive, IMPORT_EXPORT_STANDARD pattern)
+**IE-DEFER-5** Policies list export · **IE-DEFER-8** Report Layouts list export · **IE-DEFER-2** CPV
+unit-enablement leg import/export · **IE-DEFER-3c / H-B3** Cases list export · **IE-DEFER-6** scope-export
+round-trip (emit codes) · **R0050-6** design nit (`text-border`→`text-muted-foreground`). Each = additive
+route + manifest + SDK `.export()` + web `exportFn`, **gated by the list's read perm** (export never wider
+than read — IE-1..4 rule: Policies=`POLICY_VIEW`, ReportLayouts=`TEMPLATE_MANAGE`, Cases=`DATA_EXPORT`,
+CPV-units=`DATA_EXPORT`/import=`MASTERDATA_MANAGE`), OpenAPI regen + contract test, full `pnpm verify`.
+Each flips to FIXED in its own log line as it lands.
+
+### Confirmed DEFERRED at HEAD (big ops-phase / product / ratchet — NOT auto-built; owner-flagged)
+- **Operations features:** B-13 (cases PDF/≥10k job tier — note PDF/DOCX/XLSX rendering already exists via
+  `platform/pdf` + `caseReports`; the gap is the cases-list export [closed via IE-DEFER-3c] + the ≥10k async
+  tier) · B-14 universal import-engine (blocks ADR-0059) · IE-DEFER-3a case-creation bulk import (ADR-0059
+  Proposed) · IE-DEFER-4 MIS/Billing/Field-Monitoring ≥10k async export builders · B-16 report templating
+  (Handlebars + CPV-scoped overrides; rendering done) · B-18 unified per-client+product reporting engine
+  (MIS + CASE_REPORT exist independently) · B-17 Verification Workspace (keystone, not started).
+- **C-10 → mostly DONE:** `cases.version` (mig 0052) + `case_tasks.version` (mig 0036) exist; finalize/
+  assign/complete/recordResult are OCC-guarded. Residual = general non-finalize case mutations unguarded
+  (cases are largely immutable post-create) → low-risk DEFERRED.
+- **Ops/product follow-ups:** SHIP-3 (stranded location-less PENDING — needs a prod `count(*)`), R0050-4
+  (₹0-silent indicator), R0050-5 (office relay export/state), R0056-5 (pre-seed commissions), R0056-1
+  residual (cross-specificity derive vs lateral `tat_band` — intentional, latent).
+- **Standing/by-design:** G-5 currency RATCHET, H-9-CPV (deferred by design), H-10 DataGrid menu arrow-roving
+  (P3, risk on the shared grid), E-1..E-4 coverage ratchets (ratchet up only when coverage rises).
+
+### Mobile repo (`crm-mobile-native`, SEPARATE) — flagged for a mobile session, NOT built here
+- **R0054-6** cross-user wipe = two drifting hardcoded lists (`StorageService.clearAllData` vs
+  `MaintenanceRepository.CLEARABLE_TABLES`) — the critical partial-wipe bug is fixed (`88c6114`); hoisting to
+  a shared constant + a subset assertion remains. **R0054-7** wipe is non-transactional + swallows failure.
+  Both verified still-open in the mobile repo; they need the mobile build/device-verify workflow.
 
 ---
 *Governance ledger. Update — never overwrite — as findings change state. Linked from
