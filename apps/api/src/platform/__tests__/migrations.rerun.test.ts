@@ -84,6 +84,21 @@ describe.skipIf(!RUN)('migrations re-run safety (prod re-applies the full set ev
         `SELECT count(*)::text AS n FROM rate_types WHERE code = 'OFFICE' AND category = 'OFFICE'`,
       );
       expect(office[0]!.n).toBe('1'); // exactly one OFFICE row after three deploys (ON CONFLICT no-dupe)
+
+      // ADR-0067 Phase B: rate_type_assignments + its UNIQUE constraint + partial index must survive
+      // the 3× re-run (idempotent CREATE TABLE IF NOT EXISTS / guarded constraint / CREATE INDEX IF NOT EXISTS).
+      const { rows: rta } = await pool.query<{ n: string }>(
+        `SELECT count(*)::text AS n FROM information_schema.tables WHERE table_name = 'rate_type_assignments'`,
+      );
+      expect(rta[0]!.n).toBe('1');
+      const { rows: rtaUq } = await pool.query<{ n: string }>(
+        `SELECT count(*)::text AS n FROM pg_constraint WHERE conname = 'uq_rate_type_assignment'`,
+      );
+      expect(rtaUq[0]!.n).toBe('1');
+      const { rows: rtaIdx } = await pool.query<{ n: string }>(
+        `SELECT count(*)::text AS n FROM pg_indexes WHERE indexname = 'idx_rta_combo'`,
+      );
+      expect(rtaIdx[0]!.n).toBe('1');
     } finally {
       await pool.end();
       const admin2 = new Pool({ connectionString: url, max: 1 });
