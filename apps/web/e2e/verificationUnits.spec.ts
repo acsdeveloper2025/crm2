@@ -33,3 +33,13 @@ test('Verification Units: create + edit are record-page routes, not modals', asy
   await expect(page.getByRole('heading', { name: 'Edit Verification Unit' })).toBeVisible();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
+
+// Regression (D4-introduced): deep-linking a SYSTEM unit's record route used to render an editable form
+// (the server then 409'd the save). Unit id 1 = RESIDENCE — one of the 9 mobile-locked is_system units;
+// the record route now guards is_system and shows a "can't be edited" message instead of the form.
+test('Verification Units: a system unit cannot be edited via deep-link', async ({ page }) => {
+  await page.goto('/admin/verification-units/1');
+  await expect(page.getByText(/system verification unit .* can.t be edited/i)).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Edit Verification Unit' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
+});

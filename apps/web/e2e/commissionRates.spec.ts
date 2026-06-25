@@ -29,3 +29,18 @@ test('Commission Rates: create + revise are record-page routes, not modals', asy
   await expect(page.getByRole('heading', { name: 'Revise Commission Rate' })).toBeVisible();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
+
+// Regression: revising used to 500 — Effective From was seeded from the rate and an <input type=date>
+// truncated the stored timestamp to midnight, inverting the server tstzrange. Asserting SAVE persists
+// (returns to the LIST) catches it; the route-loads test above would pass even with a broken Save.
+test('Commission Rates: revising a rate Saves and returns to the list (no 500)', async ({ page }) => {
+  await page.goto('/admin/commission-rates');
+  await page.getByRole('button', { name: 'Revise', exact: true }).first().click();
+  await expect(page).toHaveURL(/\/admin\/commission-rates\/\d+$/);
+  await expect(page.getByRole('heading', { name: 'Revise Commission Rate' })).toBeVisible();
+  // Change only the amount; Effective From stays blank (= now) — the fix.
+  await page.getByPlaceholder('50.00').fill('137.50');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  // SAVE persisted → back to the list. A 500 would keep us on /:id with an error.
+  await expect(page).toHaveURL(/\/admin\/commission-rates$/);
+});
