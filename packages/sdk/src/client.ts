@@ -30,7 +30,7 @@ import type {
   UpdateRateInput,
   ReviseRateInput,
 } from './rates.js';
-import type { RateType } from './rateTypes.js';
+import type { RateTypeOption } from './rateTypes.js';
 import type {
   CommissionRate,
   CommissionRateView,
@@ -438,7 +438,8 @@ export function createSdk(opts: SdkOptions) {
     },
 
     rateTypes: {
-      list: () => req<RateType[]>('GET', '/api/v2/rate-types?active=true'),
+      // GET / is now paginated; the lean dropdown lives at /options (ADR-0063).
+      list: () => req<RateTypeOption[]>('GET', '/api/v2/rate-types/options?active=true'),
     },
 
     locations: {

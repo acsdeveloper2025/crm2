@@ -437,7 +437,7 @@ describe('createSdk — transport', () => {
     await s.geocode.dlq();
     expect(calls.map((c) => c.url)).toEqual([
       'http://x/api/v2/system/health',
-      'http://x/api/v2/rate-types?active=true',
+      'http://x/api/v2/rate-types/options?active=true',
       'http://x/api/v2/roles/options',
       'http://x/api/v2/roles/dimensions',
       'http://x/api/v2/access/matrix',

@@ -8,7 +8,7 @@ import {
   type VerificationUnitOption,
   type Rate,
   type RateView,
-  type RateType,
+  type RateTypeOption,
   type Location,
   type Paginated,
 } from '@crm2/sdk';
@@ -124,7 +124,7 @@ function RateForm({ initial }: { initial: RateView | null }) {
   });
   const clientRateTypes = useQuery({
     queryKey: ['rate-types'],
-    queryFn: () => api<RateType[]>('GET', '/api/v2/rate-types?active=true'),
+    queryFn: () => api<RateTypeOption[]>('GET', '/api/v2/rate-types/options?active=true'),
     enabled: !isRevise,
   });
   const pincodes = useQuery({
