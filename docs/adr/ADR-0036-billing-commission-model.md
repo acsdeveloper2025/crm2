@@ -53,10 +53,15 @@ both references on eligibility: **ANY completed task** is eligible (not field-on
    permission added in 5a. Migration **0058**.
 
 **4. Derived amounts now; engine later.** Amounts are COMPUTED at read time (the billing view,
-   slice 5b/5c). The only new persistence is this CONFIG table. Deferred to the "engine" slice:
-   a persisted billed-marker (`case_tasks.billed/billed_at`) + double-bill guard, invoice
-   generation + GST + PDF, the commission payout run (PENDING→APPROVED→PAID), and a case-detail
-   financial-summary card.
+   slice 5b/5c). The only new persistence is this CONFIG table.
+   **OUT OF SCOPE — owner decision 2026-06-25: CRM2 does NOT generate invoices or GST, and does NOT
+   run a commission payout.** Billing & commission are delivered as a **read-model + Excel/CSV export
+   only** — the shipped `/billing` page (`/cases` · `/cases/:id/tasks` · `/breakdown` · `/export`)
+   plus the MIS export. Client invoicing + GST live **externally** (Tally, per the v1 decision) and
+   commission is **exported and paid outside the CRM**. So `invoice generation + GST + PDF` and the
+   `commission payout run (PENDING→APPROVED→PAID)` are **removed from the backlog (WONTFIX), not
+   deferred.** A persisted billed-marker (`case_tasks.billed/billed_at`) + double-bill guard + a
+   case-detail financial-summary card remain OPTIONAL niceties, not committed deliverables.
 
 **5. Outcome-independent** (v1 parity) — neither bill nor commission depends on
    `verification_outcome`.

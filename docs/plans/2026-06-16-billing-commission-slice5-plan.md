@@ -1,7 +1,14 @@
 # Slice 5 — Billing & Commission (per-case, unified) — PLAN
 
+> **⚠️ SCOPE UPDATE (owner 2026-06-25): EXPORT-ONLY. CRM2 does NOT generate invoices/GST and does NOT
+> run a commission payout.** 5a (config) + the read-model + Excel/CSV export shipped and are the FINAL
+> billing/commission deliverable. The plan's `invoice generation + GST + invoice PDF + payout run
+> (PENDING→APPROVED→PAID)` items are **WONTFIX** — invoicing/GST live externally (Tally); commission is
+> exported and paid outside the CRM. Optional-only leftovers: billed-marker + double-bill guard +
+> financial-summary card. See ADR-0036 §4.
+
 - **Date:** 2026-06-16
-- **Status:** Proposed (awaiting owner go-ahead to build sub-slice 5a)
+- **Status:** Partially built + DESCOPED (5a + read-model + export shipped; invoice/GST/payout WONTFIX 2026-06-25)
 - **ADR:** ADR-0036 (to be written at 5a) · next mig = 0058
 - **Lifecycle:** ADR-0032 two-track; "task is the unit of billing"
 

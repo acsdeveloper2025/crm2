@@ -26,7 +26,7 @@
 |---|---|---|---|
 | **FE dep-upgrade cluster** — vite 5→6, vitest 2→4, **Tailwind 3→4** (CSS-first; browser-validate @4 viewports) [FE/deps] | `CRM2_DEP_UPGRADE_PROMPT.md` | React 19 + router 7 landed (HEAD `531d0ff`); vite/vitest/Tailwind remain (Tailwind last) | verified |
 | **Verification Workspace** + FE feature-flag infra [FE/API] | `MASTER_MEMORY:200,217`; ADR-0015 | Keystone; re-scope what's left | ⚠️ |
-| **Billing engine 5b–5d** — billed-marker + double-bill guard, invoice+GST+PDF, commission payout run, financial card; snapshot rate at bill time [API/FE] | `ADR-0036:48-71` | Only 5a config shipped | verified |
+| **Billing & commission = EXPORT-ONLY (mostly DONE)** — read-model + Excel/CSV export shipped (`/billing` `/cases`·`/cases/:id/tasks`·`/breakdown`·`/export` + MIS export). **invoice + GST + commission-payout = WONTFIX** (owner 2026-06-25: CRM2 never invoices/GST/pays — invoicing is external/Tally, commission is exported & paid outside the CRM). Optional-only leftovers: billed-marker + double-bill guard + a case-detail financial-summary card | `ADR-0036:4` (descope) | 5a config + read-model + export shipped; invoice/GST/payout removed from backlog | verified |
 | **MIS Layout 2–6** — Designer FE, office data-entry (`case_data_entries`), MIS gen (`v_mis_rows`), real bank format + immutable-once-used [FE/API/DB] | `ADR-0037:55-58` | Schema slice 1 done | verified |
 | **CASE_REPORT slice 5** — Xlsx renderer (exceljs + formula-injection guard) [API] | `ADR-0041:126` | Slices 1–4 done | verified |
 | **KYC desk B2–B4** — finalize endpoint + field-review leg + `/sync/download` OFFICE-exclusion + outcome wiring [API/Mobile] | `ADR-0025:3,48-51` | B1 done | verified |
