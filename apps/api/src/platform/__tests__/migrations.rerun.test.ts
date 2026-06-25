@@ -72,6 +72,18 @@ describe.skipIf(!RUN)('migrations re-run safety (prod re-applies the full set ev
           WHERE conname IN ('rates_no_overlap', 'commission_rates_no_overlap') ORDER BY conname`,
       );
       expect(cons.map((c) => c.conname)).toEqual(['commission_rates_no_overlap', 'rates_no_overlap']);
+
+      // ADR-0063 Phase A: rate_types gains name/description/category/version and an OFFICE row,
+      // and must survive the 3× re-run unchanged (idempotent ADD COLUMN + ON CONFLICT seed).
+      const { rows: rtCols } = await pool.query<{ cols: string }>(
+        `SELECT string_agg(column_name, ',' ORDER BY column_name) AS cols
+           FROM information_schema.columns WHERE table_name = 'rate_types'`,
+      );
+      for (const c of ['category', 'description', 'name', 'version']) expect(rtCols[0]!.cols).toContain(c);
+      const { rows: office } = await pool.query<{ n: string }>(
+        `SELECT count(*)::text AS n FROM rate_types WHERE code = 'OFFICE' AND category = 'OFFICE'`,
+      );
+      expect(office[0]!.n).toBe('1'); // exactly one OFFICE row after three deploys (ON CONFLICT no-dupe)
     } finally {
       await pool.end();
       const admin2 = new Pool({ connectionString: url, max: 1 });
