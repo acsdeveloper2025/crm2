@@ -52,6 +52,7 @@ const ADMINISTRATION: { label: string; to: string; perm: string }[] = [
   { label: 'CPV Mapping', to: '/admin/cpv', perm: 'page.masterdata' },
   { label: 'Rate Management', to: '/admin/rates', perm: 'page.masterdata' },
   { label: 'Rate Types', to: '/admin/rate-types', perm: 'page.masterdata' },
+  { label: 'Rate Type Assignments', to: '/admin/rate-type-assignments', perm: 'page.masterdata' },
   { label: 'Commission Rates', to: '/admin/commission-rates', perm: 'masterdata.manage' },
   { label: 'MIS Layouts', to: '/admin/report-layouts', perm: 'report_template.manage' },
   { label: 'Location Management', to: '/admin/locations', perm: 'page.masterdata' },
