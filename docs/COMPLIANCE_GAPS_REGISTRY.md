@@ -1242,6 +1242,22 @@ layer — all three returned **PASS**. Built on branch `feat/rate-type-assignmen
 
 Next: Phase C (ADR-0068, mig 0094) = FK conversion (`rate_type_id` onto rates/commission_rates/case_tasks) + picker wiring.
 
+## Section RTA-C — Rate-Type FK conversion (ADR-0068, Phase C) dispositions (2026-06-25)
+
+Phase C FK-converts the 3 rate-type columns to `rate_type_id` (mig 0094) + DROPs the old string columns;
+resolution byte-identical; contracts keep emitting code strings (mobile/SDK unaffected). Built on branch
+`feat/rate-type-fk-conversion` (off origin/main `9ca1832`); full `pnpm verify` GREEN (api **987**, money path
+SAME amounts; sdk 230; the **3× `migrations.rerun.test`** proves re-run safety) + Playwright **e2e 157**;
+mig 0094 applied to `crm2_dev` (backfill confirmed). NOT pushed (owner-gated).
+
+| id | sev | finding | disposition |
+|----|-----|---------|-------------|
+| RTC-1 | **HIGH** | **Latent prod data-loss bug** (pre-existing, Phase A/B): `0013` re-runs every deploy and unconditionally `DROP COLUMN rates.rate_type_id` (line 41) + `DROP TABLE rate_types CASCADE` (line 49) → wiped the managed catalog (id-reset + admin edits) + CASCADE-wiped `rate_type_assignments` every deploy. Latent only because prod had no persisted catalog edits/assignments yet; Phase C's FK would make it FATAL (dangling/reset FK ids). | ✅ **FIXED** — guarded 0013's catalog DROP on `rate_types.category` (managed-catalog marker), the `rate_type_id` drop on the transient `rates.rate_type`, the `client_rate_type` block on `category`; +0011/0058/0079/0084 guarded on `NOT EXISTS rate_type_id`; +0014 seeds `name` (the now-persistent table has `name NOT NULL`). Proven by the 3× re-run test (FKs/ids/assignments survive). |
+| RTC-2 | LOW | Raw commission-create (`commissionRateService.create`) + `commissionRates/import.ts`: the relaxed `fieldRateType` (now any catalog code) writes `rate_type_id = NULL` for an UNKNOWN code with no 400; `import.ts` conversely still enum-validates `COMMISSION_RATE_TYPES` (stricter) | 🟡 **DEFERRED (fast-follow, owner-confirmed by review = non-blocking)** — **money-SAFE** (a NULL `rate_type_id` never matches `COMMISSION_LATERAL` → earns ₹0, no over-pay; an admin would see the ₹0); UI pickers already constrain to catalog codes so only the raw API/import path is affected. Fast-follow: add an active-catalog-code check in `create` → 400 `UNKNOWN_RATE_TYPE` + relax `import.ts` to the same validator, so both paths match the FK contract. |
+| RTC-3 | INFO | Post-conversion, a NEW rate/commission created via the raw API with a free-text code loses the label (→ NULL id), unlike pre-conversion verbatim-string storage; 0094 auto-promote only rescued rows existing at migration time | ⚪ **WONTFIX (intended)** — the FK design retires free-text rate labels; the catalog is now the only label source and the pickers enforce catalog codes. |
+
+**Adversarial review (Principal+DB+Security, migration re-run + money-path equivalence) — ✅ PASS** (2026-06-25): "migration re-run safety CORRECT and COMPLETE" (every guard traced — fresh-DB pass-1 + post-conversion re-run both correct, no migration missed [0036/0083 safe as-is]) + "money-path resolution IDENTICAL" (both LATERALs, derive, writes, history equivalent; KYC-null + OFFICE-id preserved). All findings LOW/INFO + money-safe → RTC-2 deferred fast-follow, RTC-3 wontfix. **"Nothing blocks the push."**
+
 ## Section X-CHECK-2026-06-23 — Compliance-gaps cross-check & close-out
 
 Read-only multi-agent cross-check of EVERY open/DEFERRED/RATCHET/🔴 finding against live code at HEAD
