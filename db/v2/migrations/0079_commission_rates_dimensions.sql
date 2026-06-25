@@ -13,15 +13,17 @@ ALTER TABLE commission_rates
   ADD COLUMN IF NOT EXISTS verification_unit_id integer REFERENCES verification_units (id),
   ADD COLUMN IF NOT EXISTS tat_band             integer;            -- tat_hours | -1 overflow | NULL=any
 
--- `rate_type` is renamed to `field_rate_type` by 0083. Since prod RE-RUNS every migration on every
--- deploy, this rate_type-touching block must NOT execute once the rename has happened (it would
--- reference a column that no longer exists → hard error: "column rate_type does not exist"). Guard it on
--- the pre-rename state: it runs on a fresh DB / the first deploy (before 0083), then no-ops on every
--- subsequent re-run (the renamed column auto-carries the DROP NOT NULL + the no-overlap EXCLUDE).
+-- `rate_type` is renamed to `field_rate_type` by 0083, which Phase C (0094) then FK-converts to
+-- `rate_type_id` and DROPS. Since prod RE-RUNS every migration on every deploy, this rate_type-touching
+-- block must NOT execute once the rename OR the FK conversion has happened (it would reference a column
+-- that no longer exists → hard error). Guard it on the pre-rename state AND the absence of the Phase C FK:
+-- it runs on a fresh DB / the first deploy (before 0083), then no-ops on every subsequent re-run.
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                 WHERE table_name = 'commission_rates' AND column_name = 'field_rate_type') THEN
+                 WHERE table_name = 'commission_rates' AND column_name = 'field_rate_type')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name = 'commission_rates' AND column_name = 'rate_type_id') THEN
     ALTER TABLE commission_rates ALTER COLUMN rate_type DROP NOT NULL;
 
     ALTER TABLE commission_rates DROP CONSTRAINT IF EXISTS commission_rates_no_overlap;

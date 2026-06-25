@@ -51,8 +51,11 @@ describe.skipIf(!RUN)('migrations re-run safety (prod re-applies the full set ev
         }
       }
 
-      // The two rate-type renames (0083) must leave NO pre-rename column behind after a full re-run:
-      // every earlier migration that adds `rate_type` / `distance_band` must no-op once renamed.
+      // ADR-0068 Phase C: the FK conversion DROPS the 3 old string columns in place (mig 0094). After a
+      // full 3× re-run the old `client_rate_type`/`field_rate_type` columns must stay GONE and only
+      // `rate_type_id` remains — every earlier migration that (re)creates the old columns (0011/0013/0079/
+      // 0083/0084) must no-op once the FK exists, or a re-run resurrects them (the 0037/0083 trap).
+      // `task_assignment_history.field_rate_type` is an append-only audit varchar — NOT converted, KEPT.
       const { rows } = await pool.query<{ table_name: string; cols: string }>(
         `SELECT table_name, string_agg(column_name, ',' ORDER BY column_name) AS cols
            FROM information_schema.columns
@@ -61,9 +64,9 @@ describe.skipIf(!RUN)('migrations re-run safety (prod re-applies the full set ev
           GROUP BY table_name`,
       );
       const byTable = Object.fromEntries(rows.map((r) => [r.table_name, r.cols]));
-      expect(byTable['rates']).toBe('client_rate_type');
-      expect(byTable['case_tasks']).toBe('field_rate_type');
-      expect(byTable['commission_rates']).toBe('field_rate_type');
+      expect(byTable['rates']).toBe('rate_type_id');
+      expect(byTable['case_tasks']).toBe('rate_type_id');
+      expect(byTable['commission_rates']).toBe('rate_type_id');
       expect(byTable['task_assignment_history']).toBe('field_rate_type');
 
       // The billing/commission no-overlap integrity guards must survive the re-run.
@@ -99,6 +102,21 @@ describe.skipIf(!RUN)('migrations re-run safety (prod re-applies the full set ev
         `SELECT count(*)::text AS n FROM pg_indexes WHERE indexname = 'idx_rta_combo'`,
       );
       expect(rtaIdx[0]!.n).toBe('1');
+
+      // ADR-0068 Phase C: the rate_type_id FKs must SURVIVE the 3× re-run. This also proves the catalog is
+      // NOT dropped+recreated each deploy: 0013's unconditional `DROP TABLE rate_types CASCADE` (now
+      // guarded on rate_types.category) would CASCADE-drop these FKs, and 0094's `ADD COLUMN IF NOT EXISTS`
+      // would NOT re-create them (column already present) — so their survival is the catalog-stability proof.
+      const { rows: fks } = await pool.query<{ conname: string }>(
+        `SELECT conname FROM pg_constraint WHERE contype = 'f' AND conname IN
+           ('rates_rate_type_id_fkey', 'commission_rates_rate_type_id_fkey', 'case_tasks_rate_type_id_fkey')
+         ORDER BY conname`,
+      );
+      expect(fks.map((f) => f.conname)).toEqual([
+        'case_tasks_rate_type_id_fkey',
+        'commission_rates_rate_type_id_fkey',
+        'rates_rate_type_id_fkey',
+      ]);
     } finally {
       await pool.end();
       const admin2 = new Pool({ connectionString: url, max: 1 });

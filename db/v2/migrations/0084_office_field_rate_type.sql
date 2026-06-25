@@ -11,10 +11,15 @@
 DO $$
 BEGIN
   -- field_rate_type domain: LOCAL | OGL | OFFICE (still nullable for unassigned tasks).
-  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_case_task_field_rate_type') THEN
-    ALTER TABLE case_tasks DROP CONSTRAINT chk_case_task_field_rate_type;
+  -- Phase C (0094) FK-converts field_rate_type → rate_type_id and DROPS the column; once it's gone this
+  -- block (which ADDs a CHECK referencing field_rate_type) must no-op on re-run, or it hard-errors.
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'case_tasks' AND column_name = 'field_rate_type') THEN
+    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_case_task_field_rate_type') THEN
+      ALTER TABLE case_tasks DROP CONSTRAINT chk_case_task_field_rate_type;
+    END IF;
+    ALTER TABLE case_tasks
+      ADD CONSTRAINT chk_case_task_field_rate_type
+      CHECK (field_rate_type IS NULL OR field_rate_type IN ('LOCAL', 'OGL', 'OFFICE'));
   END IF;
-  ALTER TABLE case_tasks
-    ADD CONSTRAINT chk_case_task_field_rate_type
-    CHECK (field_rate_type IS NULL OR field_rate_type IN ('LOCAL', 'OGL', 'OFFICE'));
 END $$;

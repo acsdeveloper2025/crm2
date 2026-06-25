@@ -11,14 +11,17 @@ ALTER TABLE case_tasks
   ADD COLUMN IF NOT EXISTS assigned_by    uuid,
   ADD COLUMN IF NOT EXISTS assigned_at    timestamptz;
 
--- `distance_band` is renamed to `field_rate_type` by 0083; prod RE-RUNS every migration on each deploy,
--- so guard the column + its CHECK on the pre-rename state (a bare re-run would resurrect an empty
--- `distance_band` column + the stale `chk_case_task_distance_band` CHECK). Runs on a fresh DB / first
--- deploy; no-ops after the rename.
+-- `distance_band` is renamed to `field_rate_type` by 0083, which Phase C (0094) then FK-converts to
+-- `rate_type_id` and DROPS. prod RE-RUNS every migration on each deploy, so guard this block on BOTH the
+-- pre-rename state (field_rate_type absent) AND the absence of the Phase C FK (rate_type_id) — else a
+-- post-conversion re-run resurrects an empty `distance_band` + the stale `chk_case_task_distance_band`.
+-- Runs on a fresh DB / first deploy; no-ops after the rename AND after the FK conversion.
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                 WHERE table_name = 'case_tasks' AND column_name = 'field_rate_type') THEN
+                 WHERE table_name = 'case_tasks' AND column_name = 'field_rate_type')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name = 'case_tasks' AND column_name = 'rate_type_id') THEN
     ALTER TABLE case_tasks ADD COLUMN IF NOT EXISTS distance_band varchar(10);
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_case_task_distance_band') THEN
       ALTER TABLE case_tasks

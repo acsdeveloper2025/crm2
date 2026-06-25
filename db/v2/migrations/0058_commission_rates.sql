@@ -45,14 +45,17 @@ BEGIN
 END $$;
 
 -- resolver path: (user, rate_type, client) most-specific-wins over active rows.
--- `rate_type` is renamed to `field_rate_type` by 0083, and 0079 supersedes this index with a generalized
--- one. Since prod re-runs every migration each deploy, guard this on the pre-rename state — `CREATE INDEX
--- IF NOT EXISTS` still resolves the column list even when the index name already exists, so a bare re-run
--- here errors ("column rate_type does not exist"). Runs on a fresh DB only; no-ops after the rename.
+-- `rate_type` is renamed to `field_rate_type` by 0083 (then FK-converted to `rate_type_id` + DROPPED by
+-- 0094), and 0079 supersedes this index with a generalized one. Since prod re-runs every migration each
+-- deploy, guard this on BOTH the pre-rename state AND the absence of the Phase C FK — `CREATE INDEX IF NOT
+-- EXISTS` still resolves the column list even when the index name already exists, so a bare re-run errors
+-- ("column rate_type does not exist"). Runs on a fresh DB only; no-ops after the rename / FK conversion.
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                 WHERE table_name = 'commission_rates' AND column_name = 'field_rate_type') THEN
+                 WHERE table_name = 'commission_rates' AND column_name = 'field_rate_type')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name = 'commission_rates' AND column_name = 'rate_type_id') THEN
     CREATE INDEX IF NOT EXISTS idx_commission_rates_resolve
       ON commission_rates (user_id, rate_type, client_id) WHERE is_active;
   END IF;
