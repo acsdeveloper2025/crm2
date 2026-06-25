@@ -38,8 +38,8 @@ describe.skipIf(!RUN)('reference masters (mobile parity)', () => {
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     const data = res.body.data as VerificationTypeOutcome[];
-    // 7 standard types × 5 outcomes + 2 property types × 4 = 43 rows
-    expect(data).toHaveLength(43);
+    // 7 standard types × 5 outcomes + PROPERTY_APF × 3 (no top-level NEGATIVE, mig 0090) + PROPERTY_INDIVIDUAL × 4 = 42
+    expect(data).toHaveLength(42);
     expect(typeof data[0]!.id).toBe('number');
 
     const residence = data.filter((o) => o.verificationTypeCode === 'RESIDENCE');
@@ -52,9 +52,11 @@ describe.skipIf(!RUN)('reference masters (mobile parity)', () => {
     ]);
     expect(residence[0]).toMatchObject({ displayLabel: 'Positive', sortOrder: 1, isActive: true });
 
-    // Property APF carries NEGATIVE in place of Shifted/NSP.
+    // A2026-0623-07: PROPERTY_APF has no top-level NEGATIVE outcome — the negative result is captured via
+    // the construction-activity routing inside the one APF form (v1 parity), so the feed must not advertise
+    // a phantom NEGATIVE the device has no form for (mig 0090 dropped it).
     const apf = data.filter((o) => o.verificationTypeCode === 'PROPERTY_APF').map((o) => o.outcomeCode);
-    expect(apf).toEqual(['POSITIVE', 'NEGATIVE', 'ENTRY_RESTRICTED', 'UNTRACEABLE']);
+    expect(apf).toEqual(['POSITIVE', 'ENTRY_RESTRICTED', 'UNTRACEABLE']);
   });
 
   it('serves revoke reasons in the v1 { success, data } envelope', async () => {
