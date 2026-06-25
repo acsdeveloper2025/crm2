@@ -11,6 +11,15 @@ describe('BulkSetRateTypeAssignmentsSchema', () => {
     });
     expect(r.rateTypeIds).toEqual([4, 5]);
   });
+  it('accepts a null productId + verificationUnitId (Universal / all)', () => {
+    const r = BulkSetRateTypeAssignmentsSchema.parse({
+      clientId: 1,
+      productId: null,
+      verificationUnitId: null,
+      rateTypeIds: [4],
+    });
+    expect(r).toMatchObject({ productId: null, verificationUnitId: null, rateTypeIds: [4] });
+  });
   it('accepts an empty rateTypeIds array (clearing the combo)', () => {
     expect(
       BulkSetRateTypeAssignmentsSchema.parse({

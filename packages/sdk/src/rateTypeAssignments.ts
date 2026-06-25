@@ -28,8 +28,9 @@ const posInt = z.number().int().positive().max(MAX_PG_INT);
  */
 export const BulkSetRateTypeAssignmentsSchema = z.object({
   clientId: posInt,
-  productId: posInt,
-  verificationUnitId: posInt,
+  // null/omitted = Universal ("all products" / "all units"), stored as NULL (ADR-0069).
+  productId: posInt.nullable(),
+  verificationUnitId: posInt.nullable(),
   // No `.min(1)` — an empty array intentionally clears the combo. `.max` mirrors the sibling array schemas.
   rateTypeIds: z.array(posInt).max(MAX_BATCH),
 });

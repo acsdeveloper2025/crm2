@@ -191,4 +191,102 @@ describe.skipIf(!RUN)('rate-types CRUD (ADR-0064)', () => {
       expect(res.status).toBe(403);
     });
   });
+
+  // GET /available — UNION-with-wildcards: a combo gets every rate type assigned to it OR to any
+  // Universal (NULL) parent product/unit (ADR-0069). Fresh master-data so it never overlaps the block
+  // above (whose assignments persist — beforeEach only resets audit).
+  describe('GET /available — Universal union (ADR-0069)', () => {
+    let clientId: number;
+    let productId: number;
+    let unitId: number;
+    let rtSpecific: number; // assigned to the exact combo
+    let rtUniProduct: number; // assigned Universal-product (product NULL, this unit)
+    let rtUniUnit: number; // assigned Universal-unit (this product, unit NULL)
+    let rtUniBoth: number; // assigned fully Universal (product NULL, unit NULL)
+
+    const availIds = async (header: Record<string, string>, pid = productId, uid = unitId) => {
+      const res = await request(app)
+        .get(`/api/v2/rate-types/available?clientId=${clientId}&productId=${pid}&verificationUnitId=${uid}`)
+        .set(header);
+      expect(res.status).toBe(200);
+      return (res.body as { id: number }[]).map((r) => r.id);
+    };
+
+    beforeAll(async () => {
+      const seedId = async (path: string, body: object): Promise<number> => {
+        const res = await request(app).post(`/api/v2/${path}`).set(SA).send(body);
+        expect(res.status).toBe(201);
+        return res.body.id as number;
+      };
+      clientId = await seedId('clients', clientFactory({ code: 'RT_UNION_CLIENT' }));
+      productId = await seedId('products', productFactory({ code: 'RT_UNION_PRODUCT' }));
+      unitId = await seedId('verification-units', verificationUnitFactory({ code: 'RT_UNION_UNIT' }));
+      const rts = await db!.pool.query<{ id: number }>(
+        `SELECT id FROM rate_types WHERE is_active AND effective_from <= now() ORDER BY sort_order LIMIT 4`,
+      );
+      rtSpecific = rts.rows[0]!.id;
+      rtUniProduct = rts.rows[1]!.id;
+      rtUniUnit = rts.rows[2]!.id;
+      rtUniBoth = rts.rows[3]!.id;
+      // product_id / verification_unit_id NULL = Universal.
+      await db!.pool.query(
+        `INSERT INTO rate_type_assignments (client_id, product_id, verification_unit_id, rate_type_id, is_active) VALUES
+           ($1, $2,   $3,   $4, true),
+           ($1, NULL, $3,   $5, true),
+           ($1, $2,   NULL, $6, true),
+           ($1, NULL, NULL, $7, true)`,
+        [clientId, productId, unitId, rtSpecific, rtUniProduct, rtUniUnit, rtUniBoth],
+      );
+    });
+
+    it('a specific combo unions in the Universal-product and Universal-unit (and fully-Universal) rate types', async () => {
+      const ids = await availIds(SA);
+      expect(ids).toContain(rtSpecific);
+      expect(ids).toContain(rtUniProduct); // Universal product (product NULL) matched the specific product
+      expect(ids).toContain(rtUniUnit); // Universal unit (unit NULL) matched the specific unit
+      expect(ids).toContain(rtUniBoth); // fully Universal matched both
+    });
+
+    it('the Universal rate types resolve even for an UNRELATED product+unit of the same client', async () => {
+      // A combo with no specific assignment still inherits only the fully-Universal one (product+unit
+      // NULL); the product-specific / unit-specific Universal rows do NOT match a different product/unit.
+      const ids = await availIds(SA, 999001, 999002);
+      expect(ids).toEqual([rtUniBoth]);
+    });
+
+    it('is DISTINCT — a rate type assigned both specifically AND Universally appears once', async () => {
+      // rtSpecific is already on the exact combo; also add it Universally → still one row in available.
+      await db!.pool.query(
+        `INSERT INTO rate_type_assignments (client_id, product_id, verification_unit_id, rate_type_id, is_active)
+         VALUES ($1, NULL, NULL, $2, true)
+         ON CONFLICT (client_id, product_id, verification_unit_id, rate_type_id) DO UPDATE SET is_active = true`,
+        [clientId, rtSpecific],
+      );
+      const ids = await availIds(SA);
+      expect(ids.filter((id) => id === rtSpecific)).toHaveLength(1);
+    });
+
+    it('regression: available only WIDENS — a new Universal assignment never shrinks the set', async () => {
+      const before = await availIds(SA);
+      // Pick an active catalog rate type not yet assigned to this client, assign it fully-Universal.
+      const extra = await db!.pool.query<{ id: number }>(
+        `SELECT id FROM rate_types WHERE is_active AND effective_from <= now()
+            AND id NOT IN (SELECT rate_type_id FROM rate_type_assignments WHERE client_id = $1)
+          ORDER BY sort_order LIMIT 1`,
+        [clientId],
+      );
+      const extraRt = extra.rows[0]!.id;
+      await db!.pool.query(
+        `INSERT INTO rate_type_assignments (client_id, product_id, verification_unit_id, rate_type_id, is_active)
+         VALUES ($1, NULL, NULL, $2, true)
+         ON CONFLICT (client_id, product_id, verification_unit_id, rate_type_id) DO UPDATE SET is_active = true`,
+        [clientId, extraRt],
+      );
+      const after = await availIds(SA);
+      // Superset: every previously-available id is still there, plus the new one.
+      for (const id of before) expect(after).toContain(id);
+      expect(after).toContain(extraRt);
+      expect(after.length).toBe(before.length + 1);
+    });
+  });
 });

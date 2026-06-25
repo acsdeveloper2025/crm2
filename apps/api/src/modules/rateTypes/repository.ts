@@ -88,16 +88,24 @@ export const rateTypeRepository = {
     );
   },
 
-  /** Rate types AVAILABLE for a (client × product × verification_unit) combo (ADR-0067, Phase B):
-   *  the active assignments, intersected with usable (active + in-effect) rate types. */
+  /** Rate types AVAILABLE for a (client × product × verification_unit) combo (ADR-0067 / ADR-0069):
+   *  union-with-wildcards — the combo's own active assignments PLUS any assigned to a Universal (NULL)
+   *  parent product or unit, intersected with usable (active + in-effect) rate types. DISTINCT because a
+   *  rate type can be assigned both specifically and Universally. This only WIDENS the picker's set. */
   available(clientId: number, productId: number, unitId: number): Promise<RateTypeOption[]> {
+    // DISTINCT collapses a rate type assigned both specifically AND Universally. ORDER BY sort_order
+    // must sit OUTSIDE the DISTINCT (a SELECT DISTINCT can't order by a non-selected column) → subquery.
     return query<RateTypeOption>(
-      `SELECT rt.id, rt.code, rt.category
-         FROM rate_type_assignments a
-         JOIN rate_types rt ON rt.id = a.rate_type_id
-        WHERE a.client_id = $1 AND a.product_id = $2 AND a.verification_unit_id = $3
-          AND a.is_active AND rt.is_active AND rt.effective_from <= now()
-        ORDER BY rt.sort_order, rt.code`,
+      `SELECT id, code, category FROM (
+         SELECT DISTINCT rt.id, rt.code, rt.category, rt.sort_order
+           FROM rate_type_assignments a
+           JOIN rate_types rt ON rt.id = a.rate_type_id
+          WHERE a.client_id = $1
+            AND (a.product_id IS NULL OR a.product_id = $2)
+            AND (a.verification_unit_id IS NULL OR a.verification_unit_id = $3)
+            AND a.is_active AND rt.is_active AND rt.effective_from <= now()
+       ) u
+       ORDER BY u.sort_order, u.code`,
       [clientId, productId, unitId],
     );
   },

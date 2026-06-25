@@ -17,25 +17,45 @@ const COLS = `a.id, a.client_id AS "clientId", a.product_id AS "productId",
 /** Minimal query shape — same structural type the platform `query`/`TxQuery` satisfy. */
 type QueryFn = <T>(text: string, params?: unknown[]) => Promise<T[]>;
 
-const listForComboWith = (
+// Active assignments for a (client × product|NULL) across every unit (incl. the NULL "All units" row).
+// productId NULL = the Universal-product rows; `IS NOT DISTINCT FROM` matches NULL = NULL (ADR-0069).
+const listForClientProductWith = (
   q: QueryFn,
   clientId: number,
-  productId: number,
-  unitId: number,
+  productId: number | null,
 ): Promise<RateTypeAssignment[]> =>
   q<RateTypeAssignment>(
     `SELECT ${COLS}
        FROM rate_type_assignments a
        JOIN rate_types rt ON rt.id = a.rate_type_id
-      WHERE a.client_id = $1 AND a.product_id = $2 AND a.verification_unit_id = $3 AND a.is_active
+      WHERE a.client_id = $1 AND a.product_id IS NOT DISTINCT FROM $2 AND a.is_active
+      ORDER BY rt.sort_order, rt.code`,
+    [clientId, productId],
+  );
+
+// The single (client × product|NULL × unit|NULL) combo bulkSet just wrote — echoes only that combo
+// (not sibling units). `IS NOT DISTINCT FROM` matches Universal (NULL) dims.
+const listForComboWith = (
+  q: QueryFn,
+  clientId: number,
+  productId: number | null,
+  unitId: number | null,
+): Promise<RateTypeAssignment[]> =>
+  q<RateTypeAssignment>(
+    `SELECT ${COLS}
+       FROM rate_type_assignments a
+       JOIN rate_types rt ON rt.id = a.rate_type_id
+      WHERE a.client_id = $1 AND a.product_id IS NOT DISTINCT FROM $2
+        AND a.verification_unit_id IS NOT DISTINCT FROM $3 AND a.is_active
       ORDER BY rt.sort_order, rt.code`,
     [clientId, productId, unitId],
   );
 
 export const rateTypeAssignmentRepository = {
-  /** Active assignments for a (client × product × verification_unit) combo (display-joined). */
-  listForCombo(clientId: number, productId: number, unitId: number): Promise<RateTypeAssignment[]> {
-    return listForComboWith(query, clientId, productId, unitId);
+  /** Active assignments for a (client × product|NULL) across all units — the page groups by
+   *  verificationUnitId (NULL unit = its "All units" row). productId NULL = Universal product. */
+  listForClientProduct(clientId: number, productId: number | null): Promise<RateTypeAssignment[]> {
+    return listForClientProductWith(query, clientId, productId);
   },
 
   /**
@@ -44,8 +64,8 @@ export const rateTypeAssignmentRepository = {
    */
   async bulkSet(
     clientId: number,
-    productId: number,
-    unitId: number,
+    productId: number | null,
+    unitId: number | null,
     rateTypeIds: number[],
     userId: string,
   ): Promise<RateTypeAssignment[]> {
@@ -62,18 +82,21 @@ export const rateTypeAssignmentRepository = {
           );
         }
         await q(
+          // `IS NOT DISTINCT FROM` so a Universal (NULL) combo's complement is matched (NULL = NULL).
           `UPDATE rate_type_assignments
               SET is_active = false, updated_by = $4, updated_at = now()
-            WHERE client_id = $1 AND product_id = $2 AND verification_unit_id = $3
+            WHERE client_id = $1 AND product_id IS NOT DISTINCT FROM $2
+              AND verification_unit_id IS NOT DISTINCT FROM $3
               AND is_active AND NOT (rate_type_id = ANY($5::int[]))`,
           [clientId, productId, unitId, userId, rateTypeIds],
         );
         // One immutable audit row capturing the combo + resulting active set. 'BULK_SET' is not a
-        // valid AuditAction (audit_log CHECK + the AuditAction union) → recorded as UPDATE.
+        // valid AuditAction (audit_log CHECK + the AuditAction union) → recorded as UPDATE. entityId =
+        // clientId (always non-null; product/unit may be Universal/NULL) — full combo is in `after`.
         await appendAudit(
           {
             entityType: 'rate_type_assignments',
-            entityId: unitId,
+            entityId: clientId,
             action: 'UPDATE',
             actorId: userId,
             after: { clientId, productId, verificationUnitId: unitId, rateTypeIds },
