@@ -70,7 +70,12 @@ done
 
 if [ "$healthy" = "1" ]; then
   ok "GREEN — edge + api healthy at $IMAGE_TAG"
-  log "prune dangling images"; docker image prune -f >/dev/null || true
+  # Prune ALL unused images older than 72h, not just dangling ones — every deploy pulls a fresh tagged
+  # `crm2-api:<sha>` (~2 GB) that `prune -f` (dangling-only) never reclaimed, so they accumulated and once
+  # filled the disk to 100% (postgres then crash-looped on a failed checkpoint). `-a` reclaims the old tags;
+  # the `until=72h` window keeps the last few deploys (incl. the running + rollback images) intact.
+  log "prune unused images older than 72h (keep recent for rollback)"
+  docker image prune -af --filter "until=72h" >/dev/null || true
   ok "deploy complete"
   exit 0
 fi
