@@ -81,7 +81,8 @@ function RateForm({ initial }: { initial: RateView | null }) {
   // Create cascade state (unused in revise — every dimension is fixed there).
   const [clientId, setClientId] = useState('');
   const [productId, setProductId] = useState('');
-  const [kind, setKind] = useState('FIELD_VISIT');
+  const [mode, setMode] = useState('FIELD');
+  const [universal, setUniversal] = useState(false); // Universal = one rate for all locations (null location)
   const [unitId, setUnitId] = useState('');
   const [pincode, setPincode] = useState('');
   const [pincodeSearch, setPincodeSearch] = useState('');
@@ -96,10 +97,13 @@ function RateForm({ initial }: { initial: RateView | null }) {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [conflict, setConflict] = useState<{ updatedAt?: string; version?: number } | null>(null);
 
-  // KYC documents have no geography or rate type — those fields are greyed out and forced null.
-  const isKyc = kind === 'KYC_DOCUMENT';
-  const onKindChange = (k: string) => {
-    setKind(k);
+  // ADR-0070: the rate's field/office is the operator's choice, not the unit's classification. OFFICE
+  // rates are flat (no geography, no rate type); FIELD rates are location-based (LOCAL/OGL) with an
+  // optional Universal (all-locations) choice that stores a null location.
+  const isOffice = mode === 'OFFICE';
+  const onModeChange = (m: string) => {
+    setMode(m);
+    setUniversal(false);
     setUnitId('');
     setPincode('');
     setLocationId('');
@@ -125,7 +129,7 @@ function RateForm({ initial }: { initial: RateView | null }) {
   // Rate types are now assignment-gated by the (client × product × unit) combo (ADR-0067 Phase B
   // resolver). Enabled only once all three dims are chosen — KYC units have no rate type, so the
   // field is greyed out and this query stays idle for them too.
-  const comboReady = !isRevise && !isKyc && !!clientId && !!productId && !!unitId;
+  const comboReady = !isRevise && !isOffice && !!clientId && !!productId && !!unitId;
   const clientRateTypes = useQuery({
     queryKey: ['rate-types-available', clientId, productId, unitId],
     queryFn: () =>
@@ -160,8 +164,8 @@ function RateForm({ initial }: { initial: RateView | null }) {
             clientId: Number(clientId),
             productId: Number(productId),
             verificationUnitId: Number(unitId),
-            locationId: isKyc || !locationId ? null : Number(locationId),
-            clientRateType: isKyc ? null : clientRateType || null,
+            locationId: isOffice || universal || !locationId ? null : Number(locationId),
+            clientRateType: isOffice ? null : clientRateType || null,
             amount: Number(amount),
             effectiveFrom: toIsoDate(effectiveFrom),
           }),
@@ -181,7 +185,11 @@ function RateForm({ initial }: { initial: RateView | null }) {
   // Revise gate: only amount (keys are fixed).
   const valid = isRevise
     ? amount !== ''
-    : !!clientId && !!productId && !!unitId && amount !== '' && (isKyc || (!!locationId && !!clientRateType));
+    : !!clientId &&
+      !!productId &&
+      !!unitId &&
+      amount !== '' &&
+      (isOffice || (!!clientRateType && (universal || !!locationId)));
 
   const clientOpts: Opt[] = (clients.data ?? []).map((c) => ({
     value: String(c.id),
@@ -191,12 +199,10 @@ function RateForm({ initial }: { initial: RateView | null }) {
     value: String(p.id),
     label: `${p.code} — ${p.name}`,
   }));
-  const unitOpts: Opt[] = (units.data ?? [])
-    .filter((u) => u.kind === kind)
-    .map((u) => ({ value: String(u.id), label: u.name }));
-  const kindOpts: Opt[] = [
-    { value: 'FIELD_VISIT', label: 'FIELD VISIT' },
-    { value: 'KYC_DOCUMENT', label: 'KYC DOCUMENT' },
+  const unitOpts: Opt[] = (units.data ?? []).map((u) => ({ value: String(u.id), label: u.name }));
+  const modeOpts: Opt[] = [
+    { value: 'FIELD', label: 'Field' },
+    { value: 'OFFICE', label: 'Office' },
   ];
   const pincodeOpts: Opt[] = (pincodes.data ?? []).map((p) => ({ value: p, label: p }));
   const areaOpts: Opt[] = (areas.data ?? []).map((l) => ({ value: String(l.id), label: l.area }));
@@ -215,7 +221,7 @@ function RateForm({ initial }: { initial: RateView | null }) {
         <p className="text-sm text-muted-foreground">
           {isRevise
             ? 'Keys are immutable — revising appends a new effective-dated version (amount & effective-from only). The current row is end-dated, never overwritten.'
-            : 'One rate = client · product · verification unit · pincode/area · rate type · amount. Geography & rate type are blank for KYC units.'}
+            : 'One rate = client · product · verification unit · pincode/area · rate type · amount. Office rates are flat — geography & rate type are blank; a Field rate may be Universal (all locations).'}
         </p>
       </div>
 
@@ -225,7 +231,7 @@ function RateForm({ initial }: { initial: RateView | null }) {
             <ReadOnlyRow label="Client" value={`${initial.clientCode} — ${initial.clientName}`} />
             <ReadOnlyRow label="Product" value={`${initial.productCode} — ${initial.productName}`} />
             <ReadOnlyRow label="Verification Unit" value={initial.unitName} />
-            <ReadOnlyRow label="Kind" value={initial.unitKind.replace(/_/g, ' ')} mono />
+            <ReadOnlyRow label="Type" value={initial.clientRateType ? 'Field' : 'Office'} />
             <ReadOnlyRow
               label="Location"
               value={`${initial.pincode ?? ''} ${initial.area ?? ''}`.trim() || null}
@@ -252,8 +258,8 @@ function RateForm({ initial }: { initial: RateView | null }) {
                 <span className="mt-1 block text-xs text-destructive">{fieldErrors['productId']}</span>
               )}
             </Field>
-            <Field label="Kind">
-              <SearchableSelect value={kind} onChange={onKindChange} options={kindOpts} width="w-full" />
+            <Field label="Field / Office">
+              <SearchableSelect value={mode} onChange={onModeChange} options={modeOpts} width="w-full" />
             </Field>
             <Field label="Verification Unit">
               <SearchableSelect value={unitId} onChange={setUnitId} options={unitOpts} width="w-full" />
@@ -263,53 +269,71 @@ function RateForm({ initial }: { initial: RateView | null }) {
                 </span>
               )}
             </Field>
-            <Field label="Pincode (search)">
-              <SearchableSelect
-                value={pincode}
-                onChange={(v) => {
-                  setPincode(v);
-                  setLocationId('');
-                }}
-                options={pincodeOpts}
-                onQueryChange={setPincodeSearch}
-                placeholder={isKyc ? 'n/a for KYC' : 'Type ≥2 digits…'}
-                disabled={isKyc}
-                width="w-full"
-              />
-            </Field>
-            <Field label="Area">
-              <SearchableSelect
-                value={locationId}
-                onChange={setLocationId}
-                options={areaOpts}
-                disabled={isKyc || !pincode}
-                placeholder={isKyc ? 'n/a for KYC' : pincode ? 'Select area…' : 'Pick pincode first'}
-                width="w-full"
-              />
-              {fieldErrors['locationId'] && (
-                <span className="mt-1 block text-xs text-destructive">{fieldErrors['locationId']}</span>
-              )}
-            </Field>
-            <Field label="Rate Type">
-              <SearchableSelect
-                value={clientRateType}
-                onChange={setRateType}
-                options={clientRateTypeOpts}
-                disabled={isKyc || !comboReady}
-                placeholder={
-                  isKyc ? 'n/a for KYC' : comboReady ? 'Search…' : 'Pick client, product & unit first'
-                }
-                width="w-full"
-              />
-              {noRateTypesForCombo && (
-                <span className="mt-1 block text-xs text-muted-foreground">
-                  No rate types assigned for this combination — assign them in Admin → Rate Type Assignments.
-                </span>
-              )}
-              {fieldErrors['clientRateType'] && (
-                <span className="mt-1 block text-xs text-destructive">{fieldErrors['clientRateType']}</span>
-              )}
-            </Field>
+            {!isOffice && (
+              <label className="flex items-center gap-2 text-sm text-foreground">
+                <input
+                  type="checkbox"
+                  checked={universal}
+                  onChange={(e) => {
+                    setUniversal(e.target.checked);
+                    setPincode('');
+                    setLocationId('');
+                  }}
+                />
+                Universal — one rate for all locations
+              </label>
+            )}
+            {!isOffice && !universal && (
+              <>
+                <Field label="Pincode (search)">
+                  <SearchableSelect
+                    value={pincode}
+                    onChange={(v) => {
+                      setPincode(v);
+                      setLocationId('');
+                    }}
+                    options={pincodeOpts}
+                    onQueryChange={setPincodeSearch}
+                    placeholder="Type ≥2 digits…"
+                    width="w-full"
+                  />
+                </Field>
+                <Field label="Area">
+                  <SearchableSelect
+                    value={locationId}
+                    onChange={setLocationId}
+                    options={areaOpts}
+                    disabled={!pincode}
+                    placeholder={pincode ? 'Select area…' : 'Pick pincode first'}
+                    width="w-full"
+                  />
+                  {fieldErrors['locationId'] && (
+                    <span className="mt-1 block text-xs text-destructive">{fieldErrors['locationId']}</span>
+                  )}
+                </Field>
+              </>
+            )}
+            {!isOffice && (
+              <Field label="Rate Type">
+                <SearchableSelect
+                  value={clientRateType}
+                  onChange={setRateType}
+                  options={clientRateTypeOpts}
+                  disabled={!comboReady}
+                  placeholder={comboReady ? 'Search…' : 'Pick client, product & unit first'}
+                  width="w-full"
+                />
+                {noRateTypesForCombo && (
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    No rate types assigned for this combination — assign them in Admin → Rate Type
+                    Assignments.
+                  </span>
+                )}
+                {fieldErrors['clientRateType'] && (
+                  <span className="mt-1 block text-xs text-destructive">{fieldErrors['clientRateType']}</span>
+                )}
+              </Field>
+            )}
           </>
         )}
         <Field label="Rate (₹)">
@@ -356,8 +380,8 @@ function RateForm({ initial }: { initial: RateView | null }) {
                     clientId: Number(clientId),
                     productId: Number(productId),
                     verificationUnitId: Number(unitId),
-                    locationId: isKyc || !locationId ? null : Number(locationId),
-                    clientRateType: isKyc ? null : clientRateType || null,
+                    locationId: isOffice || universal || !locationId ? null : Number(locationId),
+                    clientRateType: isOffice ? null : clientRateType || null,
                     amount: Number(amount),
                     ...(effectiveFromIso ? { effectiveFrom: effectiveFromIso } : {}),
                   });

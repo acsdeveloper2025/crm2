@@ -1,19 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { CreateVerificationUnitSchema, visitTypeForKind } from './verificationUnit.js';
-
-describe('visitTypeForKind (A2026-0623-05)', () => {
-  it('maps FIELD_VISIT→FIELD and desk kinds (KYC_DOCUMENT / DESK_DOCUMENT)→OFFICE', () => {
-    expect(visitTypeForKind('FIELD_VISIT')).toBe('FIELD');
-    expect(visitTypeForKind('KYC_DOCUMENT')).toBe('OFFICE');
-    expect(visitTypeForKind('DESK_DOCUMENT')).toBe('OFFICE');
-  });
-});
+import { CreateVerificationUnitSchema } from './verificationUnit.js';
 
 const field = (over: Record<string, unknown> = {}) => ({
   code: 'RESIDENCE',
   name: 'Residence',
   category: 'FIELD',
-  kind: 'FIELD_VISIT',
   workerRole: 'FIELD_AGENT',
   assignmentMethod: 'TERRITORY_AUTO',
   requiredFormCode: 'RESIDENCE_FORM',
@@ -30,7 +21,6 @@ const kyc = (over: Record<string, unknown> = {}) => ({
   code: 'PAN_CARD',
   name: 'PAN Verification',
   category: 'IDENTITY',
-  kind: 'KYC_DOCUMENT',
   workerRole: 'KYC_VERIFIER',
   assignmentMethod: 'DESK_POOL',
   requiredFormCode: null,
@@ -57,7 +47,9 @@ describe('VerificationUnit contract — FIELD_VISIT invariants', () => {
   it('rejects missing form code', () => {
     expect(CreateVerificationUnitSchema.safeParse(field({ requiredFormCode: null })).success).toBe(false);
   });
-  it('rejects KYC worker on a field unit', () => {
+  it('rejects a KYC worker role carrying the field profile', () => {
+    // worker_role is the discriminator now (ADR-0070): KYC_VERIFIER + a field profile (5 photos, GPS,
+    // AGENT_COMMISSION…) violates the KYC invariants → rejected.
     expect(CreateVerificationUnitSchema.safeParse(field({ workerRole: 'KYC_VERIFIER' })).success).toBe(false);
   });
   it('rejects invoice billing on a field unit', () => {

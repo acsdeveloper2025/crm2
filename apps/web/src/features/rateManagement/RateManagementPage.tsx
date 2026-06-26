@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   pageQueryToParams,
   exportQueryToParams,
-  KINDS,
   type Option,
   type RateView,
   type RateHistory,
@@ -26,13 +25,6 @@ import { useAuth } from '../../lib/AuthContext.js';
 const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
   e instanceof ApiError && e.status === HTTP_CONFLICT && e.code === 'STALE_UPDATE';
-
-const KIND_LABELS: Record<string, string> = {
-  FIELD_VISIT: 'Field Visit',
-  KYC_DOCUMENT: 'KYC Document',
-  DESK_DOCUMENT: 'Desk Document',
-};
-const RATE_KIND_OPTIONS = KINDS.map((k) => ({ value: k, label: KIND_LABELS[k] ?? k }));
 
 function ActiveChip({ active }: { active: boolean }) {
   return (
@@ -108,14 +100,6 @@ export function RateManagementPage() {
         header: 'Product',
         sortable: true,
         cell: (r) => <span className="whitespace-nowrap">{r.productCode}</span>,
-      },
-      {
-        id: 'kind',
-        header: 'Kind',
-        sortable: true,
-        filterable: true,
-        filterOptions: RATE_KIND_OPTIONS,
-        cell: (r) => <span className="text-xs">{r.unitKind.replace(/_/g, ' ')}</span>,
       },
       {
         id: 'unit',
@@ -200,8 +184,8 @@ export function RateManagementPage() {
         <div>
           <h1 className="text-xl font-bold tracking-tight">Rate Management</h1>
           <p className="text-sm text-muted-foreground">
-            One row per rate — client, product, unit, pincode/area, rate type and amount. Geography is blank
-            for KYC units.
+            One row per rate — client, product, unit, pincode/area, rate type and amount. Office rates are
+            flat (no geography); a Field rate may be Universal (all locations).
           </p>
         </div>
         {canManage && (

@@ -127,7 +127,6 @@ describe('createSdk — transport', () => {
       code: 'C',
       name: 'N',
       category: 'F',
-      kind: 'FIELD_VISIT',
       workerRole: 'FIELD_AGENT',
       assignmentMethod: 'TERRITORY_AUTO',
       requiredFormCode: 'F',

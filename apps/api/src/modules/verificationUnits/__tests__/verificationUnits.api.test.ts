@@ -56,7 +56,7 @@ describe.skipIf(!RUN)('verification-units API', () => {
     const res = await request(app)
       .post('/api/v2/verification-units')
       .set(SA)
-      .send(verificationUnitFactory({ kind: 'KYC_DOCUMENT', code: 'PAN_CARD' }));
+      .send(verificationUnitFactory({ workerRole: 'KYC_VERIFIER', code: 'PAN_CARD' }));
     expect(res.status).toBe(201);
     expect(res.body.billingProfile).toBe('CLIENT_INVOICE');
     expect(res.body.piiSensitive).toBe(true);
@@ -235,7 +235,7 @@ describe.skipIf(!RUN)('verification-units API', () => {
     expect(codes).toContain('OK_UNIT');
     expect(codes).not.toContain('OFF_UNIT'); // inactive excluded
     expect(codes).not.toContain('FUT_UNIT'); // future-dated excluded (ADR-0017)
-    expect(Object.keys(res.body[0]).sort()).toEqual(['code', 'id', 'kind', 'name']); // trimmed shape + kind
+    expect(Object.keys(res.body[0]).sort()).toEqual(['code', 'id', 'name', 'workerRole']); // trimmed shape + workerRole
   });
 
   it('GET /options requires auth (401); BACKEND_USER may read (200)', async () => {
@@ -243,28 +243,30 @@ describe.skipIf(!RUN)('verification-units API', () => {
     expect((await request(app).get('/api/v2/verification-units/options').set(BE)).status).toBe(200);
   });
 
-  // ── Excel-style header multi-select on `kind` (DATAGRID_STANDARD §7) ──
-  it('f_kind filters by the kind enum: single → eq, comma → IN; unknown values dropped', async () => {
+  // ── Excel-style header multi-select on `worker_role` (DATAGRID_STANDARD §7) ──
+  it('f_workerRole filters by the worker-role enum: single → eq, comma → IN; unknown values dropped', async () => {
     await request(app)
       .post('/api/v2/verification-units')
       .set(SA)
-      .send(verificationUnitFactory({ code: 'FV1', kind: 'FIELD_VISIT' }));
+      .send(verificationUnitFactory({ code: 'FV1', workerRole: 'FIELD_AGENT' }));
     await request(app)
       .post('/api/v2/verification-units')
       .set(SA)
-      .send(verificationUnitFactory({ code: 'KYC1', kind: 'KYC_DOCUMENT' }));
+      .send(verificationUnitFactory({ code: 'KYC1', workerRole: 'KYC_VERIFIER' }));
 
-    const single = await request(app).get('/api/v2/verification-units?f_kind=KYC_DOCUMENT').set(SA);
+    const single = await request(app).get('/api/v2/verification-units?f_workerRole=KYC_VERIFIER').set(SA);
     expect(single.body.items.map((u: { code: string }) => u.code)).toEqual(['KYC1']);
-    expect(single.body.filters.f_kind).toBe('KYC_DOCUMENT');
+    expect(single.body.filters.f_workerRole).toBe('KYC_VERIFIER');
 
     const multi = await request(app)
-      .get('/api/v2/verification-units?f_kind=FIELD_VISIT,KYC_DOCUMENT')
+      .get('/api/v2/verification-units?f_workerRole=FIELD_AGENT,KYC_VERIFIER')
       .set(SA);
     expect(multi.body.items.map((u: { code: string }) => u.code).sort()).toEqual(['FV1', 'KYC1']);
 
     // an out-of-enum value is dropped (whitelist) → here leaves only the valid one (eq)
-    const mixed = await request(app).get('/api/v2/verification-units?f_kind=FIELD_VISIT,HACKER').set(SA);
+    const mixed = await request(app)
+      .get('/api/v2/verification-units?f_workerRole=FIELD_AGENT,HACKER')
+      .set(SA);
     expect(mixed.body.items.map((u: { code: string }) => u.code)).toEqual(['FV1']);
   });
 
@@ -430,7 +432,7 @@ describe.skipIf(!RUN)('verification-units API', () => {
         /attachment; filename="verification-units-\d{8}\.csv"/,
       );
       expect(res.text.split('\r\n')[0]).toBe(
-        'Code,Name,Description,Category,Kind,Worker Role,Assignment Method,Required Form Code,Required Photos,Required GPS,Required Attachments,Result Set,Review Required,Billing Profile,Commission Profile,Report Template Type,Reverification Rule,PII Sensitive,Sort Order,Effective From,Created,Updated,Status',
+        'Code,Name,Description,Category,Worker Role,Assignment Method,Required Form Code,Required Photos,Required GPS,Required Attachments,Result Set,Review Required,Billing Profile,Commission Profile,Report Template Type,Reverification Rule,PII Sensitive,Sort Order,Effective From,Created,Updated,Status',
       );
       expect(res.text).toContain('RESIDENCE,RESIDENCE');
     });
@@ -482,7 +484,7 @@ describe.skipIf(!RUN)('verification-units API', () => {
       expect(res.status).toBe(200);
       const rows = res.text.split('\r\n');
       expect(rows[0]).toBe(
-        'Code,Name,Description,Category,Kind,Worker Role,Assignment Method,Required Form Code,Required Photos,Required GPS,Required Attachments,Result Set,Review Required,Billing Profile,Commission Profile,Report Template Type,Reverification Rule,PII Sensitive,Sort Order,Effective From,Created,Updated,Status',
+        'Code,Name,Description,Category,Worker Role,Assignment Method,Required Form Code,Required Photos,Required GPS,Required Attachments,Result Set,Review Required,Billing Profile,Commission Profile,Report Template Type,Reverification Rule,PII Sensitive,Sort Order,Effective From,Created,Updated,Status',
       );
       expect(res.text).toContain('SELA');
       expect(res.text).not.toContain('SELB'); // the unticked row is excluded
@@ -604,7 +606,6 @@ describe.skipIf(!RUN)('verification-units API', () => {
       'Name',
       'Description',
       'Category',
-      'Kind',
       'Worker Role',
       'Assignment Method',
       'Required Form Code',
@@ -621,19 +622,18 @@ describe.skipIf(!RUN)('verification-units API', () => {
       'Sort Order',
       'Effective From',
     ];
-    // A valid FIELD_VISIT row that passes applyInvariants (mirrors the seeded RESIDENCE unit).
+    // A valid FIELD_AGENT row that passes applyInvariants (mirrors the seeded RESIDENCE unit).
     const validRow = (code: string): (string | number)[] => [
       code,
       'Residence Verification',
       'Physical residence verification',
       'FIELD',
-      'FIELD_VISIT',
       'FIELD_AGENT',
       'TERRITORY_AUTO',
       `${code}_FORM`,
       5,
       'true',
-      '', // Required Attachments — blank for FIELD_VISIT (not required)
+      '', // Required Attachments — blank for a FIELD_AGENT unit (not required)
       'Positive,Negative,Refer,Fraud',
       'true',
       'AGENT_COMMISSION',
@@ -644,10 +644,10 @@ describe.skipIf(!RUN)('verification-units API', () => {
       1,
       '2026-01-01',
     ];
-    // Same shape but a bad `kind` enum → zod rejects against the Kind column.
-    const badKindRow = (code: string): (string | number)[] => {
+    // Same shape but a bad `workerRole` enum → zod rejects against the Worker Role column.
+    const badWorkerRoleRow = (code: string): (string | number)[] => {
       const r = validRow(code);
-      r[4] = 'NOT_A_KIND';
+      r[4] = 'NOT_A_ROLE';
       return r;
     };
     // A KYC_DOCUMENT row (worker=KYC_VERIFIER, 0 photos, no GPS, CLIENT_INVOICE, KYC template). The
@@ -658,7 +658,6 @@ describe.skipIf(!RUN)('verification-units API', () => {
       'KYC PAN Check',
       'Verify PAN document',
       'KYC',
-      'KYC_DOCUMENT',
       'KYC_VERIFIER',
       'DESK_POOL',
       '', // no required form code for KYC
@@ -708,11 +707,11 @@ describe.skipIf(!RUN)('verification-units API', () => {
       expect((res.body as Buffer).subarray(0, 2).toString('latin1')).toBe('PK');
     });
 
-    it('preview flags an invalid row (bad kind) against its column, keeps the valid one', async () => {
-      const res = await upload('preview', await mkXlsx([validRow('RESIDENCE'), badKindRow('OFFICE')]));
+    it('preview flags an invalid row (bad worker role) against its column, keeps the valid one', async () => {
+      const res = await upload('preview', await mkXlsx([validRow('RESIDENCE'), badWorkerRoleRow('OFFICE')]));
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({ totalRows: 2, validRows: 1, errorRows: 1 });
-      expect(res.body.errors[0]).toMatchObject({ rowNumber: 3, column: 'Kind' });
+      expect(res.body.errors[0]).toMatchObject({ rowNumber: 3, column: 'Worker Role' });
       // preview is read-only — nothing inserted
       expect((await request(app).get('/api/v2/verification-units').set(SA)).body.totalCount).toBe(0);
     });

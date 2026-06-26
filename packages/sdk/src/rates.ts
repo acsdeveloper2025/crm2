@@ -35,7 +35,6 @@ export interface RateView extends Rate {
   productName: string;
   unitCode: string;
   unitName: string;
-  unitKind: string;
   pincode: string | null;
   area: string | null;
 }

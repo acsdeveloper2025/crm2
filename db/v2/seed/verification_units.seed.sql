@@ -8,19 +8,19 @@ BEGIN;
 -- FIELD_VISIT units (9) — each has a bespoke form + narrative report template
 -- ===========================================================================
 INSERT INTO verification_units
-  (code, name, category, kind, worker_role, assignment_method, required_form_code,
+  (code, name, category, worker_role, assignment_method, required_form_code,
    required_photos, required_gps, required_attachments, billing_profile, commission_profile,
    report_template_type, reverification_rule, pii_sensitive, sort_order)
 VALUES
-  ('RESIDENCE',            'Residence Verification',            'FIELD','FIELD_VISIT','FIELD_AGENT','TERRITORY_AUTO','RESIDENCE_FORM',            5,true,'[]',  'AGENT_COMMISSION','FIELD_RATE','FIELD_NARRATIVE','REVISIT_PARENT_RATE', false, 1),
-  ('OFFICE',               'Office Verification',               'FIELD','FIELD_VISIT','FIELD_AGENT','TERRITORY_AUTO','OFFICE_FORM',               5,true,'[]',  'AGENT_COMMISSION','FIELD_RATE','FIELD_NARRATIVE','REVISIT_PARENT_RATE', false, 2),
-  ('RESIDENCE_CUM_OFFICE', 'Residence cum Office Verification', 'FIELD','FIELD_VISIT','FIELD_AGENT','TERRITORY_AUTO','RESIDENCE_CUM_OFFICE_FORM',  5,true,'[]',  'AGENT_COMMISSION','FIELD_RATE','FIELD_NARRATIVE','REVISIT_PARENT_RATE', false, 3),
-  ('BUSINESS',             'Business Verification',             'FIELD','FIELD_VISIT','FIELD_AGENT','TERRITORY_AUTO','BUSINESS_FORM',             5,true,'[]',  'AGENT_COMMISSION','FIELD_RATE','FIELD_NARRATIVE','REVISIT_PARENT_RATE', false, 4),
-  ('BUILDER',              'Builder Verification',              'FIELD','FIELD_VISIT','FIELD_AGENT','TERRITORY_AUTO','BUILDER_FORM',              5,true,'[]',  'AGENT_COMMISSION','FIELD_RATE','FIELD_NARRATIVE','REVISIT_PARENT_RATE', false, 5),
-  ('NOC',                  'NOC Verification',                  'FIELD','FIELD_VISIT','FIELD_AGENT','TERRITORY_AUTO','NOC_FORM',                  5,true,'[]',  'AGENT_COMMISSION','FIELD_RATE','FIELD_NARRATIVE','REVISIT_PARENT_RATE', false, 6),
-  ('DSA_CONNECTOR',        'DSA DST & Connector Verification',  'FIELD','FIELD_VISIT','FIELD_AGENT','TERRITORY_AUTO','DSA_CONNECTOR_FORM',        5,true,'[]',  'AGENT_COMMISSION','FIELD_RATE','FIELD_NARRATIVE','REVISIT_PARENT_RATE', false, 7),
-  ('PROPERTY_APF',         'Property APF Verification',         'FIELD','FIELD_VISIT','FIELD_AGENT','TERRITORY_AUTO','PROPERTY_APF_FORM',         5,true,'[]',  'AGENT_COMMISSION','FIELD_RATE','FIELD_NARRATIVE','REVISIT_PARENT_RATE', false, 8),
-  ('PROPERTY_INDIVIDUAL',  'Property Individual Verification',  'FIELD','FIELD_VISIT','FIELD_AGENT','TERRITORY_AUTO','PROPERTY_INDIVIDUAL_FORM',  5,true,'[]',  'AGENT_COMMISSION','FIELD_RATE','FIELD_NARRATIVE','REVISIT_PARENT_RATE', false, 9)
+  ('RESIDENCE',            'Residence Verification',            'FIELD','FIELD_AGENT','TERRITORY_AUTO','RESIDENCE_FORM',            5,true,'[]',  'AGENT_COMMISSION','FIELD_RATE','FIELD_NARRATIVE','REVISIT_PARENT_RATE', false, 1),
+  ('OFFICE',               'Office Verification',               'FIELD','FIELD_AGENT','TERRITORY_AUTO','OFFICE_FORM',               5,true,'[]',  'AGENT_COMMISSION','FIELD_RATE','FIELD_NARRATIVE','REVISIT_PARENT_RATE', false, 2),
+  ('RESIDENCE_CUM_OFFICE', 'Residence cum Office Verification', 'FIELD','FIELD_AGENT','TERRITORY_AUTO','RESIDENCE_CUM_OFFICE_FORM',  5,true,'[]',  'AGENT_COMMISSION','FIELD_RATE','FIELD_NARRATIVE','REVISIT_PARENT_RATE', false, 3),
+  ('BUSINESS',             'Business Verification',             'FIELD','FIELD_AGENT','TERRITORY_AUTO','BUSINESS_FORM',             5,true,'[]',  'AGENT_COMMISSION','FIELD_RATE','FIELD_NARRATIVE','REVISIT_PARENT_RATE', false, 4),
+  ('BUILDER',              'Builder Verification',              'FIELD','FIELD_AGENT','TERRITORY_AUTO','BUILDER_FORM',              5,true,'[]',  'AGENT_COMMISSION','FIELD_RATE','FIELD_NARRATIVE','REVISIT_PARENT_RATE', false, 5),
+  ('NOC',                  'NOC Verification',                  'FIELD','FIELD_AGENT','TERRITORY_AUTO','NOC_FORM',                  5,true,'[]',  'AGENT_COMMISSION','FIELD_RATE','FIELD_NARRATIVE','REVISIT_PARENT_RATE', false, 6),
+  ('DSA_CONNECTOR',        'DSA DST & Connector Verification',  'FIELD','FIELD_AGENT','TERRITORY_AUTO','DSA_CONNECTOR_FORM',        5,true,'[]',  'AGENT_COMMISSION','FIELD_RATE','FIELD_NARRATIVE','REVISIT_PARENT_RATE', false, 7),
+  ('PROPERTY_APF',         'Property APF Verification',         'FIELD','FIELD_AGENT','TERRITORY_AUTO','PROPERTY_APF_FORM',         5,true,'[]',  'AGENT_COMMISSION','FIELD_RATE','FIELD_NARRATIVE','REVISIT_PARENT_RATE', false, 8),
+  ('PROPERTY_INDIVIDUAL',  'Property Individual Verification',  'FIELD','FIELD_AGENT','TERRITORY_AUTO','PROPERTY_INDIVIDUAL_FORM',  5,true,'[]',  'AGENT_COMMISSION','FIELD_RATE','FIELD_NARRATIVE','REVISIT_PARENT_RATE', false, 9)
 ON CONFLICT (code) DO NOTHING;
 
 -- ===========================================================================
@@ -31,10 +31,10 @@ ON CONFLICT (code) DO NOTHING;
 -- pii_sensitive = true for IDENTITY + FINANCIAL categories (DPDP).
 -- ===========================================================================
 INSERT INTO verification_units
-  (code, name, category, kind, worker_role, assignment_method, required_form_code,
+  (code, name, category, worker_role, assignment_method, required_form_code,
    required_photos, required_gps, required_attachments, billing_profile, commission_profile,
    report_template_type, reverification_rule, pii_sensitive, sort_order)
-SELECT v.code, v.name, v.category, 'KYC_DOCUMENT','KYC_VERIFIER','DESK_POOL', NULL,
+SELECT v.code, v.name, v.category, 'KYC_VERIFIER','DESK_POOL', NULL,
        0, false, '[{"type":"DOCUMENT","min":1}]'::jsonb, 'CLIENT_INVOICE','NONE',
        'KYC_DOCUMENT','RECHECK_FRESH_RATE',
        (v.category IN ('IDENTITY','FINANCIAL')), 100 + row_number() OVER ()
@@ -116,12 +116,12 @@ ON CONFLICT (code) DO NOTHING;
 -- prod). `is_system` is added by 0086, which runs before this seed.
 UPDATE verification_units SET is_system = true
 WHERE NOT is_system
-  AND kind = 'FIELD_VISIT'
+  AND worker_role = 'FIELD_AGENT'
   AND code IN ('RESIDENCE', 'OFFICE', 'RESIDENCE_CUM_OFFICE', 'BUSINESS', 'BUILDER', 'NOC',
                'DSA_CONNECTOR', 'PROPERTY_APF', 'PROPERTY_INDIVIDUAL');
 
 COMMIT;
 
 -- Sanity (run after seed):
---   SELECT kind, count(*) FROM verification_units GROUP BY kind;   -- FIELD_VISIT 9 · KYC_DOCUMENT 59
+--   SELECT worker_role, count(*) FROM verification_units GROUP BY worker_role;   -- FIELD_AGENT 9 · KYC_VERIFIER 59
 --   SELECT count(*) FROM verification_units WHERE pii_sensitive;   -- IDENTITY+FINANCIAL units

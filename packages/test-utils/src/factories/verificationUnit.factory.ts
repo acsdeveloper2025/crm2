@@ -1,14 +1,12 @@
 /**
- * Verification Unit factory — produces a VALID create-input, kind-aware, with overrides.
- * Used by unit + integration tests so every test starts from a passing baseline.
+ * Verification Unit factory — produces a VALID create-input, worker-role-aware, with overrides.
+ * Used by unit + integration tests so every test starts from a passing baseline. worker_role is the
+ * unit's discriminator (ADR-0070): FIELD_AGENT ⇒ the field-visit profile, KYC_VERIFIER ⇒ the desk profile.
  */
-type Kind = 'FIELD_VISIT' | 'KYC_DOCUMENT' | 'DESK_DOCUMENT';
-
 export interface VerificationUnitInput {
   code: string;
   name: string;
   category: string;
-  kind: Kind;
   workerRole: 'FIELD_AGENT' | 'KYC_VERIFIER';
   assignmentMethod: 'TERRITORY_AUTO' | 'MANUAL' | 'DESK_POOL';
   requiredFormCode: string | null;
@@ -31,7 +29,6 @@ const FIELD_DEFAULTS = (): VerificationUnitInput => ({
   code: `FIELD_UNIT_${++seq}`,
   name: `Field Unit ${seq}`,
   category: 'FIELD',
-  kind: 'FIELD_VISIT',
   workerRole: 'FIELD_AGENT',
   assignmentMethod: 'TERRITORY_AUTO',
   requiredFormCode: `FORM_${seq}`,
@@ -52,7 +49,6 @@ const KYC_DEFAULTS = (): VerificationUnitInput => ({
   code: `KYC_UNIT_${++seq}`,
   name: `KYC Unit ${seq}`,
   category: 'IDENTITY',
-  kind: 'KYC_DOCUMENT',
   workerRole: 'KYC_VERIFIER',
   assignmentMethod: 'DESK_POOL',
   requiredFormCode: null,
@@ -70,8 +66,8 @@ const KYC_DEFAULTS = (): VerificationUnitInput => ({
 });
 
 export function verificationUnitFactory(
-  overrides: Partial<VerificationUnitInput> & { kind?: Kind } = {},
+  overrides: Partial<VerificationUnitInput> = {},
 ): VerificationUnitInput {
-  const base = overrides.kind === 'KYC_DOCUMENT' ? KYC_DEFAULTS() : FIELD_DEFAULTS();
+  const base = overrides.workerRole === 'KYC_VERIFIER' ? KYC_DEFAULTS() : FIELD_DEFAULTS();
   return { ...base, ...overrides };
 }

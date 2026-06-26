@@ -47,7 +47,7 @@ export interface ClientProductVerificationUnit {
 export interface ClientProductVerificationUnitView extends ClientProductVerificationUnit {
   unitCode: string;
   unitName: string;
-  unitKind: string;
+  unitWorkerRole: string;
 }
 
 const positiveInt = z.number().int().positive();

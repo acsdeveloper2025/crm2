@@ -157,7 +157,7 @@ function Form({ initial }: { initial: ReportLayoutDetail | null }) {
     queryKey: ['vunit-options'],
     queryFn: () => api<VerificationUnitOption[]>('GET', '/api/v2/verification-units/options'),
   });
-  const fieldUnits = (units.data ?? []).filter((u) => u.kind === 'FIELD_VISIT');
+  const fieldUnits = (units.data ?? []).filter((u) => u.workerRole === 'FIELD_AGENT');
 
   // create-mode form state; in edit mode these are seeded from `initial` via the state initializers.
   const [clientId, setClientId] = useState(initial ? String(initial.clientId) : '');

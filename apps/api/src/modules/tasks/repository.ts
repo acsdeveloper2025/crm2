@@ -73,7 +73,7 @@ const TASK_FROM_BILLING = `${TASK_FROM}
 const TASK_SELECT_BASE = `
   SELECT ct.id, ct.case_id, cs.case_number, ct.task_number, cs.client_id, cl.name AS client_name,
          p.name AS product_name, pa.name AS primary_name,
-         ct.verification_unit_id, vu.code AS unit_code, vu.name AS unit_name, vu.kind AS unit_kind,
+         ct.verification_unit_id, vu.code AS unit_code, vu.name AS unit_name,
          ct.status, ct.assigned_to, au.name AS assigned_to_name,
          ct.visit_type, (SELECT code FROM rate_types WHERE id = ct.rate_type_id) AS field_rate_type, ct.bill_count, ct.assigned_at,
          ct.version, ct.created_at, ct.updated_at,
@@ -253,14 +253,12 @@ export const taskRepository = {
       status: string;
       assignedTo: string | null;
       version: number;
-      unitKind: string;
     }>
   > {
     const params: unknown[] = [taskIds];
     const scopePred = taskScopePredicate(params, scope);
     return query(
-      // vu.kind feeds the bulk-assign visitType↔kind binding (A2026-0623-05).
-      `SELECT ct.id, ct.case_id, ct.status, ct.assigned_to, ct.version, vu.kind AS unit_kind
+      `SELECT ct.id, ct.case_id, ct.status, ct.assigned_to, ct.version
        FROM case_tasks ct JOIN cases cs ON cs.id = ct.case_id
        JOIN verification_units vu ON vu.id = ct.verification_unit_id
        WHERE ct.id = ANY($1::uuid[]) ${scopePred ? `AND ${scopePred}` : ''}`,

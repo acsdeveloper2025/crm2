@@ -253,7 +253,7 @@ async function deriveFieldRateTypeForNewTask(
  *  the task's unit — the BEST-available active rate for that CPV, preferring the most specific
  *  location (task area > task pincode > case area > case pincode > a location-less default > any),
  *  honouring the temporal window. Null ONLY when no active rate exists for the CPV at all. */
-const TASK_VIEW_COLS = `ct.id, ct.case_id, cs.case_number, ct.verification_unit_id, vu.code AS unit_code, vu.name AS unit_name, vu.kind AS unit_kind,
+const TASK_VIEW_COLS = `ct.id, ct.case_id, cs.case_number, ct.verification_unit_id, vu.code AS unit_code, vu.name AS unit_name,
          ct.task_number, ct.task_origin, ct.parent_task_id, ct.applicant_id, ap.name AS applicant_name,
          ct.address, ct.trigger, ct.priority,
          ct.status, ct.assigned_to, au.name AS assigned_to_name,
@@ -583,26 +583,6 @@ export const caseRepository = {
   async caseApplicantIds(caseId: string): Promise<string[]> {
     const rows = await query<{ id: string }>(`SELECT id FROM case_applicants WHERE case_id = $1`, [caseId]);
     return rows.map((r) => r.id);
-  },
-
-  /** A2026-0623-05: the `kind` of each requested verification unit — for the create-time visitType↔kind
-   *  binding (a FIELD_VISIT unit must be FIELD, a KYC/desk unit OFFICE). Keyed by unit id. */
-  async unitKindByIds(unitIds: number[]): Promise<Map<number, string>> {
-    const rows = await query<{ id: number; kind: string }>(
-      `SELECT id, kind FROM verification_units WHERE id = ANY($1::int[])`,
-      [unitIds],
-    );
-    return new Map(rows.map((r) => [r.id, r.kind] as const));
-  },
-
-  /** A2026-0623-05: the unit `kind` of a single task — for the assign-time visitType↔kind binding. */
-  async taskUnitKind(taskId: string): Promise<string | null> {
-    const rows = await query<{ kind: string }>(
-      `SELECT vu.kind FROM case_tasks ct JOIN verification_units vu ON vu.id = ct.verification_unit_id
-       WHERE ct.id = $1`,
-      [taskId],
-    );
-    return rows[0]?.kind ?? null;
   },
 
   /**

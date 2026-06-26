@@ -87,7 +87,10 @@ function seeded<T>(res: request.Response): T {
 }
 
 /** Seed a client+product with one CPV-enabled unit and one un-enabled unit. */
-async function seedCpv(tag: string, opts: { kind?: 'FIELD_VISIT' | 'KYC_DOCUMENT' } = {}): Promise<Ctx> {
+async function seedCpv(
+  tag: string,
+  opts: { workerRole?: 'FIELD_AGENT' | 'KYC_VERIFIER' } = {},
+): Promise<Ctx> {
   const clientId = seeded<{ id: number }>(
     await request(app)
       .post('/api/v2/clients')
@@ -100,13 +103,18 @@ async function seedCpv(tag: string, opts: { kind?: 'FIELD_VISIT' | 'KYC_DOCUMENT
       .set(SA)
       .send(productFactory({ code: `P_${tag}` })),
   ).id;
-  // The enabled unit can be FIELD_VISIT (default) or KYC_DOCUMENT — desk-flow tests need a KYC unit so
-  // an OFFICE assignment passes the visitType↔kind binding (A2026-0623-05).
+  // The enabled unit can be FIELD_AGENT (default) or KYC_VERIFIER — desk-flow tests need a KYC unit so
+  // an OFFICE assignment passes the visitType↔worker_role binding (A2026-0623-05).
   const enabledUnitId = seeded<{ id: number }>(
     await request(app)
       .post('/api/v2/verification-units')
       .set(SA)
-      .send(verificationUnitFactory({ code: `UE_${tag}`, ...(opts.kind ? { kind: opts.kind } : {}) })),
+      .send(
+        verificationUnitFactory({
+          code: `UE_${tag}`,
+          ...(opts.workerRole ? { workerRole: opts.workerRole } : {}),
+        }),
+      ),
   ).id;
   const disabledUnitId = seeded<{ id: number }>(
     await request(app)
@@ -704,9 +712,9 @@ describe.skipIf(!RUN)('cases API', () => {
 
   async function seedCaseWithTask(
     tag: string,
-    opts: { kind?: 'FIELD_VISIT' | 'KYC_DOCUMENT'; withDoc?: boolean } = {},
+    opts: { workerRole?: 'FIELD_AGENT' | 'KYC_VERIFIER'; withDoc?: boolean } = {},
   ): Promise<{ caseId: string; taskId: string }> {
-    const ctx = await seedCpv(tag, opts.kind ? { kind: opts.kind } : {});
+    const ctx = await seedCpv(tag, opts.workerRole ? { workerRole: opts.workerRole } : {});
     const caseId = seeded<{ id: string }>(
       await request(app)
         .post('/api/v2/cases')
@@ -937,7 +945,7 @@ describe.skipIf(!RUN)('cases API', () => {
   });
 
   it('a backend user finalizes an assigned desk task → COMPLETED with the official result + remark (ADR-0025)', async () => {
-    const { caseId, taskId } = await seedCaseWithTask('CP1', { kind: 'KYC_DOCUMENT', withDoc: true });
+    const { caseId, taskId } = await seedCaseWithTask('CP1', { workerRole: 'KYC_VERIFIER', withDoc: true });
     const verifier = await createUser({ username: 'kyc_cp1', name: 'DESK V', role: 'KYC_VERIFIER' });
     const be = await createUser({ username: 'be_cp1', name: 'BACKEND BOB', role: 'BACKEND_USER' });
     // a desk (OFFICE) task assigned to the desk pool user (version 1 → 2)
@@ -1002,7 +1010,7 @@ describe.skipIf(!RUN)('cases API', () => {
       await request(app)
         .post('/api/v2/verification-units')
         .set(SA)
-        .send(verificationUnitFactory({ code: 'U_KD', kind: 'KYC_DOCUMENT' })),
+        .send(verificationUnitFactory({ code: 'U_KD', workerRole: 'KYC_VERIFIER' })),
     ).id;
     const cpId = seeded<{ id: number }>(
       await request(app)
@@ -1065,7 +1073,7 @@ describe.skipIf(!RUN)('cases API', () => {
     expect(ok.body.status).toBe('COMPLETED');
   });
 
-  it('A2026-0623-05: visitType must match the unit kind at create + assign (FIELD_VISIT⇒FIELD, KYC⇒OFFICE)', async () => {
+  it('ADR-0070: the verification unit no longer constrains a task’s visitType (kind binding retired)', async () => {
     const clientId = seeded<{ id: number }>(
       await request(app)
         .post('/api/v2/clients')
@@ -1088,7 +1096,7 @@ describe.skipIf(!RUN)('cases API', () => {
       await request(app)
         .post('/api/v2/verification-units')
         .set(SA)
-        .send(verificationUnitFactory({ code: 'U_VTKK', kind: 'KYC_DOCUMENT' })),
+        .send(verificationUnitFactory({ code: 'U_VTKK', workerRole: 'KYC_VERIFIER' })),
     ).id;
     const cpId = seeded<{ id: number }>(
       await request(app)
@@ -1119,45 +1127,34 @@ describe.skipIf(!RUN)('cases API', () => {
       await request(app).get(`/api/v2/cases/${caseId}`).set(SA),
     ).applicants[0]!.id;
 
-    // CREATE-time: a FIELD_VISIT unit with visitType OFFICE → rejected (OFFICE needs no address, so the
-    // request clears zod and reaches the kind binding; a KYC-unit+FIELD would 400 on the address rule).
-    const badCreate = await request(app)
+    // CREATE: a field-classified unit accepts an OFFICE visitType — the retired unit↔visitType binding
+    // (A2026-0623-05) would have 400'd this; visitType is now the operator's free choice of which pool works it.
+    const offOnFieldUnit = await request(app)
       .post(`/api/v2/cases/${caseId}/tasks`)
       .set(SA)
       .send({ tasks: [{ verificationUnitId: fieldUnit, applicantId, visitType: 'OFFICE' }] });
-    expect(badCreate.status).toBe(400);
-    expect(badCreate.body.error).toBe('VISIT_TYPE_UNIT_MISMATCH');
+    expect(offOnFieldUnit.status).toBe(201);
 
-    // create both tasks PENDING (no visitType), then resolve each task id BY its unit (the add-tasks
-    // response order isn't relied on), and exercise the assign binding.
+    // ASSIGN: visitType picks the pool, NOT the unit — a field unit's task assigned OFFICE goes to a KYC
+    // verifier (the OFFICE pool) and succeeds; previously this was a VISIT_TYPE_UNIT_MISMATCH 400.
     await addTaskFor(caseId, fieldUnit);
-    await addTaskFor(caseId, kycUnit);
-    const taskRows = (
-      await db!.pool.query<{ id: string; verification_unit_id: number }>(
-        `SELECT id, verification_unit_id FROM case_tasks WHERE case_id = $1`,
-        [caseId],
+    const fieldTask = (
+      await db!.pool.query<{ id: string }>(
+        `SELECT id FROM case_tasks WHERE case_id = $1 AND verification_unit_id = $2 AND status = 'PENDING'
+         ORDER BY id LIMIT 1`,
+        [caseId, fieldUnit],
       )
-    ).rows;
-    const fieldTask = taskRows.find((t) => t.verification_unit_id === fieldUnit)!.id;
-    const kycTask = taskRows.find((t) => t.verification_unit_id === kycUnit)!.id;
-    const fa = await createUser({ username: 'fa_vtk', name: 'FIELD VTK', role: 'FIELD_AGENT' });
+    ).rows[0]!.id;
     const kyc = await createUser({ username: 'kyc_vtk', name: 'DESK VTK', role: 'KYC_VERIFIER' });
-    const assign = (taskId: string, assignedTo: string, visitType: string) =>
-      request(app)
-        .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
-        .set(SA)
-        .send({ assignedTo, visitType, fieldRateType: 'LOCAL', billCount: 1, version: 1 });
-
-    // a FIELD_VISIT task assigned OFFICE → rejected; a KYC task assigned FIELD → rejected
-    expect((await assign(fieldTask, kyc, 'OFFICE')).body.error).toBe('VISIT_TYPE_UNIT_MISMATCH');
-    expect((await assign(kycTask, fa, 'FIELD')).body.error).toBe('VISIT_TYPE_UNIT_MISMATCH');
-    // the correct pairings still succeed
-    expect((await assign(fieldTask, fa, 'FIELD')).status).toBe(200);
-    expect((await assign(kycTask, kyc, 'OFFICE')).status).toBe(200);
+    const assigned = await request(app)
+      .post(`/api/v2/cases/${caseId}/tasks/${fieldTask}/assign`)
+      .set(SA)
+      .send({ assignedTo: kyc, visitType: 'OFFICE', fieldRateType: 'LOCAL', billCount: 1, version: 1 });
+    expect(assigned.status).toBe(200);
   });
 
   it('finalize guards: read-only verifier 403, out-of-scope 404, remark required 400, stale + terminal 409', async () => {
-    const { caseId, taskId } = await seedCaseWithTask('CP2', { kind: 'KYC_DOCUMENT', withDoc: true });
+    const { caseId, taskId } = await seedCaseWithTask('CP2', { workerRole: 'KYC_VERIFIER', withDoc: true });
     const desk = await createUser({ username: 'kyc_cp2_desk', name: 'DESK V2', role: 'KYC_VERIFIER' });
     const verifier = await createUser({ username: 'kyc_cp2', name: 'RO V2', role: 'KYC_VERIFIER' });
     const outsider = await createUser({ username: 'be_cp2_out', name: 'BE OUT', role: 'BACKEND_USER' });
@@ -1209,7 +1206,10 @@ describe.skipIf(!RUN)('cases API', () => {
   });
 
   it('completion stamps the immutable elapsed minutes (assigned→completed) and derives the completed-in TAT band (ADR-0044)', async () => {
-    const { caseId, taskId } = await seedCaseWithTask('TATBAND', { kind: 'KYC_DOCUMENT', withDoc: true });
+    const { caseId, taskId } = await seedCaseWithTask('TATBAND', {
+      workerRole: 'KYC_VERIFIER',
+      withDoc: true,
+    });
     const verifier = await createUser({ username: 'kyc_tatband', name: 'DESK TAT', role: 'KYC_VERIFIER' });
     // assign (version 1 → 2) so the task carries an assigned_at clock start
     expect(
@@ -1289,7 +1289,10 @@ describe.skipIf(!RUN)('cases API', () => {
     }
 
     it('rollup parks the case in AWAITING_COMPLETION; a backend user finalizes → COMPLETED with the ONE final verdict (distinct from the per-task result)', async () => {
-      const { caseId, taskId } = await seedCaseWithTask('FIN1', { kind: 'KYC_DOCUMENT', withDoc: true });
+      const { caseId, taskId } = await seedCaseWithTask('FIN1', {
+        workerRole: 'KYC_VERIFIER',
+        withDoc: true,
+      });
       const be = await createUser({ username: 'be_fin1', name: 'FINAL FRED', role: 'BACKEND_USER' });
       await grantPortfolio(be, caseId);
 
@@ -1317,7 +1320,10 @@ describe.skipIf(!RUN)('cases API', () => {
     });
 
     it('finalize guards: not-AWAITING 409, verifier 403, out-of-scope 404, stale 409, double-finalize 409', async () => {
-      const { caseId, taskId } = await seedCaseWithTask('FIN2', { kind: 'KYC_DOCUMENT', withDoc: true });
+      const { caseId, taskId } = await seedCaseWithTask('FIN2', {
+        workerRole: 'KYC_VERIFIER',
+        withDoc: true,
+      });
       const verifier = await createUser({ username: 'kyc_fin2', name: 'DESK V', role: 'KYC_VERIFIER' });
       const outsider = await createUser({ username: 'be_fin2_out', name: 'BE OUT', role: 'BACKEND_USER' });
       const url = `/api/v2/cases/${caseId}/finalize`;
@@ -1369,7 +1375,7 @@ describe.skipIf(!RUN)('cases API', () => {
     it('a revisit-style new active task re-opens a COMPLETED case → IN_PROGRESS and invalidates the verdict', async () => {
       // built inline (not via seedCaseWithTask) so we keep ctx.enabledUnitId to add a second task.
       // KYC unit so the desk (OFFICE) drive passes the visitType↔kind binding (A2026-0623-05).
-      const ctx = await seedCpv('FIN3', { kind: 'KYC_DOCUMENT' });
+      const ctx = await seedCpv('FIN3', { workerRole: 'KYC_VERIFIER' });
       const caseId = seeded<{ id: string }>(
         await request(app)
           .post('/api/v2/cases')
@@ -1403,7 +1409,7 @@ describe.skipIf(!RUN)('cases API', () => {
     });
 
     it('office records the per-task result on a device-COMPLETED task (D3) — status unchanged; non-COMPLETED → 409, verifier 403', async () => {
-      const { caseId, taskId } = await seedCaseWithTask('RES', { kind: 'KYC_DOCUMENT', withDoc: true });
+      const { caseId, taskId } = await seedCaseWithTask('RES', { workerRole: 'KYC_VERIFIER', withDoc: true });
       const be = await createUser({ username: 'be_res', name: 'RES BE', role: 'BACKEND_USER' });
       const verifier = await createUser({ username: 'kyc_res', name: 'RES V', role: 'KYC_VERIFIER' });
       await grantPortfolio(be, caseId);
@@ -1449,7 +1455,10 @@ describe.skipIf(!RUN)('cases API', () => {
     });
 
     it('ADR-0050: a MANAGER can close (complete) a desk task — granted field_review.complete (owner 2026-06-20)', async () => {
-      const { caseId, taskId } = await seedCaseWithTask('MGRC', { kind: 'KYC_DOCUMENT', withDoc: true });
+      const { caseId, taskId } = await seedCaseWithTask('MGRC', {
+        workerRole: 'KYC_VERIFIER',
+        withDoc: true,
+      });
       const manager = await createUser({ username: 'mgr_mgrc', name: 'MGR C', role: 'MANAGER' });
       // the office exec reports to the manager → the case is in the manager's SUBTREE scope.
       const officeExec = await createUser({
@@ -1505,7 +1514,7 @@ describe.skipIf(!RUN)('cases API', () => {
     }
 
     it('REVISIT a COMPLETED task → a NEW billed task (lineage) re-opens the case + invalidates the verdict; parent untouched', async () => {
-      const { caseId, taskId } = await seedCaseWithTask('RV1', { kind: 'KYC_DOCUMENT', withDoc: true });
+      const { caseId, taskId } = await seedCaseWithTask('RV1', { workerRole: 'KYC_VERIFIER', withDoc: true });
       await settle(caseId, taskId, 'RV1');
 
       const res = await request(app)
@@ -1616,7 +1625,7 @@ describe.skipIf(!RUN)('cases API', () => {
     });
 
     it('verdict history (ADR-0033): every finalize recorded who/when/what, newest first (before/after a revisit); out-of-scope → 404', async () => {
-      const { caseId, taskId } = await seedCaseWithTask('VH1', { kind: 'KYC_DOCUMENT', withDoc: true });
+      const { caseId, taskId } = await seedCaseWithTask('VH1', { workerRole: 'KYC_VERIFIER', withDoc: true });
       await settle(caseId, taskId, 'VH1'); // finalize #1 → POSITIVE
 
       // revisit re-opens the case; drive the new child to COMPLETED, then re-finalize with a NEW verdict
@@ -1675,7 +1684,7 @@ describe.skipIf(!RUN)('cases API', () => {
     });
 
     it('two CONCURRENT revisits of one COMPLETED parent → exactly one 201, one 409 (active-revisit unique backstop, no double-bill)', async () => {
-      const { caseId, taskId } = await seedCaseWithTask('VHR', { kind: 'KYC_DOCUMENT', withDoc: true });
+      const { caseId, taskId } = await seedCaseWithTask('VHR', { workerRole: 'KYC_VERIFIER', withDoc: true });
       await settle(caseId, taskId, 'VHR');
       const url = `/api/v2/cases/${caseId}/tasks/${taskId}/revisit`;
       // fired together: both may pass the service pre-check (read 0). Exactly one INSERT commits; the
@@ -1723,7 +1732,7 @@ describe.skipIf(!RUN)('cases API', () => {
       expect((await request(app).post(url).set(SA).send({ reason: 'again' })).status).toBe(200);
 
       // a COMPLETED task CANNOT be revoked (it is reworked via revisit) → 409
-      const done = await seedCaseWithTask('BRV2', { kind: 'KYC_DOCUMENT', withDoc: true });
+      const done = await seedCaseWithTask('BRV2', { workerRole: 'KYC_VERIFIER', withDoc: true });
       await settle(done.caseId, done.taskId, 'BRV2');
       const blocked = await request(app)
         .post(`/api/v2/cases/${done.caseId}/tasks/${done.taskId}/revoke`)
@@ -1785,7 +1794,7 @@ describe.skipIf(!RUN)('cases API', () => {
     });
 
     it('scope + RBAC: the assigned desk user reads; an outsider 404; case.view-only cannot upload (403)', async () => {
-      const { caseId, taskId } = await seedCaseWithTask('AT3', { kind: 'KYC_DOCUMENT' });
+      const { caseId, taskId } = await seedCaseWithTask('AT3', { workerRole: 'KYC_VERIFIER' });
       const verifier = await createUser({ username: 'kyc_at3', name: 'DESK A', role: 'KYC_VERIFIER' });
       await request(app)
         .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)

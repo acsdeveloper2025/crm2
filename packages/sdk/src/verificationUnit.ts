@@ -6,17 +6,7 @@ import { toUpper } from './text.js';
  * web, and tests. Mirrors crm2/db/v2/migrations/0001 column-for-column.
  * The cross-field invariants here MIRROR the DB CHECK constraints (defence in depth).
  */
-export const KINDS = ['FIELD_VISIT', 'KYC_DOCUMENT', 'DESK_DOCUMENT'] as const;
 export const WORKER_ROLES = ['FIELD_AGENT', 'KYC_VERIFIER'] as const;
-
-/** The visit type a unit's kind dictates (A2026-0623-05): a FIELD_VISIT unit is verified in the FIELD
- *  (a physical address visit); every other kind (KYC_DOCUMENT / DESK_DOCUMENT) is desk work, done at the
- *  OFFICE. The chain kind→worker_role→assignment pool is 1:1 (DB CHECK + assignment_pool_roles), so an
- *  operator-chosen visitType MUST match this — the server rejects a mismatch at create/assign/bulk.
- *  Accepts a raw kind string (the value flows up from a DB column) and is total over it. */
-export function visitTypeForKind(kind: string): 'FIELD' | 'OFFICE' {
-  return kind === 'FIELD_VISIT' ? 'FIELD' : 'OFFICE';
-}
 export const ASSIGNMENT_METHODS = ['TERRITORY_AUTO', 'MANUAL', 'DESK_POOL'] as const;
 export const BILLING_PROFILES = ['AGENT_COMMISSION', 'CLIENT_INVOICE'] as const;
 export const COMMISSION_PROFILES = ['FIELD_RATE', 'NONE'] as const;
@@ -25,15 +15,16 @@ export const REVERIFICATION_RULES = ['REVISIT_PARENT_RATE', 'RECHECK_FRESH_RATE'
 export const DEFAULT_RESULT_SET = ['Positive', 'Negative', 'Refer', 'Fraud'] as const;
 
 /**
- * Lightweight VU option for dropdowns (B-22). Carries `kind` on top of the generic {@link Option}
- * shape so a selector can filter by kind (rate-management splits FIELD_VISIT vs KYC_DOCUMENT).
- * Structurally assignable to {@link Option} (id/code/name) for callers that ignore `kind`.
+ * Lightweight VU option for dropdowns (B-22). Carries `workerRole` on top of the generic {@link Option}
+ * shape so a selector can split field vs desk units (rate-management: FIELD_AGENT needs geography, a
+ * KYC_VERIFIER unit is flat). Structurally assignable to {@link Option} (id/code/name) for callers that
+ * ignore `workerRole`.
  */
 export interface VerificationUnitOption {
   id: number;
   code: string;
   name: string;
-  kind: (typeof KINDS)[number];
+  workerRole: (typeof WORKER_ROLES)[number];
 }
 
 export interface VerificationUnit {
@@ -43,7 +34,6 @@ export interface VerificationUnit {
   description: string | null;
   version: number;
   category: string;
-  kind: (typeof KINDS)[number];
   workerRole: (typeof WORKER_ROLES)[number];
   assignmentMethod: (typeof ASSIGNMENT_METHODS)[number];
   requiredFormCode: string | null;
@@ -73,7 +63,6 @@ export interface VerificationUnit {
 /** The cross-field invariants — single source, reused by create + update + tests. */
 function applyInvariants(
   d: {
-    kind: string;
     workerRole: string;
     requiredPhotos: number;
     requiredGps: boolean;
@@ -89,32 +78,32 @@ function applyInvariants(
   const fail = (message: string, path: string) =>
     ctx.addIssue({ code: z.ZodIssueCode.custom, message, path: [path] });
 
-  if (d.kind === 'FIELD_VISIT') {
-    if (d.workerRole !== 'FIELD_AGENT') fail('FIELD_VISIT requires workerRole=FIELD_AGENT', 'workerRole');
-    if (d.requiredPhotos < 5) fail('FIELD_VISIT requires requiredPhotos>=5', 'requiredPhotos');
-    if (!d.requiredGps) fail('FIELD_VISIT requires requiredGps=true', 'requiredGps');
-    if (!d.requiredFormCode) fail('FIELD_VISIT requires a requiredFormCode', 'requiredFormCode');
+  // worker_role is the unit's single discriminator (ADR-0070): FIELD_AGENT ⇒ the field-visit profile,
+  // KYC_VERIFIER ⇒ the desk-document profile. Same invariants the DB CHECKs enforce, mirrored for errors.
+  if (d.workerRole === 'FIELD_AGENT') {
+    if (d.requiredPhotos < 5) fail('a FIELD_AGENT unit requires requiredPhotos>=5', 'requiredPhotos');
+    if (!d.requiredGps) fail('a FIELD_AGENT unit requires requiredGps=true', 'requiredGps');
+    if (!d.requiredFormCode) fail('a FIELD_AGENT unit requires a requiredFormCode', 'requiredFormCode');
     if (d.billingProfile !== 'AGENT_COMMISSION')
-      fail('FIELD_VISIT requires billingProfile=AGENT_COMMISSION', 'billingProfile');
+      fail('a FIELD_AGENT unit requires billingProfile=AGENT_COMMISSION', 'billingProfile');
     if (d.reportTemplateType !== 'FIELD_NARRATIVE')
-      fail('FIELD_VISIT requires reportTemplateType=FIELD_NARRATIVE', 'reportTemplateType');
+      fail('a FIELD_AGENT unit requires reportTemplateType=FIELD_NARRATIVE', 'reportTemplateType');
     if (d.reverificationRule !== 'REVISIT_PARENT_RATE')
-      fail('FIELD_VISIT requires reverificationRule=REVISIT_PARENT_RATE', 'reverificationRule');
+      fail('a FIELD_AGENT unit requires reverificationRule=REVISIT_PARENT_RATE', 'reverificationRule');
   }
-  if (d.kind === 'KYC_DOCUMENT') {
-    if (d.workerRole !== 'KYC_VERIFIER') fail('KYC_DOCUMENT requires workerRole=KYC_VERIFIER', 'workerRole');
-    if (d.requiredPhotos !== 0) fail('KYC_DOCUMENT requires requiredPhotos=0', 'requiredPhotos');
-    if (d.requiredGps) fail('KYC_DOCUMENT requires requiredGps=false', 'requiredGps');
+  if (d.workerRole === 'KYC_VERIFIER') {
+    if (d.requiredPhotos !== 0) fail('a KYC_VERIFIER unit requires requiredPhotos=0', 'requiredPhotos');
+    if (d.requiredGps) fail('a KYC_VERIFIER unit requires requiredGps=false', 'requiredGps');
     if (!d.requiredAttachments || d.requiredAttachments.length === 0)
-      fail('KYC_DOCUMENT requires at least one required attachment', 'requiredAttachments');
+      fail('a KYC_VERIFIER unit requires at least one required attachment', 'requiredAttachments');
     if (d.billingProfile !== 'CLIENT_INVOICE')
-      fail('KYC_DOCUMENT requires billingProfile=CLIENT_INVOICE', 'billingProfile');
+      fail('a KYC_VERIFIER unit requires billingProfile=CLIENT_INVOICE', 'billingProfile');
     if (d.commissionProfile !== 'NONE')
-      fail('KYC_DOCUMENT requires commissionProfile=NONE', 'commissionProfile');
+      fail('a KYC_VERIFIER unit requires commissionProfile=NONE', 'commissionProfile');
     if (d.reportTemplateType !== 'KYC_DOCUMENT')
-      fail('KYC_DOCUMENT requires reportTemplateType=KYC_DOCUMENT', 'reportTemplateType');
+      fail('a KYC_VERIFIER unit requires reportTemplateType=KYC_DOCUMENT', 'reportTemplateType');
     if (d.reverificationRule !== 'RECHECK_FRESH_RATE')
-      fail('KYC_DOCUMENT requires reverificationRule=RECHECK_FRESH_RATE', 'reverificationRule');
+      fail('a KYC_VERIFIER unit requires reverificationRule=RECHECK_FRESH_RATE', 'reverificationRule');
   }
 }
 
@@ -123,7 +112,6 @@ const baseShape = {
   name: z.string().min(1).transform(toUpper),
   description: z.string().transform(toUpper).nullish(),
   category: z.string().min(1).transform(toUpper),
-  kind: z.enum(KINDS),
   workerRole: z.enum(WORKER_ROLES),
   assignmentMethod: z.enum(ASSIGNMENT_METHODS),
   requiredFormCode: z.string().nullish(),
@@ -158,7 +146,6 @@ export const UpdateVerificationUnitSchema = z
   .object({ ...baseShape })
   .partial()
   .extend({
-    kind: z.enum(KINDS),
     workerRole: z.enum(WORKER_ROLES),
     requiredPhotos: z.number().int().min(0),
     requiredGps: z.boolean(),

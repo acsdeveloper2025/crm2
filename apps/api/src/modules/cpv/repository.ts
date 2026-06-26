@@ -302,7 +302,7 @@ export const cpvUnitRepository = {
     return query<ClientProductVerificationUnitView>(
       `SELECT cpvu.id, cpvu.client_product_id, cpvu.verification_unit_id, cpvu.is_active,
               cpvu.effective_from, cpvu.version, cpvu.created_at, cpvu.updated_at,
-              vu.code AS unit_code, vu.name AS unit_name, vu.kind AS unit_kind
+              vu.code AS unit_code, vu.name AS unit_name, vu.worker_role AS unit_worker_role
        FROM client_product_verification_units cpvu
        JOIN verification_units vu ON vu.id = cpvu.verification_unit_id
        ${clause}

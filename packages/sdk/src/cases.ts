@@ -206,10 +206,6 @@ export interface CaseTaskView {
   verificationUnitId: number;
   unitCode: string;
   unitName: string;
-  /** The verification unit's kind (matches `KINDS` in verificationUnit.ts): FIELD_VISIT (address, field)
-   *  vs KYC_DOCUMENT / DESK_DOCUMENT (desk). Lets a consumer tell a field task from a desk task without
-   *  re-fetching the unit (e.g. the case-detail Field Report card shows FIELD_VISIT tasks only). */
-  unitKind: 'FIELD_VISIT' | 'KYC_DOCUMENT' | 'DESK_DOCUMENT';
   /** Display task number `case_number-<seq>` (device shows it, never parses it; ADR-0023). */
   taskNumber: string;
   /** Lineage (ADR-0033): ORIGINAL, or REVISIT/RECHECK of `parentTaskId`. The commission gate reads it. */

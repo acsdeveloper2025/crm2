@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  KINDS,
   exportQueryToParams,
   pageQueryToParams,
   type ExportRequest,
@@ -23,28 +22,27 @@ const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
   e instanceof ApiError && e.status === HTTP_CONFLICT && e.code === 'STALE_UPDATE';
 
-/** Unit kind → semantic chip tokens (no raw colors). */
-function KindBadge({ kind }: { kind: string }) {
+/** Unit worker role → readable label (ADR-0070: worker_role is the unit discriminator). */
+const WORKER_ROLE_LABELS: Record<string, string> = {
+  FIELD_AGENT: 'Field',
+  KYC_VERIFIER: 'Desk/Office',
+};
+const WORKER_ROLE_OPTIONS = Object.entries(WORKER_ROLE_LABELS).map(([value, label]) => ({ value, label }));
+
+/** Unit worker role → semantic chip tokens (no raw colors). */
+function WorkerRoleBadge({ workerRole }: { workerRole: string }) {
   const map: Record<string, string> = {
-    FIELD_VISIT: 'bg-st-in-progress-bg text-st-in-progress',
-    KYC_DOCUMENT: 'bg-st-assigned-bg text-st-assigned',
-    DESK_DOCUMENT: 'bg-st-under-review-bg text-st-under-review',
+    FIELD_AGENT: 'bg-st-in-progress-bg text-st-in-progress',
+    KYC_VERIFIER: 'bg-st-assigned-bg text-st-assigned',
   };
   return (
     <span
-      className={`rounded px-2 py-0.5 text-xs font-medium ${map[kind] ?? 'bg-muted text-muted-foreground'}`}
+      className={`rounded px-2 py-0.5 text-xs font-medium ${map[workerRole] ?? 'bg-muted text-muted-foreground'}`}
     >
-      {kind.replace('_', ' ')}
+      {WORKER_ROLE_LABELS[workerRole] ?? workerRole}
     </span>
   );
 }
-
-const KIND_LABELS: Record<string, string> = {
-  FIELD_VISIT: 'Field Visit',
-  KYC_DOCUMENT: 'KYC Document',
-  DESK_DOCUMENT: 'Desk Document',
-};
-const KIND_OPTIONS = KINDS.map((k) => ({ value: k, label: KIND_LABELS[k] ?? k }));
 
 export function VerificationUnitsPage() {
   const qc = useQueryClient();
@@ -83,12 +81,12 @@ export function VerificationUnitsPage() {
         cell: (u) => <span className="text-muted-foreground">{u.category}</span>,
       },
       {
-        id: 'kind',
-        header: 'Kind',
+        id: 'workerRole',
+        header: 'Worker',
         sortable: true,
         filterable: true,
-        filterOptions: KIND_OPTIONS,
-        cell: (u) => <KindBadge kind={u.kind} />,
+        filterOptions: WORKER_ROLE_OPTIONS,
+        cell: (u) => <WorkerRoleBadge workerRole={u.workerRole} />,
       },
       {
         id: 'billing',

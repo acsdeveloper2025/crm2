@@ -44,7 +44,7 @@ function seeded<T>(res: request.Response): T {
 
 async function seedCpvUnit(
   tag: string,
-  opts: { kind?: 'FIELD_VISIT' | 'KYC_DOCUMENT' } = {},
+  opts: { workerRole?: 'KYC_VERIFIER' } = {},
 ): Promise<{ clientId: number; productId: number; unitId: number }> {
   const clientId = seeded<{ id: number }>(
     await request(app)
@@ -58,12 +58,17 @@ async function seedCpvUnit(
       .set(SA)
       .send(productFactory({ code: `P_${tag}` })),
   ).id;
-  // A KYC unit lets a desk (OFFICE) task pass the visitType↔kind binding (A2026-0623-05).
+  // A KYC unit lets a desk (OFFICE) task pass the visitType↔worker-role binding (A2026-0623-05).
   const unitId = seeded<{ id: number }>(
     await request(app)
       .post('/api/v2/verification-units')
       .set(SA)
-      .send(verificationUnitFactory({ code: `U_${tag}`, ...(opts.kind ? { kind: opts.kind } : {}) })),
+      .send(
+        verificationUnitFactory({
+          code: `U_${tag}`,
+          ...(opts.workerRole ? { workerRole: opts.workerRole } : {}),
+        }),
+      ),
   ).id;
   const cpId = seeded<{ id: number }>(
     await request(app)
@@ -467,7 +472,7 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
   });
 
   it('§4 office (ADR-0050): a flat OFFICE commission resolves for a desk task — auto-stamped field_rate_type=OFFICE, location-less', async () => {
-    const ctx = await seedCpvUnit('OFF', { kind: 'KYC_DOCUMENT' }); // desk task ⇒ KYC unit (binding)
+    const ctx = await seedCpvUnit('OFF', { workerRole: 'KYC_VERIFIER' }); // desk task ⇒ KYC unit (binding)
     // the office executive = the OFFICE assignment pool (relays the task; never completes it).
     const officeExec = await createUser({ username: 'off_kyc', name: 'OFF DESK', role: 'KYC_VERIFIER' });
     // A location-less client rate (the desk task has no trip/location) so the bill resolves, and a FLAT

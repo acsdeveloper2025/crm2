@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { VISIT_TYPES, FIELD_RATE_TYPES } from './cases.js';
 import type { CaseTaskStatus, FieldRateType, VisitType } from './cases.js';
-import type { KINDS } from './verificationUnit.js';
 
 /**
  * @crm2/sdk — Pipeline contract (operations task queue). A TaskView is one `case_task` row with
@@ -22,7 +21,6 @@ export interface TaskView {
   verificationUnitId: number;
   unitCode: string;
   unitName: string;
-  unitKind: (typeof KINDS)[number];
   status: CaseTaskStatus;
   assignedTo: string | null;
   assignedToName: string | null;

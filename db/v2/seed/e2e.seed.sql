@@ -41,7 +41,7 @@ BEGIN
 
   SELECT id INTO v_client_id FROM clients WHERE code = 'HDFC';
   SELECT id INTO v_product_id FROM products WHERE code = 'HL';
-  SELECT id INTO v_unit_id FROM verification_units WHERE kind = 'FIELD_VISIT' ORDER BY id LIMIT 1;
+  SELECT id INTO v_unit_id FROM verification_units WHERE worker_role = 'FIELD_AGENT' ORDER BY id LIMIT 1;
 
   INSERT INTO cases (case_number, client_id, product_id, status, dedupe_decision, backend_contact_number)
   VALUES ('E2E-0001', v_client_id, v_product_id, 'NEW', 'NO_DUPLICATES_FOUND', '9990000001')
@@ -89,7 +89,7 @@ INSERT INTO rates (client_id, product_id, verification_unit_id, location_id, rat
 SELECT
   (SELECT id FROM clients WHERE code = 'HDFC'),
   (SELECT id FROM products WHERE code = 'HL'),
-  (SELECT id FROM verification_units WHERE kind = 'FIELD_VISIT' ORDER BY id LIMIT 1),
+  (SELECT id FROM verification_units WHERE worker_role = 'FIELD_AGENT' ORDER BY id LIMIT 1),
   (SELECT id FROM locations WHERE pincode = '400001' AND area = 'Fort' LIMIT 1),
   (SELECT id FROM rate_types WHERE code = 'LOCAL'),
   250

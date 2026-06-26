@@ -19,11 +19,11 @@ const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
   e instanceof ApiError && e.status === HTTP_CONFLICT && e.code === 'STALE_UPDATE';
 
-type Kind = 'FIELD_VISIT' | 'KYC_DOCUMENT';
+type WorkerRole = 'FIELD_AGENT' | 'KYC_VERIFIER';
 
-/** kind → the locked invariant profile (so the UI cannot author an invalid unit). */
-function profileFor(kind: Kind) {
-  return kind === 'FIELD_VISIT'
+/** worker_role → the locked invariant profile (ADR-0070 — so the UI cannot author an invalid unit). */
+function profileFor(workerRole: WorkerRole) {
+  return workerRole === 'FIELD_AGENT'
     ? {
         workerRole: 'FIELD_AGENT',
         assignmentMethod: 'TERRITORY_AUTO',
@@ -110,7 +110,7 @@ function UnitForm({ initial }: { initial: VerificationUnit | null }) {
   const [code, setCode] = useState(initial?.code ?? '');
   const [name, setName] = useState(initial?.name ?? '');
   const [category, setCategory] = useState(initial?.category ?? 'FIELD');
-  const [kind, setKind] = useState<Kind>((initial?.kind as Kind) ?? 'FIELD_VISIT');
+  const [workerRole, setWorkerRole] = useState<WorkerRole>(initial?.workerRole ?? 'FIELD_AGENT');
   const [requiredFormCode, setRequiredFormCode] = useState(initial?.requiredFormCode ?? '');
   const [piiSensitive, setPiiSensitive] = useState(initial?.piiSensitive ?? false);
   const [description, setDescription] = useState(initial?.description ?? '');
@@ -121,23 +121,22 @@ function UnitForm({ initial }: { initial: VerificationUnit | null }) {
   const [conflict, setConflict] = useState<{ updatedAt?: string; version?: number } | null>(null);
 
   useEffect(() => {
-    if (!isEdit) setCategory(kind === 'FIELD_VISIT' ? 'FIELD' : 'IDENTITY');
-  }, [kind, isEdit]);
+    if (!isEdit) setCategory(workerRole === 'FIELD_AGENT' ? 'FIELD' : 'IDENTITY');
+  }, [workerRole, isEdit]);
 
   // The exact write payload (sans OCC `version`) — reused by both the mutation and client validation,
   // so the inline checks run over the SAME field names the server schema enforces.
   const buildPayload = () => {
-    const profile = profileFor(kind);
+    const profile = profileFor(workerRole);
     return {
       ...profile,
       code,
       name,
       category,
-      kind,
       description: description || null,
       piiSensitive,
       ...(toIsoDate(effectiveFrom) ? { effectiveFrom: toIsoDate(effectiveFrom) } : {}),
-      ...(kind === 'FIELD_VISIT' ? { requiredFormCode: requiredFormCode || code } : {}),
+      ...(workerRole === 'FIELD_AGENT' ? { requiredFormCode: requiredFormCode || code } : {}),
     };
   };
 
@@ -203,15 +202,15 @@ function UnitForm({ initial }: { initial: VerificationUnit | null }) {
             <span className="mt-1 block text-xs text-destructive">{fieldErrors['name']}</span>
           )}
         </Field>
-        <Field label="Kind">
+        <Field label="Worker Role">
           <select
             className="input"
-            value={kind}
+            value={workerRole}
             disabled={isEdit}
-            onChange={(e) => setKind(e.target.value as Kind)}
+            onChange={(e) => setWorkerRole(e.target.value as WorkerRole)}
           >
-            <option value="FIELD_VISIT">Field Visit</option>
-            <option value="KYC_DOCUMENT">KYC Document</option>
+            <option value="FIELD_AGENT">Field Agent (field visit)</option>
+            <option value="KYC_VERIFIER">KYC Verifier (desk document)</option>
           </select>
         </Field>
         <Field label="Category">
@@ -220,7 +219,7 @@ function UnitForm({ initial }: { initial: VerificationUnit | null }) {
             <span className="mt-1 block text-xs text-destructive">{fieldErrors['category']}</span>
           )}
         </Field>
-        {kind === 'FIELD_VISIT' && (
+        {workerRole === 'FIELD_AGENT' && (
           <Field label="Form code">
             <Input
               className="input"
@@ -253,7 +252,7 @@ function UnitForm({ initial }: { initial: VerificationUnit | null }) {
           PII sensitive (DPDP masking)
         </label>
         <p className="rounded bg-surface-muted p-2 text-xs text-muted-foreground">
-          {kind === 'FIELD_VISIT'
+          {workerRole === 'FIELD_AGENT'
             ? 'Profile locked: FIELD_AGENT · ≥5 photos · GPS · agent commission · revisit (parent rate).'
             : 'Profile locked: KYC_VERIFIER · document · client invoice · no commission · recheck (fresh rate).'}
         </p>

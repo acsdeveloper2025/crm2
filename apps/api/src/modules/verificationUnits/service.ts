@@ -1,7 +1,7 @@
 import {
   CreateVerificationUnitSchema,
   EffectiveFromSchema,
-  KINDS,
+  WORKER_ROLES,
   type CreateVerificationUnitInput,
   type VerificationUnit,
   type VerificationUnitOption,
@@ -32,7 +32,7 @@ const VU_PAGE_SPEC: PageSpec = {
   sortMap: {
     code: 'code',
     name: 'name',
-    kind: 'kind',
+    workerRole: 'worker_role',
     category: 'category',
     sortOrder: 'sort_order',
     status: 'is_active',
@@ -44,8 +44,8 @@ const VU_PAGE_SPEC: PageSpec = {
     code: { column: 'code', kind: 'text' },
     name: { column: 'name', kind: 'text' },
     category: { column: 'category', kind: 'text' },
-    // Excel-style multi-select (§7): the fixed unit-kind enum.
-    kind: { column: 'kind', kind: 'enum', values: KINDS },
+    // Excel-style multi-select (§7): the fixed worker-role enum.
+    workerRole: { column: 'worker_role', kind: 'enum', values: WORKER_ROLES },
     createdAt: { column: 'created_at', kind: 'date' },
     effectiveFrom: { column: 'effective_from', kind: 'date' },
   },
@@ -56,7 +56,7 @@ const VU_PAGE_SPEC: PageSpec = {
 /**
  * requiredAttachments round-trips through a single spreadsheet cell as a comma-separated list of
  * `TYPE:MIN` tokens (MIN omitted ⇒ 1), e.g. "DOCUMENT,PAN:2" ⇄ [{type:'DOCUMENT',min:1},{type:'PAN',min:2}].
- * Blank ⇒ undefined so the Create schema applies its [] default (valid for non-KYC units; the KYC_DOCUMENT
+ * Blank ⇒ undefined so the Create schema applies its [] default (valid for non-KYC units; the KYC_VERIFIER
  * invariant requires ≥1, so a KYC import row must carry this cell — previously impossible, GAP-VU-1).
  */
 const parseAttachmentList = (raw: unknown): unknown => {
@@ -90,10 +90,10 @@ const formatAttachmentList = (list: unknown[]): string =>
     .join(',');
 
 /**
- * The DataGrid export manifest. The first 20 columns mirror VU_IMPORT_COLUMNS (same headers) so an
+ * The DataGrid export manifest. The first columns mirror VU_IMPORT_COLUMNS (same headers) so an
  * export re-imports losslessly (every Create-form field is present and re-mappable); the trailing
  * read-only audit columns (Created/Updated/Status) are ignored on re-import. The `id`s of the columns
- * the FE grid shows (code/name/category/kind/billing/effectiveFrom/createdAt/updatedAt/status) match
+ * the FE grid shows (code/name/category/workerRole/billing/effectiveFrom/createdAt/updatedAt/status) match
  * the grid column ids so the visible-columns (`cols`) selection still filters + orders them.
  */
 const VU_EXPORT_COLUMNS: ExportColumn<VerificationUnit>[] = [
@@ -101,7 +101,6 @@ const VU_EXPORT_COLUMNS: ExportColumn<VerificationUnit>[] = [
   { id: 'name', header: 'Name', value: (r) => r.name },
   { id: 'description', header: 'Description', value: (r) => r.description ?? '' },
   { id: 'category', header: 'Category', value: (r) => r.category },
-  { id: 'kind', header: 'Kind', value: (r) => r.kind },
   { id: 'workerRole', header: 'Worker Role', value: (r) => r.workerRole },
   { id: 'assignmentMethod', header: 'Assignment Method', value: (r) => r.assignmentMethod },
   { id: 'requiredFormCode', header: 'Required Form Code', value: (r) => r.requiredFormCode ?? '' },
@@ -137,13 +136,12 @@ const VU_IMPORT_COLUMNS: ImportColumn[] = [
   { id: 'name', header: 'Name', required: true },
   { id: 'description', header: 'Description' },
   { id: 'category', header: 'Category', required: true },
-  { id: 'kind', header: 'Kind', required: true },
   { id: 'workerRole', header: 'Worker Role', required: true },
   { id: 'assignmentMethod', header: 'Assignment Method', required: true },
   { id: 'requiredFormCode', header: 'Required Form Code' },
   { id: 'requiredPhotos', header: 'Required Photos', parse: parseInteger },
   { id: 'requiredGps', header: 'Required GPS', parse: parseBoolean },
-  // KYC_DOCUMENT units require ≥1 attachment; without this column those rows could never import (GAP-VU-1).
+  // KYC_VERIFIER units require ≥1 attachment; without this column those rows could never import (GAP-VU-1).
   { id: 'requiredAttachments', header: 'Required Attachments', parse: parseAttachmentList },
   { id: 'resultSet', header: 'Result Set', parse: parseCsvList },
   { id: 'reviewRequired', header: 'Review Required', parse: parseBoolean },
@@ -159,7 +157,7 @@ const VU_IMPORT_COLUMNS: ImportColumn[] = [
 /**
  * Import contract (B-14): the full VU column manifest + the Create schema (which runs `applyInvariants`).
  * FK-free → no `resolve`; `TInput = CreateVerificationUnitInput`. The sample row mirrors the seeded
- * RESIDENCE FIELD_VISIT unit so it passes the cross-field invariants.
+ * RESIDENCE FIELD_AGENT unit so it passes the cross-field invariants.
  */
 const VU_IMPORT_SPEC: ImportSpec<CreateVerificationUnitInput> = {
   resource: 'verification-units',
@@ -171,14 +169,13 @@ const VU_IMPORT_SPEC: ImportSpec<CreateVerificationUnitInput> = {
     name: 'Residence Verification',
     description: 'Physical residence verification',
     category: 'FIELD',
-    kind: 'FIELD_VISIT',
     workerRole: 'FIELD_AGENT',
     assignmentMethod: 'TERRITORY_AUTO',
     requiredFormCode: 'RESIDENCE_FORM',
     requiredPhotos: 5,
     requiredGps: 'true',
     // demonstrates the Required Attachments cell grammar in the downloadable template: comma-separated
-    // `TYPE[:MIN]` tokens (MIN omitted ⇒ 1). KYC_DOCUMENT units MUST carry ≥1; FIELD_VISIT may leave it blank.
+    // `TYPE[:MIN]` tokens (MIN omitted ⇒ 1). KYC_VERIFIER units MUST carry ≥1; FIELD_AGENT may leave it blank.
     requiredAttachments: 'DOCUMENT,PAN:2',
     resultSet: 'Positive,Negative,Refer,Fraud',
     reviewRequired: 'true',
@@ -202,14 +199,14 @@ const VU_IMPORT_SPEC: ImportSpec<CreateVerificationUnitInput> = {
 export const verificationUnitService = {
   async list(rawQuery: Record<string, unknown>): Promise<Paginated<VerificationUnit>> {
     const r = resolvePage(rawQuery, VU_PAGE_SPEC);
-    const rawKind = rawQuery['kind'];
-    const kind = typeof rawKind === 'string' ? rawKind : undefined;
+    const rawWorkerRole = rawQuery['workerRole'];
+    const workerRole = typeof rawWorkerRole === 'string' ? rawWorkerRole : undefined;
     const rawCategory = rawQuery['category'];
     const category = typeof rawCategory === 'string' ? rawCategory : undefined;
     const active = rawQuery['active'] === 'true' ? true : rawQuery['active'] === 'false' ? false : undefined;
     const columnFilters = resolveFilters(rawQuery, VU_PAGE_SPEC);
     const { items, totalCount } = await repo.list({
-      ...(kind !== undefined ? { kind } : {}),
+      ...(workerRole !== undefined ? { workerRole } : {}),
       ...(category !== undefined ? { category } : {}),
       ...(active !== undefined ? { active } : {}),
       ...(r.search !== undefined ? { search: r.search } : {}),
@@ -220,7 +217,7 @@ export const verificationUnitService = {
       offset: r.offset,
     });
     const filters: Record<string, unknown> = {};
-    if (kind !== undefined) filters['kind'] = kind;
+    if (workerRole !== undefined) filters['workerRole'] = workerRole;
     if (category !== undefined) filters['category'] = category;
     if (active !== undefined) filters['active'] = active;
     if (r.search !== undefined) filters['search'] = r.search;
@@ -230,14 +227,14 @@ export const verificationUnitService = {
 
   /**
    * Export rows for the DataGrid (IMPORT_EXPORT_STANDARD). Re-runs the SAME list query
-   * (kind/category/active/search/filters/sort) — `current` = the exact page; `all` = every matching row
+   * (workerRole/category/active/search/filters/sort) — `current` = the exact page; `all` = every matching row
    * (no page LIMIT, capped at the job threshold → 413 EXPORT_TOO_LARGE above it). Returns rows + the
    * module column manifest; the controller streams the file.
    */
   async exportData(rawQuery: Record<string, unknown>, ex: ResolvedExport) {
     const r = resolvePage(rawQuery, VU_PAGE_SPEC);
-    const rawKind = rawQuery['kind'];
-    const kind = typeof rawKind === 'string' ? rawKind : undefined;
+    const rawWorkerRole = rawQuery['workerRole'];
+    const workerRole = typeof rawWorkerRole === 'string' ? rawWorkerRole : undefined;
     const rawCategory = rawQuery['category'];
     const category = typeof rawCategory === 'string' ? rawCategory : undefined;
     const active = rawQuery['active'] === 'true' ? true : rawQuery['active'] === 'false' ? false : undefined;
@@ -249,7 +246,7 @@ export const verificationUnitService = {
     if (ex.mode === 'selected' && (!selectedIds || selectedIds.length === 0))
       return { rows: [], columns: VU_EXPORT_COLUMNS };
     const { items, totalCount } = await repo.list({
-      ...(kind !== undefined ? { kind } : {}),
+      ...(workerRole !== undefined ? { workerRole } : {}),
       ...(category !== undefined ? { category } : {}),
       ...(active !== undefined ? { active } : {}),
       ...(r.search !== undefined ? { search: r.search } : {}),

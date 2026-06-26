@@ -2,7 +2,6 @@ import {
   CreateRateSchema,
   UpdateRateSchema,
   ReviseRateSchema,
-  KINDS,
   type Rate,
   type RateHistory,
   type RateView,
@@ -28,7 +27,6 @@ const RATE_PAGE_SPEC: PageSpec = {
   sortMap: {
     client: 'c.name',
     product: 'p.name',
-    kind: 'vu.kind',
     unit: 'vu.name',
     pincode: 'l.pincode',
     area: 'l.area',
@@ -40,7 +38,6 @@ const RATE_PAGE_SPEC: PageSpec = {
     updatedAt: 'r.updated_at',
   },
   filterMap: {
-    kind: { column: 'vu.kind', kind: 'enum', values: KINDS },
     unit: { column: 'vu.name', kind: 'text' },
     pincode: { column: 'l.pincode', kind: 'text' },
     area: { column: 'l.area', kind: 'text' },
@@ -66,7 +63,6 @@ const toPosInt = (v: unknown): number | undefined => {
 const RATE_EXPORT_COLUMNS: ExportColumn<RateView>[] = [
   { id: 'client', header: 'Client', value: (r) => r.clientCode },
   { id: 'product', header: 'Product', value: (r) => r.productCode },
-  { id: 'kind', header: 'Kind', value: (r) => r.unitKind.replace(/_/g, ' ') },
   { id: 'unit', header: 'Verification Unit', value: (r) => r.unitName },
   { id: 'pincode', header: 'Pincode', value: (r) => r.pincode },
   { id: 'area', header: 'Area', value: (r) => r.area },

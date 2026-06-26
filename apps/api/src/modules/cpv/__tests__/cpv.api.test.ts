@@ -203,7 +203,7 @@ describe.skipIf(!RUN)('CPV API', () => {
     expect(list.status).toBe(200);
     expect(list.body).toHaveLength(1);
     expect(list.body[0].unitCode).toBe('U_CPV5');
-    expect(list.body[0].unitKind).toBeTruthy();
+    expect(list.body[0].unitWorkerRole).toBeTruthy();
     expect(list.body[0].version).toBe(1); // list must return the OCC token (toggle needs it)
   });
 

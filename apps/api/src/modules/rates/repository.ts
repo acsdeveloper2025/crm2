@@ -31,7 +31,7 @@ const RATE_VIEW_COLS = `r.id, r.client_id, r.product_id, r.verification_unit_id,
        r.version, r.created_by, r.updated_by, r.created_at, r.updated_at,
        c.code AS client_code, c.name AS client_name,
        p.code AS product_code, p.name AS product_name,
-       vu.code AS unit_code, vu.name AS unit_name, vu.kind AS unit_kind,
+       vu.code AS unit_code, vu.name AS unit_name,
        l.pincode, l.area`;
 
 const mapWriteError = (e: unknown): never => {

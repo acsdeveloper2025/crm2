@@ -103,17 +103,24 @@ describe.skipIf(!RUN)('rates API', () => {
   });
 
   // ── column filters on JOINED columns (DATAGRID_STANDARD §6/§7); count + items share RATE_FROM ──
-  it('f_kind (enum, on the joined vu.kind) filters count AND items, and echoes', async () => {
+  it('f_unit (text, on the joined vu.name) filters count AND items, and echoes', async () => {
     const key = await seedKey('FLT');
     await request(app)
       .post('/api/v2/rates')
       .set(SA)
-      .send({ ...key, amount: 42 }); // unit kind defaults to FIELD_VISIT
-    const hit = await request(app).get('/api/v2/rates?f_kind=FIELD_VISIT').set(SA);
+      .send({ ...key, amount: 42 });
+    const created = (await request(app).get('/api/v2/rates').set(SA)).body.items as {
+      verificationUnitId: number;
+      unitName: string;
+    }[];
+    const unitName = created.find((r) => r.verificationUnitId === key.verificationUnitId)!.unitName;
+    const hit = await request(app)
+      .get(`/api/v2/rates?f_unit=${encodeURIComponent(unitName)}`)
+      .set(SA);
     expect(hit.body.totalCount).toBe(1); // count applied the joined filter (no count/items divergence)
     expect(hit.body.items).toHaveLength(1);
-    expect(hit.body.filters.f_kind).toBe('FIELD_VISIT');
-    const none = await request(app).get('/api/v2/rates?f_kind=KYC_DOCUMENT').set(SA);
+    expect(hit.body.filters.f_unit).toBe(unitName);
+    const none = await request(app).get('/api/v2/rates?f_unit=ZZZ_NO_SUCH_UNIT').set(SA);
     expect(none.body.totalCount).toBe(0);
   });
 
@@ -420,7 +427,7 @@ describe.skipIf(!RUN)('rates API', () => {
       expect(res.headers['content-type']).toContain('text/csv');
       expect(res.headers['content-disposition']).toMatch(/attachment; filename="rates-\d{8}\.csv"/);
       expect(res.text.split('\r\n')[0]).toBe(
-        'Client,Product,Kind,Verification Unit,Pincode,Area,Rate Type,Rate,Currency,Effective From,Effective To,Created,Updated,Status',
+        'Client,Product,Verification Unit,Pincode,Area,Rate Type,Rate,Currency,Effective From,Effective To,Created,Updated,Status',
       );
       expect(res.text).toContain('C_EXP1,P_EXP1');
       expect(res.text).toContain(',INR,'); // currency now exported (lossless round-trip)
@@ -474,7 +481,7 @@ describe.skipIf(!RUN)('rates API', () => {
       const res = await request(app).get(`/api/v2/rates/export?format=csv&mode=selected&ids=${a.id}`).set(SA);
       expect(res.status).toBe(200);
       expect(res.text.split('\r\n')[0]).toBe(
-        'Client,Product,Kind,Verification Unit,Pincode,Area,Rate Type,Rate,Currency,Effective From,Effective To,Created,Updated,Status',
+        'Client,Product,Verification Unit,Pincode,Area,Rate Type,Rate,Currency,Effective From,Effective To,Created,Updated,Status',
       );
       expect(res.text).toContain('C_SELA');
       expect(res.text).not.toContain('C_SELB'); // the unticked row is excluded

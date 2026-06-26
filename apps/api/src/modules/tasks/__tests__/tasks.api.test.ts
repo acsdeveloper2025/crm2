@@ -179,11 +179,11 @@ describe.skipIf(!RUN)('tasks API (Pipeline)', () => {
     expect(row.taskNumber).toMatch(/^CASE-\d{6}-\d+$/); // per-task number (ADR-0023)
     expect(row.clientName).toBeTruthy();
     expect(row.primaryName).toBe('ENV APP');
-    expect(row.unitKind).toBe('FIELD_VISIT');
+    expect(row.visitType).toBeNull(); // PENDING tasks have no visit type until assigned
     expect(row.status).toBe('PENDING');
   });
 
-  it('filters: status domain param + f_unitKind enum + f_caseNumber text; echoes into envelope', async () => {
+  it('filters: status domain param + f_visitType enum + f_caseNumber text; echoes into envelope', async () => {
     const ctx = await seedCpv('FLT');
     const a = await seedCaseTasks(ctx, { name: 'FLT ONE', unitIds: [ctx.unitAId] });
     await seedCaseTasks(ctx, { name: 'FLT TWO', unitIds: [ctx.unitBId] });
@@ -195,10 +195,13 @@ describe.skipIf(!RUN)('tasks API (Pipeline)', () => {
     expect(assigned.body.items[0].id).toBe(a.taskIds[0]);
     expect(assigned.body.filters.status).toBe('ASSIGNED');
 
-    const kind = await request(app).get('/api/v2/tasks?f_unitKind=FIELD_VISIT').set(SA);
-    expect(kind.body.totalCount).toBe(2);
-    const noKind = await request(app).get('/api/v2/tasks?f_unitKind=KYC_DOCUMENT').set(SA);
-    expect(noKind.body.totalCount).toBe(0);
+    // visit_type is set at assignment (task `a[0]` was assigned visitType FIELD above); the other
+    // tasks stay PENDING/null, so FIELD matches exactly the assigned one and OFFICE matches none.
+    const fieldVisit = await request(app).get('/api/v2/tasks?f_visitType=FIELD').set(SA);
+    expect(fieldVisit.body.totalCount).toBe(1);
+    expect(fieldVisit.body.items[0].id).toBe(a.taskIds[0]);
+    const officeVisit = await request(app).get('/api/v2/tasks?f_visitType=OFFICE').set(SA);
+    expect(officeVisit.body.totalCount).toBe(0);
 
     const caseNumber = (await request(app).get(`/api/v2/cases/${a.caseId}`).set(SA)).body
       .caseNumber as string;
@@ -700,7 +703,7 @@ describe.skipIf(!RUN)('tasks API (Pipeline)', () => {
       expect(res.headers['content-type']).toContain('text/csv');
       const header = (res.text as string).split(/\r?\n/)[0];
       expect(header).toBe(
-        'Case,Task,Client,Applicant,Unit,Kind,Status,Assignee,Bill Count,Bill Amount,Commission,Assigned At,Created,Updated',
+        'Case,Task,Client,Applicant,Unit,Visit Type,Status,Assignee,Bill Count,Bill Amount,Commission,Assigned At,Created,Updated',
       );
       expect(res.text).toContain('EX APP');
       const denied = await request(app).get('/api/v2/tasks/export?format=csv&mode=current').set(FA);

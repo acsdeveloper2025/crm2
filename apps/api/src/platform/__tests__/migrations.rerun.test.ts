@@ -1,23 +1,27 @@
 import { describe, it, expect } from 'vitest';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { randomBytes } from 'node:crypto';
-import { readFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Pool } from 'pg';
 
 /**
- * Guardrail for the project's most-bitten prod hazard. The deploy runner (db/v2/migrate.sh) now applies
- * only NEW or EDITED migrations (tracked in `schema_migrations`), but idempotency is STILL required: (a)
- * the first deploy after the runner lands replays the full set once, and (b) an EDITED migration
- * re-applies — so a late migration that RENAMEs a column or DROP+ADDs a CHECK can still break an earlier
- * one when it re-executes. Exactly the `0037` (status CHECK) and `0083` (rate-type rename) incidents. The
- * per-file test harness builds its template by applying each migration ONCE, so it can't catch this. Here
- * we simulate THREE consecutive full applies against a fresh scratch DB and assert the set re-applies
- * cleanly and the schema converges (no resurrected pre-rename columns).
+ * Guardrail for the project's most-bitten prod hazard, now enforced via the tracked runner
+ * (db/v2/migrate.sh): the deploy applies each migration EXACTLY ONCE (recorded in `schema_migrations`)
+ * and never raw-replays the full set, so a late migration that DROPs a column an earlier one references
+ * (e.g. 0097 dropping `verification_units.kind`, which 0086 reads) can no longer break a re-run — the
+ * `0037`/`0083` trap is structurally gone. Here we drive the REAL runner 3× against a fresh scratch DB and
+ * assert it applies the full set cleanly once, SKIPS every migration on re-invocation, and the schema
+ * converges (rate-type FK columns/constraints, kind dropped, no resurrected pre-rename columns).
  */
 const RUN = !!process.env['DATABASE_URL'];
 const HERE = dirname(fileURLToPath(import.meta.url));
+const SCRIPT = resolve(HERE, '../../../../../db/v2/migrate.sh');
 const MIGRATIONS_DIR = resolve(HERE, '../../../../../db/v2/migrations');
+const sh = promisify(execFile);
 
 const baseName = (url: string): string => new URL(url).pathname.replace(/^\//, '');
 function withDbName(url: string, name: string): string {
@@ -26,14 +30,12 @@ function withDbName(url: string, name: string): string {
   return u.toString();
 }
 
-describe.skipIf(!RUN)('migrations re-run safety (prod re-applies the full set every deploy)', () => {
-  it('applies the entire migration set 3× without error and leaves no resurrected rate-type columns', async () => {
+describe.skipIf(!RUN)('migrations re-run safety (tracked runner applies once, skips thereafter)', () => {
+  it('runs the full migration set via migrate.sh 3× cleanly and converges the schema', async () => {
     const url = process.env['DATABASE_URL']!;
     const scratch = `${baseName(url)}_rerun_${randomBytes(5).toString('hex')}`;
-    const files = readdirSync(MIGRATIONS_DIR)
-      .filter((f) => f.endsWith('.sql'))
-      .sort();
-    const sql = files.map((f) => readFileSync(join(MIGRATIONS_DIR, f), 'utf8'));
+    const scratchUrl = withDbName(url, scratch);
+    const emptySeed = mkdtempSync(join(tmpdir(), 'crm2-rerun-seed-')); // skip the heavy data seeds
 
     const admin = new Pool({ connectionString: url, max: 1 });
     try {
@@ -43,20 +45,25 @@ describe.skipIf(!RUN)('migrations re-run safety (prod re-applies the full set ev
       await admin.end();
     }
 
-    const pool = new Pool({ connectionString: withDbName(url, scratch) });
+    const pool = new Pool({ connectionString: scratchUrl });
     try {
+      // pass 1 applies every migration (fresh DB → no backfill); passes 2-3 must SKIP every one cleanly.
       for (let pass = 1; pass <= 3; pass++) {
-        for (let i = 0; i < files.length; i++) {
-          // Each .sql is its own BEGIN;…COMMIT; — a non-idempotent statement throws here, naming the file.
-          await expect(pool.query(sql[i]!), `deploy ${pass}, migration ${files[i]}`).resolves.toBeDefined();
-        }
+        const { stdout } = await sh('sh', [SCRIPT], {
+          env: { ...process.env, DATABASE_URL: scratchUrl, MIGRATIONS_DIR, SEED_DIR: emptySeed },
+        });
+        if (pass > 1) expect(stdout, `deploy ${pass} should skip the unchanged set`).toContain('0 applied,');
       }
 
-      // ADR-0068 Phase C: the FK conversion DROPS the 3 old string columns in place (mig 0094). After a
-      // full 3× re-run the old `client_rate_type`/`field_rate_type` columns must stay GONE and only
-      // `rate_type_id` remains — every earlier migration that (re)creates the old columns (0011/0013/0079/
-      // 0083/0084) must no-op once the FK exists, or a re-run resurrects them (the 0037/0083 trap).
-      // `task_assignment_history.field_rate_type` is an append-only audit varchar — NOT converted, KEPT.
+      // ADR-0070: verification_units.kind is dropped (0097) and stays dropped across the re-runs.
+      const { rows: kindCol } = await pool.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM information_schema.columns
+          WHERE table_name = 'verification_units' AND column_name = 'kind'`,
+      );
+      expect(kindCol[0]!.n).toBe(0);
+
+      // ADR-0068 Phase C: the FK conversion DROPS the 3 old string columns in place (mig 0094) — only
+      // `rate_type_id` remains. `task_assignment_history.field_rate_type` is an append-only audit varchar — KEPT.
       const { rows } = await pool.query<{ table_name: string; cols: string }>(
         `SELECT table_name, string_agg(column_name, ',' ORDER BY column_name) AS cols
            FROM information_schema.columns
@@ -70,15 +77,14 @@ describe.skipIf(!RUN)('migrations re-run safety (prod re-applies the full set ev
       expect(byTable['commission_rates']).toBe('rate_type_id');
       expect(byTable['task_assignment_history']).toBe('field_rate_type');
 
-      // The billing/commission no-overlap integrity guards must survive the re-run.
+      // The billing/commission no-overlap integrity guards must be present.
       const { rows: cons } = await pool.query<{ conname: string }>(
         `SELECT conname FROM pg_constraint
           WHERE conname IN ('rates_no_overlap', 'commission_rates_no_overlap') ORDER BY conname`,
       );
       expect(cons.map((c) => c.conname)).toEqual(['commission_rates_no_overlap', 'rates_no_overlap']);
 
-      // ADR-0064 Phase A: rate_types gains name/description/category/version and an OFFICE row,
-      // and must survive the 3× re-run unchanged (idempotent ADD COLUMN + ON CONFLICT seed).
+      // ADR-0064 Phase A: rate_types gains name/description/category/version + a single OFFICE row.
       const { rows: rtCols } = await pool.query<{ cols: string }>(
         `SELECT string_agg(column_name, ',' ORDER BY column_name) AS cols
            FROM information_schema.columns WHERE table_name = 'rate_types'`,
@@ -87,10 +93,9 @@ describe.skipIf(!RUN)('migrations re-run safety (prod re-applies the full set ev
       const { rows: office } = await pool.query<{ n: string }>(
         `SELECT count(*)::text AS n FROM rate_types WHERE code = 'OFFICE' AND category = 'OFFICE'`,
       );
-      expect(office[0]!.n).toBe('1'); // exactly one OFFICE row after three deploys (ON CONFLICT no-dupe)
+      expect(office[0]!.n).toBe('1');
 
-      // ADR-0067 Phase B: rate_type_assignments + its UNIQUE constraint + partial index must survive
-      // the 3× re-run (idempotent CREATE TABLE IF NOT EXISTS / guarded constraint / CREATE INDEX IF NOT EXISTS).
+      // ADR-0067 Phase B: rate_type_assignments + its UNIQUE constraint + partial index exist.
       const { rows: rta } = await pool.query<{ n: string }>(
         `SELECT count(*)::text AS n FROM information_schema.tables WHERE table_name = 'rate_type_assignments'`,
       );
@@ -104,8 +109,7 @@ describe.skipIf(!RUN)('migrations re-run safety (prod re-applies the full set ev
       );
       expect(rtaIdx[0]!.n).toBe('1');
 
-      // ADR-0069: product_id/verification_unit_id become NULLABLE (NULL = Universal) and the unique key is
-      // NULLS NOT DISTINCT (so a Universal NULL row is a single value the bulk upsert dedupes). Survive 3×.
+      // ADR-0069: product_id/verification_unit_id are NULLABLE (NULL = Universal) with a NULLS NOT DISTINCT key.
       const { rows: rtaNull } = await pool.query<{ cols: string }>(
         `SELECT string_agg(column_name, ',' ORDER BY column_name) AS cols
            FROM information_schema.columns
@@ -118,10 +122,7 @@ describe.skipIf(!RUN)('migrations re-run safety (prod re-applies the full set ev
       );
       expect(rtaNnd[0]!.def).toContain('NULLS NOT DISTINCT');
 
-      // ADR-0068 Phase C: the rate_type_id FKs must SURVIVE the 3× re-run. This also proves the catalog is
-      // NOT dropped+recreated each deploy: 0013's unconditional `DROP TABLE rate_types CASCADE` (now
-      // guarded on rate_types.category) would CASCADE-drop these FKs, and 0094's `ADD COLUMN IF NOT EXISTS`
-      // would NOT re-create them (column already present) — so their survival is the catalog-stability proof.
+      // ADR-0068 Phase C: the rate_type_id FKs exist (catalog stability — not dropped+recreated each deploy).
       const { rows: fks } = await pool.query<{ conname: string }>(
         `SELECT conname FROM pg_constraint WHERE contype = 'f' AND conname IN
            ('rates_rate_type_id_fkey', 'commission_rates_rate_type_id_fkey', 'case_tasks_rate_type_id_fkey')
@@ -134,6 +135,7 @@ describe.skipIf(!RUN)('migrations re-run safety (prod re-applies the full set ev
       ]);
     } finally {
       await pool.end();
+      rmSync(emptySeed, { recursive: true, force: true });
       const admin2 = new Pool({ connectionString: url, max: 1 });
       try {
         await admin2.query(`DROP DATABASE IF EXISTS "${scratch}" WITH (FORCE)`);

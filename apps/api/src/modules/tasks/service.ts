@@ -1,8 +1,7 @@
 import {
   BulkAssignSchema,
   CASE_TASK_STATUSES,
-  KINDS,
-  visitTypeForKind,
+  VISIT_TYPES,
   type AssignableUser,
   type BulkAssignResult,
   type BulkAssignRowStatus,
@@ -27,7 +26,7 @@ const TASK_PAGE_SPEC: PageSpec = {
     clientName: 'cl.name',
     primaryName: 'pa.name',
     unitName: 'vu.name',
-    unitKind: 'vu.kind',
+    visitType: 'ct.visit_type',
     status: 'ct.status',
     assignedToName: 'au.name',
     assignedAt: 'ct.assigned_at',
@@ -43,7 +42,7 @@ const TASK_PAGE_SPEC: PageSpec = {
     clientName: { column: 'cl.name', kind: 'text' },
     primaryName: { column: 'pa.name', kind: 'text' },
     unitName: { column: 'vu.name', kind: 'text' },
-    unitKind: { column: 'vu.kind', kind: 'enum', values: KINDS },
+    visitType: { column: 'ct.visit_type', kind: 'enum', values: VISIT_TYPES },
     status: { column: 'ct.status', kind: 'enum', values: CASE_TASK_STATUSES },
     assignedToName: { column: 'au.name', kind: 'text' },
     createdAt: { column: 'ct.created_at', kind: 'date' },
@@ -63,7 +62,7 @@ function taskExportColumns(canViewBilling: boolean): ExportColumn<TaskView>[] {
     { id: 'clientName', header: 'Client', value: (r) => r.clientName },
     { id: 'primaryName', header: 'Applicant', value: (r) => r.primaryName },
     { id: 'unitName', header: 'Unit', value: (r) => `${r.unitCode} — ${r.unitName}` },
-    { id: 'unitKind', header: 'Kind', value: (r) => r.unitKind },
+    { id: 'visitType', header: 'Visit Type', value: (r) => r.visitType ?? '' },
     { id: 'status', header: 'Status', value: (r) => r.status },
     { id: 'assignedToName', header: 'Assignee', value: (r) => r.assignedToName },
     { id: 'billCount', header: 'Bill Count', value: (r) => r.billCount },
@@ -274,10 +273,6 @@ export const taskService = {
         // ADR-0055: bulk assigns only a PENDING task — same rule as single-assign (cases/service.ts).
         // A live ASSIGNED task is never re-pointed in place; the office Revokes (mandatory reason) then
         // reassigns the REVOKED task (reassign-after-revoke, ADR-0033), so every agent change is audited.
-        status = 'NOT_ASSIGNABLE';
-      } else if (visitTypeForKind(row.unitKind) !== v.visitType) {
-        // A2026-0623-05: the bulk visitType must match each task's unit kind (FIELD_VISIT⇒FIELD,
-        // KYC/desk⇒OFFICE). A mismatched row is not assignable under the chosen visit type.
         status = 'NOT_ASSIGNABLE';
       } else if (!eligible.has(item.id)) {
         status = 'INELIGIBLE_ASSIGNEE';

@@ -88,7 +88,7 @@ packages/test-utils/src/
 **Factories required:** Users · Clients · Products · **Verification Units** · Cases · Tasks · Assignments (all listed — implemented in this package).
 **Example:**
 ```ts
-const unit = verificationUnitFactory({ kind: 'KYC_DOCUMENT', code: 'PAN_CARD' }); // valid KYC unit
+const unit = verificationUnitFactory({ workerRole: 'KYC_VERIFIER', code: 'PAN_CARD' }); // valid KYC unit
 const { case_, tasks } = caseScenarioBuilder().withClientProduct(cp).withUnits(['RESIDENCE','PAN_CARD']).build();
 await assertUnitInvariant(unit);          // FIELD/KYC cross-field rules hold
 ```

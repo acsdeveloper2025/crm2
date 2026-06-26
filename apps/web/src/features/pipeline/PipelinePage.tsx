@@ -4,7 +4,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   exportQueryToParams,
   pageQueryToParams,
-  KINDS,
   type AssignableUser,
   type BulkAssignResult,
   type ExportRequest,
@@ -125,12 +124,12 @@ export function PipelinePage() {
         ),
       },
       {
-        id: 'unitKind',
-        header: 'Kind',
+        id: 'visitType',
+        header: 'Visit',
         sortable: true,
         filterable: true,
-        filterOptions: KINDS.map((k) => ({ value: k, label: k.replace(/_/g, ' ') })),
-        cell: (t) => t.unitKind.replace(/_/g, ' '),
+        filterOptions: VISIT_TYPES.map((v) => ({ value: v, label: VISIT_TYPE_LABELS[v] })),
+        cell: (t) => t.visitType ?? '—',
       },
       {
         id: 'status',
