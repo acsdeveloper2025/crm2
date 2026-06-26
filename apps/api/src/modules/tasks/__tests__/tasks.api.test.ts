@@ -262,40 +262,6 @@ describe.skipIf(!RUN)('tasks API (Pipeline)', () => {
       expect(await taskIdsOf(SA)).toEqual(expect.arrayContaining(c.taskIds));
     });
 
-    it('VERIFICATION_TYPE is task-grain: a VT-scoped user sees ONLY matching tasks, never siblings', async () => {
-      const ctx = await seedCpv('VT');
-      const c = await seedCaseTasks(ctx, { name: 'VT APP', unitIds: [ctx.unitAId, ctx.unitBId] });
-      const be = await createUser({ username: 'tvt_be', name: 'TVT BE', role: 'BACKEND_USER' });
-      // Neutralize the default PRODUCT cap so this test isolates the VERIFICATION_TYPE mechanic.
-      await db!.pool.query(
-        `INSERT INTO role_scope_dimensions (role_code, dimension_code, mode)
-         VALUES ('BACKEND_USER', 'VERIFICATION_TYPE', 'EXPAND') ON CONFLICT (role_code, dimension_code) DO NOTHING`,
-      );
-      await db!.pool.query(
-        `UPDATE role_scope_dimensions SET mode = 'EXPAND' WHERE role_code = 'BACKEND_USER' AND dimension_code = 'PRODUCT'`,
-      );
-      invalidateRoleCache();
-      try {
-        seeded(
-          await request(app)
-            .post(`/api/v2/users/${be}/scope-assignments`)
-            .set(SA)
-            .send({ dimension: 'VERIFICATION_TYPE', entityIds: [ctx.unitAId] }),
-        );
-        const seen = await taskIdsOf(hdr('BACKEND_USER', be));
-        expect(seen).toContain(c.taskIds[0]); // the unit-A task
-        expect(seen).not.toContain(c.taskIds[1]); // sibling unit-B task of the SAME case — hidden
-      } finally {
-        await db!.pool.query(
-          `DELETE FROM role_scope_dimensions WHERE role_code = 'BACKEND_USER' AND dimension_code = 'VERIFICATION_TYPE'`,
-        );
-        await db!.pool.query(
-          `UPDATE role_scope_dimensions SET mode = 'RESTRICT' WHERE role_code = 'BACKEND_USER' AND dimension_code = 'PRODUCT'`,
-        );
-        invalidateRoleCache();
-      }
-    });
-
     it('territory EXPAND: a field agent sees unassigned tasks of located cases in their pincode', async () => {
       const ctx = await seedCpv('TERR');
       const pin = (

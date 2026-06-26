@@ -169,17 +169,9 @@ describe.skipIf(!RUN)('data scope engine (ADR-0022 — role attributes, no role 
     expect(pred3).toBe('((ct.assigned_to = ANY($1::uuid[])) AND FALSE)');
   });
 
-  it('TASK level picks taskPredicate (VT = the row’s own unit) and falls back to the case leg', () => {
-    // VERIFICATION_TYPE at TASK grain = direct unit match (no per-case EXISTS)
-    const pT: unknown[] = [];
-    const predT = composeScopePredicate(
-      pT,
-      { userIds: [U.FA], expand: { VERIFICATION_TYPE: [3] } },
-      hierarchyLeg,
-      'TASK',
-    );
-    expect(predT).toBe('((ct.assigned_to = ANY($1::uuid[]) OR ct.verification_unit_id = ANY($2::int[])))');
-    // a dimension WITHOUT a task leg (PINCODE) falls back to its case leg through the joined cs
+  it('TASK level falls back to the case leg for a dimension without a task leg (PINCODE)', () => {
+    // No dimension declares a taskPredicate anymore (VERIFICATION_TYPE removed, ADR-0072), so every
+    // dimension uses its casePredicate at TASK grain — through the joined cs.
     const pF: unknown[] = [];
     const predF = composeScopePredicate(
       pF,
@@ -188,24 +180,29 @@ describe.skipIf(!RUN)('data scope engine (ADR-0022 — role attributes, no role 
       'TASK',
     );
     expect(predF).toBe('((ct.assigned_to = ANY($1::uuid[]) OR cs.pincode_id = ANY($2::int[])))');
-    // CASE level (default) keeps the EXISTS shape for VT
-    const pC: unknown[] = [];
-    const predC = composeScopePredicate(
-      pC,
-      { userIds: [U.FA], expand: { VERIFICATION_TYPE: [3] } },
-      hierarchyLeg,
-    );
-    expect(predC).toContain('EXISTS (SELECT 1 FROM case_tasks vt_ct');
   });
 
-  it('the code registry and the scope_dimensions catalog stay in lockstep', async () => {
+  it('the code registry and the ACTIVE scope_dimensions catalog stay in lockstep', async () => {
     const rows = await db!.pool.query<{ code: string; entity_kind: string }>(
-      `SELECT code, entity_kind FROM scope_dimensions ORDER BY code`,
+      `SELECT code, entity_kind FROM scope_dimensions WHERE is_active ORDER BY code`,
     );
     const dbDims = rows.rows.map((r) => `${r.code}:${r.entity_kind}`).sort();
     const codeDims = Object.values(DIMENSIONS)
       .map((d) => `${d.code}:${d.entityKind}`)
       .sort();
     expect(dbDims).toEqual(codeDims);
+  });
+
+  it('STATE / CITY / VERIFICATION_TYPE are removed from the scope catalog (ADR-0072)', async () => {
+    // user-access scope is CLIENT + PRODUCT (+ PINCODE/AREA territory); the 3 unwired dims are gone.
+    expect(Object.keys(DIMENSIONS).sort()).toEqual(['AREA', 'CLIENT', 'PINCODE', 'PRODUCT']);
+    for (const gone of ['STATE', 'CITY', 'VERIFICATION_TYPE']) {
+      expect(DIMENSIONS).not.toHaveProperty(gone);
+    }
+    // and deactivated in the DB catalog (mig 0099) — every reader filters is_active.
+    const active = await db!.pool.query<{ code: string }>(
+      `SELECT code FROM scope_dimensions WHERE is_active ORDER BY code`,
+    );
+    expect(active.rows.map((r) => r.code)).toEqual(['AREA', 'CLIENT', 'PINCODE', 'PRODUCT']);
   });
 });

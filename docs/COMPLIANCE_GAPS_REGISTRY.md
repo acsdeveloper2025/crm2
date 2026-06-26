@@ -1213,9 +1213,9 @@ were a write-side scope cluster + a role-grant gap. All 7 dimensions are genuine
 | SR-5 | MED | `GET /cases/available-units` un-scoped (enumerates any client's CPV catalog) | ✅ **FIXED** (ADR-0065) — portfolio guard |
 | SR-6 | MED | `GET /cases/rate-preview` un-scoped (leaks rate metadata) | ✅ **FIXED** (ADR-0065) — portfolio guard |
 | SR-7 | MED | TEAM_LEADER could not create cases (intent gap) | ✅ **FIXED** (owner 2026-06-25: TLs may create) — granted (ADR-0065, mig 0095) |
-| SR-8 | MED | VERIFICATION_TYPE in RESTRICT mode under-filters at CASE grain (admits the whole case if any one task matches; doesn't hide sibling tasks) | 🟡 **DEFERRED** — no production role wires VERIFICATION_TYPE RESTRICT today; revisit if one does. Precise filtering exists at TASK grain. |
+| SR-8 | MED | VERIFICATION_TYPE in RESTRICT mode under-filters at CASE grain (admits the whole case if any one task matches; doesn't hide sibling tasks) | ✅ **FIXED** (ADR-0072, mig 0099) — the VERIFICATION_TYPE dimension is removed from the scope catalog (it was wired to no role); the under-filtering footgun no longer exists. |
 | SR-9 | LOW | `BILLING_GENERATE` permission is granted to MANAGER but enforced by no route (dead) | 🟡 **DEFERRED** — harmless; remove or implement when the billing-generate endpoint is built. |
-| SR-10 | LOW | STATE/CITY/VERIFICATION_TYPE dimensions are selectable but wired to no system role (functional, untested in prod) | 🟡 **DEFERRED** — not inert (predicate + write-path support them); add integration coverage if a role adopts one. |
+| SR-10 | LOW | STATE/CITY/VERIFICATION_TYPE dimensions are selectable but wired to no system role (functional, untested in prod) | ✅ **FIXED** (ADR-0072, mig 0099) — the three unwired dimensions are removed from the scope catalog (deactivated, zero access change); the surface is now exactly the wired CLIENT/PRODUCT + PINCODE/AREA. |
 | SR-11 | LOW | Web has no per-route permission guard + some write controls render without a `useAuth().has()` wrap | 🟡 **DEFERRED** — all are backend-gated (`authorize`), so cosmetic/info-leak, not privilege escalation. |
 | SR-12 | LOW | `caseDataEntries` repo methods carry no scope predicate (safe today via the service gate) | 🟡 **DEFERRED** — defense-in-depth; push the predicate into the repo or assert the service-gate invariant. |
 

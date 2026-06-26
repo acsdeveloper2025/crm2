@@ -37,12 +37,12 @@ const LOCATION_PICK_LIMIT = 25;
 const locationLabel = (l: Location): string => `${l.pincode} — ${l.area}, ${l.city}`;
 
 /**
- * Territory is one operator concept (a pincode/area the user covers) even though the model splits it
- * across location dimensions. We surface a SINGLE pincode/area search instead of one block per
- * dimension; CITY/STATE stay model-supported (bulk import / Access Control) but off this dialog.
+ * Territory is one operator concept (a pincode/area the user covers). We surface a SINGLE pincode/area
+ * search instead of one block per location dimension. (CITY/STATE were removed from the scope catalog —
+ * ADR-0072.)
  */
 const LOCATION_DIMS = ['PINCODE', 'AREA'] as const;
-const FOLDED_LOCATION_DIMS = ['PINCODE', 'AREA', 'CITY', 'STATE'] as const;
+const FOLDED_LOCATION_DIMS = ['PINCODE', 'AREA'] as const;
 
 export function UserAccessSection({ roleCode, dimensions, userId, staged, onStageChange }: Props) {
   const qc = useQueryClient();
@@ -108,8 +108,7 @@ export function UserAccessSection({ roleCode, dimensions, userId, staged, onStag
   };
 
   // Territory = the PINCODE/AREA dimensions folded into one picker; new picks land on AREA (exact
-  // area_id match) when wired, else PINCODE. CITY/STATE are dropped from this dialog. Everything
-  // else (CLIENT/PRODUCT/VERIFICATION_TYPE) keeps its own block.
+  // area_id match) when wired, else PINCODE. Everything else (CLIENT/PRODUCT) keeps its own block.
   const locationWirings = dimensions.filter((w) =>
     (LOCATION_DIMS as readonly string[]).includes(w.dimension),
   );

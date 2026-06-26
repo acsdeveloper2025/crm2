@@ -25,7 +25,7 @@ async function labelsFor(def: DimensionDef, ids: number[]): Promise<Map<number, 
  * resolver (`resolveImportRow`) parses back — so an exported file round-trips through import (IE-DEFER-6):
  *  • PINCODE → the bare pincode (`resolveImportRow` looks up ALL its area rows);
  *  • AREA    → `pincode:area` (the `PINCODE:AREA` form `resolveImportRow` splits on `:`);
- *  • code-keyed catalogs (CLIENT/PRODUCT/VERIFICATION_TYPE) → the catalog `code` (`catalogIdByCode`).
+ *  • code-keyed catalogs (CLIENT/PRODUCT) → the catalog `code` (`catalogIdByCode`).
  * Keyed off the code-owned registry (`dimensionCode`/`catalogTable`, never user input) — safe to
  * interpolate. VALUE-kind dimensions are excluded: their `entity_value` is already the import token.
  */

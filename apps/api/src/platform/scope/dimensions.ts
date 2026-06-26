@@ -6,14 +6,10 @@
  * a list WHERE. Adding a dimension = one reviewed entry here + a catalog row; everything else
  * about it (which roles hold it, EXPAND/RESTRICT, the assignments) is admin data.
  */
-export type DimensionCode =
-  | 'CLIENT'
-  | 'PRODUCT'
-  | 'PINCODE'
-  | 'AREA'
-  | 'STATE'
-  | 'CITY'
-  | 'VERIFICATION_TYPE';
+// ADR-0072 (amends ADR-0022): user-access scope is CLIENT + PRODUCT (+ PINCODE/AREA = field-agent
+// territory). STATE / CITY / VERIFICATION_TYPE were selectable but wired to no system role — removed.
+// (The DimensionDef VALUE-kind + taskPredicate machinery is retained as a latent extension point.)
+export type DimensionCode = 'CLIENT' | 'PRODUCT' | 'PINCODE' | 'AREA';
 
 export interface DimensionDef {
   code: DimensionCode;
@@ -69,33 +65,6 @@ export const DIMENSIONS: Record<DimensionCode, DimensionDef> = {
     catalogTable: 'locations',
     labelExpr: `e.area || ' (' || e.pincode || '), ' || e.city`,
     casePredicate: (p, v) => `cs.area_id = ANY(${pushParam(p, v, 'int[]')})`,
-  },
-  STATE: {
-    code: 'STATE',
-    entityKind: 'VALUE',
-    valueColumn: 'state',
-    labelExpr: `''`,
-    casePredicate: (p, v) =>
-      `EXISTS (SELECT 1 FROM locations sl WHERE sl.id = cs.pincode_id AND sl.state = ANY(${pushParam(p, v, 'text[]')}))`,
-  },
-  CITY: {
-    code: 'CITY',
-    entityKind: 'VALUE',
-    valueColumn: 'city',
-    labelExpr: `''`,
-    casePredicate: (p, v) =>
-      `EXISTS (SELECT 1 FROM locations sl WHERE sl.id = cs.pincode_id AND sl.city = ANY(${pushParam(p, v, 'text[]')}))`,
-  },
-  VERIFICATION_TYPE: {
-    code: 'VERIFICATION_TYPE',
-    entityKind: 'ID',
-    catalogTable: 'verification_units',
-    labelExpr: `e.name`,
-    casePredicate: (p, v) =>
-      `EXISTS (SELECT 1 FROM case_tasks vt_ct WHERE vt_ct.case_id = cs.id AND vt_ct.verification_unit_id = ANY(${pushParam(p, v, 'int[]')}))`,
-    // Task grain: the row's OWN unit — a VT-scoped user sees only the matching tasks of a case,
-    // never its sibling tasks (the deferred "task-level leg", activated with Pipeline).
-    taskPredicate: (p, v) => `ct.verification_unit_id = ANY(${pushParam(p, v, 'int[]')})`,
   },
 };
 

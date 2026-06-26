@@ -2,9 +2,9 @@ import { z } from 'zod';
 
 /**
  * @crm2/sdk — generic user scope assignments (ADR-0022). ONE contract for every dimension
- * (CLIENT / PRODUCT / PINCODE / AREA / STATE / CITY / VERIFICATION_TYPE …): which dimensions a
+ * (CLIENT / PRODUCT / PINCODE / AREA — ADR-0072 removed STATE/CITY/VERIFICATION_TYPE): which dimensions a
  * user may hold is governed by their role's admin-edited wiring, not by this contract. ID-kind
- * dimensions reference a catalog row id; VALUE-kind dimensions carry a text value (state/city).
+ * dimensions reference a catalog row id; the contract retains VALUE-kind (text value) support, latent.
  */
 export interface ScopeAssignmentItem {
   /** the assignment row id (the DELETE handle). */

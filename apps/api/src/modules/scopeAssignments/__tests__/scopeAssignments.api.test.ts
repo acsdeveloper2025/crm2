@@ -134,40 +134,6 @@ describe.skipIf(!RUN)('scope assignments API (ADR-0022 slice 3 — generic, role
     expect(missing.body.error).toBe('USER_NOT_FOUND');
   });
 
-  it('VALUE-kind dimensions (STATE) assign by text value once wired to the role', async () => {
-    await seed();
-    // wire STATE to FIELD_AGENT (an admin Role-Management act; direct SQL here)
-    await db!.pool.query(
-      `INSERT INTO role_scope_dimensions (role_code, dimension_code, mode)
-       VALUES ('FIELD_AGENT', 'STATE', 'EXPAND') ON CONFLICT (role_code, dimension_code) DO NOTHING`,
-    );
-    // a VALUE-kind add with ids → 400; with an unknown value → 400; with a real value → stored
-    expect(
-      (
-        await request(app)
-          .post(`/api/v2/users/${FIELD_USER}/scope-assignments`)
-          .set(SA)
-          .send({ dimension: 'STATE', entityIds: [1] })
-      ).status,
-    ).toBe(400);
-    const unknown = await request(app)
-      .post(`/api/v2/users/${FIELD_USER}/scope-assignments`)
-      .set(SA)
-      .send({ dimension: 'STATE', entityValues: ['Atlantis'] });
-    expect(unknown.status).toBe(400);
-    expect(unknown.body.error).toBe('INVALID_REFERENCE');
-    const ok = await request(app)
-      .post(`/api/v2/users/${FIELD_USER}/scope-assignments`)
-      .set(SA)
-      .send({ dimension: 'STATE', entityValues: ['Maharashtra'] });
-    expect(ok.status).toBe(200);
-    expect(ok.body.STATE[0]).toMatchObject({ entityValue: 'Maharashtra', label: 'Maharashtra' });
-    // un-wire again so other suites see the seed wiring
-    await db!.pool.query(
-      `DELETE FROM role_scope_dimensions WHERE role_code = 'FIELD_AGENT' AND dimension_code = 'STATE'`,
-    );
-  });
-
   it('bulk import (template → preview → confirm) + all-assignments export (ADR-0022 slice 8)', async () => {
     const { clientId } = await seed();
     // a second area row for the SAME pincode — a pincode import must assign ALL its rows
