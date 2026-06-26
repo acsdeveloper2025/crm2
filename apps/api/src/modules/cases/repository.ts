@@ -45,6 +45,10 @@ export interface FieldPhotoFile {
   caseNumber: string;
   taskNumber: string | null;
   seq: number;
+  // ADR-0075: the inputs the download composites into the baked GPS-Map-Camera overlay.
+  geoLocation: { latitude?: number; longitude?: number; accuracy?: number; timestamp?: string } | null;
+  reverseGeocodedAddress: string | null;
+  unitName: string | null;
 }
 
 /**
@@ -1708,13 +1712,17 @@ export const caseRepository = {
       `WITH visible AS (
          SELECT ca.id, ca.storage_key AS "storageKey", ca.original_name AS "originalName",
                 ca.mime_type AS "mimeType", ca.photo_type AS "photoType",
-                csm.case_number AS "caseNumber", ctm.task_number AS "taskNumber", ca.created_at
+                csm.case_number AS "caseNumber", ctm.task_number AS "taskNumber", ca.created_at,
+                ca.geo_location AS "geoLocation", ca.reverse_geocoded_address AS "reverseGeocodedAddress",
+                vu.name AS "unitName"
          FROM case_attachments ca
            JOIN cases csm ON csm.id = ca.case_id
            LEFT JOIN case_tasks ctm ON ctm.id = ca.task_id
+           LEFT JOIN verification_units vu ON vu.id = ctm.verification_unit_id
          WHERE ca.case_id = $1 AND ca.kind = 'FIELD_PHOTO' AND ca.deleted_at IS NULL ${taskLeg}
        )
        SELECT id, "storageKey", "originalName", "mimeType", "photoType", "caseNumber", "taskNumber",
+              "geoLocation", "reverseGeocodedAddress", "unitName",
               (ROW_NUMBER() OVER (ORDER BY created_at, id))::int AS seq
        FROM visible
        ORDER BY seq`,

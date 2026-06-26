@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
+import sharp from 'sharp';
 import {
   createTestDb,
   clientFactory,
@@ -2760,6 +2761,54 @@ describe.skipIf(!RUN)('cases API', () => {
         .get(`/api/v2/cases/${caseId}/field-photos/00000000-0000-0000-0000-0000000000ff/download`)
         .set(SA);
       expect(unknown.status).toBe(404);
+    });
+
+    it('bakes the GPS overlay INTO the single download — a valid JPEG, not the raw bytes (ADR-0075)', async () => {
+      // A real JPEG + static-map PNG so the compositor actually runs (the PHOTO_BYTES fixture is a non-image
+      // that fail-opens). Restores the shared bytesStorage in `finally` so later tests are unaffected.
+      const realJpeg = await sharp({
+        create: { width: 400, height: 600, channels: 3, background: { r: 100, g: 120, b: 140 } },
+      })
+        .jpeg()
+        .toBuffer();
+      const mapPng = await sharp({
+        create: { width: 240, height: 160, channels: 3, background: { r: 30, g: 150, b: 70 } },
+      })
+        .png()
+        .toBuffer();
+      setStorage({
+        put: (key) => Promise.resolve({ key }),
+        get: () => Promise.resolve(realJpeg),
+        signedUrl: (key) => Promise.resolve(`https://signed.example/${key}`),
+        remove: () => Promise.resolve(),
+      });
+      setStaticMapProvider({ thumbnail: () => Promise.resolve(mapPng) });
+      try {
+        const { caseId, photoId } = await seedFieldPhoto('BAKE', {
+          latitude: 19.07,
+          longitude: 72.87,
+          accuracy: 10,
+          timestamp: '2026-06-22T05:51:16.600Z',
+        });
+        const res = await request(app)
+          .get(`/api/v2/cases/${caseId}/field-photos/${photoId}/download`)
+          .set(SA)
+          .buffer(true)
+          .parse((r, cb) => {
+            const chunks: Buffer[] = [];
+            r.on('data', (c: Buffer) => chunks.push(c));
+            r.on('end', () => cb(null, Buffer.concat(chunks)));
+          });
+        expect(res.status).toBe(200);
+        const body = res.body as Buffer;
+        const meta = await sharp(body).metadata();
+        expect(meta.format).toBe('jpeg');
+        expect(meta.width).toBe(400); // overlaid on the bottom — dimensions preserved
+        expect(meta.height).toBe(600);
+        expect(body.equals(realJpeg)).toBe(false); // overlay composited in, not the raw photo
+      } finally {
+        setStorage(bytesStorage);
+      }
     });
 
     it('zips ALL field photos (application/zip, non-empty); a case with none → 404 NO_FIELD_PHOTOS', async () => {

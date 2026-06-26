@@ -38,6 +38,7 @@ import { requireVersion } from '../../platform/occ.js';
 import { resolvePage, resolveFilters, buildPage, type PageSpec } from '../../platform/pagination.js';
 import { resolveScope, getScopedUserIds, scopedEntityIds, type Actor } from '../../platform/scope/index.js';
 import { getStorage } from '../../platform/storage/index.js';
+import { composeFieldPhotoOverlay } from '../../platform/photo.js';
 import { detectAttachment, MAX_ATTACHMENT_BYTES } from '../../platform/file.js';
 import { logger } from '@crm2/logger';
 import type { NotifyInput } from '@crm2/sdk';
@@ -193,6 +194,28 @@ function fieldPhotoFilename(file: FieldPhotoFile): string {
   const type = file.photoType ? sanitize(file.photoType) : '';
   const base = parts.join('_') + (type ? `_${type}` : '');
   return `${base}.${photoExt(file.mimeType, file.originalName)}`;
+}
+
+/** Bake the GPS-Map-Camera overlay onto a field-photo download (ADR-0075). Fetches the static map for the
+ *  photo's coords (fail-open null → text-only band) and composites the same band the web shows. Fail-open:
+ *  returns the original bytes unchanged when there's no geo or compositing fails — a download never breaks. */
+async function bakeFieldPhotoOverlay(file: FieldPhotoFile, bytes: Buffer): Promise<Buffer> {
+  const lat = file.geoLocation?.latitude;
+  const lng = file.geoLocation?.longitude;
+  const mapPng =
+    typeof lat === 'number' && typeof lng === 'number'
+      ? await getStaticMapProvider().thumbnail(lat, lng)
+      : null;
+  return composeFieldPhotoOverlay(bytes, {
+    mapPng,
+    address: file.reverseGeocodedAddress,
+    latitude: lat,
+    longitude: lng,
+    accuracy: file.geoLocation?.accuracy,
+    captureTime: file.geoLocation?.timestamp,
+    photoType: file.photoType,
+    unitName: file.unitName,
+  });
 }
 
 /**
@@ -664,7 +687,8 @@ export const caseService = {
     const files = await repo.listFieldPhotoFiles(caseId, scope);
     const file = files.find((f) => f.id === attachmentId);
     if (!file) throw AppError.notFound('FIELD_PHOTO_NOT_FOUND');
-    const bytes = await getStorage().get(file.storageKey); // 503 if storage unconfigured
+    const raw = await getStorage().get(file.storageKey); // 503 if storage unconfigured
+    const bytes = await bakeFieldPhotoOverlay(file, raw); // ADR-0075: GPS overlay baked into the download
     return { bytes, filename: fieldPhotoFilename(file), mimeType: file.mimeType ?? 'image/jpeg' };
   },
 
@@ -680,8 +704,13 @@ export const caseService = {
     const rows = await repo.listFieldPhotoFiles(caseId, scope);
     if (rows.length === 0) throw AppError.notFound('NO_FIELD_PHOTOS');
     const storage = getStorage();
+    // ADR-0075: composite the GPS overlay onto each photo before zipping. Concurrent — bounded by the
+    // field-photo-per-case count. ponytail: if a case ever carries very many photos, batch this sequentially.
     const files = await Promise.all(
-      rows.map(async (f) => ({ filename: fieldPhotoFilename(f), bytes: await storage.get(f.storageKey) })),
+      rows.map(async (f) => ({
+        filename: fieldPhotoFilename(f),
+        bytes: await bakeFieldPhotoOverlay(f, await storage.get(f.storageKey)),
+      })),
     );
     return { zipName: `${rows[0]!.caseNumber.replace(/[^A-Za-z0-9-]+/g, '_')}_field-photos.zip`, files };
   },
