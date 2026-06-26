@@ -82,7 +82,6 @@ function RateForm({ initial }: { initial: RateView | null }) {
   const [clientId, setClientId] = useState('');
   const [productId, setProductId] = useState('');
   const [mode, setMode] = useState('FIELD');
-  const [universal, setUniversal] = useState(false); // Universal = one rate for all locations (null location)
   const [unitId, setUnitId] = useState('');
   const [pincode, setPincode] = useState('');
   const [pincodeSearch, setPincodeSearch] = useState('');
@@ -98,12 +97,10 @@ function RateForm({ initial }: { initial: RateView | null }) {
   const [conflict, setConflict] = useState<{ updatedAt?: string; version?: number } | null>(null);
 
   // ADR-0070: the rate's field/office is the operator's choice, not the unit's classification. OFFICE
-  // rates are flat (no geography, no rate type); FIELD rates are location-based (LOCAL/OGL) with an
-  // optional Universal (all-locations) choice that stores a null location.
+  // rates are flat (no geography, no rate type); FIELD rates are location-based (LOCAL/OGL).
   const isOffice = mode === 'OFFICE';
   const onModeChange = (m: string) => {
     setMode(m);
-    setUniversal(false);
     setUnitId('');
     setPincode('');
     setLocationId('');
@@ -164,7 +161,7 @@ function RateForm({ initial }: { initial: RateView | null }) {
             clientId: Number(clientId),
             productId: Number(productId),
             verificationUnitId: Number(unitId),
-            locationId: isOffice || universal || !locationId ? null : Number(locationId),
+            locationId: isOffice || !locationId ? null : Number(locationId),
             clientRateType: isOffice ? null : clientRateType || null,
             amount: Number(amount),
             effectiveFrom: toIsoDate(effectiveFrom),
@@ -189,7 +186,7 @@ function RateForm({ initial }: { initial: RateView | null }) {
       !!productId &&
       !!unitId &&
       amount !== '' &&
-      (isOffice || (!!clientRateType && (universal || !!locationId)));
+      (isOffice || (!!clientRateType && !!locationId));
 
   const clientOpts: Opt[] = (clients.data ?? []).map((c) => ({
     value: String(c.id),
@@ -200,10 +197,6 @@ function RateForm({ initial }: { initial: RateView | null }) {
     label: `${p.code} — ${p.name}`,
   }));
   const unitOpts: Opt[] = (units.data ?? []).map((u) => ({ value: String(u.id), label: u.name }));
-  const modeOpts: Opt[] = [
-    { value: 'FIELD', label: 'Field' },
-    { value: 'OFFICE', label: 'Office' },
-  ];
   const pincodeOpts: Opt[] = (pincodes.data ?? []).map((p) => ({ value: p, label: p }));
   const areaOpts: Opt[] = (areas.data ?? []).map((l) => ({ value: String(l.id), label: l.area }));
   const clientRateTypeOpts: Opt[] = (clientRateTypes.data ?? []).map((rt) => ({
@@ -221,7 +214,7 @@ function RateForm({ initial }: { initial: RateView | null }) {
         <p className="text-sm text-muted-foreground">
           {isRevise
             ? 'Keys are immutable — revising appends a new effective-dated version (amount & effective-from only). The current row is end-dated, never overwritten.'
-            : 'One rate = client · product · verification unit · pincode/area · rate type · amount. Office rates are flat — geography & rate type are blank; a Field rate may be Universal (all locations).'}
+            : 'One rate = client · product · verification unit · pincode/area · rate type · amount. Office rates are flat — geography & rate type are blank.'}
         </p>
       </div>
 
@@ -259,7 +252,11 @@ function RateForm({ initial }: { initial: RateView | null }) {
               )}
             </Field>
             <Field label="Field / Office">
-              <SearchableSelect value={mode} onChange={onModeChange} options={modeOpts} width="w-full" />
+              {/* a fixed 2-option choice → a native select (freely switchable), not a search-first dropdown */}
+              <select className="input" value={mode} onChange={(e) => onModeChange(e.target.value)}>
+                <option value="FIELD">Field</option>
+                <option value="OFFICE">Office</option>
+              </select>
             </Field>
             <Field label="Verification Unit">
               <SearchableSelect value={unitId} onChange={setUnitId} options={unitOpts} width="w-full" />
@@ -270,20 +267,6 @@ function RateForm({ initial }: { initial: RateView | null }) {
               )}
             </Field>
             {!isOffice && (
-              <label className="flex items-center gap-2 text-sm text-foreground">
-                <input
-                  type="checkbox"
-                  checked={universal}
-                  onChange={(e) => {
-                    setUniversal(e.target.checked);
-                    setPincode('');
-                    setLocationId('');
-                  }}
-                />
-                Universal — one rate for all locations
-              </label>
-            )}
-            {!isOffice && !universal && (
               <>
                 <Field label="Pincode (search)">
                   <SearchableSelect
@@ -380,7 +363,7 @@ function RateForm({ initial }: { initial: RateView | null }) {
                     clientId: Number(clientId),
                     productId: Number(productId),
                     verificationUnitId: Number(unitId),
-                    locationId: isOffice || universal || !locationId ? null : Number(locationId),
+                    locationId: isOffice || !locationId ? null : Number(locationId),
                     clientRateType: isOffice ? null : clientRateType || null,
                     amount: Number(amount),
                     ...(effectiveFromIso ? { effectiveFrom: effectiveFromIso } : {}),

@@ -185,7 +185,7 @@ export function RateManagementPage() {
           <h1 className="text-xl font-bold tracking-tight">Rate Management</h1>
           <p className="text-sm text-muted-foreground">
             One row per rate — client, product, unit, pincode/area, rate type and amount. Office rates are
-            flat (no geography); a Field rate may be Universal (all locations).
+            flat (no geography).
           </p>
         </div>
         {canManage && (

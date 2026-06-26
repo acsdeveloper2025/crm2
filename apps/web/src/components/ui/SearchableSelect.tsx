@@ -43,6 +43,16 @@ export function SearchableSelect({
     setOpen(false);
   };
 
+  // Open the list fresh — cleared query so ALL options show (not just the current selection). Used on
+  // focus AND on click: after a commit the input keeps focus (the option's onMouseDown preventDefaults
+  // the blur) while the list closes, so a plain re-click fires no focus event. onClick reopens it, so the
+  // value stays freely changeable without clicking away first.
+  const openFresh = () => {
+    setOpen(true);
+    setQ('');
+    setHighlight(0);
+  };
+
   // Keyboard combobox (K3): the picker previously committed on onMouseDown only, so keyboard users
   // could never select an option. Arrow keys move the active option, Enter selects, Escape closes.
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -78,10 +88,9 @@ export function SearchableSelect({
         aria-controls={listId}
         aria-autocomplete="list"
         aria-activedescendant={open && hl >= 0 ? `${listId}-opt-${hl}` : undefined}
-        onFocus={() => {
-          setOpen(true);
-          setQ('');
-          setHighlight(0);
+        onFocus={openFresh}
+        onClick={() => {
+          if (!open) openFresh();
         }}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         onKeyDown={onKeyDown}
