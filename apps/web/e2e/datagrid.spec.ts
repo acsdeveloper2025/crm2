@@ -125,27 +125,29 @@ test('DataGrid: per-column filter sends f_<col>, persists to the URL, and surviv
 test('DataGrid: Excel-style header multi-select (§7) filters by enum, persists, and clears', async ({
   page,
 }) => {
+  // ADR-0070 dropped verification_units.kind; worker_role is the unit discriminator now, exposed as the
+  // filterable "Worker" enum column — exercise the §7 multi-select feature on it.
   await page.goto('/admin/verification-units');
-  const kindFilter = page.getByRole('button', { name: 'Filter Kind' });
-  await expect(kindFilter).toBeVisible();
-  await expect(kindFilter).toContainText('All');
+  const workerFilter = page.getByRole('button', { name: 'Filter Worker' });
+  await expect(workerFilter).toBeVisible();
+  await expect(workerFilter).toContainText('All');
 
-  await kindFilter.click();
-  const menu = page.getByRole('menu', { name: 'Kind options' });
-  await menu.getByRole('checkbox', { name: 'Field Visit' }).check();
-  await expect(page).toHaveURL(/f_kind=FIELD_VISIT/);
+  await workerFilter.click();
+  const menu = page.getByRole('menu', { name: 'Worker options' });
+  await menu.getByRole('checkbox', { name: 'Field', exact: true }).check();
+  await expect(page).toHaveURL(/f_workerRole=FIELD_AGENT/);
 
   // Survives reload; the trigger reflects the selection count.
   await page.reload();
-  await expect(page.getByRole('button', { name: 'Filter Kind' })).toContainText('1 selected');
+  await expect(page.getByRole('button', { name: 'Filter Worker' })).toContainText('1 selected');
 
   // Unchecking clears the param.
-  await page.getByRole('button', { name: 'Filter Kind' }).click();
+  await page.getByRole('button', { name: 'Filter Worker' }).click();
   await page
-    .getByRole('menu', { name: 'Kind options' })
-    .getByRole('checkbox', { name: 'Field Visit' })
+    .getByRole('menu', { name: 'Worker options' })
+    .getByRole('checkbox', { name: 'Field', exact: true })
     .uncheck();
-  await expect(page).not.toHaveURL(/f_kind=/);
+  await expect(page).not.toHaveURL(/f_workerRole=/);
 });
 
 // Guard the contract change: EVERY page that consumes a paginated list endpoint (or the
