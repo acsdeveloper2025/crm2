@@ -17,18 +17,25 @@
  */
 
 /** Most-specific active rate for the task's CPV (task area > task pincode > case area > case pincode >
- *  location-less default > a non-matching scoped rate), temporal + active. The location rank is a single
- *  CASE (ADR-0048): a plain `(loc = X) DESC NULLS LAST` ladder ranks a non-matching FALSE ABOVE the
+ *  location-less default > a non-matching scoped rate), temporal + active. product/unit are wildcard-matched
+ *  (ADR-0071): a Universal rate has NULL product/unit and applies to ALL — `(col IS NULL OR col = task.col)`.
+ *  Dimension specificity outranks location: `product DESC NULLS LAST, unit DESC NULLS LAST` lead the ORDER BY
+ *  so a SPECIFIC rate ALWAYS beats a Universal one (mirrors commission_rates, ADR-0050). The location rank is
+ *  a single CASE (ADR-0048): a plain `(loc = X) DESC NULLS LAST` ladder ranks a non-matching FALSE ABOVE the
  *  location-less NULL, so a task at an unmatched location would wrongly bill a different-location override
  *  instead of the default (COMPLIANCE §G-8). LIMIT 1 → 1:1 (COUNT/SUM stay exact). */
 export const RATE_LATERAL = `LEFT JOIN LATERAL (
     SELECT rt.code AS client_rate_type, r.amount::float8 AS bill_amount
     FROM rates r
     LEFT JOIN rate_types rt ON rt.id = r.rate_type_id
-    WHERE r.client_id = cs.client_id AND r.product_id = cs.product_id
-      AND r.verification_unit_id = ct.verification_unit_id AND r.is_active
+    WHERE r.client_id = cs.client_id
+      AND (r.product_id IS NULL OR r.product_id = cs.product_id)
+      AND (r.verification_unit_id IS NULL OR r.verification_unit_id = ct.verification_unit_id)
+      AND r.is_active
       AND r.effective_from <= now() AND (r.effective_to IS NULL OR r.effective_to > now())
-    ORDER BY (CASE
+    ORDER BY r.product_id DESC NULLS LAST,
+             r.verification_unit_id DESC NULLS LAST,
+             (CASE
                WHEN r.location_id = ct.area_id    THEN 5
                WHEN r.location_id = ct.pincode_id THEN 4
                WHEN r.location_id = cs.area_id    THEN 3

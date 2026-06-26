@@ -10,8 +10,10 @@ import { z } from 'zod';
 export interface Rate {
   id: number;
   clientId: number;
-  productId: number;
-  verificationUnitId: number;
+  /** null ⇒ Universal — the rate applies to ALL products of the client (ADR-0071). */
+  productId: number | null;
+  /** null ⇒ Universal — the rate applies to ALL verification units of the client (ADR-0071). */
+  verificationUnitId: number | null;
   locationId: number | null;
   clientRateType: string | null;
   amount: number;
@@ -27,14 +29,15 @@ export interface Rate {
   updatedAt: string;
 }
 
-/** A rate joined with the client / product / unit / location display fields (list view). */
+/** A rate joined with the client / product / unit / location display fields (list view).
+ *  product/unit codes+names are null for a Universal (NULL product/unit) rate (ADR-0071). */
 export interface RateView extends Rate {
   clientCode: string;
   clientName: string;
-  productCode: string;
-  productName: string;
-  unitCode: string;
-  unitName: string;
+  productCode: string | null;
+  productName: string | null;
+  unitCode: string | null;
+  unitName: string | null;
   pincode: string | null;
   area: string | null;
 }
@@ -59,8 +62,10 @@ const clientRateType = z.string().trim().min(1).max(60);
 
 export const CreateRateSchema = z.object({
   clientId: positiveInt,
-  productId: positiveInt,
-  verificationUnitId: positiveInt,
+  /** null/absent ⇒ Universal — applies to ALL products of the client (ADR-0071). */
+  productId: positiveInt.nullish(),
+  /** null/absent ⇒ Universal — applies to ALL verification units of the client (ADR-0071). */
+  verificationUnitId: positiveInt.nullish(),
   /** geography (a `locations` row = pincode+area); null/absent ⇒ no geography (e.g. KYC). */
   locationId: positiveInt.nullish(),
   /** free-text tier label the user types (Local, OGL, Outstation…); null/absent ⇒ none. */

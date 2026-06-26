@@ -17,10 +17,12 @@ const COLS = `id, client_id, product_id, verification_unit_id, location_id,
   version, created_by, updated_by, created_at, updated_at`;
 
 // Shared FROM + joins for the list view (used by both the COUNT and the page query).
+// product/unit are LEFT JOINs: a Universal rate (ADR-0071) has NULL product_id/verification_unit_id, so
+// an INNER JOIN would drop the row from the list/view — the join is for display names only.
 const RATE_FROM = `FROM rates r
   JOIN clients c ON c.id = r.client_id
-  JOIN products p ON p.id = r.product_id
-  JOIN verification_units vu ON vu.id = r.verification_unit_id
+  LEFT JOIN products p ON p.id = r.product_id
+  LEFT JOIN verification_units vu ON vu.id = r.verification_unit_id
   LEFT JOIN locations l ON l.id = r.location_id
   LEFT JOIN rate_types rt ON rt.id = r.rate_type_id`;
 
@@ -129,8 +131,8 @@ export const rateRepository = {
            RETURNING ${COLS}`,
           [
             input.clientId,
-            input.productId,
-            input.verificationUnitId,
+            input.productId ?? null, // null ⇒ Universal product (ADR-0071)
+            input.verificationUnitId ?? null, // null ⇒ Universal unit (ADR-0071)
             input.locationId ?? null,
             input.clientRateType ?? null,
             input.amount,
@@ -251,9 +253,9 @@ export const rateRepository = {
               h.old_effective_to, h.new_effective_from, h.changed_by, h.changed_at
        FROM rate_history h
        JOIN rates r ON r.id = h.rate_id
-       WHERE (r.client_id, r.product_id, r.verification_unit_id,
+       WHERE (r.client_id, COALESCE(r.product_id, -1), COALESCE(r.verification_unit_id, -1),
               COALESCE(r.location_id, -1), COALESCE(r.rate_type_id, -1)) = (
-         SELECT k.client_id, k.product_id, k.verification_unit_id,
+         SELECT k.client_id, COALESCE(k.product_id, -1), COALESCE(k.verification_unit_id, -1),
                 COALESCE(k.location_id, -1), COALESCE(k.rate_type_id, -1)
          FROM rates k WHERE k.id = $1
        )

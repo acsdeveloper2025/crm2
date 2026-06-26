@@ -27,6 +27,11 @@ const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
   e instanceof ApiError && e.status === HTTP_CONFLICT && e.code === 'STALE_UPDATE';
 
+// ADR-0071: product / verification unit can be Universal (a rate for ALL products / ALL units of a
+// client). The select carries this sentinel; the payload sends null (= Universal) for it.
+const UNIVERSAL = 'UNIVERSAL';
+const toDim = (v: string): number | null => (v === UNIVERSAL ? null : Number(v));
+
 /**
  * Rate create/revise as a full record-page route (ADR-0051 Wave-4 D4 — no modal).
  * `/admin/rates/new` creates (the full client→product→unit→pincode→area cascade);
@@ -68,8 +73,8 @@ export function RateRecordPage() {
 }
 
 /**
- * Asymmetric form. CREATE (initial null) renders the full cascade (Universal-able? no — client /
- * product / unit are required; pincode→area + rate type are field-only, greyed for KYC) and POSTs.
+ * Asymmetric form. CREATE (initial null) renders the full cascade (client required; product + unit can be
+ * Universal = all, ADR-0071; pincode→area + rate type are field-only, greyed for KYC) and POSTs.
  * REVISE (initial set) shows every dimension read-only and edits only amount + effective-from,
  * POSTing to `…/:id/revise` with the OCC version.
  */
@@ -127,16 +132,22 @@ function RateForm({ initial }: { initial: RateView | null }) {
   // resolver). Enabled only once all three dims are chosen — KYC units have no rate type, so the
   // field is greyed out and this query stays idle for them too.
   const comboReady = !isRevise && !isOffice && !!clientId && !!productId && !!unitId;
+  // A Universal (NULL) product/unit can't use the assignment-combo resolver (it needs concrete ids);
+  // fall back to every usable rate type (ADR-0071).
+  const dimsUniversal = productId === UNIVERSAL || unitId === UNIVERSAL;
   const clientRateTypes = useQuery({
-    queryKey: ['rate-types-available', clientId, productId, unitId],
+    queryKey: dimsUniversal ? ['rate-types-options'] : ['rate-types-available', clientId, productId, unitId],
     queryFn: () =>
-      api<RateTypeOption[]>(
-        'GET',
-        `/api/v2/rate-types/available?clientId=${clientId}&productId=${productId}&verificationUnitId=${unitId}`,
-      ),
+      dimsUniversal
+        ? api<RateTypeOption[]>('GET', '/api/v2/rate-types/options')
+        : api<RateTypeOption[]>(
+            'GET',
+            `/api/v2/rate-types/available?clientId=${clientId}&productId=${productId}&verificationUnitId=${unitId}`,
+          ),
     enabled: comboReady,
   });
-  const noRateTypesForCombo = comboReady && clientRateTypes.isSuccess && clientRateTypes.data.length === 0;
+  const noRateTypesForCombo =
+    comboReady && !dimsUniversal && clientRateTypes.isSuccess && clientRateTypes.data.length === 0;
   const pincodes = useQuery({
     queryKey: ['pincodes', pincodeSearch],
     queryFn: () => api<string[]>('GET', `/api/v2/locations/pincodes?q=${encodeURIComponent(pincodeSearch)}`),
@@ -159,8 +170,8 @@ function RateForm({ initial }: { initial: RateView | null }) {
           })
         : api<Rate>('POST', BASE, {
             clientId: Number(clientId),
-            productId: Number(productId),
-            verificationUnitId: Number(unitId),
+            productId: toDim(productId), // null = Universal (ADR-0071)
+            verificationUnitId: toDim(unitId), // null = Universal
             locationId: isOffice || !locationId ? null : Number(locationId),
             clientRateType: isOffice ? null : clientRateType || null,
             amount: Number(amount),
@@ -192,11 +203,14 @@ function RateForm({ initial }: { initial: RateView | null }) {
     value: String(c.id),
     label: `${c.code} — ${c.name}`,
   }));
-  const productOpts: Opt[] = (products.data ?? []).map((p) => ({
-    value: String(p.id),
-    label: `${p.code} — ${p.name}`,
-  }));
-  const unitOpts: Opt[] = (units.data ?? []).map((u) => ({ value: String(u.id), label: u.name }));
+  const productOpts: Opt[] = [
+    { value: UNIVERSAL, label: 'Universal (all products)' },
+    ...(products.data ?? []).map((p) => ({ value: String(p.id), label: `${p.code} — ${p.name}` })),
+  ];
+  const unitOpts: Opt[] = [
+    { value: UNIVERSAL, label: 'Universal (all units)' },
+    ...(units.data ?? []).map((u) => ({ value: String(u.id), label: u.name })),
+  ];
   const pincodeOpts: Opt[] = (pincodes.data ?? []).map((p) => ({ value: p, label: p }));
   const areaOpts: Opt[] = (areas.data ?? []).map((l) => ({ value: String(l.id), label: l.area }));
   const clientRateTypeOpts: Opt[] = (clientRateTypes.data ?? []).map((rt) => ({
@@ -222,8 +236,11 @@ function RateForm({ initial }: { initial: RateView | null }) {
         {isRevise ? (
           <dl className="space-y-2 rounded-md border border-border p-3 text-sm">
             <ReadOnlyRow label="Client" value={`${initial.clientCode} — ${initial.clientName}`} />
-            <ReadOnlyRow label="Product" value={`${initial.productCode} — ${initial.productName}`} />
-            <ReadOnlyRow label="Verification Unit" value={initial.unitName} />
+            <ReadOnlyRow
+              label="Product"
+              value={initial.productCode ? `${initial.productCode} — ${initial.productName}` : 'Universal'}
+            />
+            <ReadOnlyRow label="Verification Unit" value={initial.unitName ?? 'Universal'} />
             <ReadOnlyRow label="Type" value={initial.clientRateType ? 'Field' : 'Office'} />
             <ReadOnlyRow
               label="Location"
@@ -361,8 +378,8 @@ function RateForm({ initial }: { initial: RateView | null }) {
                   })
                 : zodFieldErrors(CreateRateSchema, {
                     clientId: Number(clientId),
-                    productId: Number(productId),
-                    verificationUnitId: Number(unitId),
+                    productId: toDim(productId),
+                    verificationUnitId: toDim(unitId),
                     locationId: isOffice || !locationId ? null : Number(locationId),
                     clientRateType: isOffice ? null : clientRateType || null,
                     amount: Number(amount),

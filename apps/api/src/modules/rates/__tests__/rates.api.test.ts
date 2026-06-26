@@ -260,6 +260,68 @@ describe.skipIf(!RUN)('rates API', () => {
     expect(dup.body.error).toBe('RATE_EXISTS');
   });
 
+  // ── Universal (NULL) product / verification unit (ADR-0071) ──────────────────────────────────────
+  it('creates a Universal-product rate (productId omitted → null) and lists it (LEFT JOIN keeps the row)', async () => {
+    const key = await seedKey('UPROD');
+    const res = await request(app)
+      .post('/api/v2/rates')
+      .set(SA)
+      .send({ clientId: key.clientId, verificationUnitId: key.verificationUnitId, amount: 75 });
+    expect(res.status).toBe(201);
+    expect(res.body.productId).toBeNull();
+    const list = await request(app).get(`/api/v2/rates?clientId=${key.clientId}`).set(SA);
+    expect(list.body.items).toHaveLength(1);
+    expect(list.body.items[0].productId).toBeNull();
+    expect(list.body.items[0].productCode).toBeNull(); // null product → no join row, but rate still listed
+    expect(list.body.items[0].unitName).toBeTruthy();
+  });
+
+  it('creates a Universal-unit rate (verificationUnitId omitted → null), null unit in the view', async () => {
+    const key = await seedKey('UUNIT');
+    const res = await request(app)
+      .post('/api/v2/rates')
+      .set(SA)
+      .send({ clientId: key.clientId, productId: key.productId, amount: 80 });
+    expect(res.status).toBe(201);
+    expect(res.body.verificationUnitId).toBeNull();
+    const list = await request(app).get(`/api/v2/rates?clientId=${key.clientId}`).set(SA);
+    expect(list.body.items[0].verificationUnitId).toBeNull();
+    expect(list.body.items[0].unitName).toBeNull();
+    expect(list.body.items[0].productCode).toBeTruthy();
+  });
+
+  it('creates a fully-Universal rate (product + unit both null)', async () => {
+    const key = await seedKey('UALL');
+    const res = await request(app).post('/api/v2/rates').set(SA).send({ clientId: key.clientId, amount: 60 });
+    expect(res.status).toBe(201);
+    expect(res.body.productId).toBeNull();
+    expect(res.body.verificationUnitId).toBeNull();
+  });
+
+  it('a specific rate and a Universal-product rate coexist (no overlap collision)', async () => {
+    const key = await seedKey('UCO');
+    const specific = await request(app)
+      .post('/api/v2/rates')
+      .set(SA)
+      .send({ ...key, amount: 500 });
+    expect(specific.status).toBe(201);
+    const universal = await request(app)
+      .post('/api/v2/rates')
+      .set(SA)
+      .send({ clientId: key.clientId, verificationUnitId: key.verificationUnitId, amount: 100 });
+    expect(universal.status).toBe(201); // COALESCE(product,-1) differs from the specific product → no collision
+  });
+
+  it('two fully-Universal rates for the same client collide → 409 RATE_EXISTS', async () => {
+    const key = await seedKey('UDUP');
+    expect(
+      (await request(app).post('/api/v2/rates').set(SA).send({ clientId: key.clientId, amount: 60 })).status,
+    ).toBe(201);
+    const dup = await request(app).post('/api/v2/rates').set(SA).send({ clientId: key.clientId, amount: 70 });
+    expect(dup.status).toBe(409);
+    expect(dup.body.error).toBe('RATE_EXISTS');
+  });
+
   it('revise inserts a new effective-dated version, end-dates the prior, and records history', async () => {
     const key = await seedKey('R9');
     const created = (

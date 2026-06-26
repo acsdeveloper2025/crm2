@@ -99,14 +99,15 @@ export function RateManagementPage() {
         id: 'product',
         header: 'Product',
         sortable: true,
-        cell: (r) => <span className="whitespace-nowrap">{r.productCode}</span>,
+        // null product = Universal (ADR-0071): one rate for all products of the client.
+        cell: (r) => <span className="whitespace-nowrap">{r.productCode ?? 'Universal'}</span>,
       },
       {
         id: 'unit',
         header: 'Verification Unit',
         sortable: true,
         filterable: true,
-        cell: (r) => r.unitName,
+        cell: (r) => r.unitName ?? 'Universal',
       },
       {
         id: 'pincode',

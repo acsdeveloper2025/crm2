@@ -260,10 +260,14 @@ const TASK_VIEW_COLS = `ct.id, ct.case_id, cs.case_number, ct.verification_unit_
          ct.visit_type, (SELECT code FROM rate_types WHERE id = ct.rate_type_id) AS field_rate_type, ct.bill_count, ct.pincode_id, ct.area_id,
          (SELECT rt.code FROM rates r
             LEFT JOIN rate_types rt ON rt.id = r.rate_type_id
-            WHERE r.client_id = cs.client_id AND r.product_id = cs.product_id
-              AND r.verification_unit_id = ct.verification_unit_id AND r.is_active
+            WHERE r.client_id = cs.client_id
+              AND (r.product_id IS NULL OR r.product_id = cs.product_id)
+              AND (r.verification_unit_id IS NULL OR r.verification_unit_id = ct.verification_unit_id)
+              AND r.is_active
               AND r.effective_from <= now() AND (r.effective_to IS NULL OR r.effective_to > now())
-            ORDER BY (CASE
+            ORDER BY r.product_id DESC NULLS LAST,
+                     r.verification_unit_id DESC NULLS LAST,
+                     (CASE
                        WHEN r.location_id = ct.area_id    THEN 5
                        WHEN r.location_id = ct.pincode_id THEN 4
                        WHEN r.location_id = cs.area_id    THEN 3
@@ -534,12 +538,17 @@ export const caseRepository = {
     assigneeId: string | null,
   ): Promise<{ clientRateType: string | null; fieldRateTypes: string[] }> {
     const [clientRow] = await query<{ clientRateType: string | null }>(
+      // product/unit wildcard-matched, most-specific wins (ADR-0071) — a specific rate outranks a Universal one.
       `SELECT rt.code AS client_rate_type
          FROM rates r
          LEFT JOIN rate_types rt ON rt.id = r.rate_type_id
-        WHERE r.client_id = $1 AND r.product_id = $2 AND r.verification_unit_id = $3 AND r.is_active
+        WHERE r.client_id = $1
+          AND (r.product_id IS NULL OR r.product_id = $2)
+          AND (r.verification_unit_id IS NULL OR r.verification_unit_id = $3)
+          AND r.is_active
           AND r.effective_from <= now() AND (r.effective_to IS NULL OR r.effective_to > now())
-        ORDER BY (CASE WHEN r.location_id = $4 THEN 2 WHEN r.location_id IS NULL THEN 1 ELSE 0 END) DESC,
+        ORDER BY r.product_id DESC NULLS LAST, r.verification_unit_id DESC NULLS LAST,
+                 (CASE WHEN r.location_id = $4 THEN 2 WHEN r.location_id IS NULL THEN 1 ELSE 0 END) DESC,
                  r.location_id, r.id DESC
         LIMIT 1`,
       [clientId, productId, verificationUnitId, locationId],
