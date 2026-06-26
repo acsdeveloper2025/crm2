@@ -118,6 +118,20 @@ export const cpvUnitController = {
     }
   },
 
+  /** ADR-0074: GET /cpv-units/available?clientId&productId — the CPV-scoped units for a client+product
+   *  (a Universal CPV ⇒ all active units). Feeds the config unit pickers. */
+  async available(req: Request, res: Response, next: NextFunction) {
+    try {
+      const clientId = parsePositiveInt(req.query['clientId']);
+      const productId = parsePositiveInt(req.query['productId']);
+      if (clientId === undefined || productId === undefined)
+        throw AppError.badRequest('BAD_REQUEST', { param: 'clientId, productId' });
+      res.json(await cpvSvc.availableUnits(clientId, productId));
+    } catch (e) {
+      next(e);
+    }
+  },
+
   async export(req: Request, res: Response, next: NextFunction) {
     try {
       const q = req.query as Record<string, unknown>;

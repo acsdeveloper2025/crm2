@@ -110,9 +110,18 @@ function AssignmentForm() {
     queryKey: ['product-options'],
     queryFn: () => api<Option[]>('GET', '/api/v2/products/options'),
   });
+  // ADR-0074: with a specific client + product chosen, the unit options are the CPV-mapped units (a
+  // Universal CPV ⇒ all units); else (no product / Universal product) all active units.
+  const unitCpvScoped = !!clientId && !!productId;
   const units = useQuery({
-    queryKey: ['verification-unit-options'],
-    queryFn: () => api<VerificationUnitOption[]>('GET', '/api/v2/verification-units/options'),
+    queryKey: unitCpvScoped ? ['cpv-available-units', clientId, productId] : ['verification-unit-options'],
+    queryFn: () =>
+      unitCpvScoped
+        ? api<{ id: number; code: string; name: string }[]>(
+            'GET',
+            `/api/v2/cpv-units/available?clientId=${clientId}&productId=${productId}`,
+          )
+        : api<VerificationUnitOption[]>('GET', '/api/v2/verification-units/options'),
   });
   const rateTypes = useQuery({
     queryKey: ['rate-types', 'options'],

@@ -510,16 +510,24 @@ export const caseRepository = {
     });
   },
 
-  /** Units enabled (CPV) for a client+product — the case-creation unit picker. */
+  /** Units enabled (CPV) for a client+product — the case-creation unit picker. ADR-0074: a Universal CPV
+   *  mapping (verification_unit_id IS NULL) enables EVERY active unit; else only the specifically-mapped
+   *  ones. Same rule as cpvUnitRepository.availableUnits — keep them in sync. */
   async availableUnits(clientId: number, productId: number): Promise<AvailableUnit[]> {
     return query<AvailableUnit>(
       `SELECT vu.id AS verification_unit_id, vu.code, vu.name
-       FROM client_product_verification_units cpvu
-       JOIN client_products cp ON cp.id = cpvu.client_product_id
-       JOIN verification_units vu ON vu.id = cpvu.verification_unit_id
-       WHERE cp.client_id = $1 AND cp.product_id = $2
-         AND cpvu.is_active AND cp.is_active AND vu.is_active
-         AND vu.effective_from <= now() AND cp.effective_from <= now() AND cpvu.effective_from <= now()
+       FROM verification_units vu
+       WHERE vu.is_active AND vu.effective_from <= now()
+         AND (
+           EXISTS (SELECT 1 FROM client_product_verification_units cpvu
+                     JOIN client_products cp ON cp.id = cpvu.client_product_id
+                    WHERE cp.client_id = $1 AND cp.product_id = $2 AND cpvu.verification_unit_id IS NULL
+                      AND cpvu.is_active AND cp.is_active AND cp.effective_from <= now() AND cpvu.effective_from <= now())
+           OR EXISTS (SELECT 1 FROM client_product_verification_units cpvu
+                       JOIN client_products cp ON cp.id = cpvu.client_product_id
+                      WHERE cp.client_id = $1 AND cp.product_id = $2 AND cpvu.verification_unit_id = vu.id
+                        AND cpvu.is_active AND cp.is_active AND cp.effective_from <= now() AND cpvu.effective_from <= now())
+         )
        ORDER BY vu.sort_order, vu.name`,
       [clientId, productId],
     );
@@ -573,19 +581,24 @@ export const caseRepository = {
     };
   },
 
-  /** True only if every unit id is CPV-enabled for the client+product. */
+  /** True if every unit id is CPV-enabled for the client+product. ADR-0074: a Universal CPV mapping
+   *  (verification_unit_id IS NULL) enables every unit; else every unit id must be specifically mapped. */
   async allUnitsEnabled(clientId: number, productId: number, unitIds: number[]): Promise<boolean> {
-    const rows = await query<{ n: number }>(
-      `SELECT count(DISTINCT vu.id)::int AS n
-       FROM client_product_verification_units cpvu
-       JOIN client_products cp ON cp.id = cpvu.client_product_id
-       JOIN verification_units vu ON vu.id = cpvu.verification_unit_id
-       WHERE cp.client_id = $1 AND cp.product_id = $2 AND cpvu.is_active AND cp.is_active
-         AND cp.effective_from <= now() AND cpvu.effective_from <= now()
-         AND vu.id = ANY($3::int[])`,
+    const [row] = await query<{ universal: boolean; mappedCount: number }>(
+      `SELECT
+         EXISTS (SELECT 1 FROM client_product_verification_units cpvu
+                   JOIN client_products cp ON cp.id = cpvu.client_product_id
+                  WHERE cp.client_id = $1 AND cp.product_id = $2 AND cpvu.verification_unit_id IS NULL
+                    AND cpvu.is_active AND cp.is_active AND cp.effective_from <= now() AND cpvu.effective_from <= now()) AS universal,
+         (SELECT count(DISTINCT cpvu.verification_unit_id)::int
+            FROM client_product_verification_units cpvu
+            JOIN client_products cp ON cp.id = cpvu.client_product_id
+           WHERE cp.client_id = $1 AND cp.product_id = $2 AND cpvu.is_active AND cp.is_active
+             AND cp.effective_from <= now() AND cpvu.effective_from <= now()
+             AND cpvu.verification_unit_id = ANY($3::int[])) AS "mappedCount"`,
       [clientId, productId, unitIds],
     );
-    return (rows[0]?.n ?? 0) === new Set(unitIds).size;
+    return (row?.universal ?? false) || (row?.mappedCount ?? 0) === new Set(unitIds).size;
   },
 
   /** Applicant ids belonging to a case — for validating per-task `applicantId` (no cross-case leak). */

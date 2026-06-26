@@ -1689,6 +1689,25 @@
         ]
       }
     },
+    "/api/v2/cpv-units/available": {
+      "get": {
+        "tags": [
+          "cpv-units"
+        ],
+        "operationId": "get_api_v2_cpv_units_available",
+        "summary": "GET /api/v2/cpv-units/available",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v2/cpv-units/export": {
       "get": {
         "tags": [

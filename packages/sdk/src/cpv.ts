@@ -33,7 +33,8 @@ export interface ClientProductView extends ClientProduct {
 export interface ClientProductVerificationUnit {
   id: number;
   clientProductId: number;
-  verificationUnitId: number;
+  /** null ⇒ Universal — all units are enabled for this client+product (ADR-0074). */
+  verificationUnitId: number | null;
   isActive: boolean;
   /** when the enablement becomes usable (ADR-0017); usable ⇔ isActive AND effectiveFrom <= now(). */
   effectiveFrom: string;
@@ -43,11 +44,12 @@ export interface ClientProductVerificationUnit {
   updatedAt: string;
 }
 
-/** A CPV-unit row joined with the verification-unit display fields (list view). */
+/** A CPV-unit row joined with the verification-unit display fields (list view).
+ *  unit codes/name/role are null for a Universal (NULL unit) mapping — render "Universal" (ADR-0074). */
 export interface ClientProductVerificationUnitView extends ClientProductVerificationUnit {
-  unitCode: string;
-  unitName: string;
-  unitWorkerRole: string;
+  unitCode: string | null;
+  unitName: string | null;
+  unitWorkerRole: string | null;
 }
 
 const positiveInt = z.number().int().positive();
@@ -62,7 +64,8 @@ export const CreateClientProductSchema = z.object({
 
 export const CreateCpvUnitSchema = z.object({
   clientProductId: positiveInt,
-  verificationUnitId: positiveInt,
+  /** null/absent ⇒ Universal — enables ALL units for this client+product (ADR-0074). */
+  verificationUnitId: positiveInt.nullish(),
   /** optional; defaults to now() server-side (ADR-0017). */
   effectiveFrom: isoDate.optional(),
 });

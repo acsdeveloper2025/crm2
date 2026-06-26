@@ -215,6 +215,9 @@ const CPV_UNIT_EXPORT_PAGE_SPEC: PageSpec = {
 export const cpvUnitService = {
   list: (q: CpvUnitListQuery) => cpvRepo.list(q),
 
+  /** ADR-0074: the CPV-scoped available units for a client+product (a Universal CPV ⇒ all active units). */
+  availableUnits: (clientId: number, productId: number) => cpvRepo.availableUnits(clientId, productId),
+
   /**
    * Export the enabled-units across ALL client-products (IE-DEFER-2, IMPORT_EXPORT_STANDARD). Mirrors
    * `clientProductService.exportData`: `current` = the exact page; `all` = every matching row (no page

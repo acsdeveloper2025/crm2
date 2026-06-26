@@ -6,6 +6,9 @@ import type {
   CpvUnitListQuery,
   SortOrder,
 } from '@crm2/sdk';
+
+/** A unit option (id/code/name) — the shape the config unit pickers consume, same as /verification-units/options. */
+type UnitOption = { id: number; code: string; name: string };
 import { query, withTransaction } from '../../platform/db.js';
 import { appendAudit } from '../../platform/audit.js';
 import { AppError } from '../../platform/errors.js';
@@ -300,14 +303,40 @@ export const cpvUnitRepository = {
       if (q.active) clause += ` AND cpvu.effective_from <= now()`;
     }
     return query<ClientProductVerificationUnitView>(
+      // LEFT JOIN: a Universal (NULL unit) mapping has no unit row — its codes come back null and the UI
+      // renders "Universal" (ADR-0074). An INNER JOIN would drop the Universal row from the list.
       `SELECT cpvu.id, cpvu.client_product_id, cpvu.verification_unit_id, cpvu.is_active,
               cpvu.effective_from, cpvu.version, cpvu.created_at, cpvu.updated_at,
               vu.code AS unit_code, vu.name AS unit_name, vu.worker_role AS unit_worker_role
        FROM client_product_verification_units cpvu
-       JOIN verification_units vu ON vu.id = cpvu.verification_unit_id
+       LEFT JOIN verification_units vu ON vu.id = cpvu.verification_unit_id
        ${clause}
-       ORDER BY vu.sort_order, vu.name`,
+       ORDER BY vu.sort_order NULLS FIRST, vu.name NULLS FIRST`,
       params,
+    );
+  },
+
+  /** Units AVAILABLE for a client+product (ADR-0074): every active unit when a Universal CPV mapping
+   *  exists (verification_unit_id IS NULL), else only the specifically-mapped units. The masterdata-gated
+   *  feed behind GET /cpv-units/available (the config pickers). Case-creation's cases.availableUnits applies
+   *  the SAME rule — keep them in sync. */
+  async availableUnits(clientId: number, productId: number): Promise<UnitOption[]> {
+    return query<UnitOption>(
+      `SELECT vu.id, vu.code, vu.name
+       FROM verification_units vu
+       WHERE vu.is_active AND vu.effective_from <= now()
+         AND (
+           EXISTS (SELECT 1 FROM client_product_verification_units cpvu
+                     JOIN client_products cp ON cp.id = cpvu.client_product_id
+                    WHERE cp.client_id = $1 AND cp.product_id = $2 AND cpvu.verification_unit_id IS NULL
+                      AND cpvu.is_active AND cp.is_active AND cp.effective_from <= now() AND cpvu.effective_from <= now())
+           OR EXISTS (SELECT 1 FROM client_product_verification_units cpvu
+                       JOIN client_products cp ON cp.id = cpvu.client_product_id
+                      WHERE cp.client_id = $1 AND cp.product_id = $2 AND cpvu.verification_unit_id = vu.id
+                        AND cpvu.is_active AND cp.is_active AND cp.effective_from <= now() AND cpvu.effective_from <= now())
+         )
+       ORDER BY vu.sort_order, vu.name`,
+      [clientId, productId],
     );
   },
 
@@ -322,7 +351,7 @@ export const cpvUnitRepository = {
   async create(
     input: {
       clientProductId: number;
-      verificationUnitId: number;
+      verificationUnitId?: number | null | undefined; // null ⇒ Universal (all units), ADR-0074
       effectiveFrom?: string | undefined;
     },
     userId: string,
@@ -332,7 +361,7 @@ export const cpvUnitRepository = {
         const [row] = await q<ClientProductVerificationUnit>(
           `INSERT INTO client_product_verification_units (client_product_id, verification_unit_id, effective_from)
            VALUES ($1, $2, COALESCE($3::timestamptz, now())) RETURNING ${CPV_COLS}`,
-          [input.clientProductId, input.verificationUnitId, input.effectiveFrom ?? null],
+          [input.clientProductId, input.verificationUnitId ?? null, input.effectiveFrom ?? null],
         );
         if (!row) throw AppError.internal('insert returned no row');
         await appendAudit(

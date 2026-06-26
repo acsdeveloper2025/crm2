@@ -400,7 +400,7 @@ function UnitManager({ link }: { link: ClientProductView }) {
     mutationFn: () =>
       api('POST', '/api/v2/cpv-units', {
         clientProductId: link.id,
-        verificationUnitId: Number(unitId),
+        verificationUnitId: unitId === 'UNIVERSAL' ? null : Number(unitId), // null ⇒ Universal (ADR-0074)
         effectiveFrom: toIsoDate(effectiveFrom),
       }),
     onSuccess: () => {
@@ -452,6 +452,8 @@ function UnitManager({ link }: { link: ClientProductView }) {
             onChange={(e) => setUnitId(e.target.value)}
           >
             <option value="">Select unit…</option>
+            {/* ADR-0074: map one unit OR Universal (all units) for this client+product. */}
+            <option value="UNIVERSAL">Universal (all units)</option>
             {units.data?.map((u) => (
               <option key={u.id} value={u.id}>
                 {u.code} — {u.name}
@@ -526,8 +528,15 @@ function UnitManager({ link }: { link: ClientProductView }) {
           {enabled.data?.map((u) => (
             <tr key={u.id} className="border-t border-border transition-colors hover:bg-row-hover">
               <td data-label="Unit" className="px-3 py-2">
-                <div className="font-mono text-xs">{u.unitCode}</div>
-                <div className="text-xs text-muted-foreground">{u.unitName}</div>
+                {u.unitCode === null ? (
+                  // ADR-0074: a Universal CPV (null unit) — applies to all units of the client+product.
+                  <div className="text-xs font-medium text-foreground">Universal (all units)</div>
+                ) : (
+                  <>
+                    <div className="font-mono text-xs">{u.unitCode}</div>
+                    <div className="text-xs text-muted-foreground">{u.unitName}</div>
+                  </>
+                )}
               </td>
               <td
                 data-label="Effective From"

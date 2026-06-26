@@ -28,6 +28,9 @@ clientProductRoutes.post('/:id/deactivate', authorize(PERMISSIONS.MASTERDATA_MAN
 
 export const cpvUnitRoutes: Router = Router();
 cpvUnitRoutes.get('/', authorize(PERMISSIONS.MASTERDATA_VIEW), cpv.list);
+// ADR-0074: CPV-scoped available units for a client+product (Universal CPV ⇒ all units) — feeds the config
+// unit pickers (rate-type-assignment / commission / rate-management). Static path, before `/:id`.
+cpvUnitRoutes.get('/available', authorize(PERMISSIONS.MASTERDATA_VIEW), cpv.available);
 // `/export` + `/import` declared before the `/:id` param routes (IMPORT_EXPORT_STANDARD route order).
 // Gates IDENTICAL to the clientProduct leg: export=DATA_EXPORT, import=MASTERDATA_MANAGE (import
 // CREATES enablements, so it needs the same authority as `POST /`). The file is raw bytes; `raw()`

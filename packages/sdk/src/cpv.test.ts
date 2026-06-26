@@ -17,7 +17,8 @@ describe('CPV contract — unit enablement', () => {
   it('accepts a valid pair', () => {
     expect(CreateCpvUnitSchema.safeParse({ clientProductId: 1, verificationUnitId: 3 }).success).toBe(true);
   });
-  it('rejects a missing id', () => {
-    expect(CreateCpvUnitSchema.safeParse({ clientProductId: 1 }).success).toBe(false);
+  it('accepts a missing unit id (Universal = all units, ADR-0074); still requires the client-product id', () => {
+    expect(CreateCpvUnitSchema.safeParse({ clientProductId: 1 }).success).toBe(true); // Universal CPV
+    expect(CreateCpvUnitSchema.safeParse({ verificationUnitId: 3 }).success).toBe(false); // no clientProductId
   });
 });
