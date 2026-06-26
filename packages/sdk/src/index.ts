@@ -46,3 +46,4 @@ export * from './bulk.js';
 export * from './mis.js';
 export * from './client.js';
 export * from './policies.js';
+export * from './userKycUnits.js';

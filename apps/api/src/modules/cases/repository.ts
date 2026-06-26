@@ -805,17 +805,19 @@ export const caseRepository = {
    * The eligible pool for a NOT-yet-created task (ADR-0024) — the operator picks the pool by visit
    * type, so the role is resolved from the `assignment_pool_roles` mapping (data, no role literal):
    *  1. USABLE user, 2. role = the pool role for `visitType`, 3. inside the actor's hierarchy scope,
-   *  4. FIELD only: the user holds an ACTIVE territory assignment matching the picked area/pincode
-   *     (id-equality, the same shape as the visibility engine's geo legs). OFFICE skips the territory
-   *     leg (desk pool). `scopeUserIds` undefined = no hierarchy cap (SUPER_ADMIN sees the whole pool).
+   *  4. FIELD: the user holds an ACTIVE territory assignment matching the picked area/pincode (id-equality,
+   *     the same shape as the visibility engine's geo legs); OFFICE (ADR-0073): the user is GRANTED the
+   *     task's verification unit (`user_kyc_unit_access`) — desk work has no territory but is unit-gated.
+   *     `scopeUserIds` undefined = no hierarchy cap (SUPER_ADMIN sees the whole pool).
    */
   async eligibleAssigneesForNew(
     visitType: string,
     pincodeId: number | undefined,
     areaId: number | undefined,
+    verificationUnitId: number | undefined,
     scopeUserIds: string[] | undefined,
   ): Promise<AssignableUser[]> {
-    const params: unknown[] = [visitType, areaId ?? null, pincodeId ?? null];
+    const params: unknown[] = [visitType, areaId ?? null, pincodeId ?? null, verificationUnitId ?? null];
     let hierarchy = '';
     if (scopeUserIds !== undefined) {
       params.push(scopeUserIds);
@@ -826,15 +828,19 @@ export const caseRepository = {
        FROM users u
        WHERE u.is_active AND u.effective_from <= now() ${hierarchy}
          AND u.role = (SELECT role_code FROM assignment_pool_roles WHERE visit_type = $1)
-         AND (
-           $1 = 'OFFICE'
-           OR EXISTS (
+         AND CASE WHEN $1 = 'OFFICE'
+           -- ADR-0073: OFFICE assignable only to a KYC user GRANTED the task's unit ($4).
+           THEN EXISTS (
+             SELECT 1 FROM user_kyc_unit_access k
+             WHERE k.user_id = u.id AND k.verification_unit_id = $4 AND k.is_active
+           )
+           ELSE EXISTS (
              SELECT 1 FROM user_scope_assignments usa
              WHERE usa.user_id = u.id AND usa.is_active
                AND ((usa.dimension_code = 'AREA' AND usa.entity_id = $2)
                  OR (usa.dimension_code = 'PINCODE' AND usa.entity_id = $3))
            )
-         )
+         END
        ORDER BY u.name`,
       params,
     );

@@ -97,7 +97,19 @@ async function seedLocation(pincode: string, area: string): Promise<number> {
 async function createUser(o: { username: string; name: string; role: string }): Promise<string> {
   const res = await request(app).post('/api/v2/users').set(SA).send(o);
   expect(res.status).toBe(201);
-  return res.body.id as string;
+  const id = res.body.id as string;
+  // ADR-0073: OFFICE assignment is now gated by a per-unit grant. Make a test KYC verifier universally
+  // OFFICE-eligible (grant every active unit — incl FIELD units, since ADR-0070 decoupled visit type from
+  // the unit) so pre-existing desk-flow assertions hold. The gate itself is covered by
+  // userKycUnits.api.test.ts. Idempotent.
+  if (o.role === 'KYC_VERIFIER')
+    await query(
+      `INSERT INTO user_kyc_unit_access (user_id, verification_unit_id)
+       SELECT $1, vu.id FROM verification_units vu WHERE vu.is_active
+       ON CONFLICT DO NOTHING`,
+      [id],
+    );
+  return id;
 }
 
 /** Create a client `rates` row scoped to a location. */

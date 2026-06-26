@@ -23,6 +23,7 @@ import { SessionList } from '../../components/SessionList.js';
 import { UserPhoto } from '../../components/UserPhoto.js';
 import { PasswordPolicyChecklist, isPasswordStrong } from '../../components/PasswordPolicyChecklist.js';
 import { UserAccessSection, type StagedScope } from '../../components/UserAccessSection.js';
+import { UserKycUnitsSection } from '../../components/UserKycUnitsSection.js';
 import { Button } from '../../components/ui/Button.js';
 import { Input } from '../../components/ui/Input.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
@@ -256,13 +257,17 @@ function UserForm({ initial }: { initial: UserView | null }) {
           ]}
         />
         {tab === 'access' && (
-          <UserAccessSection
-            roleCode={role}
-            dimensions={roleDimensions}
-            {...(initial ? { userId: initial.id } : {})}
-            staged={stagedScope}
-            onStageChange={setStagedScope}
-          />
+          <>
+            <UserAccessSection
+              roleCode={role}
+              dimensions={roleDimensions}
+              {...(initial ? { userId: initial.id } : {})}
+              staged={stagedScope}
+              onStageChange={setStagedScope}
+            />
+            {/* ADR-0073: per-user KYC-unit assignment eligibility — KYC verifiers only, existing user. */}
+            {isEdit && role === 'KYC_VERIFIER' && <UserKycUnitsSection userId={initial!.id} />}
+          </>
         )}
         <div className={tab === 'profile' ? 'space-y-3' : 'hidden'}>
           {isEdit && (

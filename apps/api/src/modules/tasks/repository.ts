@@ -293,13 +293,21 @@ export const taskRepository = {
          AND NOT EXISTS (
            SELECT 1 FROM case_tasks t
            WHERE t.id = ANY($1::uuid[])
-             AND $2 = 'FIELD'
-             AND (t.area_id IS NOT NULL OR t.pincode_id IS NOT NULL) -- unlocated task ⇒ no territory gate
-             AND NOT EXISTS (
-               SELECT 1 FROM user_scope_assignments usa
-               WHERE usa.user_id = u.id AND usa.is_active
-                 AND ((usa.dimension_code = 'AREA' AND usa.entity_id = t.area_id)
-                   OR (usa.dimension_code = 'PINCODE' AND usa.entity_id = t.pincode_id))
+             AND (
+               ($2 = 'FIELD'
+                 AND (t.area_id IS NOT NULL OR t.pincode_id IS NOT NULL) -- unlocated FIELD ⇒ no territory gate
+                 AND NOT EXISTS (
+                   SELECT 1 FROM user_scope_assignments usa
+                   WHERE usa.user_id = u.id AND usa.is_active
+                     AND ((usa.dimension_code = 'AREA' AND usa.entity_id = t.area_id)
+                       OR (usa.dimension_code = 'PINCODE' AND usa.entity_id = t.pincode_id))
+                 ))
+               -- ADR-0073: a KYC user lacking a grant for an OFFICE task's unit fails it (so an
+               -- OFFICE pool is the intersection of users granted EVERY selected task's unit).
+               OR ($2 = 'OFFICE' AND NOT EXISTS (
+                   SELECT 1 FROM user_kyc_unit_access k
+                   WHERE k.user_id = u.id AND k.verification_unit_id = t.verification_unit_id AND k.is_active
+                 ))
              )
          )
        ORDER BY u.name`,
@@ -328,16 +336,20 @@ export const taskRepository = {
        WHERE t.id = ANY($1::uuid[])
          AND u.is_active AND u.effective_from <= now() ${hierarchy}
          AND u.role = (SELECT role_code FROM assignment_pool_roles WHERE visit_type = $3)
-         AND (
-           $3 = 'OFFICE'
-           OR (t.area_id IS NULL AND t.pincode_id IS NULL) -- unlocated task ⇒ no territory gate
-           OR EXISTS (
-             SELECT 1 FROM user_scope_assignments usa
-             WHERE usa.user_id = u.id AND usa.is_active
-               AND ((usa.dimension_code = 'AREA' AND usa.entity_id = t.area_id)
-                 OR (usa.dimension_code = 'PINCODE' AND usa.entity_id = t.pincode_id))
+         AND CASE WHEN $3 = 'OFFICE'
+           -- ADR-0073: an OFFICE task is assignable only to a KYC user GRANTED that task's unit.
+           THEN EXISTS (
+             SELECT 1 FROM user_kyc_unit_access k
+             WHERE k.user_id = u.id AND k.verification_unit_id = t.verification_unit_id AND k.is_active
            )
-         )`,
+           ELSE (t.area_id IS NULL AND t.pincode_id IS NULL) -- unlocated FIELD task ⇒ no territory gate
+             OR EXISTS (
+               SELECT 1 FROM user_scope_assignments usa
+               WHERE usa.user_id = u.id AND usa.is_active
+                 AND ((usa.dimension_code = 'AREA' AND usa.entity_id = t.area_id)
+                   OR (usa.dimension_code = 'PINCODE' AND usa.entity_id = t.pincode_id))
+             )
+         END`,
       params,
     );
     return rows.map((r) => r.id);

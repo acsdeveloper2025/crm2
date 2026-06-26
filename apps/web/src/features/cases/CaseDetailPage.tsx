@@ -959,6 +959,8 @@ function AssignForm({
         p.set('areaId', String(task.areaId));
         if (task.pincodeId) p.set('pincodeId', String(task.pincodeId));
       }
+      // ADR-0073: the OFFICE pool is gated by the task's unit grant — pass the task's unit.
+      if (visitType === 'OFFICE') p.set('verificationUnitId', String(task.verificationUnitId));
       return api<AssignableUser[]>('GET', `/api/v2/cases/${caseId}/eligible-assignees?${p.toString()}`);
     },
     enabled: !fieldNoLocation,

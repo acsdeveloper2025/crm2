@@ -29,7 +29,17 @@ function seeded<T>(res: request.Response): T {
 async function createUser(o: { username: string; name: string; role: string }): Promise<string> {
   const res = await request(app).post('/api/v2/users').set(SA).send(o);
   expect(res.status).toBe(201);
-  return res.body.id as string;
+  const id = res.body.id as string;
+  // ADR-0073: OFFICE assignment is gated by a per-unit grant — grant a test KYC verifier every active unit
+  // so desk-flow assertions hold (the gate itself is covered by userKycUnits.api.test.ts). Idempotent.
+  if (o.role === 'KYC_VERIFIER')
+    await db!.pool.query(
+      `INSERT INTO user_kyc_unit_access (user_id, verification_unit_id)
+       SELECT $1, vu.id FROM verification_units vu WHERE vu.is_active
+       ON CONFLICT DO NOTHING`,
+      [id],
+    );
+  return id;
 }
 
 async function seedCpvUnit(
@@ -129,6 +139,13 @@ describe.skipIf(!RUN)('Dashboard overview (ADR-0029)', () => {
     kycId = await createUser({ username: 'dash_kyc', name: 'Dash KYC Verifier', role: 'KYC_VERIFIER' });
     const ctx = await seedCpvUnit('DASH');
     const kycCtx = await seedCpvUnit('DASHK', { workerRole: 'KYC_VERIFIER' }); // desk unit for the OFFICE task
+    // ADR-0073: kycId was created before this unit existed, so the createUser auto-grant missed it — grant
+    // now so the OFFICE assign below is eligible.
+    await db!.pool.query(
+      `INSERT INTO user_kyc_unit_access (user_id, verification_unit_id)
+       SELECT $1, vu.id FROM verification_units vu WHERE vu.is_active ON CONFLICT DO NOTHING`,
+      [kycId],
+    );
     await seedAssignedTask(ctx, agentId); // FIELD task → field agent
     await seedAssignedTask(kycCtx, kycId, 'OFFICE'); // OFFICE task → KYC verifier (KYC unit, binding)
   });

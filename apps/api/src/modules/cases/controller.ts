@@ -141,6 +141,7 @@ export const caseController = {
           visitType,
           parsePositiveInt(req.query['pincodeId']),
           parsePositiveInt(req.query['areaId']),
+          parsePositiveInt(req.query['verificationUnitId']),
         ),
       );
     } catch (e) {

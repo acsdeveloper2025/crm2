@@ -304,7 +304,13 @@ export const caseService = {
     if (assigned.length > 0) {
       const scopeUserIds = await getScopedUserIds(actor);
       for (const t of assigned) {
-        const pool = await repo.eligibleAssigneesForNew(t.visitType!, t.pincodeId, t.areaId, scopeUserIds);
+        const pool = await repo.eligibleAssigneesForNew(
+          t.visitType!,
+          t.pincodeId,
+          t.areaId,
+          t.verificationUnitId,
+          scopeUserIds,
+        );
         if (!pool.some((u) => u.id === t.assigneeId)) throw AppError.badRequest('INVALID_ASSIGNEE');
       }
     }
@@ -320,9 +326,10 @@ export const caseService = {
     visitType: string,
     pincodeId: number | undefined,
     areaId: number | undefined,
+    verificationUnitId: number | undefined,
   ): Promise<AssignableUser[]> {
     return getScopedUserIds(actor).then((ids) =>
-      repo.eligibleAssigneesForNew(visitType, pincodeId, areaId, ids),
+      repo.eligibleAssigneesForNew(visitType, pincodeId, areaId, verificationUnitId, ids),
     );
   },
 

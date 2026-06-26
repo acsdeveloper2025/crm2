@@ -293,16 +293,20 @@ function TaskRowEditor({
   });
   const areas = areaMatches?.items ?? [];
 
-  // The eligible executive pool for the chosen visit type (+ FIELD location). case.assign-gated.
-  const poolReady = !!row.visitType && (row.visitType === 'OFFICE' || !!row.locationId);
+  // The eligible executive pool for the chosen visit type (+ FIELD location / OFFICE unit grant).
+  // case.assign-gated. ADR-0073: the OFFICE pool needs the chosen unit (it's gated by a per-unit grant).
+  const poolReady =
+    !!row.visitType && (row.visitType === 'OFFICE' ? !!row.verificationUnitId : !!row.locationId);
   const { data: pool, isLoading: poolLoading } = useQuery({
-    queryKey: ['eligible-assignees', caseId, row.visitType, row.locationId],
+    queryKey: ['eligible-assignees', caseId, row.visitType, row.locationId, row.verificationUnitId],
     queryFn: () => {
       const p = new URLSearchParams({ visitType: row.visitType });
       if (row.locationId) {
         p.set('areaId', row.locationId);
         p.set('pincodeId', row.locationId);
       }
+      if (row.visitType === 'OFFICE' && row.verificationUnitId)
+        p.set('verificationUnitId', row.verificationUnitId);
       return api<AssignableUser[]>('GET', `/api/v2/cases/${caseId}/eligible-assignees?${p.toString()}`);
     },
     enabled: canAssign && poolReady,

@@ -4855,6 +4855,42 @@
         ]
       }
     },
+    "/api/v2/users/{id}/kyc-units": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "get_api_v2_users_id_kyc_units",
+        "summary": "GET /api/v2/users/{id}/kyc-units",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "put_api_v2_users_id_kyc_units",
+        "summary": "PUT /api/v2/users/{id}/kyc-units",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v2/users/{id}/password": {
       "post": {
         "tags": [

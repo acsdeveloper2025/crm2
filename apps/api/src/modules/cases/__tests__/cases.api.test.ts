@@ -707,7 +707,19 @@ describe.skipIf(!RUN)('cases API', () => {
   }): Promise<string> {
     const res = await request(app).post('/api/v2/users').set(SA).send(o);
     expect(res.status).toBe(201);
-    return res.body.id as string;
+    const id = res.body.id as string;
+    // ADR-0073: OFFICE assignment is now gated by a per-unit grant. Make a test KYC verifier universally
+    // OFFICE-eligible (grant every active unit — incl FIELD units, since ADR-0070 decoupled visit type from
+    // the unit) so pre-existing desk-flow assertions hold. The gate itself is covered by
+    // userKycUnits.api.test.ts. Idempotent.
+    if (o.role === 'KYC_VERIFIER')
+      await db!.pool.query(
+        `INSERT INTO user_kyc_unit_access (user_id, verification_unit_id)
+         SELECT $1, vu.id FROM verification_units vu WHERE vu.is_active
+         ON CONFLICT DO NOTHING`,
+        [id],
+      );
+    return id;
   }
 
   async function seedCaseWithTask(
@@ -2173,7 +2185,7 @@ describe.skipIf(!RUN)('cases API', () => {
     }
 
     it('eligible-assignees: FIELD needs the territory; OFFICE returns the desk pool', async () => {
-      const { loc, caseId } = await locatedCase('PEF');
+      const { ctx, loc, caseId } = await locatedCase('PEF');
       const fa = await createUser({ username: 'fa_pef', name: 'PEF FA', role: 'FIELD_AGENT' });
       const desk = await createUser({ username: 'kyc_pef', name: 'PEF DESK', role: 'KYC_VERIFIER' });
       const fieldUrl = `/api/v2/cases/${caseId}/eligible-assignees?visitType=FIELD&areaId=${loc}&pincodeId=${loc}`;
@@ -2191,9 +2203,11 @@ describe.skipIf(!RUN)('cases API', () => {
       expect(ids(field.body)).toContain(fa);
       expect(ids(field.body)).not.toContain(desk); // wrong pool for FIELD
 
-      // OFFICE: the backend desk pool, no territory needed; field agents excluded.
+      // OFFICE: the desk pool granted this unit (ADR-0073), no territory needed; field agents excluded.
       const office = await request(app)
-        .get(`/api/v2/cases/${caseId}/eligible-assignees?visitType=OFFICE`)
+        .get(
+          `/api/v2/cases/${caseId}/eligible-assignees?visitType=OFFICE&verificationUnitId=${ctx.enabledUnitId}`,
+        )
         .set(SA);
       expect(office.status).toBe(200);
       expect(ids(office.body)).toContain(desk);

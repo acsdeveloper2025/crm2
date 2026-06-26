@@ -8,6 +8,8 @@ import { MAX_IMAGE_BYTES } from '../../platform/image.js';
 import { authController } from '../auth/controller.js';
 // Generic scope assignment (ADR-0022) — mounted under /users/:id, delegates to its module.
 import { scopeAssignmentController } from '../scopeAssignments/controller.js';
+// Per-user KYC-unit assignment eligibility (ADR-0073) — mounted under /users/:id.
+import { userKycUnitsController } from '../userKycUnits/controller.js';
 
 /**
  * /api/v2/users — admin user identity management.
@@ -94,6 +96,10 @@ const T = PERMISSIONS.ACCESS_SCOPE_ASSIGN;
 userRoutes.get('/:id/scope-assignments', authorize(T), scopeAssignmentController.get);
 userRoutes.post('/:id/scope-assignments', authorize(T), scopeAssignmentController.add);
 userRoutes.delete('/:id/scope-assignments/:assignmentId', authorize(T), scopeAssignmentController.remove);
+// KYC-unit assignment eligibility (ADR-0073): per-user grants narrowing the OFFICE assignee pool (NOT data
+// scope). Read = USER_VIEW (same audience as the user record page); write = USER_MANAGE.
+userRoutes.get('/:id/kyc-units', authorize(PERMISSIONS.USER_VIEW), userKycUnitsController.get);
+userRoutes.put('/:id/kyc-units', authorize(PERMISSIONS.USER_MANAGE), userKycUnitsController.set);
 // Bulk assignment (IMPORT_EXPORT_STANDARD): spreadsheet import + all-assignments export. Static
 // two-segment paths — no collision with the `/:id/...` patterns above.
 userRoutes.get('/scope/import-template', authorize(T), scopeAssignmentController.importTemplate);
