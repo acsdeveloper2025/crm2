@@ -78,11 +78,16 @@ jobs:
         run: pnpm --filter @crm2/api exec puppeteer browsers install chrome
       - name: 4+5. Unit + Integration tests (coverage-gated)
         run: pnpm test
-      # Part 22: migrations must re-apply idempotently on an existing DB.
-      - name: Migration re-apply (idempotency)
+      # Part 22: prod applies migrations via the tracked runner (db/v2/migrate.sh) — only NEW/EDITED ones
+      # run, the rest skip (so a late migration that drops a column an earlier one referenced, e.g. 0097
+      # dropping verification_units.kind, can't break a re-run). Prove it on the fresh base DB: run the
+      # runner twice; the 2nd pass must apply 0 (everything already tracked). SEED_DIR=/tmp ⇒ no data seeds.
+      - name: Migration runner idempotency
         run: |
-          for f in db/v2/migrations/*.sql; do psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"; done
-          for f in db/v2/migrations/*.sql; do psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"; done
+          MIGRATIONS_DIR=db/v2/migrations SEED_DIR=/tmp sh db/v2/migrate.sh
+          out="$(MIGRATIONS_DIR=db/v2/migrations SEED_DIR=/tmp sh db/v2/migrate.sh)"
+          echo "$out"
+          echo "$out" | grep -q "0 applied," || { echo "::error::second runner pass should skip all migrations"; exit 1; }
 
   build:
     runs-on: ubuntu-latest

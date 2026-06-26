@@ -77,7 +77,9 @@ for f in "$MIGRATIONS_DIR"/*.sql; do
   fi
   # Each .sql is its own BEGIN;…COMMIT;. Record AFTER a clean apply: a crash between
   # the two leaves the row unrecorded, so the next run re-applies (idempotent → safe).
-  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$f"
+  # lock_timeout: a DDL migration that can't get its lock (e.g. behind the still-serving old api during a
+  # rolling deploy) FAILS FAST → the deploy goes RED and rolls back, instead of hanging the cutover forever.
+  PGOPTIONS='-c lock_timeout=30s' psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$f"
   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -c \
     "INSERT INTO schema_migrations (filename, checksum) VALUES ('$name', '$sum')
        ON CONFLICT (filename) DO UPDATE SET checksum = EXCLUDED.checksum, applied_at = now();"
