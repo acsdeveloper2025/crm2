@@ -8,6 +8,11 @@
 -- Graph: 3 clients · 2 products · 3 CPV links (client_products) · 1 case with one
 -- primary applicant and one PENDING (unassigned) field task for the Pipeline queue.
 
+-- The e2e admin is a test fixture: migration 0103 (ADR-0076 SEC-12) flips password_must_change=true
+-- for the seed-hash admin (so a fresh real deployment is forced to rotate the known credential). The
+-- automated specs log straight into the app shell, so opt the fixture admin out of that gate.
+UPDATE users SET password_must_change = false WHERE username = 'admin';
+
 -- Clients (Select-row bulk-bar test selects the first row; CPV test needs an owner).
 INSERT INTO clients (code, name)
 VALUES ('HDFC', 'HDFC Bank'), ('ICICI', 'ICICI Bank'), ('AXIS', 'Axis Bank')
