@@ -1,6 +1,6 @@
 # ADR-0076: Security hardening — rate limiting, resource-exhaustion guards, secret fail-fast, and access-token revocation
 
-- **Status:** Accepted (Phase 1 building; Phase 2 planned — see Decision)
+- **Status:** Accepted (Phase 1 + Phase 2 built & verified — see Decision)
 - **Date:** 2026-06-27
 - **Amends:** ADR-0014 (Authentication & session management) · ADR-0022 (Access Control 2.0).
 - **Relates:** ADR-0027 (Realtime & push) · ADR-0030 (Background jobs).
@@ -110,11 +110,10 @@ separately because it carries migration + false-positive risk.
    `NODE_ENV==='production'`, so even a misconfigured mount can't honor `x-test-auth` in prod.
    The mount guard stays as the first line.
 
-### Phase 2 — access-token revocation, built & reviewed separately (needs a migration)
+### Phase 2 — access-token revocation (BUILT, migration 0101)
 
 Because prod has no Redis, the access-token kill switch needs **durable** state, and reuse
-detection needs a grace window to avoid mass-logout false positives. Decided design (to build
-next, not in Phase 1):
+detection needs a grace window to avoid mass-logout false positives. Built as:
 
 - **Per-user `tokens_valid_after timestamptz` on `users`** (new migration). `signAccessToken`
   already stamps `iat`; `verifyAccessToken` returns it; `authenticate.ts` rejects a token whose

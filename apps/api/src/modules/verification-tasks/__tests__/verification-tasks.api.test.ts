@@ -183,6 +183,7 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
       emitToUser: () => undefined,
       emitToFieldMonitoring: () => undefined,
       emitToOffice: (event, payload) => office.push({ event, payload }),
+      disconnectUser: () => undefined,
     };
     setRealtime(rt);
     try {

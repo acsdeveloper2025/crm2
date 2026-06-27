@@ -12,6 +12,8 @@ import {
   type Paginated,
 } from '@crm2/sdk';
 import { userRepository as repo } from './repository.js';
+import { revokeUserAccessTokens } from '../../platform/tokenRevocation/index.js';
+import { getRealtime } from '../../platform/realtime/index.js';
 import { departmentService } from '../departments/service.js';
 import { designationService } from '../designations/service.js';
 import { hashPassword, generateTempPassword } from '../../platform/password.js';
@@ -435,13 +437,37 @@ export const userService = {
   },
 
   activate: (id: string, version: number, userId: string) => repo.setActive(id, true, userId, version),
-  deactivate: (id: string, version: number, userId: string) => repo.setActive(id, false, userId, version),
+
+  /** Deactivation also kills the user's live access tokens + drops their sockets (ADR-0076 Phase 2),
+   *  so a disabled account loses access immediately, not only at its 15-min token TTL. (Refresh is
+   *  already refused for an inactive user via statusById, so no separate refresh revoke is needed.) */
+  async deactivate(id: string, version: number, userId: string) {
+    const row = await repo.setActive(id, false, userId, version);
+    await revokeUserAccessTokens(id);
+    getRealtime().disconnectUser(id);
+    return row;
+  },
 
   /** Bulk (de)activate — per-row OCC, per-row result (CONCURRENCY_AND_EDITING_STANDARD §1). Reuses
    *  the same version-guarded `repo.setActive`; a row changed since selection comes back CONFLICT.
-   *  id is a uuid (string) — passed through as a string, never Number()'d. */
-  bulkSetActive(body: unknown, isActive: boolean, userId: string) {
+   *  id is a uuid (string) — passed through as a string, never Number()'d. On deactivation each
+   *  successfully-updated user also has its access tokens killed + sockets dropped (ADR-0076 Phase 2). */
+  async bulkSetActive(body: unknown, isActive: boolean, userId: string) {
     const items = parseBulkItems(body, 'uuid');
-    return applyBulkOcc(items, (id, version) => repo.setActive(String(id), isActive, userId, version));
+    const result = await applyBulkOcc(items, (id, version) =>
+      repo.setActive(String(id), isActive, userId, version),
+    );
+    if (!isActive) {
+      const rt = getRealtime();
+      await Promise.all(
+        result.results
+          .filter((r) => r.status === 'OK')
+          .map(async (r) => {
+            await revokeUserAccessTokens(r.id);
+            rt.disconnectUser(r.id);
+          }),
+      );
+    }
+    return result;
   },
 };

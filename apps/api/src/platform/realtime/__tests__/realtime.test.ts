@@ -57,6 +57,7 @@ describe('realtime emit seam (no server)', () => {
       emitToUser: (userId, event) => calls.push(`user:${userId}:${event}`),
       emitToFieldMonitoring: (event) => calls.push(`fm:${event}`),
       emitToOffice: (event) => calls.push(`office:${event}`),
+      disconnectUser: (userId) => calls.push(`disconnect:${userId}`),
     });
     getRealtime().emitToUser(UID, 'notification', {});
     getRealtime().emitToFieldMonitoring('field-monitoring:location-updated', {});

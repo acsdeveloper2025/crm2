@@ -1503,15 +1503,16 @@ in-memory / durable-DB, not Redis-backed.
 - **SEC-7 (LOW)** `x-test-auth` seam gated only by mount-time `NODE_ENV`. FIX: middleware no-ops in
   production (double-guard).
 
-**🟡 DEFERRED to Phase 2 (ADR-0076, needs migration + careful review — built separately):**
+**🟢 FIXED in Phase 2 (ADR-0076, mig 0101, branch `feat/security-hardening` — built + gate GREEN):**
 - **SEC-8 (HIGH)** Stolen/re-issued access token unrevocable for ≤15 min; deactivation/password
-  change don't kill live access tokens or the realtime socket. FIX (planned): durable per-user
-  `tokens_valid_after` column + `iat` check in `authenticate` + socket force-disconnect, wired into
-  logout-all / password-change / deactivate (single+bulk). Until then: bounded by 15-min TTL +
-  refresh-side block (unchanged from today).
-- **SEC-9 (MEDIUM)** Refresh-token reuse not treated as a breach (no family revoke). FIX (planned):
-  family revoke **with a ≈60s grace window** so benign mobile-retry / multi-tab replays don't cause
-  mass logout.
+  change didn't kill live access tokens or the realtime socket. FIX: durable per-user
+  `tokens_valid_after` column (mig 0101) + `iat` check in `authenticate` (strict `<`, whole-second so
+  a same-second re-login isn't self-killed) + socket-handshake check + force-disconnect, wired into
+  logout-all / password-change / deactivate (single+bulk). Read fail-CLOSED (DB-backed), cached 5s with
+  bust-on-revoke. SEC-12-adjacent: `setActive(false)` now actually revokes (was a no-op before).
+- **SEC-9 (MEDIUM)** Refresh-token reuse not treated as a breach. FIX: replaying a rotated token →
+  family revoke (all sessions + access kill + socket drop) **only beyond a 60s grace window**; within
+  grace it's a benign 401 (mobile lost-response retry / multi-tab race) so jitter never mass-logs-out.
 
 **🟡 DEFERRED / hygiene (tracked, low risk):**
 - **SEC-10 (MEDIUM)** Web stores access+refresh in `localStorage` (XSS → durable takeover). DEFER:

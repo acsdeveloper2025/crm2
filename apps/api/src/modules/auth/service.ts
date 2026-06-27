@@ -22,6 +22,8 @@ import { encryptSecret, decryptSecret } from '../../platform/encryption.js';
 import { AppError } from '../../platform/errors.js';
 import { HTTP_STATUS } from '../../platform/http.js';
 import { getRealtime } from '../../platform/realtime/index.js';
+import { revokeUserAccessTokens } from '../../platform/tokenRevocation/index.js';
+import { logger } from '@crm2/logger';
 
 const MS_PER_S = 1000;
 const MS_PER_MIN = 60_000;
@@ -38,6 +40,22 @@ function emitSessionRevoked(userId: string, deviceIds: ReadonlyArray<string | nu
     if (deviceId) rt.emitToUser(userId, 'auth:session_revoked', { deviceId });
   }
 }
+
+/**
+ * Fully cut a user off (ADR-0076 Phase 2): revoke all refresh sessions (+ push the per-device
+ * forced-logout), kill live access tokens (the durable cutoff), and hard-disconnect live sockets so a
+ * revoked/compromised user loses REST and realtime at once — not only at the access token's TTL.
+ */
+async function fullyRevokeUser(userId: string): Promise<void> {
+  emitSessionRevoked(userId, await repo.revokeAllForUser(userId));
+  await revokeUserAccessTokens(userId);
+  getRealtime().disconnectUser(userId);
+}
+
+/** Grace for refresh-token reuse detection: a rotated token replayed within this window is treated as a
+ *  benign client retry (lost-response retry / multi-tab race) → plain 401, no family revoke. Beyond it,
+ *  a replay is a theft signal → revoke the whole family. Avoids network jitter causing mass logout. */
+const REFRESH_REUSE_GRACE_MS = 60_000;
 /** Lock an account after this many consecutive failed logins; auto-unlock after the cooldown. */
 const MAX_FAILED_LOGINS = 5;
 const LOCKOUT_COOLDOWN_S = 900; // 15 minutes
@@ -248,7 +266,7 @@ export const authService = {
     const hash = await repo.passwordHashById(userId);
     if (!hash || !(await verifyPassword(v.currentPassword, hash))) throw invalidCreds();
     await repo.changePassword(userId, await hashPassword(v.newPassword));
-    emitSessionRevoked(userId, await repo.revokeAllForUser(userId));
+    await fullyRevokeUser(userId);
   },
 
   async refresh(input: unknown, ip: string | null): Promise<AuthTokens> {
@@ -256,7 +274,17 @@ export const authService = {
     const claims = await verifyRefreshToken(v.refreshToken);
     if (!claims) throw invalidRefresh();
     const row = await repo.findRefresh(claims.jti);
-    if (!row || row.revokedAt || new Date(row.expiresAt).getTime() < Date.now()) throw invalidRefresh();
+    if (!row || new Date(row.expiresAt).getTime() < Date.now()) throw invalidRefresh();
+    // Reuse detection (ADR-0076 Phase 2): a signature-valid, present, but ALREADY-revoked token is a
+    // rotated/used token being replayed. Within the grace window it's a benign client retry (lost
+    // response / multi-tab race) → plain 401. Beyond grace it's a theft signal → burn the whole family.
+    if (row.revokedAt) {
+      if (Date.now() - new Date(row.revokedAt).getTime() > REFRESH_REUSE_GRACE_MS) {
+        logger.warn('refresh-token reuse beyond grace → family revoke', { userId: claims.userId });
+        await fullyRevokeUser(claims.userId);
+      }
+      throw invalidRefresh();
+    }
     const status = await repo.statusById(claims.userId);
     if (!status || !status.usable) throw invalidRefresh();
     // Rotation policy can't be outrun by an always-on session: once the password is over-age, refresh
@@ -295,7 +323,7 @@ export const authService = {
   },
 
   async logout(userId: string): Promise<void> {
-    emitSessionRevoked(userId, await repo.revokeAllForUser(userId));
+    await fullyRevokeUser(userId);
   },
 
   async me(userId: string): Promise<LoginResponse['user']> {
