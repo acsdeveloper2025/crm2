@@ -15,6 +15,7 @@ function spyRealtime(): { events: Array<{ userId: string; event: string; payload
     },
     emitToFieldMonitoring: () => undefined,
     emitToOffice: () => undefined,
+    disconnectUser: () => undefined,
   };
   setRealtime(rt);
   return { events };
@@ -215,6 +216,55 @@ describe.skipIf(!RUN)('auth API', () => {
     const reuse = await request(app).post('/api/v2/auth/refresh').send({ refreshToken: first.refreshToken });
     expect(reuse.status).toBe(401);
     expect(reuse.body.error).toBe('INVALID_REFRESH');
+  });
+
+  it('refresh-token reuse WITHIN the grace window is a benign 401 (no family revoke)', async () => {
+    await makeUser({ username: 'reuse_grace' });
+    const first = (await login('reuse_grace')).body.tokens;
+    const rotated = await request(app)
+      .post('/api/v2/auth/refresh')
+      .send({ refreshToken: first.refreshToken });
+    expect(rotated.status).toBe(200);
+    const newRefresh = rotated.body.tokens.refreshToken as string;
+    // Replay the just-rotated (now-revoked) token: a benign retry within grace → plain 401…
+    const replay = await request(app).post('/api/v2/auth/refresh').send({ refreshToken: first.refreshToken });
+    expect(replay.status).toBe(401);
+    expect(replay.body.error).toBe('INVALID_REFRESH');
+    // …and the NEW token still works → the family was NOT revoked (no mass logout from network jitter).
+    const ok = await request(app).post('/api/v2/auth/refresh').send({ refreshToken: newRefresh });
+    expect(ok.status).toBe(200);
+  });
+
+  it('refresh-token reuse BEYOND the grace window revokes the whole family (theft response)', async () => {
+    await makeUser({ username: 'reuse_theft' });
+    // Log in WITH a deviceId so the family revoke emits the per-device forced-logout we assert below.
+    const first = (
+      await request(app)
+        .post('/api/v2/auth/login')
+        .send({ username: 'reuse_theft', password: PASSWORD, deviceId: 'dev-theft' })
+    ).body.tokens;
+    const rotated = await request(app)
+      .post('/api/v2/auth/refresh')
+      .send({ refreshToken: first.refreshToken });
+    expect(rotated.status).toBe(200);
+    const newRefresh = rotated.body.tokens.refreshToken as string;
+    // Backdate the old token's revocation to beyond the grace window → a later replay reads as theft.
+    await db!.pool.query(
+      `UPDATE auth_refresh_tokens SET revoked_at = now() - interval '2 minutes' WHERE revoked_at IS NOT NULL`,
+    );
+    const { events } = spyRealtime();
+    try {
+      const replay = await request(app)
+        .post('/api/v2/auth/refresh')
+        .send({ refreshToken: first.refreshToken });
+      expect(replay.status).toBe(401);
+      // Family revoke fired: the still-live NEW token is now dead too, and a forced-logout was pushed.
+      const dead = await request(app).post('/api/v2/auth/refresh').send({ refreshToken: newRefresh });
+      expect(dead.status).toBe(401);
+      expect(events.some((e) => e.event === 'auth:session_revoked')).toBe(true);
+    } finally {
+      setRealtime(null);
+    }
   });
 
   it('logout revokes the user’s refresh tokens', async () => {

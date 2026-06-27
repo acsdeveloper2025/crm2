@@ -14,6 +14,11 @@ export interface AccessClaims {
   // open role catalog (ADR-0022) - the code is resolved to attributes per request, never name-checked
   role: string;
 }
+/** Verification result: the signed claims plus the token's issued-at (set by signAccessToken's
+ *  setIssuedAt). `iat` drives the per-user access-token kill switch (ADR-0076 Phase 2). */
+export interface VerifiedAccessClaims extends AccessClaims {
+  iat: number;
+}
 export interface RefreshClaims {
   userId: string;
   jti: string;
@@ -43,12 +48,18 @@ async function verify(token: string): Promise<JWTPayload> {
   return payload;
 }
 
-/** Returns access claims or null when the token is invalid/expired/not an access token. */
-export async function verifyAccessToken(token: string): Promise<AccessClaims | null> {
+/** Returns access claims (incl. `iat`) or null when the token is invalid/expired/not an access token. */
+export async function verifyAccessToken(token: string): Promise<VerifiedAccessClaims | null> {
   try {
     const p = await verify(token);
-    if (p['typ'] !== 'access' || typeof p.sub !== 'string' || typeof p['role'] !== 'string') return null;
-    return { userId: p.sub, role: p['role'] };
+    if (
+      p['typ'] !== 'access' ||
+      typeof p.sub !== 'string' ||
+      typeof p['role'] !== 'string' ||
+      typeof p.iat !== 'number'
+    )
+      return null;
+    return { userId: p.sub, role: p['role'], iat: p.iat };
   } catch {
     return null;
   }

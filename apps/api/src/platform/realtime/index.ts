@@ -7,6 +7,7 @@ import { loadEnv } from '@crm2/config';
 import { logger } from '@crm2/logger';
 import { verifyAccessToken } from '../jwt.js';
 import { getRoleAttributes } from '../access/index.js';
+import { isAccessRevoked } from '../tokenRevocation/index.js';
 
 /**
  * Real-time transport seam (ADR-0027). Callers depend on the {@link Realtime} interface, never on
@@ -27,12 +28,16 @@ export interface Realtime {
    *  FIELD_AGENT). Used for case/task status fan-out so web views refetch live without spamming the
    *  field app (which never joins this room). */
   emitToOffice(event: string, payload: unknown): void;
+  /** Force-disconnect every live socket of one user (ADR-0076 Phase 2): a user-wide revoke must drop
+   *  the realtime channel too, not just the REST tokens — else a revoked socket keeps receiving fan-out. */
+  disconnectUser(userId: string): void;
 }
 
 const noopRealtime: Realtime = {
   emitToUser: () => undefined,
   emitToFieldMonitoring: () => undefined,
   emitToOffice: () => undefined,
+  disconnectUser: () => undefined,
 };
 
 let override: Realtime | null = null;
@@ -86,6 +91,9 @@ function extractToken(socket: AppSocket): string | null {
 export async function resolveSocketIdentity(token: string | null): Promise<SocketData | null> {
   const claims = token ? await verifyAccessToken(token) : null;
   if (!claims) return null;
+  // Kill switch (ADR-0076 Phase 2): a revoked user must not be able to open a fresh socket with a
+  // still-unexpired-but-killed access token (the REST path already rejects it).
+  if (await isAccessRevoked(claims.userId, claims.iat)) return null;
   const attrs = await getRoleAttributes(claims.role);
   const grantsAll = attrs?.grantsAll ?? false;
   const permissions = attrs?.permissions ?? [];
@@ -163,6 +171,9 @@ export function initRealtime(httpServer: HttpServer, env: Env = loadEnv()): AppS
     },
     emitToOffice: (event, payload) => {
       io.to(OFFICE_ROOM).emit(event, payload);
+    },
+    disconnectUser: (userId) => {
+      void io.in(userRoom(userId)).disconnectSockets(true);
     },
   };
 
