@@ -276,6 +276,54 @@ describe.skipIf(!RUN)('auth API', () => {
     expect(after.status).toBe(401);
   });
 
+  // ── refresh-token httpOnly cookie (ADR-0076 SEC-10) — web uses the cookie, mobile uses the body ──
+  describe('refresh-token cookie', () => {
+    const refreshCookie = (res: { headers: Record<string, unknown> }): string | undefined => {
+      const set = res.headers['set-cookie'] as string[] | undefined;
+      return (set ?? []).find((c) => c.startsWith('crm2_rt='));
+    };
+
+    it('login sets an httpOnly refresh cookie and returns jti in the body', async () => {
+      await makeUser({ username: 'ck_login' });
+      const res = await login('ck_login');
+      expect(res.status).toBe(200);
+      expect(typeof res.body.tokens.jti).toBe('string');
+      const c = refreshCookie(res);
+      expect(c?.toLowerCase()).toContain('httponly');
+      expect(c).toContain('Path=/api/v2/auth');
+      expect(res.body.tokens.refreshToken).toBeTruthy(); // body token still present for mobile
+    });
+
+    it('refresh works from the cookie alone — no body token (web path)', async () => {
+      await makeUser({ username: 'ck_web' });
+      const cookie = refreshCookie(await login('ck_web'))!.split(';')[0]!; // "crm2_rt=<token>"
+      const res = await request(app).post('/api/v2/auth/refresh').set('Cookie', cookie).send({});
+      expect(res.status).toBe(200);
+      expect(typeof res.body.tokens.jti).toBe('string');
+      expect(refreshCookie(res)).toBeDefined(); // cookie rotated
+    });
+
+    it('refresh still works from the body — no cookie (mobile parity)', async () => {
+      await makeUser({ username: 'ck_mobile' });
+      const li = await login('ck_mobile');
+      const res = await request(app)
+        .post('/api/v2/auth/refresh')
+        .send({ refreshToken: li.body.tokens.refreshToken });
+      expect(res.status).toBe(200);
+    });
+
+    it('logout clears the refresh cookie', async () => {
+      await makeUser({ username: 'ck_logout' });
+      const li = await login('ck_logout');
+      const res = await request(app)
+        .post('/api/v2/auth/logout')
+        .set('authorization', `Bearer ${li.body.tokens.accessToken}`);
+      expect(res.status).toBe(200);
+      const c = refreshCookie(res) ?? '';
+      expect(c).toMatch(/crm2_rt=;|Expires=Thu, 01 Jan 1970|Max-Age=0/); // cleared
+    });
+  });
+
   // ── auth:session_revoked realtime forced-logout (ADR-0014/0027, mobile parity) ──
   it('logout emits auth:session_revoked to the device (immediate forced-logout)', async () => {
     await makeUser({ username: 'sock', role: 'FIELD_AGENT' });

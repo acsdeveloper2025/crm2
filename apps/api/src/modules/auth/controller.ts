@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { authService as svc } from './service.js';
 import { AppError } from '../../platform/errors.js';
 import { HTTP_STATUS } from '../../platform/http.js';
+import { setRefreshCookie, clearRefreshCookie, readRefreshCookie } from '../../http/refreshCookie.js';
 
 const requireUserId = (req: Request): string => {
   const id = req.auth?.userId;
@@ -21,7 +22,9 @@ const requireUuidParam = (value: string | string[] | undefined, param: string): 
 export const authController = {
   async login(req: Request, res: Response, next: NextFunction) {
     try {
-      res.json(await svc.login(req.body, req.ip ?? null));
+      const result = await svc.login(req.body, req.ip ?? null);
+      setRefreshCookie(res, result.tokens.refreshToken); // web reads the cookie; mobile reads the body
+      res.json(result);
     } catch (e) {
       next(e);
     }
@@ -29,7 +32,13 @@ export const authController = {
 
   async refresh(req: Request, res: Response, next: NextFunction) {
     try {
-      res.json({ tokens: await svc.refresh(req.body, req.ip ?? null) });
+      // Accept the refresh token from the httpOnly cookie (web, SEC-10) OR the body (mobile parity).
+      const cookieToken = readRefreshCookie(req);
+      const bodyToken = (req.body as { refreshToken?: unknown } | undefined)?.refreshToken;
+      const refreshToken = cookieToken ?? (typeof bodyToken === 'string' ? bodyToken : undefined);
+      const tokens = await svc.refresh({ refreshToken }, req.ip ?? null);
+      setRefreshCookie(res, tokens.refreshToken); // rotate the cookie too
+      res.json({ tokens });
     } catch (e) {
       next(e);
     }
@@ -38,6 +47,7 @@ export const authController = {
   async logout(req: Request, res: Response, next: NextFunction) {
     try {
       await svc.logout(requireUserId(req));
+      clearRefreshCookie(res);
       res.status(HTTP_STATUS.OK).json({ ok: true });
     } catch (e) {
       next(e);

@@ -42,7 +42,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setUnauthorizedHandler(() => setUser(null));
     void (async () => {
-      if (tokenStore.access() ?? tokenStore.refresh()) {
+      if (tokenStore.access() ?? tokenStore.jti()) {
         try {
           setUser(await api<AuthUser>('GET', '/api/v2/auth/me'));
         } catch {
@@ -60,7 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       ...(mfaCode ? { mfaCode } : {}),
       deviceId: tokenStore.deviceId(),
     });
-    tokenStore.set(res.tokens.accessToken, res.tokens.refreshToken);
+    tokenStore.set(res.tokens.accessToken, res.tokens.jti);
     tokenStore.markSessionStart();
     setLogoutReason(null);
     setMustChangePassword(res.mustChangePassword);

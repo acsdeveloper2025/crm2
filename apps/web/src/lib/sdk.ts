@@ -41,16 +41,18 @@ export function hasActiveMutations(): boolean {
 let refreshing: Promise<boolean> | null = null;
 
 async function doRefresh(): Promise<boolean> {
-  const refreshToken = tokenStore.refresh();
-  if (!refreshToken) return false;
+  if (!tokenStore.jti()) return false; // no session handle ⇒ nothing to refresh
+  // The refresh token rides as an httpOnly cookie (ADR-0076 SEC-10) — `credentials:'include'` sends it;
+  // no token in the body (mobile uses the body, web uses the cookie).
   const res = await fetch('/api/v2/auth/refresh', {
     method: 'POST',
+    credentials: 'include',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ refreshToken }),
+    body: '{}',
   });
   if (!res.ok) return false;
-  const json = (await res.json()) as { tokens: { accessToken: string; refreshToken: string } };
-  tokenStore.set(json.tokens.accessToken, json.tokens.refreshToken);
+  const json = (await res.json()) as { tokens: { accessToken: string; jti: string } };
+  tokenStore.set(json.tokens.accessToken, json.tokens.jti);
   return true;
 }
 
@@ -71,6 +73,7 @@ export async function api<T>(method: string, path: string, body?: unknown, retry
     const accessToken = tokenStore.access();
     const init: RequestInit = {
       method,
+      credentials: 'include', // carry the httpOnly refresh cookie on the auth routes (ADR-0076 SEC-10)
       headers: {
         'content-type': 'application/json',
         ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
@@ -80,7 +83,7 @@ export async function api<T>(method: string, path: string, body?: unknown, retry
 
     const res = await fetch(path, init);
 
-    if (res.status === HTTP_UNAUTHORIZED && !retry && tokenStore.refresh()) {
+    if (res.status === HTTP_UNAUTHORIZED && !retry && tokenStore.jti()) {
       if (await refreshOnce()) return await api<T>(method, path, body, true);
       tokenStore.clear();
       onUnauthorized();
@@ -105,10 +108,11 @@ export async function apiBlob(path: string, retry = false): Promise<{ blob: Blob
   const accessToken = tokenStore.access();
   const res = await fetch(path, {
     method: 'GET',
+    credentials: 'include',
     headers: { ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}) },
   });
 
-  if (res.status === HTTP_UNAUTHORIZED && !retry && tokenStore.refresh()) {
+  if (res.status === HTTP_UNAUTHORIZED && !retry && tokenStore.jti()) {
     if (await refreshOnce()) return apiBlob(path, true);
     tokenStore.clear();
     onUnauthorized();
@@ -135,10 +139,11 @@ export async function apiExport(path: string, retry = false): Promise<ExportOutc
   const accessToken = tokenStore.access();
   const res = await fetch(path, {
     method: 'GET',
+    credentials: 'include',
     headers: { ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}) },
   });
 
-  if (res.status === HTTP_UNAUTHORIZED && !retry && tokenStore.refresh()) {
+  if (res.status === HTTP_UNAUTHORIZED && !retry && tokenStore.jti()) {
     if (await refreshOnce()) return apiExport(path, true);
     tokenStore.clear();
     onUnauthorized();
@@ -172,6 +177,7 @@ export async function apiUpload<T>(path: string, file: Blob, fileName: string, r
     const accessToken = tokenStore.access();
     const res = await fetch(path, {
       method: 'POST',
+      credentials: 'include',
       headers: {
         'content-type': 'application/octet-stream',
         'x-filename': encodeURIComponent(fileName), // header must be latin1-safe; server treats it as a label
@@ -180,7 +186,7 @@ export async function apiUpload<T>(path: string, file: Blob, fileName: string, r
       body: file,
     });
 
-    if (res.status === HTTP_UNAUTHORIZED && !retry && tokenStore.refresh()) {
+    if (res.status === HTTP_UNAUTHORIZED && !retry && tokenStore.jti()) {
       if (await refreshOnce()) return await apiUpload<T>(path, file, fileName, true);
       tokenStore.clear();
       onUnauthorized();

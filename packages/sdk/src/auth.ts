@@ -45,6 +45,9 @@ export interface AuthUser {
 export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
+  /** refresh-token jti (non-secret session handle, ADR-0076 SEC-10). The web stores this instead of
+   *  the refresh token (which is now an httpOnly cookie) for its sessions list + idle-logout revoke. */
+  jti: string;
   /** access-token lifetime in seconds */
   expiresIn: number;
 }
