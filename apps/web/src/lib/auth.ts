@@ -1,22 +1,26 @@
 /**
- * Browser token storage for the JWT-pair (ADR-0014). localStorage is acceptable for this
- * internal admin app; a future hardening pass can move to httpOnly cookies.
+ * Browser token storage (ADR-0014, hardened by ADR-0076 SEC-10). The refresh token is NO LONGER kept
+ * in JS-readable storage — it lives in an httpOnly cookie the browser sends automatically on the auth
+ * routes, so an XSS can't exfiltrate it. We keep only the short-lived access token (Bearer header) and
+ * the refresh-token `jti` (a non-secret session handle the server returns at login/refresh), used for
+ * the sessions list + idle-logout self-revoke.
  */
 const ACCESS_KEY = 'acs.accessToken';
-const REFRESH_KEY = 'acs.refreshToken';
+const JTI_KEY = 'acs.jti';
 const DEVICE_KEY = 'acs.deviceId';
 const SESSION_STARTED_KEY = 'acs.sessionStartedAt';
 
 export const tokenStore = {
   access: (): string | null => localStorage.getItem(ACCESS_KEY),
-  refresh: (): string | null => localStorage.getItem(REFRESH_KEY),
-  set(accessToken: string, refreshToken: string): void {
+  /** jti of the current session (returned by login/refresh; the refresh token itself is cookie-only). */
+  jti: (): string | null => localStorage.getItem(JTI_KEY),
+  set(accessToken: string, jti: string): void {
     localStorage.setItem(ACCESS_KEY, accessToken);
-    localStorage.setItem(REFRESH_KEY, refreshToken);
+    localStorage.setItem(JTI_KEY, jti);
   },
   clear(): void {
     localStorage.removeItem(ACCESS_KEY);
-    localStorage.removeItem(REFRESH_KEY);
+    localStorage.removeItem(JTI_KEY);
   },
   /** Stable per-browser device id (ADR-0045) sent at login so the server's device-targeted
    *  `auth:session_revoked` realtime emit reaches this web session. Persists across logins. */
@@ -35,20 +39,5 @@ export const tokenStore = {
   },
   clearSessionStart(): void {
     localStorage.removeItem(SESSION_STARTED_KEY);
-  },
-  /** jti of the current session, decoded from the stored refresh token (slice 6). Unverified — the
-   *  jti is a non-secret session handle, used only to flag the caller's own "this device" row. */
-  jti(): string | null {
-    const token = localStorage.getItem(REFRESH_KEY);
-    const segment = token?.split('.')[1];
-    if (!segment) return null;
-    try {
-      const payload = JSON.parse(atob(segment.replace(/-/g, '+').replace(/_/g, '/'))) as {
-        jti?: unknown;
-      };
-      return typeof payload.jti === 'string' ? payload.jti : null;
-    } catch {
-      return null;
-    }
   },
 };

@@ -146,7 +146,7 @@ async function issueTokens(
     ip,
     absoluteExpiresAt,
   });
-  return { accessToken, refreshToken, expiresIn: accessTtl };
+  return { accessToken, refreshToken, jti, expiresIn: accessTtl };
 }
 
 /** Attach the role's resolved attributes (ADR-0022) so the FE can gate UI on PERMISSIONS,
