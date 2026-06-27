@@ -42,6 +42,19 @@ function resolveLevel(explicit?: LogLevel): LogLevel {
   return process.env['NODE_ENV'] === 'production' ? 'info' : 'debug';
 }
 
+/**
+ * Defense-in-depth (ADR-0076 SEC-11): mask values of sensitive-named log fields so a careless
+ * `logger.info('x', { authorization, password, token, ... })` never leaks a credential to the log
+ * sink. Matches the KEY (not the message text); over-masking a benignly-named field is acceptable.
+ */
+const SENSITIVE_KEY = /pass(word)?|secret|token|authorization|cookie|jwt|api[-_]?key|mfa|credential/i;
+const REDACTED = '[REDACTED]';
+function redact(record: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(record)) out[k] = SENSITIVE_KEY.test(k) ? REDACTED : v;
+  return out;
+}
+
 export function createLogger(options: LoggerOptions = {}): Logger {
   const min = RANK[resolveLevel(options.level)];
   const base = options.bindings ?? {};
@@ -51,7 +64,7 @@ export function createLogger(options: LoggerOptions = {}): Logger {
   const emit = (level: LogLevel, msg: string, fields?: LogBindings): void => {
     if (RANK[level] < min) return;
     const record = { time: now(), level, msg, ...base, ...(fields ?? {}) };
-    write(JSON.stringify(record));
+    write(JSON.stringify(redact(record)));
   };
 
   return {

@@ -59,6 +59,26 @@ describe('@crm2/logger', () => {
     });
   });
 
+  it('redacts sensitive-named fields (ADR-0076 SEC-11) but keeps benign ones', () => {
+    const c = capture();
+    createLogger({ level: 'trace', write: c.write, now: c.now }).info('login', {
+      authorization: 'Bearer abc',
+      password: 'hunter2',
+      refreshToken: 'rt_xyz',
+      apiKey: 'k',
+      userId: 'u1',
+      caseId: 7,
+    });
+    expect(JSON.parse(c.lines[0]!)).toMatchObject({
+      authorization: '[REDACTED]',
+      password: '[REDACTED]',
+      refreshToken: '[REDACTED]',
+      apiKey: '[REDACTED]',
+      userId: 'u1', // not sensitive → kept
+      caseId: 7,
+    });
+  });
+
   it('exposes all six mandated levels in order', () => {
     expect(LOG_LEVELS).toEqual(['trace', 'debug', 'info', 'warn', 'error', 'fatal']);
   });

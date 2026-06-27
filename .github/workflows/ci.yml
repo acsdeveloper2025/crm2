@@ -25,7 +25,8 @@ jobs:
         with: { fetch-depth: 0 }
       - name: Gitleaks
         uses: gitleaks/gitleaks-action@v2
-        env: { GITLEAKS_CONFIG: .gitleaks.toml }
+        # GITHUB_TOKEN is required by gitleaks-action v2 to scan pull_request events (push works without).
+        env: { GITLEAKS_CONFIG: .gitleaks.toml, GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}' }
 
   # Parts 2,3,4,6,8,11,12,25,26,27,28: static quality + boundaries.
   static:
