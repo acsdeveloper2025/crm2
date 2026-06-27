@@ -180,7 +180,6 @@ export const caseController = {
         throw AppError.badRequest('BAD_REQUEST', { param: 'visitType' });
       res.json(
         await svc.eligibleAssignees(
-          actor(req),
           visitType,
           parsePositiveInt(req.query['pincodeId']),
           parsePositiveInt(req.query['areaId']),

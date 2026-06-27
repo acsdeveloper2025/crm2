@@ -270,25 +270,18 @@ export const taskRepository = {
    * Executives eligible for EVERY one of the given tasks (ADR-0024) — the SAME pool model as the
    * Add Task picker, so list visibility, reassign and bulk-assign never disagree. Zero role names:
    *  1. USABLE user, 2. role = the pool role for the chosen `visitType` (assignment_pool_roles, data),
-   *  3. inside the ACTOR's hierarchy scope, 4. FIELD only: the candidate covers EVERY field task's
-   *  OWN location (id-equality vs the task's pincode_id/area_id — a task without a location can be
-   *  covered by no one, fail-closed). OFFICE skips the territory leg (desk pool).
+   *  3. FIELD only: the candidate covers EVERY field task's OWN location (id-equality vs the task's
+   *  pincode_id/area_id — a task without a location can be covered by no one, fail-closed). OFFICE
+   *  skips the territory leg (desk pool). ADR-0078: NOT capped by the actor's org-hierarchy — the
+   *  territory / unit grant is the access control for WHO can work the task (the actor's case/task
+   *  visibility is enforced separately, before this pool is built).
    */
-  async eligibleAssignees(
-    taskIds: string[],
-    visitType: string,
-    scopeUserIds: string[] | undefined,
-  ): Promise<AssignableUser[]> {
+  async eligibleAssignees(taskIds: string[], visitType: string): Promise<AssignableUser[]> {
     const params: unknown[] = [taskIds, visitType];
-    let hierarchy = '';
-    if (scopeUserIds !== undefined) {
-      params.push(scopeUserIds);
-      hierarchy = `AND u.id = ANY($${params.length}::uuid[])`;
-    }
     return query<AssignableUser>(
       `SELECT u.id, u.username, u.name, u.role
        FROM users u
-       WHERE u.is_active AND u.effective_from <= now() ${hierarchy}
+       WHERE u.is_active AND u.effective_from <= now()
          AND u.role = (SELECT role_code FROM assignment_pool_roles WHERE visit_type = $2)
          AND NOT EXISTS (
            SELECT 1 FROM case_tasks t
@@ -316,25 +309,20 @@ export const taskRepository = {
   },
 
   /** The subset of `taskIds` for which `assigneeId` passes the SAME ADR-0024 eligibility (per-row
-   *  bulk/reassign check): pool role for `visitType` ∩ hierarchy ∩ (FIELD) that task's own location. */
+   *  bulk/reassign check): pool role for `visitType` ∩ (FIELD) that task's own location. ADR-0078:
+   *  no org-hierarchy cap — territory / unit grant is the access control (visibility checked upstream). */
   async eligibleTaskIdsForAssignee(
     taskIds: string[],
     assigneeId: string,
     visitType: string,
-    scopeUserIds: string[] | undefined,
   ): Promise<string[]> {
     const params: unknown[] = [taskIds, assigneeId, visitType];
-    let hierarchy = '';
-    if (scopeUserIds !== undefined) {
-      params.push(scopeUserIds);
-      hierarchy = `AND u.id = ANY($${params.length}::uuid[])`;
-    }
     const rows = await query<{ id: string }>(
       `SELECT t.id
        FROM case_tasks t
        JOIN users u ON u.id = $2::uuid
        WHERE t.id = ANY($1::uuid[])
-         AND u.is_active AND u.effective_from <= now() ${hierarchy}
+         AND u.is_active AND u.effective_from <= now()
          AND u.role = (SELECT role_code FROM assignment_pool_roles WHERE visit_type = $3)
          AND CASE WHEN $3 = 'OFFICE'
            -- ADR-0073: an OFFICE task is assignable only to a KYC user GRANTED that task's unit.

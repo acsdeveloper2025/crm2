@@ -15,7 +15,7 @@ import { AppError } from '../../platform/errors.js';
 import { resolvePage, resolveFilters, buildPage, type PageSpec } from '../../platform/pagination.js';
 import { assertExportable, exportThreshold, type ResolvedExport } from '../../platform/export/index.js';
 import type { ExportColumn } from '../../platform/export/index.js';
-import { resolveScope, getScopedUserIds, type Actor } from '../../platform/scope/index.js';
+import { resolveScope, type Actor } from '../../platform/scope/index.js';
 
 /** Sortable/filterable columns (apiField → SQL column). Every referenced column is in the shared
  *  TASK_FROM (all 1:1 joins), so the same map is safe for the COUNT and stats too. */
@@ -230,7 +230,7 @@ export const taskService = {
     const scope = await resolveScope(actor);
     const visible = await repo.tasksForAssignment(taskIds, scope);
     if (visible.length !== taskIds.length) throw AppError.notFound('TASK_NOT_FOUND');
-    return repo.eligibleAssignees(taskIds, visitType, await getScopedUserIds(actor));
+    return repo.eligibleAssignees(taskIds, visitType);
   },
 
   /**
@@ -243,9 +243,7 @@ export const taskService = {
     const ids = v.items.map((i) => i.id);
     const scope = await resolveScope(actor);
     const visible = new Map((await repo.tasksForAssignment(ids, scope)).map((t) => [t.id, t] as const));
-    const eligible = new Set(
-      await repo.eligibleTaskIdsForAssignee(ids, v.assignedTo, v.visitType, await getScopedUserIds(actor)),
-    );
+    const eligible = new Set(await repo.eligibleTaskIdsForAssignee(ids, v.assignedTo, v.visitType));
     // ADR-0056: field_rate_type is normally server-derived — caseRepository.assignTask derives it per task
     // from the assignee's commission at that task's location (NO_FIELD_COMMISSION if none). An explicit
     // value (rare; the web never sends one for bulk) is honored.

@@ -2215,6 +2215,37 @@ describe.skipIf(!RUN)('cases API', () => {
       expect(ids(office.body)).not.toContain(fa);
     });
 
+    it('eligible-assignees (ADR-0078): a SELF-hierarchy case.assign holder sees territory-covering agents outside their org tree', async () => {
+      const { loc, caseId } = await locatedCase('OOH');
+      const fa = await createUser({ username: 'fa_ooh', name: 'OOH FA', role: 'FIELD_AGENT' });
+      // the agent covers the territory but reports to no one (not in any backend operator's subtree)
+      seeded(
+        await request(app)
+          .post(`/api/v2/users/${fa}/scope-assignments`)
+          .set(SA)
+          .send({ dimension: 'AREA', entityIds: [loc] }),
+      );
+      // A SELF-hierarchy operator who nonetheless holds case.assign — the prod scenario where a backend
+      // role was granted assignment. Pre-ADR-0078 the org-hierarchy cap collapsed the pool to the operator
+      // alone (empty for field work); now the territory IS the access control, so the agent appears.
+      await db!.pool.query(
+        `INSERT INTO roles (code, name, hierarchy_mode) VALUES ('BE_ASSIGNER', 'Backend Assigner', 'SELF')
+         ON CONFLICT (code) DO NOTHING`,
+      );
+      await db!.pool.query(
+        `INSERT INTO role_permissions (role_code, permission_code) VALUES
+           ('BE_ASSIGNER', 'case.assign'), ('BE_ASSIGNER', 'case.view')
+         ON CONFLICT (role_code, permission_code) DO NOTHING`,
+      );
+      invalidateRoleCache();
+      const url = `/api/v2/cases/${caseId}/eligible-assignees?visitType=FIELD&areaId=${loc}&pincodeId=${loc}`;
+      const res = await request(app)
+        .get(url)
+        .set({ 'x-test-auth': 'BE_ASSIGNER:22222222-2222-2222-2222-222222222222' });
+      expect(res.status).toBe(200);
+      expect(ids(res.body)).toContain(fa);
+    });
+
     it('assign-at-create: eligible assignee → ASSIGNED + history; ineligible → 400', async () => {
       const { ctx, loc, caseId, applicantId } = await locatedCase('AAC');
       const fa = await createUser({ username: 'fa_aac', name: 'AAC FA', role: 'FIELD_AGENT' });

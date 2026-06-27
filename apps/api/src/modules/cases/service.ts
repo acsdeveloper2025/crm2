@@ -37,7 +37,7 @@ import { taskRepository } from '../tasks/repository.js';
 import { AppError } from '../../platform/errors.js';
 import { requireVersion } from '../../platform/occ.js';
 import { resolvePage, resolveFilters, buildPage, type PageSpec } from '../../platform/pagination.js';
-import { resolveScope, getScopedUserIds, scopedEntityIds, type Actor } from '../../platform/scope/index.js';
+import { resolveScope, scopedEntityIds, type Actor } from '../../platform/scope/index.js';
 import { getStorage } from '../../platform/storage/index.js';
 import { composeFieldPhotoOverlay } from '../../platform/photo.js';
 import { detectAttachment, MAX_ATTACHMENT_BYTES } from '../../platform/file.js';
@@ -333,18 +333,17 @@ export const caseService = {
     // assignee list (FIELD→field agents, OFFICE→KYC verifiers via assignment_pool_roles) and is NOT
     // constrained by the verification unit (ADR-0070 retired the unit-kind↔visitType binding).
     // Assign-at-create (ADR-0024): re-check each chosen assignee server-side against the SAME pool the
-    // FE offered — pool role for the visit type ∩ the actor's hierarchy ∩ (FIELD) the task territory.
+    // FE offered — pool role for the visit type ∩ (FIELD) the task territory (ADR-0078: the territory /
+    // unit grant is the access control; no org-hierarchy cap — case visibility was checked above).
     // The schema already guarantees assigneeId ⇒ visitType (+ FIELD ⇒ area+pincode).
     const assigned = v.tasks.filter((t) => t.assigneeId);
     if (assigned.length > 0) {
-      const scopeUserIds = await getScopedUserIds(actor);
       for (const t of assigned) {
         const pool = await repo.eligibleAssigneesForNew(
           t.visitType!,
           t.pincodeId,
           t.areaId,
           t.verificationUnitId,
-          scopeUserIds,
         );
         if (!pool.some((u) => u.id === t.assigneeId)) throw AppError.badRequest('INVALID_ASSIGNEE');
       }
@@ -354,18 +353,16 @@ export const caseService = {
     return created;
   },
 
-  /** The eligible pool for a not-yet-created task (ADR-0024): visit-type pool ∩ hierarchy ∩ (FIELD
-   *  only) the chosen territory. case.assign-gated; scoped to the actor's hierarchy. */
+  /** The eligible pool for a not-yet-created task (ADR-0024): visit-type pool ∩ (FIELD only) the
+   *  chosen territory. case.assign-gated. ADR-0078: NOT capped by the actor's org-hierarchy — the
+   *  territory (FIELD) / unit grant (OFFICE) is the access control for who can work the task. */
   eligibleAssignees(
-    actor: Actor,
     visitType: string,
     pincodeId: number | undefined,
     areaId: number | undefined,
     verificationUnitId: number | undefined,
   ): Promise<AssignableUser[]> {
-    return getScopedUserIds(actor).then((ids) =>
-      repo.eligibleAssigneesForNew(visitType, pincodeId, areaId, verificationUnitId, ids),
-    );
+    return repo.eligibleAssigneesForNew(visitType, pincodeId, areaId, verificationUnitId);
   },
 
   async list(rawQuery: Record<string, unknown>, actor: Actor): Promise<Paginated<CaseView>> {
@@ -442,14 +439,15 @@ export const caseService = {
     return found;
   },
 
-  /** Per-task eligibility (ADR-0024) when `taskId` is given — the chosen visit-type pool ∩ hierarchy
-   *  ∩ (FIELD) the task's own territory; without it, the legacy whole-pool ∩ hierarchy. */
+  /** Per-task eligibility (ADR-0024) when `taskId` is given — the chosen visit-type pool ∩ (FIELD)
+   *  the task's own territory (ADR-0078: no org-hierarchy cap on the pool — the task is visibility-
+   *  checked first); without a taskId, the legacy whole-pool ∩ hierarchy generic list. */
   async assignableUsers(actor: Actor, taskId?: string, visitType = 'FIELD'): Promise<AssignableUser[]> {
     if (taskId === undefined) return repo.assignableUsers(actor);
     const scope = await resolveScope(actor);
     const visible = await taskRepository.tasksForAssignment([taskId], scope);
     if (visible.length === 0) throw AppError.notFound('TASK_NOT_FOUND');
-    return taskRepository.eligibleAssignees([taskId], visitType, await getScopedUserIds(actor));
+    return taskRepository.eligibleAssignees([taskId], visitType);
   },
 
   async assignTask(caseId: string, taskId: string, input: unknown, actor: Actor): Promise<CaseTaskView> {
@@ -463,14 +461,10 @@ export const caseService = {
     // every agent change leaves an auditable reason.
     if (state.status !== 'PENDING') throw AppError.conflict('TASK_NOT_ASSIGNABLE');
     // visitType is the operator's free choice of pool (ADR-0070 retired the unit-kind↔visitType binding).
-    // Eligibility (ADR-0024): the chosen visit-type pool ∩ actor hierarchy ∩ (FIELD) the task's
-    // own territory — the SAME model as Add Task, so reassign and create agree.
-    const eligible = await taskRepository.eligibleTaskIdsForAssignee(
-      [taskId],
-      v.assignedTo,
-      v.visitType,
-      await getScopedUserIds(actor),
-    );
+    // Eligibility (ADR-0024): the chosen visit-type pool ∩ (FIELD) the task's own territory — the SAME
+    // model as Add Task, so reassign and create agree (ADR-0078: no org-hierarchy cap; the task was
+    // scope-guarded above).
+    const eligible = await taskRepository.eligibleTaskIdsForAssignee([taskId], v.assignedTo, v.visitType);
     if (eligible.length === 0) throw AppError.badRequest('INVALID_ASSIGNEE');
     const task = await repo.assignTask(caseId, taskId, v, actor.userId, version);
     // Producer (ADR-0027): tell the assignee a task is now theirs.
@@ -605,13 +599,9 @@ export const caseService = {
     if (!state) throw AppError.notFound('TASK_NOT_FOUND');
     if (state.status !== 'REVOKED') throw AppError.conflict('INVALID_TRANSITION');
     // Eligibility against the revoked task's OWN territory — the SAME path as a normal reassign
-    // (visit-type pool ∩ hierarchy ∩ FIELD territory). The replacement clones that location.
-    const eligible = await taskRepository.eligibleTaskIdsForAssignee(
-      [taskId],
-      v.assignedTo,
-      v.visitType,
-      await getScopedUserIds(actor),
-    );
+    // (visit-type pool ∩ FIELD territory; ADR-0078: no org-hierarchy cap, the task was scope-guarded
+    // above). The replacement clones that location.
+    const eligible = await taskRepository.eligibleTaskIdsForAssignee([taskId], v.assignedTo, v.visitType);
     if (eligible.length === 0) throw AppError.badRequest('INVALID_ASSIGNEE');
     const view = await repo.reassignRevokedTask(caseId, taskId, v, actor.userId);
     emitTaskUpdate(view); // replacement ASSIGNED task after revoke → office views refetch live
