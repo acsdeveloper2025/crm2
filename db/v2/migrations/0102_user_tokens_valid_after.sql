@@ -1,4 +1,5 @@
--- 0101_user_tokens_valid_after.sql — ADR-0076 Phase 2. Access-token kill switch.
+-- 0102_user_tokens_valid_after.sql — ADR-0076 Phase 2. Access-token kill switch.
+-- (Numbered 0102, not 0101: 0101_cpv_universal landed on main while this sat on its branch.)
 -- Access tokens are stateless 15-min JWTs (ADR-0014) with no server-side revocation: a stolen or
 -- just-deactivated user's token stayed valid for its full TTL. This adds a per-user "valid-after"
 -- cutoff: authenticate() rejects any access token whose `iat` is strictly before it. Set to now() on

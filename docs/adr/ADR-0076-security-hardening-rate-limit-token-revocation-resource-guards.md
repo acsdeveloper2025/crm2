@@ -110,7 +110,7 @@ separately because it carries migration + false-positive risk.
    `NODE_ENV==='production'`, so even a misconfigured mount can't honor `x-test-auth` in prod.
    The mount guard stays as the first line.
 
-### Phase 2 — access-token revocation (BUILT, migration 0101)
+### Phase 2 — access-token revocation (BUILT, migration 0102)
 
 Because prod has no Redis, the access-token kill switch needs **durable** state, and reuse
 detection needs a grace window to avoid mass-logout false positives. Built as:

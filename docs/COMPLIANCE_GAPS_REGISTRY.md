@@ -1503,10 +1503,10 @@ in-memory / durable-DB, not Redis-backed.
 - **SEC-7 (LOW)** `x-test-auth` seam gated only by mount-time `NODE_ENV`. FIX: middleware no-ops in
   production (double-guard).
 
-**🟢 FIXED in Phase 2 (ADR-0076, mig 0101, branch `feat/security-hardening` — built + gate GREEN):**
+**🟢 FIXED in Phase 2 (ADR-0076, mig 0102, branch `feat/security-hardening` — built + gate GREEN):**
 - **SEC-8 (HIGH)** Stolen/re-issued access token unrevocable for ≤15 min; deactivation/password
   change didn't kill live access tokens or the realtime socket. FIX: durable per-user
-  `tokens_valid_after` column (mig 0101) + `iat` check in `authenticate` (strict `<`, whole-second so
+  `tokens_valid_after` column (mig 0102) + `iat` check in `authenticate` (strict `<`, whole-second so
   a same-second re-login isn't self-killed) + socket-handshake check + force-disconnect, wired into
   logout-all / password-change / deactivate (single+bulk). Read fail-CLOSED (DB-backed), cached 5s with
   bust-on-revoke. SEC-12-adjacent: `setActive(false)` now actually revokes (was a no-op before).
