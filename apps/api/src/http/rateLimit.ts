@@ -25,6 +25,12 @@ function make(windowMs: number, max: number): RateLimitRequestHandler {
     legacyHeaders: false,
     statusCode: HTTP_STATUS.TOO_MANY_REQUESTS,
     message: TOO_MANY,
+    // `lazyLimiter` builds this ONCE on the first request (memoized) to avoid calling loadEnv() at
+    // module import (which crashed the env-less OpenAPI CLI). That trips express-rate-limit's
+    // creation-in-handler guard, which assumes per-request creation (a new store each time) — false
+    // here since we cache the instance. Disable just that check; the limiter is stable. (The guard is
+    // auto-off in production anyway — this keeps dev/test/e2e working too.)
+    validate: { creationStack: false },
   });
 }
 
