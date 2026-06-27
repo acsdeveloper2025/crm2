@@ -78,6 +78,10 @@ export function createApp(opts: { enableTestAuth?: boolean } = {}): Express {
   registerJobs();
 
   const app = express();
+  // Behind the nginx edge (X-Forwarded-For). Trust exactly ONE hop so req.ip is the real client
+  // (required for per-IP rate limiting + correct audit IPs), not `true` which would let a client
+  // spoof X-Forwarded-For to evade the limiters (ADR-0076).
+  app.set('trust proxy', 1);
   app.use(express.json());
   if (opts.enableTestAuth ?? process.env['NODE_ENV'] !== 'production') app.use(testAuth());
   app.use(authenticate()); // real Bearer auth wins over the dev seam when a valid token is present

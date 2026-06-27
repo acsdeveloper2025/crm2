@@ -15,7 +15,7 @@ import {
 } from '@crm2/sdk';
 import { authRepository as repo } from './repository.js';
 import { getRoleAttributes } from '../../platform/access/index.js';
-import { hashPassword, verifyPassword } from '../../platform/password.js';
+import { hashPassword, verifyPassword, verifyDummyPassword } from '../../platform/password.js';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../../platform/jwt.js';
 import { generateTotpSecret, verifyTotp, otpauthUri, base32Encode } from '../../platform/totp.js';
 import { encryptSecret, decryptSecret } from '../../platform/encryption.js';
@@ -157,7 +157,12 @@ export const authService = {
   async login(input: unknown, ip: string | null): Promise<LoginResponse> {
     const v = LoginSchema.parse(input);
     const creds = await repo.credentialsByUsername(v.username);
-    if (!creds || !creds.usable || !creds.passwordHash) throw invalidCreds();
+    if (!creds || !creds.usable || !creds.passwordHash) {
+      // Spend the same scrypt cost as a real login so latency can't reveal whether the username
+      // exists (ADR-0076 — closes the enumeration timing oracle). Always fails.
+      await verifyDummyPassword(v.password);
+      throw invalidCreds();
+    }
     // Locked accounts are refused before the password is even checked (auto-unlock once the cooldown lifts).
     if (isLocked(creds.lockedUntil)) throw accountLocked();
     if (!(await verifyPassword(v.password, creds.passwordHash))) {

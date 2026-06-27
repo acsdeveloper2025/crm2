@@ -4,7 +4,19 @@ import { loadEnv } from '@crm2/config';
 let pool: Pool | null = null;
 
 export function getPool(): Pool {
-  if (!pool) pool = new Pool({ connectionString: loadEnv().DATABASE_URL });
+  if (!pool) {
+    const env = loadEnv();
+    pool = new Pool({
+      connectionString: env.DATABASE_URL,
+      max: env.DB_POOL_MAX,
+      connectionTimeoutMillis: env.DB_CONNECTION_TIMEOUT_MS,
+      // Server-side per-session guards (libpq pass-through, ADR-0076): bound a stuck/locking
+      // statement and a transaction left idle so one bad query can't pin a connection or hold
+      // locks forever. Migrations run via a separate psql process (migrate.sh) and are unaffected.
+      statement_timeout: env.DB_STATEMENT_TIMEOUT_MS,
+      idle_in_transaction_session_timeout: env.DB_IDLE_IN_TX_TIMEOUT_MS,
+    });
+  }
   return pool;
 }
 

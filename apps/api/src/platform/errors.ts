@@ -18,6 +18,7 @@ export const ERROR_CODES = [
   'VERSION_REQUIRED',
   'STORAGE_NOT_CONFIGURED',
   'INVALID_IMAGE',
+  'TOO_MANY_REQUESTS',
   'INTERNAL',
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
