@@ -1015,6 +1015,82 @@
         ]
       }
     },
+    "/api/v2/cases/lookups/clients": {
+      "get": {
+        "tags": [
+          "cases"
+        ],
+        "operationId": "get_api_v2_cases_lookups_clients",
+        "summary": "GET /api/v2/cases/lookups/clients",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/cases/lookups/locations": {
+      "get": {
+        "tags": [
+          "cases"
+        ],
+        "operationId": "get_api_v2_cases_lookups_locations",
+        "summary": "GET /api/v2/cases/lookups/locations",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/cases/lookups/products": {
+      "get": {
+        "tags": [
+          "cases"
+        ],
+        "operationId": "get_api_v2_cases_lookups_products",
+        "summary": "GET /api/v2/cases/lookups/products",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/cases/lookups/tat-policies": {
+      "get": {
+        "tags": [
+          "cases"
+        ],
+        "operationId": "get_api_v2_cases_lookups_tat_policies",
+        "summary": "GET /api/v2/cases/lookups/tat-policies",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v2/cases/rate-preview": {
       "get": {
         "tags": [

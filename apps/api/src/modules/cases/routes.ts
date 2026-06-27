@@ -1,5 +1,5 @@
 import { Router, raw } from 'express';
-import { authorize, PERMISSIONS } from '@crm2/access';
+import { authorize, authorizeAny, PERMISSIONS } from '@crm2/access';
 import { caseController as c } from './controller.js';
 import { fieldReportController } from '../fieldReports/controller.js';
 import { caseReportController } from '../caseReports/controller.js';
@@ -17,6 +17,21 @@ caseRoutes.get('/dedupe-search/export', authorize(PERMISSIONS.DATA_EXPORT), c.de
 caseRoutes.get('/dedupe-search', authorize(PERMISSIONS.DEDUPE_VIEW), c.dedupeSearch);
 caseRoutes.get('/available-units', authorize(PERMISSIONS.CASE_CREATE), c.availableUnits);
 caseRoutes.get('/rate-preview', authorize(PERMISSIONS.CASE_CREATE), c.ratePreview);
+// Case-creation workflow lookups (dedicated, case.create-gated) — let a case-creator drive the whole
+// new-case flow WITHOUT page.masterdata. They delegate to the same scoped masterdata services the admin
+// pages use (clients/products stay portfolio-scoped via the actor), so this is never wider than the
+// create form already needs. `/lookups/locations` (the FIELD pincode→area picker) also accepts
+// case.assign, since the assignee picker it feeds is itself case.assign-gated. Static two-segment paths,
+// declared before `/:id` and `/:id/...`.
+caseRoutes.get('/lookups/clients', authorize(PERMISSIONS.CASE_CREATE), c.lookupClients);
+// Client-first: ?clientId required → products ENABLED for that client (client_products) ∩ PRODUCT scope.
+caseRoutes.get('/lookups/products', authorize(PERMISSIONS.CASE_CREATE), c.lookupProducts);
+caseRoutes.get('/lookups/tat-policies', authorize(PERMISSIONS.CASE_CREATE), c.lookupTatPolicies);
+caseRoutes.get(
+  '/lookups/locations',
+  authorizeAny(PERMISSIONS.CASE_CREATE, PERMISSIONS.CASE_ASSIGN),
+  c.lookupLocations,
+);
 caseRoutes.post('/', authorize(PERMISSIONS.CASE_CREATE), c.create);
 caseRoutes.post('/:id/tasks', authorize(PERMISSIONS.CASE_CREATE), c.addTasks);
 // Add a co-applicant to an existing OPEN case (ADR-0053). Same actor as case creation (case.create);

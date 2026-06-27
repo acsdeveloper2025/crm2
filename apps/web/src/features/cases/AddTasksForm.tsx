@@ -91,7 +91,7 @@ export function AddTasksForm({
   // ADR-0044: the configurable target-TAT bands (4/6/8/12/24/48h) for the per-task TAT picker.
   const { data: tatBands } = useQuery({
     queryKey: ['tat-policies', 'options'],
-    queryFn: () => api<TatPolicyOption[]>('GET', '/api/v2/tat-policies/options'),
+    queryFn: () => api<TatPolicyOption[]>('GET', '/api/v2/cases/lookups/tat-policies'),
   });
   const [rows, setRows] = useState<TaskRow[]>([emptyTask()]);
   const [attachError, setAttachError] = useState(false);
@@ -287,7 +287,7 @@ function TaskRowEditor({
     queryFn: () =>
       api<Paginated<Location>>(
         'GET',
-        `/api/v2/locations?search=${encodeURIComponent(row.pincodeQuery)}&limit=${LOCATION_LIMIT}`,
+        `/api/v2/cases/lookups/locations?search=${encodeURIComponent(row.pincodeQuery)}&limit=${LOCATION_LIMIT}`,
       ),
     enabled: isField && row.pincodeQuery.trim().length >= 3,
   });

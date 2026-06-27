@@ -57,11 +57,16 @@ export function CaseCreatePage() {
 
   const { data: clients } = useQuery({
     queryKey: ['clients', 'active'],
-    queryFn: () => api<Option[]>('GET', '/api/v2/clients/options'),
+    // case.create-gated lookup (no page.masterdata needed); stays portfolio-scoped server-side.
+    queryFn: () => api<Option[]>('GET', '/api/v2/cases/lookups/clients'),
   });
+  // Client-first: products are those the chosen client has enabled (client_products) ∩ the actor's
+  // product scope. Loaded only after a client is picked; refetched per client.
   const { data: products } = useQuery({
-    queryKey: ['products', 'active'],
-    queryFn: () => api<Option[]>('GET', '/api/v2/products/options'),
+    queryKey: ['products', 'for-client', clientId],
+    enabled: !!clientId,
+    queryFn: () =>
+      api<Option[]>('GET', `/api/v2/cases/lookups/products?clientId=${encodeURIComponent(clientId)}`),
   });
 
   // Auto-select when the actor's portfolio (scoped options) leaves exactly one choice (E).
@@ -171,7 +176,14 @@ export function CaseCreatePage() {
         <fieldset disabled={locked} className="m-0 min-w-0 border-0 p-0">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
             <Field label="Client">
-              <select className="input" value={clientId} onChange={(e) => setClientId(e.target.value)}>
+              <select
+                className="input"
+                value={clientId}
+                onChange={(e) => {
+                  setClientId(e.target.value);
+                  setProductId(''); // product depends on client — clear the prior pick
+                }}
+              >
                 <option value="">Select client…</option>
                 {clients?.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -181,8 +193,13 @@ export function CaseCreatePage() {
               </select>
             </Field>
             <Field label="Product">
-              <select className="input" value={productId} onChange={(e) => setProductId(e.target.value)}>
-                <option value="">Select product…</option>
+              <select
+                className="input"
+                value={productId}
+                disabled={!clientId}
+                onChange={(e) => setProductId(e.target.value)}
+              >
+                <option value="">{clientId ? 'Select product…' : 'Select a client first…'}</option>
                 {products?.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}

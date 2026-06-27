@@ -2978,4 +2978,67 @@ describe.skipIf(!RUN)('cases API', () => {
       expect(res.status).toBe(403);
     });
   });
+
+  // Case-creation workflow lookups (dedicated, case.create-gated) — a case-creator must be able to drive
+  // the whole new-case flow WITHOUT page.masterdata. Regression-proofed with a bespoke role that holds
+  // case.create/case.view but explicitly NOT page.masterdata: revert any guard back to MASTERDATA_VIEW and
+  // these 200s flip to 403.
+  describe('GET /cases/lookups/* (decoupled from page.masterdata)', () => {
+    const NOMD = { 'x-test-auth': 'CASE_CREATOR_NO_MD:11111111-1111-1111-1111-111111111111' };
+    beforeAll(async () => {
+      await db!.pool.query(
+        `INSERT INTO roles (code, name, hierarchy_mode)
+         VALUES ('CASE_CREATOR_NO_MD', 'Case Creator (no masterdata)', 'SELF')
+         ON CONFLICT (code) DO NOTHING`,
+      );
+      await db!.pool.query(
+        `INSERT INTO role_permissions (role_code, permission_code) VALUES
+           ('CASE_CREATOR_NO_MD', 'case.create'), ('CASE_CREATOR_NO_MD', 'case.view')
+         ON CONFLICT (role_code, permission_code) DO NOTHING`,
+      );
+      invalidateRoleCache();
+    });
+
+    it('serves clients/products/tat-policies/locations to a case.create role that lacks masterdata', async () => {
+      const { clientId } = await seedCpv('NOMD');
+      for (const path of [
+        '/api/v2/cases/lookups/clients',
+        `/api/v2/cases/lookups/products?clientId=${clientId}`,
+        '/api/v2/cases/lookups/tat-policies',
+        '/api/v2/cases/lookups/locations?search=400&limit=5',
+      ]) {
+        const res = await request(app).get(path).set(NOMD);
+        expect(res.status, path).toBe(200);
+      }
+      // sanity: the same role genuinely has NO page.masterdata (the masterdata list 403s for it).
+      expect((await request(app).get('/api/v2/clients/options').set(NOMD)).status).toBe(403);
+    });
+
+    it('products are client-first: only products the chosen client has enabled; clientId required', async () => {
+      const { clientId, productId } = await seedCpv('NOMDP');
+      // the seeded client returns its enabled product
+      const ok = await request(app).get(`/api/v2/cases/lookups/products?clientId=${clientId}`).set(NOMD);
+      expect(ok.status).toBe(200);
+      expect(ok.body.map((p: { id: number }) => p.id)).toContain(productId);
+      // a different client with no client_products link returns none of it
+      const otherClientId = seeded<{ id: number }>(
+        await request(app)
+          .post('/api/v2/clients')
+          .set(SA)
+          .send(clientFactory({ code: 'C_NOMDPX' })),
+      ).id;
+      const otherList = await request(app)
+        .get(`/api/v2/cases/lookups/products?clientId=${otherClientId}`)
+        .set(NOMD);
+      expect(otherList.status).toBe(200);
+      expect(otherList.body.map((p: { id: number }) => p.id)).not.toContain(productId);
+      // clientId is mandatory
+      expect((await request(app).get('/api/v2/cases/lookups/products').set(NOMD)).status).toBe(400);
+    });
+
+    it('forbids a role without case.create (FIELD_AGENT → 403); unauth → 401', async () => {
+      expect((await request(app).get('/api/v2/cases/lookups/clients').set(FA)).status).toBe(403);
+      expect((await request(app).get('/api/v2/cases/lookups/clients')).status).toBe(401);
+    });
+  });
 });

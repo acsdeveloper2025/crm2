@@ -17,6 +17,7 @@ import {
   type CaseTaskView,
   type CaseVerdictEvent,
   type AvailableUnit,
+  type Option,
   type DuplicateMatch,
   type CaseView,
   type Paginated,
@@ -282,6 +283,17 @@ export const caseService = {
     if (!status) throw AppError.notFound('CASE_NOT_FOUND');
     if (status !== 'NEW' && status !== 'IN_PROGRESS') throw AppError.conflict('CASE_NOT_OPEN');
     return repo.addApplicant(caseId, v, actor.userId);
+  },
+
+  /** Case-creation product picker: products ENABLED for the chosen client (client_products) ∩ the
+   *  actor's PRODUCT scope. Client-first by design — the FE loads this only after a client is picked, so
+   *  a product shows only if (a) that client has it and (b) the actor is scoped to it. An out-of-scope
+   *  client ⇒ [] (the actor couldn't have picked that client anyway). */
+  async productsForClient(clientId: number, actor: Actor): Promise<Option[]> {
+    const clientIds = await scopedEntityIds(actor, 'CLIENT');
+    if (clientIds !== undefined && !clientIds.includes(clientId)) return [];
+    const productIds = await scopedEntityIds(actor, 'PRODUCT');
+    return repo.productsForClient(clientId, productIds);
   },
 
   async availableUnits(clientId: number, productId: number, actor: Actor): Promise<AvailableUnit[]> {

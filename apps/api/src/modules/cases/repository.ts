@@ -5,6 +5,7 @@ import type {
   CaseApplicant,
   CaseTaskView,
   AvailableUnit,
+  Option,
   DuplicateMatch,
   CreateCaseInput,
   AddApplicantInput,
@@ -512,6 +513,24 @@ export const caseRepository = {
       );
       return row;
     });
+  },
+
+  /** Products ENABLED for a client (via client_products), for the case-creation product picker — a
+   *  product appears only if that client actually has it (the owner's "client must have that product"
+   *  rule). Optionally narrowed to `productIds` (the actor's PRODUCT scope); `[]` ⇒ none (fail-closed). */
+  async productsForClient(clientId: number, productIds?: number[]): Promise<Option[]> {
+    if (productIds !== undefined && productIds.length === 0) return [];
+    return query<Option>(
+      `SELECT DISTINCT p.id, p.code, p.name
+         FROM client_products cp
+         JOIN products p ON p.id = cp.product_id
+        WHERE cp.client_id = $1
+          AND cp.is_active AND cp.effective_from <= now()
+          AND p.is_active AND p.effective_from <= now()
+          AND ($2::int[] IS NULL OR p.id = ANY($2))
+        ORDER BY p.name ASC`,
+      [clientId, productIds ?? null],
+    );
   },
 
   /** Units enabled (CPV) for a client+product — the case-creation unit picker. ADR-0074: a Universal CPV

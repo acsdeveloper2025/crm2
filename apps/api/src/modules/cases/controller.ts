@@ -1,6 +1,9 @@
 import type { Request, Response, NextFunction } from 'express';
 import archiver from 'archiver';
 import { caseService as svc } from './service.js';
+import { clientService } from '../clients/service.js';
+import { tatPolicyService } from '../tatPolicies/service.js';
+import { locationService } from '../locations/service.js';
 import { AppError } from '../../platform/errors.js';
 import { HTTP_STATUS } from '../../platform/http.js';
 import type { Actor } from '../../platform/scope/index.js';
@@ -67,6 +70,46 @@ export const caseController = {
       if (clientId === undefined || productId === undefined)
         throw AppError.badRequest('BAD_REQUEST', { param: 'clientId, productId' });
       res.json(await svc.availableUnits(clientId, productId, actor(req)));
+    } catch (e) {
+      next(e);
+    }
+  },
+
+  // ── Case-creation workflow lookups (case.create-gated; no page.masterdata needed) ──
+  // Thin delegations to the existing scoped masterdata services so a case-creator can drive the whole
+  // new-case flow without masterdata access. clients/products stay portfolio-scoped via the actor.
+
+  async lookupClients(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json(await clientService.options(actor(req)));
+    } catch (e) {
+      next(e);
+    }
+  },
+
+  // Client-first: products are those ENABLED for the chosen client (client_products) ∩ the actor's
+  // PRODUCT scope. `clientId` is required — the FE loads this only after a client is picked.
+  async lookupProducts(req: Request, res: Response, next: NextFunction) {
+    try {
+      const clientId = parsePositiveInt(req.query['clientId']);
+      if (clientId === undefined) throw AppError.badRequest('BAD_REQUEST', { param: 'clientId' });
+      res.json(await svc.productsForClient(clientId, actor(req)));
+    } catch (e) {
+      next(e);
+    }
+  },
+
+  async lookupTatPolicies(_req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json(await tatPolicyService.options());
+    } catch (e) {
+      next(e);
+    }
+  },
+
+  async lookupLocations(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json(await locationService.list(req.query as Record<string, unknown>));
     } catch (e) {
       next(e);
     }
