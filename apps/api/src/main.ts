@@ -16,6 +16,11 @@ function main(): void {
     const app = createApp();
     // socket.io shares the HTTP server (ADR-0027) so real-time + REST live on one port.
     const server = createServer(app);
+    // Slowloris / stuck-request defense (ADR-0076): bound how long a request (incl. its headers)
+    // may take. headersTimeout must exceed requestTimeout (Node http). Both sit at/under nginx's
+    // 120s proxy_read_timeout so a stuck request fails cleanly at the origin, not the edge.
+    server.requestTimeout = 120_000;
+    server.headersTimeout = 125_000;
     initRealtime(server, env);
     void warmUpPush(env); // init the FCM SDK at boot when configured (ADR-0027); no-op otherwise
     server.listen(env.PORT, () => {

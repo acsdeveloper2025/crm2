@@ -51,6 +51,18 @@ export function generateTempPassword(length = 14): string {
   return chars.join('');
 }
 
+/**
+ * Anti-enumeration (ADR-0076): verifying against a throwaway dummy hash makes an unknown-username
+ * login spend the SAME scrypt cost as a real one, so response latency can't reveal whether a
+ * username exists. The dummy hash is minted once (lazily, at the current env's cost factor) and
+ * cached, so every environment self-tunes — including the low-N test env. Always returns false.
+ */
+let dummyHash: Promise<string> | null = null;
+export async function verifyDummyPassword(plain: string): Promise<void> {
+  dummyHash ??= hashPassword(randomBytes(24).toString('base64url'));
+  await verifyPassword(plain, await dummyHash);
+}
+
 export async function verifyPassword(plain: string, stored: string): Promise<boolean> {
   const parts = stored.split('$');
   if (parts.length !== 6 || parts[0] !== 'scrypt') return false;

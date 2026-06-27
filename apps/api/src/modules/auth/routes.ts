@@ -3,6 +3,7 @@ import { authorize, PERMISSIONS } from '@crm2/access';
 import { authController as c } from './controller.js';
 import { versionController } from './version.controller.js';
 import { notificationController } from '../notifications/controller.js';
+import { loginLimiter, refreshLimiter } from '../../http/rateLimit.js';
 
 /**
  * /api/v2/auth — login / refresh are unauthenticated; logout / me require a valid
@@ -11,8 +12,9 @@ import { notificationController } from '../notifications/controller.js';
  */
 export const authRoutes: Router = Router();
 
-authRoutes.post('/login', c.login);
-authRoutes.post('/refresh', c.refresh);
+// Brute-force / amplification guards (ADR-0076): per-IP flood caps on the unauthenticated surface.
+authRoutes.post('/login', loginLimiter(), c.login);
+authRoutes.post('/refresh', refreshLimiter(), c.refresh);
 // Mobile force-update gate (mobile parity) — PUBLIC: a too-old app must learn it before it can auth.
 authRoutes.post('/version-check', versionController.check);
 authRoutes.post('/logout', c.logout);

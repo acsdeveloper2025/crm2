@@ -9,7 +9,9 @@ export default defineConfig({
     // scrypt (~2s/hash) saturates the libuv threadpool across the auth tests and, under CI CPU
     // contention, delays in-process responses enough to reset supertest sockets ("socket hang up").
     // A power-of-2 ≪ prod keeps hashing correct (verification reads N from the stored hash) but fast.
-    env: { PASSWORD_SCRYPT_N: '16' },
+    // High rate-limit ceilings (ADR-0076) so the suite's own many logins never trip the in-memory
+    // limiter and break unrelated tests; rateLimit.test.ts forces a tiny limit to prove the 429.
+    env: { PASSWORD_SCRYPT_N: '16', RATE_LIMIT_LOGIN_MAX: '100000', RATE_LIMIT_REFRESH_MAX: '100000' },
     // Per-file DB isolation: globalSetup migrates ONE template database; each test file's
     // createTestDb() clones a private DB from it (testDb.ts), so no file shares rows or role-config
     // with another. vitest.setup clears the in-process role-attribute cache after each file. Together

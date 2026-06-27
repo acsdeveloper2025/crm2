@@ -105,6 +105,10 @@ services:
       ROLE: api
       NODE_ENV: production
       PORT: '4000'
+      # libuv threadpool (ADR-0076): scrypt (N=16384, ~2s) + sharp + PDF all run here; the default 4
+      # serializes concurrent logins into an API-wide stall. 16 keeps login latency flat under load
+      # (bounded — scrypt is ~16MB/hash against the 2g mem_limit).
+      UV_THREADPOOL_SIZE: '16'
       FIREBASE_SERVICE_ACCOUNT_PATH: /run/secrets/firebase-service-account
     env_file:
       - ${ENV_FILE:-/opt/crm2/secrets/.env.prod}

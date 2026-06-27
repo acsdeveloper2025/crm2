@@ -1468,3 +1468,55 @@ Built TDD against the mobile builder (`LegacyFormTemplateBuilders.ts` = source o
 **✅ Full 43-pair E2E matrix (2026-06-24):** drove every field `verification_type × outcome` (9 types × 4–5 outcomes) through the complete workflow on `crm2_dev` (seed→assign smokefa→submit form→5 photos+selfie→office-complete) — **43/43 OK**: form_data captured, report renders 6–8 named sections **with zero "Additional Details" leaks**, 6 attachments each, billing resolves per type (₹1100–1900) + commission ₹50 + bill_count 1. The matrix **caught + FIXED a real gap**: PROPERTY_APF omitted its structure fields (`addressStructure`, `addressStructureColor`, `doorColor`, `addressFloor` — device emits all 4 at builder lines 7170/7182/7187/7176) → added a 'Property / Structure & Nameplate' section. Note: `finalStatusNegative` is **NOT emitted** by the APF device builder (audit A2026-0623-22's finalStatusNegative sub-item + finding 07 — the device sends `finalStatus` for the negative path; re-scope that part). `fieldReports` 86 tests + `pnpm verify` green.
 
 **✅ Active-layout staleness — FIXED (2026-06-24, mig 0088 + catalog guard):** FIELD_REPORT layouts render with their OWN snapshotted columns (`fieldReports/service.ts` renderNarrative(layout.columns)), so any layout created before the 2026-06-24 device-key fixes carries the OLD keys (`applicantStayingFloor`; business/RCO `approxArea`) → empty/wrong values for v2 device submissions. **Migration `0088_field_report_layout_device_keys`** remaps the known drifts on existing stored `report_layout_columns` (floor → `addressFloor` for residence/RCO; area → `officeApproxArea` for business + residence-cum-office; residence `approxArea` left untouched) — UPDATE-only, slug-scoped, idempotent + re-run-safe (device-tested: stale→fixed, re-run no-op). **Guard:** `fieldReportDefaults.test.ts` asserts no default column reads `applicantStayingFloor` and BUSINESS/RCO area reads `officeApproxArea` (prevents catalog regression). **Scope:** prod `report_layouts` is empty (per audit) so the default-template fix already covers prod — 0088 is the safety net for any pre-fix active layout. **Residual (not migratable):** a stale layout's `template_body` (omitted clauses — e.g. the dev fixture id1 drops the floor clause) is admin/author content; regen the layout from the current default to restore omitted clauses. Render-time catalog resolution (so column source_refs auto-track the catalog) would prevent future snapshot drift but is an architecture change → ADR if owner wants a systemic guarantee.
+
+## Section SEC-AUDIT-2026-06-27 — 6-point production-readiness security review (ADR-0076)
+
+Owner-requested audit across Authorization · Rate Limiting · Secrets · Access Control · Token
+Security · Resilience. 4 read-only audit passes + 1 adversarial design review. **Authorization &
+Access Control verified SOUND (no change).** Edge gaps → ADR-0076, phased. Topology fact that shaped
+the fix: **prod is single-instance, Redis/Valkey is unset** (compose comment) — so fixes are
+in-memory / durable-DB, not Redis-backed.
+
+**✅ VERIFIED SOUND (no finding):**
+- **Authorization** — scope predicate fails closed; applied on list, detail-by-`:id`, sub-resources,
+  exports, aggregates. No IDOR. Field tasks ownership-bound (`WHERE id=$1 AND assigned_to=$2`).
+- **Access control** — Zod allowlists (no mass-assignment); role/permission/scope writes
+  SUPER_ADMIN-only; assignment re-validated server-side; KYC grant fail-closed (ADR-0073).
+- **Secrets hygiene** — no committed secrets; gitleaks in CI; GitHub-Secrets-only deploy; error
+  handler returns bare `{error:'INTERNAL'}`; web bundle has zero embedded secrets.
+
+**🟢 FIXED in Phase 1 (ADR-0076, branch `feat/security-hardening`):**
+- **SEC-1 (CRITICAL)** No rate limiting → per-IP brute-force/spray/scrape. FIX: `express-rate-limit`
+  on `/auth/login` + `/auth/refresh` (in-memory, config-driven) + nginx `limit_req` floor. The
+  existing DB per-account lockout remains the credential-stuffing control.
+- **SEC-2 (CRITICAL)** Login scrypt (~2s) on default 4-thread libuv pool → API-wide stall. FIX:
+  `UV_THREADPOOL_SIZE=16` + the login rate limit removes the trigger.
+- **SEC-3 (HIGH)** `req.ip` = edge IP (no `trust proxy`) → per-IP limiting impossible + wrong audit
+  IPs. FIX: `app.set('trust proxy', 1)`.
+- **SEC-4 (HIGH)** Prod can boot on the public dev `JWT_SECRET`/`MFA_ENC_KEY` default. FIX:
+  `loadEnv` `.superRefine` throws in production on the known default.
+- **SEC-5 (HIGH)** No pg pool / HTTP timeouts → one expensive query or slowloris stalls the system.
+  FIX: pool `statement_timeout`/`connectionTimeoutMillis`/`idle_in_transaction_session_timeout`/`max`
+  + server `requestTimeout`/`headersTimeout` (120s, matching nginx).
+- **SEC-6 (MEDIUM)** Username-enumeration timing oracle (unknown user fails before scrypt). FIX:
+  dummy-hash scrypt on the unknown-user path.
+- **SEC-7 (LOW)** `x-test-auth` seam gated only by mount-time `NODE_ENV`. FIX: middleware no-ops in
+  production (double-guard).
+
+**🟡 DEFERRED to Phase 2 (ADR-0076, needs migration + careful review — built separately):**
+- **SEC-8 (HIGH)** Stolen/re-issued access token unrevocable for ≤15 min; deactivation/password
+  change don't kill live access tokens or the realtime socket. FIX (planned): durable per-user
+  `tokens_valid_after` column + `iat` check in `authenticate` + socket force-disconnect, wired into
+  logout-all / password-change / deactivate (single+bulk). Until then: bounded by 15-min TTL +
+  refresh-side block (unchanged from today).
+- **SEC-9 (MEDIUM)** Refresh-token reuse not treated as a breach (no family revoke). FIX (planned):
+  family revoke **with a ≈60s grace window** so benign mobile-retry / multi-tab replays don't cause
+  mass logout.
+
+**🟡 DEFERRED / hygiene (tracked, low risk):**
+- **SEC-10 (MEDIUM)** Web stores access+refresh in `localStorage` (XSS → durable takeover). DEFER:
+  documented tradeoff for an internal admin SPA; move refresh to httpOnly cookie after Phase 2.
+- **SEC-11 (LOW)** `@crm2/logger` has no redaction denylist. DEFER (latent): nothing logs request
+  bodies/headers/tokens today; add a key denylist before any caller logs a request object.
+- **SEC-12 (INFO)** `admin` seed hash (`admin123`) has no force-rotate flag. DEFER: rotated on the
+  box post-cutover; add `password_must_change=true` to the 0009 seed for fresh-DB safety.
