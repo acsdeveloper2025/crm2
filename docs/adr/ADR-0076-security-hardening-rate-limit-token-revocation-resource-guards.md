@@ -1,6 +1,6 @@
 # ADR-0076: Security hardening — rate limiting, resource-exhaustion guards, secret fail-fast, and access-token revocation
 
-- **Status:** Accepted (Phase 1 + Phase 2 built & verified — see Decision)
+- **Status:** Accepted (Phase 1 + Phase 2 + follow-ups SEC-10/11/12 all built & shipped — see Decision)
 - **Date:** 2026-06-27
 - **Amends:** ADR-0014 (Authentication & session management) · ADR-0022 (Access Control 2.0).
 - **Relates:** ADR-0027 (Realtime & push) · ADR-0030 (Background jobs).

@@ -1514,10 +1514,18 @@ in-memory / durable-DB, not Redis-backed.
   family revoke (all sessions + access kill + socket drop) **only beyond a 60s grace window**; within
   grace it's a benign 401 (mobile lost-response retry / multi-tab race) so jitter never mass-logs-out.
 
-**🟡 DEFERRED / hygiene (tracked, low risk):**
-- **SEC-10 (MEDIUM)** Web stores access+refresh in `localStorage` (XSS → durable takeover). DEFER:
-  documented tradeoff for an internal admin SPA; move refresh to httpOnly cookie after Phase 2.
-- **SEC-11 (LOW)** `@crm2/logger` has no redaction denylist. DEFER (latent): nothing logs request
-  bodies/headers/tokens today; add a key denylist before any caller logs a request object.
-- **SEC-12 (INFO)** `admin` seed hash (`admin123`) has no force-rotate flag. DEFER: rotated on the
-  box post-cutover; add `password_must_change=true` to the 0009 seed for fresh-DB safety.
+**🟢 FIXED in follow-ups (ADR-0076 — branches `feat/security-followups` + `feat/refresh-cookie`):**
+- **SEC-10 (MEDIUM)** Web stored access **+ refresh** in `localStorage` (XSS → durable takeover). FIX:
+  the refresh token moved to an httpOnly / SameSite=Lax / path-scoped cookie (Secure in prod); the web
+  keeps only the access token + the non-secret refresh-token jti (returned in the login/refresh body)
+  for its sessions list + idle-logout. MOBILE unchanged (still body-based). `http/refreshCookie.ts` +
+  web `tokenStore`/`sdk`/`AuthContext`. (Server cookie contract test-covered; web browser flow shipped
+  without a human browser pass — owner-accepted.)
+- **SEC-11 (LOW)** `@crm2/logger` had no redaction denylist. FIX: `redact()` masks sensitive-named
+  fields (password/token/secret/authorization/cookie/jwt/apikey/mfa/credential) in every log record.
+- **SEC-12 (INFO)** `admin` seed (`admin123`) had no force-rotate flag. FIX: migration 0103 sets
+  `password_must_change=true` gated on the exact seed hash (no-op once admin rotates → live prod admin
+  untouched; a fresh DB is forced to rotate on first login).
+- **SEC-REGRESSION** Phase-1's `loginLimiter()`/`refreshLimiter()` called `loadEnv()` at module load,
+  crashing the OpenAPI CLI (no DATABASE_URL) and reddening main's drift gate. FIX: build the limiters
+  lazily (first request, cached). Also: gitleaks-action given `GITHUB_TOKEN` for pull_request scans.
