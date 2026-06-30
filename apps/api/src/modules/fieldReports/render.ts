@@ -1,6 +1,16 @@
-import type { ReportLayoutColumn } from '@crm2/sdk';
 import type { TaskRenderContext } from './repository.js';
 import { hb } from './helpers.js';
+
+/** The column fields the renderer actually reads — the variable key + its source binding. Satisfied by
+ *  BOTH a stored `ReportLayoutColumn` row AND a `FIELD_REPORT_DEFAULTS` catalog entry
+ *  (`ReportLayoutColumnInput`), so the service renders a custom layout or a standard default through the
+ *  same path with no read-model-only fields (id/displayOrder/options/…) to fabricate. `sourceType` is a
+ *  plain string — `resolveColumnValue` switches on the known kinds and falls back to '' for the rest. */
+export interface RenderColumn {
+  columnKey: string;
+  sourceType: string;
+  sourceRef?: string | null;
+}
 
 /**
  * FIELD_REPORT render (ADR-0039). A layout's columns are its VARIABLE CATALOG: each `columnKey` is a
@@ -24,7 +34,7 @@ function walkPath(root: unknown, path: string | null | undefined): unknown {
 
 /** Resolve one catalog column to its value for this task. Sources not meaningful for a field
  *  narrative (rate/commission/TAT/data-entry/doc-count/computed) resolve to '' in v1. */
-export function resolveColumnValue(col: ReportLayoutColumn, ctx: TaskRenderContext): unknown {
+export function resolveColumnValue(col: RenderColumn, ctx: TaskRenderContext): unknown {
   const ref = col.sourceRef ?? undefined;
   switch (col.sourceType) {
     case 'FORM_DATA_PATH':
@@ -42,7 +52,7 @@ export function resolveColumnValue(col: ReportLayoutColumn, ctx: TaskRenderConte
 
 /** Build the Handlebars context keyed by columnKey. Missing/null values become '' so a "smart"
  *  placeholder renders empty (v1 parity) rather than the literal "undefined". */
-export function buildContext(columns: ReportLayoutColumn[], ctx: TaskRenderContext): Record<string, unknown> {
+export function buildContext(columns: RenderColumn[], ctx: TaskRenderContext): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const col of columns) {
     const v = resolveColumnValue(col, ctx);
@@ -64,7 +74,7 @@ function cleanWhitespace(s: string): string {
 /** Render the narrative for one task against a FIELD_REPORT layout's body + variable catalog. */
 export function renderNarrative(
   templateBody: string,
-  columns: ReportLayoutColumn[],
+  columns: RenderColumn[],
   ctx: TaskRenderContext,
 ): string {
   const data = buildContext(columns, ctx);

@@ -24,8 +24,9 @@ function seeded<T>(res: request.Response): T {
 
 async function seedCpv(
   tag: string,
+  code?: string,
 ): Promise<{ clientId: number; productId: number; unitId: number; unitCode: string }> {
-  const unitCode = `U_${tag}`;
+  const unitCode = code ?? `U_${tag}`;
   const clientId = seeded<{ id: number }>(
     await request(app)
       .post('/api/v2/clients')
@@ -200,8 +201,8 @@ describe.skipIf(!RUN)('field-report API (ADR-0039)', () => {
     ]);
   });
 
-  it('no FIELD_REPORT configured → 200 with narrative null', async () => {
-    const ctx = await seedCpv('NOFR');
+  it('no layout AND not a standard field type (U_NOFR) → 200 with narrative null', async () => {
+    const ctx = await seedCpv('NOFR'); // unit code U_NOFR — NOT a FIELD_REPORT_DEFAULTS key
     const { caseId, taskId } = await seedCaseWithTask(ctx);
     const res = await request(app).get(`/api/v2/cases/${caseId}/tasks/${taskId}/field-report`).set(SA);
     expect(res.status).toBe(200);
@@ -209,6 +210,38 @@ describe.skipIf(!RUN)('field-report API (ADR-0039)', () => {
     expect(res.body.layoutId).toBeNull();
     expect(res.body.sections).toEqual([]); // no form_data submitted yet
     expect(res.body.verificationType).toBe(ctx.unitCode);
+  });
+
+  it('no custom layout → falls back to the STANDARD default template for a field type (CASE-000018 fix)', async () => {
+    // The unit code == a FIELD_REPORT_DEFAULTS key; NO report_layouts row is configured.
+    const ctx = await seedCpv('STD', 'RESIDENCE');
+    const { caseId, taskId } = await seedCaseWithTask(ctx);
+    // A real RESIDENCE device submission: outcome CODE + a separate houseStatus. The default columns
+    // read the lowercase `residence` slug; canonicalize recombines POSITIVE + Open → "Positive & Door
+    // Open" so the v1-vocabulary template branch matches (the exact shape of prod CASE-000018).
+    await db!.pool.query('UPDATE case_tasks SET form_data = $1::jsonb WHERE id = $2', [
+      JSON.stringify({
+        residence: {
+          verificationOutcome: 'POSITIVE',
+          formData: {
+            houseStatus: 'Open',
+            metPersonName: 'SIDDHI',
+            metPersonRelation: 'Self',
+            addressRating: 'Good',
+            finalStatus: 'Positive',
+          },
+        },
+      }),
+      taskId,
+    ]);
+    const res = await request(app).get(`/api/v2/cases/${caseId}/tasks/${taskId}/field-report`).set(SA);
+    expect(res.status).toBe(200);
+    expect(res.body.layoutId).toBeNull(); // a built-in default, not a stored layout row
+    expect(res.body.layoutName).toBe('Standard RESIDENCE');
+    expect(res.body.narrative).not.toBeNull();
+    // the canonicalized outcome selected the positive-door-open branch (previously narrative was null)
+    expect(res.body.narrative).toContain('Residence Remark: POSITIVE & DOOR OPEN.');
+    expect(res.body.narrative).toContain('met with SIDDHI (Self)');
   });
 
   it('non-uuid → 400; absent task → 404 (scope-guarded via taskScopePredicate)', async () => {
