@@ -1,6 +1,7 @@
 import { FIELD_REPORT_DEFAULTS, type FieldReportView } from '@crm2/sdk';
-import { fieldReportRepository as repo } from './repository.js';
-import { renderNarrative, type RenderColumn } from './render.js';
+import { logger } from '@crm2/logger';
+import { fieldReportRepository as repo, type TaskRenderContext } from './repository.js';
+import { renderNarrative } from './render.js';
 import { canonicalizeRenderContext } from './canonicalize.js';
 import { buildSections } from './sections.js';
 import { reportLayoutRepository } from '../reportLayouts/repository.js';
@@ -8,19 +9,69 @@ import { AppError } from '../../platform/errors.js';
 import { resolveScope, type Actor } from '../../platform/scope/index.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** `field_reports.outcome` column width — the snapshot's outcome metadata is truncated to fit. */
+const MAX_OUTCOME_LEN = 120;
 
 /**
- * FIELD_REPORT render service (ADR-0039) — renders the active FIELD_REPORT template for a task's
- * (client, product, verificationType) against its submitted form_data + case/applicant context. The
- * load is scope-guarded (out-of-scope/absent/wrong-case → 404, IDOR-safe) and gated `case.view` at the
- * route.
- *
- * Template resolution (most-specific → least-specific, v1 TemplateReportService parity):
- *  1. an admin-authored `report_layouts` row for this (client, product, verificationType) — overrides;
- *  2. else the built-in **standard** template for the verification type (`FIELD_REPORT_DEFAULTS`) — the
- *     same narratives v1 auto-generated, so the 9 field types produce their report with zero config;
- *  3. else `narrative: null` (a non-field/KYC type with no standard default) — a normal 200, like a
- *     missing DATA_ENTRY layout.
+ * Resolve the FIELD_REPORT template (most-specific → least-specific, v1 TemplateReportService parity)
+ * and render it against the canonicalized context (codes → v1 verbose labels, split → combined periods;
+ * read-time only, stored data untouched — ADR-0057):
+ *  1. an admin-authored `report_layouts` row for (client, product, verificationType) — overrides;
+ *  2. else the built-in standard default for the verification type (`FIELD_REPORT_DEFAULTS`, ADR-0079);
+ *  3. else null (a non-field / KYC type with no standard default).
+ */
+async function resolveNarrative(
+  ctx: TaskRenderContext,
+): Promise<{ narrative: string; layoutId: number | null; layoutName: string | null } | null> {
+  const layout = await reportLayoutRepository.findActiveByConfig(
+    ctx.clientId,
+    ctx.productId,
+    'FIELD_REPORT',
+    ctx.verificationType,
+  );
+  const canon = canonicalizeRenderContext(ctx);
+  if (layout?.templateBody != null) {
+    return {
+      narrative: renderNarrative(layout.templateBody, layout.columns, canon),
+      layoutId: layout.id,
+      layoutName: layout.name,
+    };
+  }
+  const std = FIELD_REPORT_DEFAULTS[ctx.verificationType];
+  if (std) {
+    // the default catalog is the write-shape (ReportLayoutColumnInput); read off the 3 fields the
+    // renderer needs so the standard and custom-layout paths share one RenderColumn contract.
+    const columns = std.columns.map((c) => ({
+      columnKey: c.columnKey,
+      sourceType: c.sourceType,
+      sourceRef: c.sourceRef ?? null,
+    }));
+    return {
+      narrative: renderNarrative(std.templateBody, columns, canon),
+      layoutId: null,
+      layoutName: `Standard ${ctx.verificationType}`,
+    };
+  }
+  return null;
+}
+
+/** The device's submitted outcome (first form-type slug's `verificationOutcome`) — snapshot metadata. */
+function deviceOutcome(formData: Record<string, unknown> | null): string | null {
+  if (!formData) return null;
+  for (const v of Object.values(formData)) {
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      const o = (v as Record<string, unknown>)['verificationOutcome'];
+      if (typeof o === 'string' && o.trim()) return o.trim().slice(0, MAX_OUTCOME_LEN);
+    }
+  }
+  return null;
+}
+
+/**
+ * FIELD_REPORT service (ADR-0039/0079/0080). The per-task narrative is FROZEN at field submission
+ * (`snapshot`) into `field_reports`; the read (`render`) returns that immutable snapshot when present,
+ * else renders live. The load is scope-guarded (out-of-scope/absent/wrong-case → 404, IDOR-safe) and
+ * gated `case.view` at the route.
  */
 export const fieldReportService = {
   async render(caseId: string, taskId: string, actor: Actor): Promise<FieldReportView> {
@@ -30,64 +81,64 @@ export const fieldReportService = {
     const ctx = await repo.loadContext(caseId, taskId, scope);
     if (!ctx) throw AppError.notFound('TASK_NOT_FOUND');
 
-    // Raw submitted fields — shown whether or not a narrative template exists (the combined view, R1).
+    // Raw submitted fields — shown whether or not a narrative exists (the combined view, R1). Always
+    // reflects the stored form_data (which is verbatim + immutable per task once submitted).
     const sections = buildSections(ctx.formData);
 
-    const layout = await reportLayoutRepository.findActiveByConfig(
-      ctx.clientId,
-      ctx.productId,
-      'FIELD_REPORT',
-      ctx.verificationType,
-    );
-    // Canonicalize the v2-native device payload (codes → v1 verbose labels, split → combined periods)
-    // for the v1-vocabulary templates — read-time only, stored data untouched (ADR-0057). Shared by
-    // both the custom-layout and standard-default render paths.
-    const render = (body: string, columns: RenderColumn[]): string =>
-      renderNarrative(body, columns, canonicalizeRenderContext(ctx));
-
-    // 1. Admin-authored layout for this (client, product, verificationType) — overrides.
-    if (layout?.templateBody != null) {
+    // ADR-0080: a snapshot frozen at field submission WINS — the report never re-renders once submitted,
+    // so a later template edit can't rewrite an already-submitted task's report.
+    const snap = await repo.findSnapshot(taskId);
+    if (snap) {
       return {
         taskId,
         verificationType: ctx.verificationType,
         sections,
-        layoutId: layout.id,
-        layoutName: layout.name,
-        narrative: render(layout.templateBody, layout.columns),
+        layoutId: snap.layoutId,
+        layoutName: snap.layoutName,
+        narrative: snap.narrative,
+        snapshotAt: snap.renderedAt,
       };
     }
 
-    // 2. Built-in standard default for the verification type (v1 TemplateReportService parity) — the
-    //    9 field types produce their report with zero config; an admin layout above overrides it.
-    const std = FIELD_REPORT_DEFAULTS[ctx.verificationType];
-    if (std) {
-      return {
-        taskId,
-        verificationType: ctx.verificationType,
-        sections,
-        layoutId: null,
-        layoutName: `Standard ${ctx.verificationType}`,
-        // the default catalog is the write-shape (ReportLayoutColumnInput); read off the 3 fields the
-        // renderer needs so the standard and custom-layout paths share one RenderColumn contract.
-        narrative: render(
-          std.templateBody,
-          std.columns.map((c) => ({
-            columnKey: c.columnKey,
-            sourceType: c.sourceType,
-            sourceRef: c.sourceRef ?? null,
-          })),
-        ),
-      };
-    }
-
-    // 3. Neither a custom layout nor a standard default (a non-field / KYC type) — narrative null.
+    // No snapshot (not yet submitted, or a task that predates snapshotting) → render live.
+    const r = await resolveNarrative(ctx);
     return {
       taskId,
       verificationType: ctx.verificationType,
       sections,
-      layoutId: null,
-      layoutName: null,
-      narrative: null,
+      layoutId: r?.layoutId ?? null,
+      layoutName: r?.layoutName ?? null,
+      narrative: r?.narrative ?? null,
+      snapshotAt: null,
     };
+  },
+
+  /**
+   * Freeze the field report at field submission (ADR-0080) — called by the device submit path AFTER the
+   * form is stored and the task transitions. BEST-EFFORT: a render/store hiccup must NEVER fail the
+   * agent's submission (the read path falls back to a live render when no snapshot exists). The caller
+   * has already ownership-verified the task, so the context load is unscoped.
+   */
+  async snapshot(caseId: string, taskId: string, renderedBy: string): Promise<void> {
+    try {
+      const ctx = await repo.loadContext(caseId, taskId, undefined);
+      if (!ctx) return;
+      const r = await resolveNarrative(ctx);
+      if (!r) return; // a non-field / KYC type with no template → nothing to freeze
+      await repo.upsertSnapshot({
+        caseTaskId: taskId,
+        verificationType: ctx.verificationType,
+        outcome: deviceOutcome(ctx.formData),
+        narrative: r.narrative,
+        layoutId: r.layoutId,
+        layoutName: r.layoutName,
+        renderedBy,
+      });
+    } catch (e) {
+      logger.warn('field report snapshot failed', {
+        taskId,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
   },
 };

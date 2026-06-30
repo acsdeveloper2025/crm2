@@ -358,9 +358,12 @@ export interface FieldReportView {
   verificationType: string;
   /** the agent's submitted fields, grouped by form-type slug; empty when no form_data. */
   sections: FieldReportSection[];
-  /** the active layout's id + name, or null when none is configured. */
+  /** the active layout's id + name, or null when none is configured (or the standard built-in default). */
   layoutId: number | null;
   layoutName: string | null;
   /** the rendered narrative text, or null when no template is configured. */
   narrative: string | null;
+  /** when this report was FROZEN at field submission (ADR-0080) — a stored, immutable snapshot. Null
+   *  means it was rendered live (the task isn't submitted yet, or predates snapshotting). */
+  snapshotAt: string | null;
 }

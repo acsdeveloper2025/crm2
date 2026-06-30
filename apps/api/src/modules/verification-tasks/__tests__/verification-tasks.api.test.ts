@@ -39,7 +39,10 @@ let vtPincodeSeq = 500000;
  *  suite tests the device lifecycle, not assignment eligibility). The task is stamped with a LOCAL
  *  distance band + a real location so the ADR-0050 exact-match commission lateral can resolve when a
  *  test seeds a matching commission row; the returned dims let those tests build the row. */
-async function seedAssignedTask(tag: string): Promise<{
+async function seedAssignedTask(
+  tag: string,
+  unitCode = `U_${tag}`,
+): Promise<{
   caseId: string;
   taskId: string;
   agent: string;
@@ -64,7 +67,7 @@ async function seedAssignedTask(tag: string): Promise<{
     await request(app)
       .post('/api/v2/verification-units')
       .set(SA)
-      .send(verificationUnitFactory({ code: `U_${tag}` })),
+      .send(verificationUnitFactory({ code: unitCode })),
   ).id;
   const locationId = seeded<{ id: number }>(
     await request(app)
@@ -139,6 +142,7 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
       'user_scope_assignments',
       'commission_rates',
       'case_attachments',
+      'field_reports',
       'case_tasks',
       'case_applicants',
       'cases',
@@ -406,6 +410,70 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
           .send({ formData: { addressConfirmed: false } })
       ).status,
     ).toBe(200);
+  });
+
+  it('ADR-0080: submitting a field form FREEZES a field-report snapshot; the read returns it, immutable vs later template edits', async () => {
+    const { caseId, taskId, agent, clientId, productId } = await seedAssignedTask('SNAP', 'RESIDENCE');
+    const h = hdr('FIELD_AGENT', agent);
+    const sub = await request(app)
+      .post(`/api/v2/verification-tasks/${taskId}/verification/residence`)
+      .set(h)
+      .send({
+        formData: {
+          houseStatus: 'Open',
+          metPersonName: 'SIDDHI',
+          metPersonRelation: 'Self',
+          addressRating: 'Good',
+          finalStatus: 'Positive',
+        },
+        verificationOutcome: 'POSITIVE',
+      });
+    expect(sub.status).toBe(200);
+
+    // a snapshot row was FROZEN at submission — the RESIDENCE default template rendered (ADR-0079/0080)
+    const snap = (
+      await db!.pool.query<{ narrative: string; verification_type: string; outcome: string }>(
+        `SELECT narrative, verification_type, outcome FROM field_reports WHERE case_task_id = $1`,
+        [taskId],
+      )
+    ).rows[0];
+    expect(snap?.verification_type).toBe('RESIDENCE');
+    expect(snap?.outcome).toBe('POSITIVE');
+    expect(snap?.narrative).toContain('Residence Remark: POSITIVE & DOOR OPEN.');
+
+    // the field-report endpoint returns the frozen snapshot (snapshotAt set, not a live render)
+    const r1 = await request(app).get(`/api/v2/cases/${caseId}/tasks/${taskId}/field-report`).set(SA);
+    expect(r1.status).toBe(200);
+    expect(r1.body.snapshotAt).toBeTruthy();
+    expect(r1.body.narrative).toContain('Residence Remark: POSITIVE & DOOR OPEN.');
+
+    // IMMUTABILITY: author a custom layout AFTER submission with a totally different body → the read
+    // STILL returns the frozen snapshot, never the new layout's render.
+    seeded(
+      await request(app)
+        .post('/api/v2/report-layouts')
+        .set(SA)
+        .send({
+          clientId,
+          productId,
+          kind: 'FIELD_REPORT',
+          name: 'Custom Later',
+          verificationType: 'RESIDENCE',
+          templateBody: 'TOTALLY DIFFERENT BODY {{o}}',
+          columns: [
+            {
+              columnKey: 'o',
+              headerLabel: 'O',
+              sourceType: 'FORM_DATA_PATH',
+              sourceRef: 'residence.verificationOutcome',
+              dataType: 'TEXT',
+            },
+          ],
+        }),
+    );
+    const r2 = await request(app).get(`/api/v2/cases/${caseId}/tasks/${taskId}/field-report`).set(SA);
+    expect(r2.body.narrative).toContain('Residence Remark: POSITIVE & DOOR OPEN.'); // still the snapshot
+    expect(r2.body.narrative).not.toContain('TOTALLY DIFFERENT');
   });
 
   it('submit form directly from ASSIGNED (no explicit start) also SUBMITS the task; case stays IN_PROGRESS', async () => {

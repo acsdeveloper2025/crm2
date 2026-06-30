@@ -20,6 +20,14 @@ export interface TaskRenderContext {
   applicant: Record<string, unknown>;
 }
 
+/** A stored, frozen field-report snapshot (ADR-0080) — the narrative as it read at submission. */
+export interface FieldReportSnapshot {
+  narrative: string;
+  layoutId: number | null;
+  layoutName: string | null;
+  renderedAt: string;
+}
+
 /** TASK-grain scope predicate for the per-task field report (A2026-0623-09): the report exposes the
  *  assigned agent's full captured PII, so visibility is THIS task's assignment — NOT case-grain. A
  *  field agent assigned a SIBLING task in the same case must NOT read this task's report (cross-agent
@@ -99,5 +107,41 @@ export const fieldReportRepository = {
       params,
     );
     return rows[0]?.ctx ?? null;
+  },
+
+  /** The frozen snapshot for a task (ADR-0080), or null if none was stored (not submitted / pre-feature). */
+  async findSnapshot(caseTaskId: string): Promise<FieldReportSnapshot | null> {
+    const rows = await query<FieldReportSnapshot>(
+      `SELECT narrative, layout_id AS "layoutId", layout_name AS "layoutName", rendered_at AS "renderedAt"
+         FROM field_reports WHERE case_task_id = $1`,
+      [caseTaskId],
+    );
+    return rows[0] ?? null;
+  },
+
+  /** Freeze a task's field report at submission (ADR-0080) — one row per task; a resubmit refreshes it. */
+  async upsertSnapshot(s: {
+    caseTaskId: string;
+    verificationType: string;
+    outcome: string | null;
+    narrative: string;
+    layoutId: number | null;
+    layoutName: string | null;
+    renderedBy: string;
+  }): Promise<void> {
+    await query(
+      `INSERT INTO field_reports
+         (case_task_id, verification_type, outcome, narrative, layout_id, layout_name, rendered_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (case_task_id) DO UPDATE SET
+         verification_type = EXCLUDED.verification_type,
+         outcome           = EXCLUDED.outcome,
+         narrative         = EXCLUDED.narrative,
+         layout_id         = EXCLUDED.layout_id,
+         layout_name       = EXCLUDED.layout_name,
+         rendered_by       = EXCLUDED.rendered_by,
+         rendered_at       = now()`,
+      [s.caseTaskId, s.verificationType, s.outcome, s.narrative, s.layoutId, s.layoutName, s.renderedBy],
+    );
   },
 };

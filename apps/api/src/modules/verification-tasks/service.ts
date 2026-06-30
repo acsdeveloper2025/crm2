@@ -10,6 +10,7 @@ import {
 import { logger } from '@crm2/logger';
 import { caseRepository as repo } from '../cases/repository.js';
 import { emitTaskUpdate } from '../cases/case-events.js';
+import { fieldReportService } from '../fieldReports/service.js';
 import { AppError } from '../../platform/errors.js';
 import { detectAttachment } from '../../platform/file.js';
 import { processFieldPhoto, MAX_FIELD_PHOTO_BYTES, MAX_FIELD_PHOTOS } from '../../platform/photo.js';
@@ -180,6 +181,9 @@ export const verificationTaskService = {
     const caseId = await ownedCaseId(taskId, actor);
     await repo.submitVerificationForm(caseId, taskId, actor.userId, formType, json);
     const view = await repo.submitTaskByDevice(caseId, taskId, actor.userId);
+    // ADR-0080: freeze the field-report narrative at submission — the immutable record of the agent's
+    // report. Best-effort (never fails the submission); the read returns this snapshot from now on.
+    await fieldReportService.snapshot(caseId, taskId, actor.userId);
     emitTaskUpdate(view); // form submit==complete → office views refetch live
     return view;
   },
