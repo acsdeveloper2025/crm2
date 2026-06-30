@@ -38,7 +38,14 @@ import type {
   ReviseCommissionRateInput,
 } from './commissionRates.js';
 import type { TatPolicy, TatPolicyView, CreateTatPolicyInput, ReviseTatPolicyInput } from './tatPolicies.js';
-import type { BillingCaseRow, BillingTaskLine, BillingBreakdown, BillingBreakdownQuery } from './billing.js';
+import type {
+  BillingCaseRow,
+  BillingTaskLine,
+  BillingBreakdown,
+  BillingBreakdownQuery,
+  CommissionSummaryRow,
+  CommissionSummaryQuery,
+} from './billing.js';
 import type { MisRowsResponse, MisQuery } from './mis.js';
 import type {
   ReportLayout,
@@ -146,6 +153,19 @@ export interface SdkOptions {
   /** returns the Authorization header value (e.g. `Bearer <jwt>`) */
   getAuthToken?: () => string | null;
   fetchImpl?: typeof fetch;
+}
+
+/** Shared query-string builder for the commission-summary list + export (everything but page/pageSize). */
+function commissionSummaryParams(q: Omit<CommissionSummaryQuery, 'page' | 'pageSize'>): URLSearchParams {
+  const p = new URLSearchParams();
+  if (q.period) p.set('period', q.period);
+  if (q.groupBy) p.set('groupBy', q.groupBy);
+  if (q.clientId !== undefined) p.set('clientId', String(q.clientId));
+  if (q.productId !== undefined) p.set('productId', String(q.productId));
+  if (q.from) p.set('from', q.from);
+  if (q.to) p.set('to', q.to);
+  if (q.search) p.set('search', q.search);
+  return p;
 }
 
 /** Thin typed client (Day-1 carries the contracts; no separate package). */
@@ -406,6 +426,28 @@ export function createSdk(opts: SdkOptions) {
       },
       /** DataGrid export (IMPORT_EXPORT_STANDARD): same list query + format/mode → a file blob. */
       export: (r: ExportRequest) => reqBlob('billing/cases', r),
+
+      /**
+       * Periodic per-field-user commission rollup (ADR-0081) — week/fortnight/month/quarter buckets,
+       * optionally split by client+product. Anchored on earned-at COALESCE(submittedAt, completedAt).
+       */
+      commissionSummary: (q: CommissionSummaryQuery = {}) => {
+        const p = commissionSummaryParams(q);
+        if (q.page !== undefined) p.set('page', String(q.page));
+        if (q.pageSize !== undefined) p.set('limit', String(q.pageSize)); // server pagination reads `limit`
+        const qs = p.toString();
+        return req<Paginated<CommissionSummaryRow>>(
+          'GET',
+          `/api/v2/billing/commission-summary${qs ? `?${qs}` : ''}`,
+        );
+      },
+
+      /** DataGrid export (IMPORT_EXPORT_STANDARD): same summary query + format/mode → a file blob. */
+      commissionSummaryExport: (q: Omit<CommissionSummaryQuery, 'page' | 'pageSize'>, r: ExportRequest) => {
+        const extra: Record<string, string | undefined> = {};
+        for (const [k, v] of commissionSummaryParams(q)) extra[k] = v;
+        return reqBlob('billing/commission-summary', r, extra);
+      },
     },
 
     /**

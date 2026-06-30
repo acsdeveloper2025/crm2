@@ -42,6 +42,7 @@ import { CommissionRateRecordPage } from './features/commissionRates/CommissionR
 import { ReportLayoutsPage } from './features/reportLayouts/ReportLayoutsPage.js';
 import { ReportLayoutRecordPage } from './features/reportLayouts/ReportLayoutRecordPage.js';
 import { MisPage } from './features/mis/MisPage.js';
+import { CommissionSummaryPage } from './features/commissionSummary/CommissionSummaryPage.js';
 
 export function App() {
   const { user, ready, mustChangePassword, mustAcceptPolicies } = useAuth();
@@ -113,6 +114,7 @@ export function App() {
         <Route path="/cases/:id" element={<CaseDetailPage />} />
         <Route path="/mis" element={<MisPage />} />
         <Route path="/billing" element={<BillingPage />} />
+        <Route path="/billing/commission-summary" element={<CommissionSummaryPage />} />
         <Route path="*" element={<div className="text-muted-foreground">Not built yet.</div>} />
       </Routes>
     </Layout>

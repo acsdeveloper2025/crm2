@@ -1529,3 +1529,31 @@ in-memory / durable-DB, not Redis-backed.
 - **SEC-REGRESSION** Phase-1's `loginLimiter()`/`refreshLimiter()` called `loadEnv()` at module load,
   crashing the OpenAPI CLI (no DATABASE_URL) and reddening main's drift gate. FIX: build the limiters
   lazily (first request, cached). Also: gitleaks-action given `GITHUB_TOKEN` for pull_request scans.
+
+## Section FIELD-COMMISSION-EXPORT-2026-07-01 (audit `docs/engineering/FIELD_COMMISSION_EXPORT_AUDIT_2026-07-01.md`)
+
+Field-user commission calculation + export/period coverage audit (v1 + Zion cross-check). Calculation
+verified SOUND/read-derived; the gaps were all on the export/aggregation side. Dispositions:
+
+- **FC-1** Periodic commission export (weekly/monthly/quarterly presets + bucketing) — ✅ **FIXED (ADR-0081,
+  no migration)** — new Billing read-model `GET /billing/commission-summary` (+ `/export`), `period ∈
+  {week,fortnight,month,quarter}`, gated `billing.view`. SQL period bucket in `platform`-shared
+  `billing/repository.ts` `PERIOD_SQL`. TDD'd (`billing.commission.test.ts` ADR-0081 cases).
+- **FC-2** Per-field-user aggregation/export (assignee was absent from the billing export) — ✅ **FIXED
+  (ADR-0081)** — the summary is grained per field-user × period, `groupBy=agent|agentClientProduct`. Export
+  columns: Agent · [Client · Product ·] Period · Tasks · Billable Units · Commission Total.
+- **FC-5** Period filter anchored on `completed_at` while commission freezes at `submitted_at` (SUBMITTED rows
+  dropped; cross-period misattribution) — ✅ **FIXED (ADR-0081)** — the summary buckets + ranges on the
+  earned-at anchor `COALESCE(ct.submitted_at, ct.completed_at)`. (The per-case Billing list/breakdown keep
+  `completed_at` — those are client-bill, billed-at-COMPLETE views — unchanged by design.)
+- **FC-3** 15-day / fortnightly — was DEFERRED (no v1/Zion precedent); shipped anyway under ADR-0081 as
+  `fortnight` = twice-monthly **1st–15th (H1) / 16th–EOM (H2)**. ⚠️ Owner to confirm the pay cycle is
+  twice-monthly (vs rolling-14) at push; swappable in one `PERIOD_SQL` fragment. → ✅ **FIXED (assumption-flagged)**.
+- **FC-4** field-user × client × product pivot — ✅ **FIXED** via `groupBy=agentClientProduct` (the audit had
+  it DEFERRED; it fell out of the same read-model for free).
+- **FC-6** OFFICE/desk task earns silent ₹0 when no OFFICE rate configured — 🟢 **WONTFIX (known)** — by-design
+  fail-soft; tracked as the CEO launch-checklist "pre-seed OFFICE rates".
+- **FC-7** Invoice generation + GST + commission payout engine — 🟢 **WONTFIX** — billing/commission is
+  export-only (owner 2026-06-25); paid externally (Tally/manual).
+- **FC-8** `bill_count` multiplier vestigial (every task ×1 since SHIP-2) — 🟢 **WONTFIX (note)** — harmless;
+  full retirement is a later cleanup.

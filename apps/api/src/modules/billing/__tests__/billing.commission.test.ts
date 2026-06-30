@@ -629,6 +629,82 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
     expect(lines.find((l) => l.taskNumber === t2Number)!.billAmount).toBe(500);
   });
 
+  // --- Commission Summary (ADR-0081) — periodic per-field-user rollup ---
+  // The §E seed = one agent (fa) with two COMPLETED tasks earned THIS month (submitted_at = now):
+  // T1 → ₹50, T2 → ₹90. These exercise the new billingRepository.commissionSummary read-model.
+  const sumOpts = (o: Partial<Parameters<typeof billingRepository.commissionSummary>[0]>) => ({
+    scope: {},
+    period: 'month' as const,
+    groupBy: 'agent' as const,
+    limit: 50,
+    offset: 0,
+    ...o,
+  });
+
+  it('ADR-0081: per-agent monthly rollup sums the frozen commission for the period', async () => {
+    const { items, totalCount } = await billingRepository.commissionSummary(sumOpts({}));
+    expect(totalCount).toBe(1); // one agent, one month
+    const row = items[0]!;
+    expect(row.commissionTotal).toBe(140); // 50 + 90
+    expect(row.taskCount).toBe(2);
+    expect(row.billableUnits).toBe(2);
+    expect(row.clientId).toBeNull(); // groupBy = agent → client/product not split out
+    expect(row.productName).toBeNull();
+    expect(row.periodKey).toMatch(/^\d{4}-\d{2}$/); // YYYY-MM
+  });
+
+  it('ADR-0081: groupBy=agentClientProduct splits out client + product', async () => {
+    const { items } = await billingRepository.commissionSummary(sumOpts({ groupBy: 'agentClientProduct' }));
+    expect(items).toHaveLength(1); // both tasks share the one client+product
+    expect(items[0]!.clientId).not.toBeNull();
+    expect(items[0]!.productName).not.toBeNull();
+    expect(items[0]!.commissionTotal).toBe(140);
+  });
+
+  it('ADR-0081 (FC-5): buckets + filters on earned-at COALESCE(submitted_at, completed_at), not completed_at', async () => {
+    // Re-date the two tasks into DIFFERENT months via submitted_at (the earned-at anchor). The frozen
+    // commission_amount is unchanged — only the bucket moves. completed_at stays now-1day (different month)
+    // to prove the bucket follows submitted_at, NOT completed_at.
+    await query(`UPDATE case_tasks SET submitted_at = '2026-01-15T10:00:00Z' WHERE task_number = $1`, [
+      t1Number,
+    ]);
+    await query(`UPDATE case_tasks SET submitted_at = '2026-03-20T10:00:00Z' WHERE task_number = $1`, [
+      t2Number,
+    ]);
+
+    const monthly = await billingRepository.commissionSummary(sumOpts({}));
+    expect(monthly.totalCount).toBe(2); // two distinct months now
+    const jan = monthly.items.find((r) => r.periodKey === '2026-01')!;
+    const mar = monthly.items.find((r) => r.periodKey === '2026-03')!;
+    expect(jan.commissionTotal).toBe(50); // T1 earned in Jan
+    expect(mar.commissionTotal).toBe(90); // T2 earned in Mar
+    expect(monthly.items[0]!.periodKey).toBe('2026-03'); // ORDER BY period_start DESC
+
+    // Earned-at range filter excludes the Jan task.
+    const filtered = await billingRepository.commissionSummary(sumOpts({ from: '2026-02-01T00:00:00Z' }));
+    expect(filtered.totalCount).toBe(1);
+    expect(filtered.items[0]!.commissionTotal).toBe(90);
+
+    // Quarterly bucket collapses Jan→Q1, Mar→Q1 into ONE row.
+    const quarterly = await billingRepository.commissionSummary(sumOpts({ period: 'quarter' }));
+    expect(quarterly.totalCount).toBe(1);
+    expect(quarterly.items[0]!.periodKey).toBe('2026-Q1');
+    expect(quarterly.items[0]!.commissionTotal).toBe(140);
+  });
+
+  it('ADR-0081: fortnight buckets split a month at the 15th (H1 / H2)', async () => {
+    await query(`UPDATE case_tasks SET submitted_at = '2026-05-10T10:00:00Z' WHERE task_number = $1`, [
+      t1Number,
+    ]);
+    await query(`UPDATE case_tasks SET submitted_at = '2026-05-20T10:00:00Z' WHERE task_number = $1`, [
+      t2Number,
+    ]);
+    const { items, totalCount } = await billingRepository.commissionSummary(sumOpts({ period: 'fortnight' }));
+    expect(totalCount).toBe(2);
+    expect(items.find((r) => r.periodKey === '2026-05-H1')!.commissionTotal).toBe(50); // 10th → H1
+    expect(items.find((r) => r.periodKey === '2026-05-H2')!.commissionTotal).toBe(90); // 20th → H2
+  });
+
   // NOTE: mutates the shared seed (bill_count). `beforeEach` re-seeds, so isolation holds, but this
   // is kept as the LAST `it()` so the earlier §E bill_count=1 assertions (850/140) are unaffected.
   it('bill_count multiplies bill+commission and reports billable_units', async () => {

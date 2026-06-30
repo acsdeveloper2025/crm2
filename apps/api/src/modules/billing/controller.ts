@@ -58,4 +58,30 @@ export const billingController = {
       next(e);
     }
   },
+
+  async commissionSummary(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json(await svc.commissionSummary(req.query as Record<string, unknown>, actor(req)));
+    } catch (e) {
+      next(e);
+    }
+  },
+
+  async commissionSummaryExport(req: Request, res: Response, next: NextFunction) {
+    try {
+      const q = req.query as Record<string, unknown>;
+      const ex = resolveExport(q);
+      const { rows, columns } = await svc.exportCommissionSummary(q, ex, actor(req));
+      await writeExport(res, {
+        rows,
+        columns,
+        ex,
+        filenameBase: 'commission-summary',
+        resource: 'billing/commission-summary',
+        actorId: actor(req).userId,
+      });
+    } catch (e) {
+      next(e);
+    }
+  },
 };

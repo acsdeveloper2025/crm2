@@ -88,3 +88,55 @@ export interface BillingBreakdownQuery {
   completedTo?: string;
   search?: string;
 }
+
+/**
+ * Commission Summary (ADR-0081) — periodic, per-field-user agent-commission rollup for export/payout.
+ * Answers "how much did each field agent earn this week/fortnight/month/quarter" — the gap the
+ * per-case Billing list could not (it has no field-user grain or period bucketing). Read-only, derived;
+ * gated `billing.view`. Every amount is the SAME `COALESCE(snapshot, live)` commission the Billing page
+ * shows, summed × bill_count. The period bucket + the date range both anchor on the **earned-at** instant
+ * `COALESCE(submitted_at, completed_at)` (ADR-0047: field commission freezes at SUBMIT), NOT `completed_at`.
+ */
+export type CommissionPeriod = 'week' | 'fortnight' | 'month' | 'quarter';
+
+/** `agent` = one row per field-user per period; `agentClientProduct` = also split by client + product. */
+export type CommissionGroupBy = 'agent' | 'agentClientProduct';
+
+/** One rollup row: a field-user's earned commission within one period bucket (optionally per client+product). */
+export interface CommissionSummaryRow {
+  agentId: string;
+  agentName: string;
+  /** null unless groupBy = agentClientProduct. */
+  clientId: number | null;
+  clientName: string | null;
+  productId: number | null;
+  productName: string | null;
+  /** Period label: `2026-W27` (week) · `2026-06-H1`/`-H2` (fortnight) · `2026-06` (month) · `2026-Q2` (quarter). */
+  periodKey: string;
+  /** ISO date of the bucket's first day (sortable). */
+  periodStart: string | null;
+  /** Count of SUBMITTED/COMPLETED commissioned tasks in the bucket. */
+  taskCount: number;
+  /** Σ bill_count over the bucket (unit-weighted). */
+  billableUnits: number;
+  /** Σ agent commission × bill_count over the bucket. */
+  commissionTotal: number;
+}
+
+/** Query contract for `GET /billing/commission-summary` (+ `/export`). All optional; defaults month/agent. */
+export interface CommissionSummaryQuery {
+  /** Bucket granularity. Default `month`. */
+  period?: CommissionPeriod;
+  /** Grouping grain. Default `agent`. */
+  groupBy?: CommissionGroupBy;
+  clientId?: number;
+  productId?: number;
+  /** ISO timestamp; only commission earned (COALESCE(submittedAt, completedAt)) at/after this. */
+  from?: string;
+  /** ISO timestamp; only commission earned at/before this. */
+  to?: string;
+  /** Full-text across agent name, client name, product name. */
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}

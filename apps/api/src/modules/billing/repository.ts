@@ -4,6 +4,9 @@ import type {
   BillingBreakdown,
   BillingLocationGroup,
   BillingBandGroup,
+  CommissionSummaryRow,
+  CommissionPeriod,
+  CommissionGroupBy,
   SortOrder,
 } from '@crm2/sdk';
 import { filterClauses, likeContains, type AppliedFilter } from '../../platform/pagination.js';
@@ -96,6 +99,85 @@ function buildBillingWhere(o: BillingFilterOptions, params: unknown[]): string {
   if (o.ids && o.ids.length) {
     params.push(o.ids);
     where.push(`cs.id = ANY($${params.length})`);
+  }
+  const scopePred = caseScopePredicate(params, o.scope);
+  if (scopePred) where.push(scopePred);
+  return `WHERE ${where.join(' AND ')}`;
+}
+
+/**
+ * Business timezone for payroll-period bucketing (ADR-0081). A single-country (India) CRM, so period
+ * boundaries are the IST calendar — making it explicit removes the dependency on the PG session timezone,
+ * so week/fortnight/month/quarter boundaries (and the from/to filter) are deterministic across server/CI.
+ */
+const BUSINESS_TZ = 'Asia/Kolkata';
+
+/**
+ * Commission-summary "earned-at" anchor (ADR-0081, fixes audit FC-5): field commission freezes at SUBMIT
+ * (ADR-0047), so both the period bucket AND the date-range filter key on COALESCE(submitted_at, completed_at)
+ * — NOT completed_at (which would drop SUBMITTED-not-completed rows and misattribute cross-period tasks).
+ * `AT TIME ZONE` yields the IST wall-clock instant so the calendar buckets land on IST day/week/month edges.
+ */
+const EARNED_AT = `(COALESCE(ct.submitted_at, ct.completed_at) AT TIME ZONE '${BUSINESS_TZ}')`;
+
+/**
+ * Whitelisted period → SQL `{ key, start }` (the `period` value is validated by the service against this
+ * map's keys — it is NEVER interpolated raw). `key` is the human label; `start` the sortable bucket-start.
+ * `fortnight` = the twice-monthly Indian payroll cycle (1st–15th = H1, 16th–EOM = H2), NOT rolling-14-day.
+ */
+const PERIOD_SQL: Readonly<Record<CommissionPeriod, { key: string; start: string }>> = {
+  week: {
+    key: `to_char(date_trunc('week', ${EARNED_AT}), 'IYYY-"W"IW')`,
+    start: `date_trunc('week', ${EARNED_AT})`,
+  },
+  fortnight: {
+    key: `to_char(${EARNED_AT}, 'YYYY-MM') || CASE WHEN extract(day from ${EARNED_AT}) <= 15 THEN '-H1' ELSE '-H2' END`,
+    start: `date_trunc('month', ${EARNED_AT}) + CASE WHEN extract(day from ${EARNED_AT}) > 15 THEN interval '15 days' ELSE interval '0 days' END`,
+  },
+  month: { key: `to_char(${EARNED_AT}, 'YYYY-MM')`, start: `date_trunc('month', ${EARNED_AT})` },
+  quarter: {
+    key: `to_char(${EARNED_AT}, 'YYYY') || '-Q' || to_char(${EARNED_AT}, 'Q')`,
+    start: `date_trunc('quarter', ${EARNED_AT})`,
+  },
+};
+
+/** FROM for the commission summary — INNER JOIN users (assigned tasks only) + the shared commission lateral. */
+const SUMMARY_FROM = `FROM case_tasks ct
+  JOIN cases cs ON cs.id = ct.case_id
+  JOIN clients cl ON cl.id = cs.client_id
+  JOIN products p ON p.id = cs.product_id
+  JOIN users au ON au.id = ct.assigned_to
+  ${COMMISSION_LATERAL}`;
+
+export interface CommissionSummaryOptions {
+  scope: Scope;
+  period: CommissionPeriod;
+  groupBy: CommissionGroupBy;
+  clientId?: number;
+  productId?: number;
+  /** Earned-at range (COALESCE(submitted_at, completed_at)); ISO strings. */
+  from?: string;
+  to?: string;
+  search?: string;
+  limit: number;
+  offset: number;
+}
+
+/** WHERE for the commission summary (mutates `params`). Earned-at range + status + client/product + scope. */
+function buildCommissionSummaryWhere(o: CommissionSummaryOptions, params: unknown[]): string {
+  const where = [`ct.status IN ('SUBMITTED', 'COMPLETED')`];
+  const add = (clause: string, val: unknown) => {
+    params.push(val);
+    where.push(clause.replace('$?', `$${params.length}`));
+  };
+  if (o.from !== undefined) add(`${EARNED_AT} >= $?`, o.from);
+  if (o.to !== undefined) add(`${EARNED_AT} <= $?`, o.to);
+  if (o.clientId !== undefined) add('cs.client_id = $?', o.clientId);
+  if (o.productId !== undefined) add('cs.product_id = $?', o.productId);
+  if (o.search) {
+    params.push(likeContains(o.search));
+    const n = params.length;
+    where.push(`(au.name ILIKE $${n} OR cl.name ILIKE $${n} OR p.name ILIKE $${n})`);
   }
   const scopePred = caseScopePredicate(params, o.scope);
   if (scopePred) where.push(scopePred);
@@ -200,5 +282,51 @@ export const billingRepository = {
     );
 
     return { byLocation, byBand };
+  },
+
+  /**
+   * Periodic per-field-user agent-commission rollup (ADR-0081) — the export/payout view the per-case list
+   * could not give (no agent grain, no period bucket). Groups by agent × period bucket, optionally also by
+   * client + product. Amount = the same `COALESCE(snapshot, live)` commission × bill_count the Billing page
+   * sums. `period`/`groupBy` are whitelisted by the service. One round-trip for count, one for the page.
+   */
+  async commissionSummary(
+    o: CommissionSummaryOptions,
+  ): Promise<{ items: CommissionSummaryRow[]; totalCount: number }> {
+    const period = PERIOD_SQL[o.period];
+    const grouped = o.groupBy === 'agentClientProduct';
+    const groupDims = grouped ? ', cs.client_id, cl.name, cs.product_id, p.name' : '';
+    const clientSel = grouped ? 'cs.client_id, cl.name' : 'NULL::int, NULL::text';
+    const productSel = grouped ? 'cs.product_id, p.name' : 'NULL::int, NULL::text';
+
+    const params: unknown[] = [];
+    const clause = buildCommissionSummaryWhere(o, params);
+
+    // count = number of group rows (agent × period [× client × product]).
+    const [countRow] = await query<{ count: number }>(
+      `SELECT count(*)::int AS count FROM (
+         SELECT 1 ${SUMMARY_FROM} ${clause}
+         GROUP BY ct.assigned_to, au.name${groupDims}, ${period.key}, ${period.start}
+       ) g`,
+      params,
+    );
+    const totalCount = countRow?.count ?? 0;
+
+    const items = await query<CommissionSummaryRow>(
+      `SELECT ct.assigned_to AS agent_id, au.name AS agent_name,
+              ${clientSel.split(', ')[0]} AS client_id, ${clientSel.split(', ')[1]} AS client_name,
+              ${productSel.split(', ')[0]} AS product_id, ${productSel.split(', ')[1]} AS product_name,
+              ${period.key} AS period_key,
+              to_char(${period.start}, 'YYYY-MM-DD') AS period_start,
+              count(*)::int AS task_count,
+              COALESCE(SUM(ct.bill_count), 0)::int AS billable_units,
+              COALESCE(SUM(COALESCE(ct.commission_amount, com.commission_amount) * ct.bill_count), 0)::float8 AS commission_total
+       ${SUMMARY_FROM} ${clause}
+       GROUP BY ct.assigned_to, au.name${groupDims}, ${period.key}, ${period.start}
+       ORDER BY ${period.start} DESC, au.name ASC${grouped ? ', cl.name ASC, p.name ASC' : ''}
+       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, o.limit, o.offset],
+    );
+    return { items, totalCount };
   },
 };
