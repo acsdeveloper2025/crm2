@@ -11,6 +11,7 @@ import {
 } from '@crm2/sdk';
 import { taskRepository as repo } from './repository.js';
 import { caseRepository } from '../cases/repository.js';
+import { notifyTaskAssigned } from '../notifications/service.js';
 import { AppError } from '../../platform/errors.js';
 import { resolvePage, resolveFilters, buildPage, type PageSpec } from '../../platform/pagination.js';
 import { assertExportable, exportThreshold, type ResolvedExport } from '../../platform/export/index.js';
@@ -276,8 +277,15 @@ export const taskService = {
         status = 'INELIGIBLE_ASSIGNEE';
       } else {
         try {
-          await caseRepository.assignTask(row.caseId, item.id, attrs, actor.userId, item.version);
+          const assigned = await caseRepository.assignTask(
+            row.caseId,
+            item.id,
+            attrs,
+            actor.userId,
+            item.version,
+          );
           status = 'OK';
+          notifyTaskAssigned(assigned); // ADR-0027: bulk assign notifies each assignee too (parity with single assign)
         } catch (e) {
           if (e instanceof AppError && e.code === 'STALE_UPDATE') status = 'CONFLICT';
           // ADR-0056: a FIELD assignee with no commission at this task's location → per-row status.

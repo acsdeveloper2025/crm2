@@ -43,7 +43,7 @@ import { composeFieldPhotoOverlay } from '../../platform/photo.js';
 import { detectAttachment, MAX_ATTACHMENT_BYTES } from '../../platform/file.js';
 import { logger } from '@crm2/logger';
 import type { NotifyInput } from '@crm2/sdk';
-import { notificationService } from '../notifications/service.js';
+import { notificationService, notifyTaskAssigned } from '../notifications/service.js';
 
 /**
  * Notification producer (ADR-0027): fire-and-forget. A notification must NEVER break the core
@@ -349,7 +349,12 @@ export const caseService = {
       }
     }
     const created = await repo.addTasks(caseId, v.tasks, actor.userId);
-    for (const t of created) emitTaskUpdate(t); // new tasks (incl. assign-at-create) appear live in the office
+    for (const t of created) {
+      emitTaskUpdate(t); // new tasks (incl. assign-at-create) appear live in the office
+      // ADR-0027: assign-at-create must notify the assignee too (the device auto-pulls on CASE_ASSIGNED) —
+      // the same producer as a later assignTask, so the agent is told the moment the task is theirs.
+      notifyTaskAssigned(t);
+    }
     return created;
   },
 
@@ -467,20 +472,8 @@ export const caseService = {
     const eligible = await taskRepository.eligibleTaskIdsForAssignee([taskId], v.assignedTo, v.visitType);
     if (eligible.length === 0) throw AppError.badRequest('INVALID_ASSIGNEE');
     const task = await repo.assignTask(caseId, taskId, v, actor.userId, version);
-    // Producer (ADR-0027): tell the assignee a task is now theirs.
-    if (task.assignedTo) {
-      notifySafely({
-        userId: task.assignedTo,
-        // The field app auto-pulls a freshly-assigned task only on CASE_ASSIGNED/CASE_REASSIGNED
-        // (NotificationService); v1 emitted CASE_ASSIGNED. Use it (already a valid enum member) so the
-        // newly assigned task downloads immediately instead of waiting for the next full sync.
-        type: 'CASE_ASSIGNED',
-        title: 'New task assigned',
-        body: `${task.taskNumber} · ${task.unitName}`,
-        payload: { caseId, caseNumber: task.caseNumber, taskId, taskNumber: task.taskNumber },
-        actionType: 'OPEN_TASK',
-      });
-    }
+    // Producer (ADR-0027): tell the assignee a task is now theirs (device auto-pulls on CASE_ASSIGNED).
+    notifyTaskAssigned(task);
     emitTaskUpdate(task); // PENDING→ASSIGNED + case NEW→IN_PROGRESS → office views refetch live (ADR-0027)
     return task;
   },
@@ -604,6 +597,7 @@ export const caseService = {
     const eligible = await taskRepository.eligibleTaskIdsForAssignee([taskId], v.assignedTo, v.visitType);
     if (eligible.length === 0) throw AppError.badRequest('INVALID_ASSIGNEE');
     const view = await repo.reassignRevokedTask(caseId, taskId, v, actor.userId);
+    notifyTaskAssigned(view); // ADR-0027: the replacement's new assignee is told the task is theirs
     emitTaskUpdate(view); // replacement ASSIGNED task after revoke → office views refetch live
     return view;
   },

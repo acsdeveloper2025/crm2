@@ -231,3 +231,45 @@ export const notificationService = {
     return { requestId, tokensTargeted: tokens.length };
   },
 };
+
+/** The minimal task shape the CASE_ASSIGNED producer reads (structurally satisfied by `CaseTaskView`). */
+type AssignedTaskRef = {
+  id: string;
+  caseId: string;
+  caseNumber: string;
+  taskNumber: string;
+  unitName: string;
+  assignedTo: string | null;
+};
+
+/**
+ * Producer (ADR-0027): tell the assignee a task is now theirs — the ONE place the CASE_ASSIGNED
+ * notification is shaped, so every assign path (assign-at-create, single assign, bulk assign,
+ * reassign-after-revoke) notifies identically. Fire-and-forget: a failed notification must NEVER
+ * break the assign flow (logged, never thrown). No-op when the task has no assignee.
+ * The device auto-pulls a freshly-assigned task on CASE_ASSIGNED, so this also triggers the download.
+ */
+export function notifyTaskAssigned(task: AssignedTaskRef): void {
+  if (!task.assignedTo) return;
+  notificationService
+    .notify({
+      userId: task.assignedTo,
+      type: 'CASE_ASSIGNED',
+      title: 'New task assigned',
+      body: `${task.taskNumber} · ${task.unitName}`,
+      payload: {
+        caseId: task.caseId,
+        caseNumber: task.caseNumber,
+        taskId: task.id,
+        taskNumber: task.taskNumber,
+      },
+      actionType: 'OPEN_TASK',
+    })
+    .catch((e: unknown) => {
+      logger.warn('notification emit failed', {
+        type: 'CASE_ASSIGNED',
+        userId: task.assignedTo,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    });
+}

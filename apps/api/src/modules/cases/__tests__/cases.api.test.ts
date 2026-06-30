@@ -2289,6 +2289,19 @@ describe.skipIf(!RUN)('cases API', () => {
         [mine!.id],
       );
       expect(hist.rows).toEqual([{ action: 'ASSIGNED', assigned_to: fa }]);
+
+      // ADR-0027 (CASE-000018 regression): assign-at-create must notify the assignee too — previously
+      // only the later assignTask path fired CASE_ASSIGNED, so a field agent assigned on the New Case
+      // page got no notification/push and the device never auto-pulled the task.
+      const feed = await request(app)
+        .get('/api/v2/notifications')
+        .set({ 'x-test-auth': `FIELD_AGENT:${fa}` });
+      expect(feed.status).toBe(200);
+      expect(feed.body.items[0]).toMatchObject({
+        type: 'CASE_ASSIGNED',
+        actionType: 'OPEN_TASK',
+        payload: { taskId: mine!.id, caseNumber: expect.stringMatching(/^CASE-/) },
+      });
     });
 
     it('rate type resolves from rate management — most specific location wins', async () => {
