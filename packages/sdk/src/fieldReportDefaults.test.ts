@@ -1,21 +1,25 @@
 import { describe, it, expect } from 'vitest';
 import { FIELD_REPORT_DEFAULTS, FIELD_REPORT_HELPER_SET } from './fieldReportDefaults.js';
-import { CreateReportLayoutSchema } from './reportLayouts.js';
+
+const COLUMN_DATA_TYPES = ['TEXT', 'NUMBER', 'DATE', 'SELECT', 'BOOLEAN'];
+// The output-encoding gate (ADR-0041): a template body must never opt out of HTML-escaping via a raw
+// output form ({{{ }}} / {{& }}, with or without a ~ whitespace-control prefix).
+const RAW_OUTPUT_RE = /\{\{~?[{&]/;
 
 describe('FIELD_REPORT_DEFAULTS (standard templates)', () => {
   for (const [vtype, def] of Object.entries(FIELD_REPORT_DEFAULTS)) {
     describe(vtype, () => {
-      it('is a valid FIELD_REPORT layout (passes CreateReportLayoutSchema)', () => {
-        const r = CreateReportLayoutSchema.safeParse({
-          clientId: 1,
-          productId: 2,
-          kind: 'FIELD_REPORT',
-          name: `${vtype} Report`,
-          verificationType: vtype,
-          templateBody: def.templateBody,
-          columns: def.columns,
-        });
-        expect(r.success, r.success ? '' : JSON.stringify(r.error.issues)).toBe(true);
+      it('is a well-formed FIELD_REPORT default (body + columns)', () => {
+        // Since ADR-0083 removed the report-layout authoring schema, assert the invariants directly:
+        // a non-empty body with no raw un-escaped output, and ≥1 column with a valid key/type.
+        expect(def.templateBody.trim().length).toBeGreaterThan(0);
+        expect(RAW_OUTPUT_RE.test(def.templateBody)).toBe(false);
+        expect(def.columns.length).toBeGreaterThan(0);
+        for (const c of def.columns) {
+          expect(c.columnKey).toMatch(/^[a-z0-9_]+$/);
+          expect(c.headerLabel.trim().length).toBeGreaterThan(0);
+          expect(COLUMN_DATA_TYPES).toContain(c.dataType);
+        }
       });
 
       it('no column key collides with a grammar-helper name (would be shadowed)', () => {

@@ -1,3 +1,5 @@
+> **SUPERSEDED by [ADR-0083](../adr/ADR-0083-remove-mis-report-layout-engine.md) (2026-07-01)** — the `/mis` page + MIS engine were removed (mig 0108). Historical design record only; not a live build target.
+
 # MIS page — design spec (pure MIS, config-driven, commission-gated)
 
 - **Date:** 2026-06-19 · **Status:** Ready to build

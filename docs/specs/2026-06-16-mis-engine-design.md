@@ -1,3 +1,5 @@
+> **SUPERSEDED by [ADR-0083](../adr/ADR-0083-remove-mis-report-layout-engine.md) (2026-07-01)** — the MIS / report-layout / office data-entry engine was removed (mig 0108). Historical design record only; not a live build target.
+
 # MIS Engine — config-driven office data-entry + operational MIS + Billing MIS (per client+product)
 
 - **Date:** 2026-06-16

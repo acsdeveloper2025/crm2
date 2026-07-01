@@ -10,7 +10,7 @@ import { describe, it, expect } from 'vitest';
  *
  * Converted (ADR-0051):
  *   D3 flat inline-grid → Departments, Designations, Clients, Products, Locations (+ MasterDataCrud)
- *   D4 record-page route → Policies, ReportLayouts, Roles (access), CommissionRates, Users,
+ *   D4 record-page route → Policies, Roles (access), CommissionRates, Users,
  *                          VerificationUnits, Templates, RateManagement (+ backend GET /:id)
  * NOT converted (documented scope, tracked in COMPLIANCE_GAPS §H):
  *   CPV (bespoke master-detail accordion).
@@ -18,7 +18,6 @@ import { describe, it, expect } from 'vitest';
 const CONVERTED_SOURCES = import.meta.glob(
   [
     '../features/policies/**/*.tsx',
-    '../features/reportLayouts/**/*.tsx',
     '../features/access/**/*.tsx',
     '../features/commissionRates/**/*.tsx',
     '../features/users/**/*.tsx',

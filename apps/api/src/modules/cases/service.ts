@@ -632,7 +632,7 @@ export const caseService = {
     await repo.finalizeCase(caseId, v.result, v.remark ?? null, actor.userId, version);
     const detail = await repo.findById(caseId, scope);
     if (!detail) throw AppError.internal('finalize: case vanished');
-    emitCaseStatusUpdate(caseId, detail.caseNumber); // case → COMPLETED → MIS/dashboard refetch live
+    emitCaseStatusUpdate(caseId, detail.caseNumber); // case → COMPLETED → dashboard refetch live
     return detail;
   },
 

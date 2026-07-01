@@ -1,3 +1,5 @@
+> **SUPERSEDED by [ADR-0083](../adr/ADR-0083-remove-mis-report-layout-engine.md) (2026-07-01)** — the `/mis` page + MIS engine were removed (mig 0108). Historical audit record only.
+
 # MIS page — cross-audit synthesis (2026-06-19)
 
 - **Date:** 2026-06-19

@@ -22,7 +22,7 @@ import { toast } from 'sonner';
 const DEFAULT_PAGE_SIZE = 50;
 
 /** Commission Summary (ADR-0081) — periodic per-field-user commission rollup with export.
- *  Mirrors MisPage: client-side filter form → Generate → server-paginated table + DataGrid export. */
+ *  Pattern: a client-side filter form → Generate → server-paginated table + DataGrid export. */
 export function CommissionSummaryPage() {
   const { user } = useAuth();
   const has = (perm: string) =>

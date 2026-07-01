@@ -90,7 +90,7 @@ const TASK_SELECT_BASE = `
 
 /** Amount columns — resolved via the laterals when billing-visible, else nulled (laterals skipped). */
 // COALESCE the frozen snapshot (ct.commission_amount) over the live lateral so the pipeline resolves
-// the SAME commission as billing & MIS (ADR-0047/0050; audit H-1 — do NOT read live-only here).
+// the SAME commission as billing (ADR-0047/0050; audit H-1 — do NOT read live-only here).
 const BILLING_AMOUNT_COLS = `, rt.bill_amount, COALESCE(ct.commission_amount, com.commission_amount) AS commission_amount`;
 const NULL_AMOUNT_COLS = `, NULL::float8 AS bill_amount, NULL::float8 AS commission_amount`;
 

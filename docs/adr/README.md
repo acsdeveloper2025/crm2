@@ -85,7 +85,7 @@ Numbers are never reused. Filenames follow `ADR-NNNN-kebab-slug.md`. Use
 | [ADR-0034](./ADR-0034-device-field-photo-upload.md) | Device field-photo upload (multipart + sharp) | Accepted | 2026-06-16 |
 | [ADR-0035](./ADR-0035-sync-delta-arrays-and-execution-fields.md) | Sync down-sync delta arrays + per-task execution fields | Accepted | 2026-06-16 |
 | [ADR-0036](./ADR-0036-billing-commission-model.md) | Billing & Commission model (per-case, unified) | Accepted (billing) · Superseded → ADR-0046 (commission §1–3) | 2026-06-16 |
-| [ADR-0037](./ADR-0037-mis-layout-engine.md) | MIS Layout Engine — per-(client,product) config | Accepted | 2026-06-16 |
+| [ADR-0037](./ADR-0037-mis-layout-engine.md) | MIS Layout Engine — per-(client,product) config | Superseded → ADR-0083 | 2026-06-16 |
 | [ADR-0038](./ADR-0038-template-report-engine.md) | Auto Template-Report Engine (FIELD_REPORT + CASE_REPORT) | Proposed | 2026-06-16 |
 | [ADR-0039](./ADR-0039-field-report-engine.md) | FIELD_REPORT Engine (template-report slice 1) | Accepted | 2026-06-16 |
 | [ADR-0040](./ADR-0040-field-photo-reverse-geocode.md) | Field-photo reverse-geocode (frozen address, async, DLQ) | Accepted | 2026-06-17 |
@@ -97,7 +97,7 @@ Numbers are never reused. Filenames follow `ADR-NNNN-kebab-slug.md`. Use
 | [ADR-0046](./ADR-0046-commission-location-and-tat-dimensions.md) | Field-executive commission — location + client/product/VU + TAT-band dimensions (decoupled from client rate) | Accepted | 2026-06-18 |
 | [ADR-0047](./ADR-0047-two-stage-task-completion.md) | Two-stage task completion — SUBMITTED (field) then COMPLETED (office) | Accepted | 2026-06-19 |
 | [ADR-0048](./ADR-0048-rate-location-rank-fix.md) | Client-rate location ranking — the location-less default must outrank a non-matching override | Accepted | 2026-06-19 |
-| [ADR-0049](./ADR-0049-mis-generation-engine.md) | MIS generation & export engine (pure-MIS page) | Accepted | 2026-06-19 |
+| [ADR-0049](./ADR-0049-mis-generation-engine.md) | MIS generation & export engine (pure-MIS page) | Superseded → ADR-0083 | 2026-06-19 |
 | [ADR-0050](./ADR-0050-commission-exact-match-rate-type-key.md) | Two rate types (client vs field) + commission resolution model (supersedes ADR-0046 §commission) | Accepted | 2026-06-20 |
 | [ADR-0053](./ADR-0053-multi-applicant-batch-dedupe-and-post-creation-add.md) | Multi-applicant batch dedupe + post-creation applicant add | Accepted | 2026-06-20 |
 | [ADR-0054](./ADR-0054-v2-native-mobile-contract.md) | v2-native mobile contract — retire v1 compatibility | Accepted | 2026-06-20 |
@@ -119,5 +119,6 @@ Numbers are never reused. Filenames follow `ADR-NNNN-kebab-slug.md`. Use
 | [ADR-0080](./ADR-0080-field-report-snapshot-at-submission.md) | Freeze the per-task FIELD_REPORT at submission — `field_reports` snapshot table (mig 0104); `submitForm` upserts the rendered narrative (best-effort), read returns the stored snapshot over live render so later template edits don't mutate a delivered report; `FieldReportView.snapshotAt` additive | Accepted · Shipped 2026-06-30 | 2026-06-30 |
 | [ADR-0081](./ADR-0081-commission-summary-periodic-export.md) | Periodic per-field-user commission summary export — a 3rd Billing read-model (`GET /billing/commission-summary` + `/export`, gated `billing.view`) grained per field-user × period bucket (`week`/`fortnight`=twice-monthly H1/H2/`month`/`quarter`), optionally × client × product; same `COALESCE(snapshot,live)×bill_count` amount, anchored on earned-at `COALESCE(submitted_at,completed_at)` (FC-5), IST-calendar buckets. No migration; closes the commission-export audit FC-1/FC-2 within the export-only scope | Accepted (CTO; owner sign-off pending) | 2026-07-01 |
 | [ADR-0082](./ADR-0082-same-origin-no-cors-layer.md) | Same-origin deployment, no CORS layer on the API — records that the absence of a `cors` package/allowlist is deliberate (nginx same-origin topology already prevents cross-origin browser calls), not an oversight; documents the Socket.IO handshake as the one place an explicit origin allowlist does apply. Audit-only, no code change (API_SECURITY-04) | Accepted | 2026-07-01 |
+| [ADR-0083](./ADR-0083-remove-mis-report-layout-engine.md) | Remove the MIS / report-layout / office data-entry engine (clean slate) — drops `report_layouts`/`report_layout_columns`/`case_data_entries`/`case_pickups` (mig 0108) + perms `page.mis`/`data_entry.manage`/`report_template.manage`; deletes `/mis`, the "MIS Layouts" designer, and office data-entry/pickup; decouples field/case reports onto built-in defaults. Supersedes ADR-0037/0049. Mobile `/api/v2` untouched | Accepted · Owner-confirmed 2026-07-01 | 2026-07-01 |
 
 > ADR-0051 (inline-grid editing) and ADR-0052 (button emphasis) are drafted on the parked `design-audit-wip` branch — not yet on `main`; they'll be indexed when that stream ships.

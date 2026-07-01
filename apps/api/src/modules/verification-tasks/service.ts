@@ -30,7 +30,7 @@ import type { Actor } from '../../platform/scope/index.js';
  */
 const MAX_REASON = 2000;
 const RevokeSchema = z.object({ reason: z.string().trim().min(1).max(MAX_REASON) });
-/** Office priority is the 4-value enum (set by the office; read by web/MIS). The DEVICE instead sends
+/** Office priority is the 4-value enum (set by the office; read by web). The DEVICE instead sends
  *  a NUMERIC drag-reorder position — the agent's LOCAL queue ordering. Per the owner decision that
  *  reorder is local-only and must NEVER overwrite the office priority, so accept either: a number →
  *  ack-without-write (handled in setPriority); an enum string → the office update. (No web caller hits

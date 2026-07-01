@@ -1,3 +1,5 @@
+> **SUPERSEDED by [ADR-0083](../adr/ADR-0083-remove-mis-report-layout-engine.md) (2026-07-01)** — the `/mis` page + MIS engine were removed (mig 0108). Historical plan only; not a live build target.
+
 # MIS Page Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
