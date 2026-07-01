@@ -629,7 +629,7 @@ export const caseService = {
     const state = await repo.caseFinalizeState(caseId, scope);
     if (!state) throw AppError.notFound('CASE_NOT_FOUND');
     if (state.status !== 'AWAITING_COMPLETION') throw AppError.conflict('INVALID_TRANSITION');
-    await repo.finalizeCase(caseId, v.result, v.remark ?? null, actor.userId, version);
+    await repo.finalizeCase(caseId, v.result, v.remark, actor.userId, version);
     const detail = await repo.findById(caseId, scope);
     if (!detail) throw AppError.internal('finalize: case vanished');
     emitCaseStatusUpdate(caseId, detail.caseNumber); // case → COMPLETED → dashboard refetch live

@@ -1332,7 +1332,7 @@ describe.skipIf(!RUN)('cases API', () => {
       expect(fin.body.tasks[0].status).toBe('COMPLETED');
     });
 
-    it('finalize guards: not-AWAITING 409, verifier 403, out-of-scope 404, stale 409, double-finalize 409', async () => {
+    it('finalize guards: not-AWAITING 409, verifier 403, out-of-scope 404, stale 409, blank remark 400, double-finalize 409', async () => {
       const { caseId, taskId } = await seedCaseWithTask('FIN2', {
         workerRole: 'KYC_VERIFIER',
         withDoc: true,
@@ -1342,7 +1342,10 @@ describe.skipIf(!RUN)('cases API', () => {
       const url = `/api/v2/cases/${caseId}/finalize`;
 
       // the case is IN_PROGRESS (its task is not complete) → not finalizable
-      const early = await request(app).post(url).set(SA).send({ result: 'POSITIVE', version: 1 });
+      const early = await request(app)
+        .post(url)
+        .set(SA)
+        .send({ result: 'POSITIVE', remark: 'ok', version: 1 });
       expect(early.status).toBe(409);
       expect(early.body.error).toBe('INVALID_TRANSITION');
 
@@ -1354,7 +1357,7 @@ describe.skipIf(!RUN)('cases API', () => {
           await request(app)
             .post(url)
             .set(hdr('KYC_VERIFIER', verifier))
-            .send({ result: 'POSITIVE', version })
+            .send({ result: 'POSITIVE', remark: 'ok', version })
         ).status,
       ).toBe(403);
       // a backend user outside the case's scope → 404 (IDOR-safe, indistinguishable from missing)
@@ -1363,7 +1366,7 @@ describe.skipIf(!RUN)('cases API', () => {
           await request(app)
             .post(url)
             .set(hdr('BACKEND_USER', outsider))
-            .send({ result: 'POSITIVE', version })
+            .send({ result: 'POSITIVE', remark: 'ok', version })
         ).status,
       ).toBe(404);
       // stale version → 409
@@ -1372,15 +1375,22 @@ describe.skipIf(!RUN)('cases API', () => {
           await request(app)
             .post(url)
             .set(SA)
-            .send({ result: 'POSITIVE', version: version - 1 })
+            .send({ result: 'POSITIVE', remark: 'ok', version: version - 1 })
         ).status,
       ).toBe(409);
+      // remark is mandatory (owner 2026-07-01): blank remark → 400, before any state mutation
+      expect(
+        (await request(app).post(url).set(SA).send({ result: 'POSITIVE', remark: '', version })).status,
+      ).toBe(400);
       // happy finalize → 200; a second finalize on the now-COMPLETED case → 409 INVALID_TRANSITION
-      expect((await request(app).post(url).set(SA).send({ result: 'POSITIVE', version })).status).toBe(200);
+      expect(
+        (await request(app).post(url).set(SA).send({ result: 'POSITIVE', remark: 'final verdict', version }))
+          .status,
+      ).toBe(200);
       const again = await request(app)
         .post(url)
         .set(SA)
-        .send({ result: 'POSITIVE', version: version + 1 });
+        .send({ result: 'POSITIVE', remark: 'again', version: version + 1 });
       expect(again.status).toBe(409);
       expect(again.body.error).toBe('INVALID_TRANSITION');
     });

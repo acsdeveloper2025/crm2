@@ -1173,8 +1173,9 @@ function ReasonForm({
   );
 }
 
-/** Case finalize (ADR-0032): the ONE final verdict + an optional case-level remark. The office
- *  decides this from the per-task office results; closes the case (AWAITING_COMPLETION → COMPLETED). */
+/** Case finalize (ADR-0032): the ONE final verdict + a mandatory case-level remark. The office
+ *  decides this from the per-task office results; closes the case (AWAITING_COMPLETION → COMPLETED).
+ *  Finalize is disabled until both verdict and remark are provided (owner 2026-07-01). */
 function CaseFinalizeForm({
   pending,
   error,
@@ -1186,7 +1187,7 @@ function CaseFinalizeForm({
 }) {
   const [result, setResult] = useState<KycResult | ''>('');
   const [remark, setRemark] = useState('');
-  const valid = result !== '';
+  const valid = result !== '' && remark.trim().length > 0;
 
   return (
     <div className="flex flex-wrap items-end gap-3">
@@ -1204,20 +1205,17 @@ function CaseFinalizeForm({
           ))}
         </select>
       </Field>
-      <Field label="Remark (optional)">
+      <Field label="Remark">
         <Input
           className="h-9 w-72 rounded-md border border-border bg-background px-2 text-sm"
           value={remark}
           onChange={(e) => setRemark(e.target.value)}
-          placeholder="Case-level note"
+          placeholder="Case-level finding (required)"
         />
       </Field>
       <button
         className="h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground disabled:opacity-50"
-        onClick={() =>
-          valid &&
-          onSubmit({ result: result as KycResult, ...(remark.trim() ? { remark: remark.trim() } : {}) })
-        }
+        onClick={() => valid && onSubmit({ result: result as KycResult, remark: remark.trim() })}
         disabled={pending || !valid}
       >
         {pending ? 'Finalizing…' : 'Finalize Case'}

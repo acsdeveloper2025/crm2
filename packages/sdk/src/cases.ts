@@ -514,13 +514,13 @@ export type RecordTaskResultInput = z.infer<typeof RecordTaskResultSchema>;
 export type RecordTaskResultRequest = RecordTaskResultInput & { version: number };
 
 /**
- * Finalize a CASE (ADR-0032): record the ONE FINAL verdict + an optional case-level remark and close
+ * Finalize a CASE (ADR-0032): record the ONE FINAL verdict + a mandatory case-level remark and close
  * the case (AWAITING_COMPLETION → COMPLETED). The office decides this from the per-task office results.
  * Gated `case.finalize` (BACKEND_USER/SA). OCC `version` travels OUTSIDE the schema (requireVersion).
  */
 export const CaseFinalizeSchema = z.object({
   result: z.enum(KYC_RESULTS),
-  remark: z.string().trim().max(MAX_REMARK).optional(),
+  remark: z.string().trim().min(1).max(MAX_REMARK),
 });
 export type CaseFinalizeInput = z.infer<typeof CaseFinalizeSchema>;
 export type CaseFinalizeRequest = CaseFinalizeInput & { version: number };
