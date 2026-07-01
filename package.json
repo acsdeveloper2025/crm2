@@ -20,6 +20,7 @@
     "deadcode": "knip",
     "no-suppressions": "node scripts/check-suppressions.mjs",
     "verify": "pnpm typecheck && pnpm lint && pnpm format && pnpm no-suppressions && pnpm boundaries && pnpm test && pnpm build",
+    "dev": "docker compose up -d && pnpm --parallel --filter @crm2/api --filter @crm2/web run dev",
     "dev:api": "pnpm --filter @crm2/api dev",
     "dev:web": "pnpm --filter @crm2/web dev",
     "prepare": "husky",
@@ -28,7 +29,6 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@vitest/coverage-v8": "^4.1.9",
     "dependency-cruiser": "^17.4.3",
     "eslint": "^10.5.0",
     "eslint-config-prettier": "^10.1.8",
@@ -38,8 +38,7 @@
     "prettier": "^3.8.4",
     "turbo": "^2.9.18",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.61.1",
-    "vitest": "^4.1.9"
+    "typescript-eslint": "^8.61.1"
   },
   "lint-staged": {
     "*.{ts,tsx}": [

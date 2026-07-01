@@ -367,7 +367,10 @@ export const CreateCaseSchema = z
     productId: positiveInt,
     // Office contact the field agent calls (ADR-0023). FE prefills from the creator's /me phone.
     backendContactNumber: contactNumber,
-    applicants: z.array(applicantInput).min(1),
+    // INPUT_VALIDATION-04 (docs/audit/04-input-validation.md): no ceiling, unlike the adjacent
+    // dedupeMatches field. A real case has a handful of applicants (borrower + co-applicants) — 10 is
+    // generous headroom, not a real operational limit.
+    applicants: z.array(applicantInput).min(1).max(10),
     dedupeDecision: z.enum(DEDUPE_DECISIONS),
     dedupeRationale: z.string().trim().max(2000).transform(toUpper).optional(),
     // The matched case numbers the operator created despite (recorded with the rationale).

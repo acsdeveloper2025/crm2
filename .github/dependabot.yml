@@ -1,0 +1,22 @@
+# DEPENDENCY_AUDIT-04 (docs/audit/16-dependency-audit.md): dependency bumps were entirely
+# hand-authored, so CVEs in a used package surfaced only via a manual `pnpm audit` run. This gives
+# every workspace (pnpm reads the whole monorepo from the root ecosystem entry) a weekly, grouped,
+# low-noise PR instead — review cadence stays manual, discovery no longer does.
+version: 2
+updates:
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    open-pull-requests-limit: 5
+    groups:
+      # One PR for routine patch/minor bumps across the monorepo; majors (which this repo's frozen
+      # dependency-selection ADRs treat as a deliberate, reviewed decision, not a routine bump) stay
+      # separate so they don't get silently rolled up.
+      routine:
+        update-types: ['patch', 'minor']
+
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'

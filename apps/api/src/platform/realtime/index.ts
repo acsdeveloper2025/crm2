@@ -131,9 +131,18 @@ function configureAdapter(io: AppServer, env: Env): void {
  * missing token rejects the connection — there are no anonymous sockets. Room membership IS the
  * authorization: `perm:field_monitoring` is joined only when the resolved role grants it.
  */
+// MERGED-SOCKETIO-CORS (docs/audit/02-authorization.md, docs/audit/06-csrf.md — independently raised
+// by both the authorization and CSRF audits): `origin: true` reflected ANY origin. The handshake still
+// requires a valid bearer JWT regardless (verifyAccessToken below), so this was latent, not actively
+// exploitable — but an explicit allowlist is a real second factor rather than none. The mobile app is a
+// non-browser socket.io client and doesn't send an Origin header the way a browser does, so it's
+// unaffected either way.
+const PROD_ORIGIN = 'https://crm.allcheckservices.com';
+const DEV_ORIGINS = ['http://localhost:5273', 'http://127.0.0.1:5273'];
+
 export function initRealtime(httpServer: HttpServer, env: Env = loadEnv()): AppServer {
   const io: AppServer = new IOServer(httpServer, {
-    cors: { origin: true, credentials: true },
+    cors: { origin: env.NODE_ENV === 'production' ? PROD_ORIGIN : DEV_ORIGINS, credentials: true },
   });
 
   configureAdapter(io, env);

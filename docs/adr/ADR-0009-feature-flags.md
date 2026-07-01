@@ -1,6 +1,11 @@
 # ADR-0009: Feature flags
 
-- **Status:** Accepted
+- **Status:** Accepted (design) · **NOT IMPLEMENTED** — verified 2026-07-01
+  (FRONTEND_SECURITY-04, `docs/audit/10-frontend-security.md`): zero
+  `featureflag`/`feature_flag` hits anywhere in `apps/api`, `apps/web`, or the
+  DB schema. Cross-referenced by ADR-0006/ADR-0010, which also describe this
+  as available — treat those cross-references as design intent, not a live
+  capability, until this ships.
 - **Date:** 2026-06-04
 
 ## Context
