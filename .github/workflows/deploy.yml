@@ -76,7 +76,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build & push crm2-api
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: infra/Dockerfile.api
@@ -87,7 +87,7 @@ jobs:
           cache-from: type=gha,scope=crm2-api
           cache-to: type=gha,scope=crm2-api,mode=max
       - name: Build & push crm2-web
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: infra/Dockerfile.web
