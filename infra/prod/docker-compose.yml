@@ -45,6 +45,7 @@ services:
       retries: 12
       start_period: 30s
     mem_limit: 4g
+    cpus: '2'
     logging: *default-logging
     security_opt:
       - no-new-privileges:true
@@ -66,6 +67,7 @@ services:
       retries: 12
       start_period: 20s
     mem_limit: 1g
+    cpus: '1'
     logging: *default-logging
     security_opt:
       - no-new-privileges:true
@@ -83,6 +85,8 @@ services:
       exit 0;
       "
     restart: 'no'
+    mem_limit: 256m
+    cpus: '0.5'
     logging: *default-logging
     security_opt:
       - no-new-privileges:true
@@ -108,6 +112,8 @@ services:
       - /bin/sh
       - db/v2/migrate.sh
     restart: 'no'
+    mem_limit: 512m
+    cpus: '1'
     logging: *default-logging
     security_opt:
       - no-new-privileges:true
@@ -146,6 +152,7 @@ services:
     stop_grace_period: 30s
     shm_size: 1gb
     mem_limit: 2g
+    cpus: '2'
     logging: *default-logging
     security_opt:
       - no-new-privileges:true
@@ -172,6 +179,7 @@ services:
       retries: 3
       start_period: 15s
     mem_limit: 256m
+    cpus: '1'
     logging: *default-logging
     security_opt:
       - no-new-privileges:true
@@ -193,13 +201,20 @@ services:
   # api: { <<: *api-like, depends_on: { clamav: { condition: service_healthy } } }
 
   # ---- FUTURE: out-of-process job tier (enable with REDIS_QUEUE_URL set) -----
+  # REDIS_CACHE-02 (docs/audit/12-redis-cache.md): noeviction with NO --maxmemory ceiling means an OOM
+  # kill instead of a controlled reject once the box's memory fills — added a ceiling + mem_limit
+  # matching every other service in this file.
   # valkey:
   #   image: valkey/valkey:8-alpine
   #   container_name: crm2_valkey
   #   restart: unless-stopped
-  #   command: ["valkey-server","--requirepass","${VALKEY_PASSWORD}","--appendonly","yes","--maxmemory-policy","noeviction"]
+  #   command: ["valkey-server","--requirepass","${VALKEY_PASSWORD}","--appendonly","yes","--maxmemory-policy","noeviction","--maxmemory","512mb"]
   #   volumes: [valkeydata:/data]
   #   healthcheck: { test: ["CMD","valkey-cli","-a","${VALKEY_PASSWORD}","ping"], interval: 10s, timeout: 5s, retries: 5 }
+  #   mem_limit: 768m
+  #   cpus: '1'
+  #   logging: *default-logging
+  #   security_opt: [no-new-privileges:true]
   # worker:   { <<: *api-like, environment: { ROLE: worker } }
   # report-worker: { <<: *api-like, environment: { ROLE: report } }
 

@@ -156,8 +156,15 @@ const toInt = (v: unknown, fallback: number): number => {
   return Number.isInteger(n) ? n : fallback;
 };
 
+// INPUT_VALIDATION-02 (docs/audit/04-input-validation.md): `limit` was already capped; `page` was not,
+// so `offset = (page-1)*limit` was unbounded. Any single dataset in this CRM fits well under this —
+// it's a sanity ceiling against a client sending e.g. page=999999999, not a real pagination limit.
+const MAX_PAGE = 1_000_000;
+
 export function resolvePage(query: Record<string, unknown>, spec: PageSpec): ResolvedPage {
-  const page = Math.max(1, toInt(query['page'], 1));
+  const rawPage = Math.max(1, toInt(query['page'], 1));
+  if (rawPage > MAX_PAGE) throw AppError.badRequest('PAGE_TOO_LARGE', { page: rawPage, max: MAX_PAGE });
+  const page = rawPage;
 
   const limit = toInt(query['limit'], DEFAULT_PAGE_SIZE);
   if (limit < 1) throw AppError.badRequest('INVALID_LIMIT', { limit });

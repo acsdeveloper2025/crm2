@@ -433,7 +433,7 @@ describe.skipIf(!RUN)('cases API', () => {
       expect(dd.body.items).toHaveLength(1);
     });
 
-    it('exports the matches as CSV (data.export); a role without it → 403', async () => {
+    it('exports the matches as CSV (dedupe.view, same gate as the view — BUSINESS_LOGIC-02); a role without it → 403', async () => {
       await seedApplicant('EX', {
         name: 'EXPORT ME',
         mobile: '9000000040',
@@ -450,7 +450,7 @@ describe.skipIf(!RUN)('cases API', () => {
       );
       expect(csv.text).toContain('EXPORT ME');
       expect(csv.text).toContain('INITECH');
-      // export needs data.export — FIELD_AGENT lacks it
+      // export needs dedupe.view — FIELD_AGENT lacks it
       expect((await request(app).get('/api/v2/cases/dedupe-search/export?pan=x').set(FA)).status).toBe(403);
     });
   });

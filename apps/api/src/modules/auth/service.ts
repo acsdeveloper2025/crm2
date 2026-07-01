@@ -115,12 +115,16 @@ interface Device {
   deviceInfo: string | null;
 }
 
+/** Defaults to a plain insert (login: one write, already atomic). `refresh()` passes a `persist` that
+ *  rotates atomically instead (DATABASE-02) — keeps the transaction inside repository.ts, which is the
+ *  only layer allowed to touch platform/db.ts (`db-access-only-in-repositories` boundary). */
 async function issueTokens(
   userId: string,
   role: string,
   device: Device,
   ip: string | null,
   absoluteExpiresAt: Date | null,
+  persist: (row: Parameters<typeof repo.insertRefresh>[0]) => Promise<void> = repo.insertRefresh,
 ): Promise<AuthTokens> {
   const env = loadEnv();
   const accessTtl = env.AUTH_ACCESS_TTL_S;
@@ -137,7 +141,7 @@ async function issueTokens(
     absoluteExpiresAt && absoluteExpiresAt.getTime() < refreshExpiresAt.getTime()
       ? absoluteExpiresAt
       : refreshExpiresAt;
-  await repo.insertRefresh({
+  await persist({
     jti,
     userId,
     expiresAt,
@@ -308,13 +312,19 @@ export const authService = {
     // (so the session keeps its identity across refreshes) and the current request IP. The absolute
     // session deadline (ADR-0045) is carried forward UNCHANGED — rotation never extends it, so the
     // session still hard-expires at its original cap.
-    await repo.revokeRefresh(claims.jti);
+    //
+    // DATABASE-02 (docs/audit/11-database.md): revoke-old + insert-new is one transaction, not two
+    // independent statements — a crash between them used to leave the token revoked with no
+    // replacement (fails closed: the user is just logged out, not a security/integrity bug, but a real
+    // gap for a two-write operation that has no reason not to be atomic). `repo.rotateRefresh` owns the
+    // transaction itself (repository-only, per the db-access-only-in-repositories boundary).
     return issueTokens(
       claims.userId,
       status.role,
       { deviceId: row.deviceId, deviceInfo: row.deviceInfo },
       ip,
       row.absoluteExpiresAt ? new Date(row.absoluteExpiresAt) : null,
+      (newToken) => repo.rotateRefresh(claims.jti, newToken),
     );
   },
 

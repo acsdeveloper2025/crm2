@@ -15,6 +15,10 @@ const parseId = (req: Request): string => {
   return id;
 };
 const userId = (req: Request): string => req.auth?.userId ?? 'unknown';
+// AUTHORIZATION-04 (docs/audit/02-authorization.md): USER_MANAGE alone let a holder assign ANY role,
+// including grantsAll/SUPER_ADMIN — the actor's own role is needed so the service can require grantsAll
+// to grant grantsAll.
+const actorRole = (req: Request): string => req.auth?.role ?? '';
 /** Profile-photo bytes from EITHER transport (ADR-0011 additive): a multipart `photo` file
  *  (mobile → multer's `req.file.buffer`) or the raw request body (web/admin → `raw()`'s Buffer). */
 const photoBytes = (req: Request): unknown => req.file?.buffer ?? req.body;
@@ -90,7 +94,7 @@ export const userController = {
       res.json(
         mode === 'preview'
           ? await svc.importPreview(file)
-          : await svc.importConfirm(file, userId(req), fileName),
+          : await svc.importConfirm(file, userId(req), fileName, actorRole(req)),
       );
     } catch (e) {
       next(e);
@@ -99,7 +103,7 @@ export const userController = {
 
   async create(req: Request, res: Response, next: NextFunction) {
     try {
-      res.status(HTTP_STATUS.CREATED).json(await svc.create(req.body, userId(req)));
+      res.status(HTTP_STATUS.CREATED).json(await svc.create(req.body, userId(req), actorRole(req)));
     } catch (e) {
       next(e);
     }
@@ -107,7 +111,7 @@ export const userController = {
 
   async update(req: Request, res: Response, next: NextFunction) {
     try {
-      res.json(await svc.update(parseId(req), req.body, userId(req)));
+      res.json(await svc.update(parseId(req), req.body, userId(req), actorRole(req)));
     } catch (e) {
       next(e);
     }

@@ -14,3 +14,18 @@ export const HTTP_STATUS = {
   INTERNAL: 500,
   SERVICE_UNAVAILABLE: 503,
 } as const;
+
+/**
+ * `decodeURIComponent` throws a bare `URIError` (not an `AppError`) on a malformed %-sequence, which
+ * skips the error middleware's ZodError/AppError special-casing and falls through to a generic 500
+ * (INPUT_VALIDATION-01, docs/audit/04-input-validation.md). Falls back to the raw, undecoded input —
+ * safe for the two current callers (a display filename, a cookie value), neither of which needs the
+ * request to fail just because a client sent a malformed escape sequence.
+ */
+export function safeDecodeURIComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}

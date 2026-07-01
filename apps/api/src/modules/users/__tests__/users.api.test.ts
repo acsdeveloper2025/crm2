@@ -53,6 +53,73 @@ describe.skipIf(!RUN)('users API', () => {
     expect(agent.effectiveFrom).toBeTruthy(); // list must return effective_from (column render)
   });
 
+  // AUTHORIZATION-04 (docs/audit/02-authorization.md): USER_MANAGE alone must not be enough to grant a
+  // grantsAll role (SUPER_ADMIN is the only one seeded) — only an actor who is themselves grantsAll can.
+  describe('role-assignment capability (AUTHORIZATION-04)', () => {
+    const ROLE_CODE = 'USER_MGR_NO_ESCALATE';
+
+    async function ensureNonGrantsAllUserManagerRole(): Promise<void> {
+      const create = await request(app)
+        .post('/api/v2/roles')
+        .set(SA)
+        .send({
+          code: ROLE_CODE,
+          name: 'User Manager (no escalate)',
+          hierarchyMode: 'SELF',
+          permissions: ['user.manage', 'page.users'],
+        });
+      // idempotent across reruns against a shared DB: 201 (created) or 409 (already exists) both fine.
+      if (create.status !== 201 && create.status !== 409) throw new Error(`unexpected ${create.status}`);
+    }
+
+    it('a non-grantsAll USER_MANAGE holder CANNOT create a SUPER_ADMIN user (403)', async () => {
+      await ensureNonGrantsAllUserManagerRole();
+      const actor = { 'x-test-auth': `${ROLE_CODE}:22222222-2222-2222-2222-222222222222` };
+      const res = await request(app)
+        .post('/api/v2/users')
+        .set(actor)
+        .send(userFactory({ username: 'wannabe_sa', name: 'Wannabe SA', role: 'SUPER_ADMIN' }));
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('CANNOT_GRANT_ELEVATED_ROLE');
+    });
+
+    it('the same actor CAN create a non-grantsAll-role user (still USER_MANAGE-gated, just not escalation)', async () => {
+      await ensureNonGrantsAllUserManagerRole();
+      const actor = { 'x-test-auth': `${ROLE_CODE}:22222222-2222-2222-2222-222222222222` };
+      const res = await request(app)
+        .post('/api/v2/users')
+        .set(actor)
+        .send(userFactory({ username: 'ok_field_agent', name: 'OK', role: 'FIELD_AGENT' }));
+      expect(res.status).toBe(201);
+    });
+
+    it('SUPER_ADMIN (grantsAll) can still create another SUPER_ADMIN', async () => {
+      const res = await request(app)
+        .post('/api/v2/users')
+        .set(SA)
+        .send(userFactory({ username: 'another_sa', name: 'Another SA', role: 'SUPER_ADMIN' }));
+      expect(res.status).toBe(201);
+    });
+
+    it('cannot PROMOTE an existing user to SUPER_ADMIN without grantsAll (403); can edit their other fields', async () => {
+      await ensureNonGrantsAllUserManagerRole();
+      const actor = { 'x-test-auth': `${ROLE_CODE}:22222222-2222-2222-2222-222222222222` };
+      const target = await newUser({ username: 'promote_me', name: 'Promote Me', role: 'FIELD_AGENT' });
+      const promote = await request(app)
+        .put(`/api/v2/users/${target.id}`)
+        .set(actor)
+        .send({ name: 'Promote Me', role: 'SUPER_ADMIN', effectiveFrom: target.effectiveFrom, version: 1 });
+      expect(promote.status).toBe(403);
+      const rename = await request(app).put(`/api/v2/users/${target.id}`).set(actor).send({
+        name: 'Renamed Only',
+        role: 'FIELD_AGENT',
+        effectiveFrom: target.effectiveFrom,
+        version: 1,
+      });
+      expect(rename.status).toBe(200);
+    });
+  });
+
   it('rejects an invalid username (400 VALIDATION)', async () => {
     const res = await request(app)
       .post('/api/v2/users')

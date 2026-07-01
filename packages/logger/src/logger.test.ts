@@ -79,6 +79,27 @@ describe('@crm2/logger', () => {
     });
   });
 
+  // LOGGING-01 (docs/audit/14-logging.md): redact() was shallow — a nested secret passed through.
+  it('redacts sensitive-named fields nested inside objects and arrays', () => {
+    const c = capture();
+    createLogger({ level: 'trace', write: c.write, now: c.now }).info('event', {
+      user: { id: 'u1', password: 'hunter2' },
+      items: [{ token: 'tok_1' }, { name: 'benign' }],
+      deep: { a: { b: { c: { secret: 'sh' } } } },
+    });
+    const line = JSON.parse(c.lines[0]!);
+    expect(line.user).toEqual({ id: 'u1', password: '[REDACTED]' });
+    expect(line.items).toEqual([{ token: '[REDACTED]' }, { name: 'benign' }]);
+    expect(line.deep.a.b.c.secret).toBe('[REDACTED]');
+  });
+
+  it('does not mangle a Date value while redacting', () => {
+    const c = capture();
+    const when = new Date('2026-01-01T00:00:00.000Z');
+    createLogger({ level: 'trace', write: c.write, now: c.now }).info('event', { when });
+    expect(JSON.parse(c.lines[0]!).when).toBe(when.toISOString());
+  });
+
   it('exposes all six mandated levels in order', () => {
     expect(LOG_LEVELS).toEqual(['trace', 'debug', 'info', 'warn', 'error', 'fatal']);
   });

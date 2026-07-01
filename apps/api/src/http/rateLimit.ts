@@ -62,3 +62,17 @@ export function refreshLimiter(): RequestHandler {
     return make(env.RATE_LIMIT_LOGIN_WINDOW_MS, env.RATE_LIMIT_REFRESH_MAX);
   });
 }
+
+/**
+ * Per-IP cap on authenticated, account-security-sensitive self-service actions — change-password and
+ * MFA enroll/verify/disable (API_SECURITY-02, docs/audit/09-api-security.md). These previously relied
+ * solely on the generic nginx 10r/s edge floor, unlike /login and /refresh. Reuses the login
+ * window/threshold — same flood-risk class (an account-security action worth capping per IP), no new
+ * config knob needed.
+ */
+export function sensitiveActionLimiter(): RequestHandler {
+  return lazyLimiter(() => {
+    const env = loadEnv();
+    return make(env.RATE_LIMIT_LOGIN_WINDOW_MS, env.RATE_LIMIT_LOGIN_MAX);
+  });
+}

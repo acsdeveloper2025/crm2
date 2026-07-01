@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import { loadEnv } from '@crm2/config';
+import { safeDecodeURIComponent } from '../platform/http.js';
 
 /**
  * Refresh-token httpOnly cookie (ADR-0076 SEC-10). The web stores the refresh token here instead of
@@ -33,7 +34,7 @@ export function readRefreshCookie(req: Request): string | null {
   for (const part of header.split(';')) {
     const eq = part.indexOf('=');
     if (eq < 0) continue;
-    if (part.slice(0, eq).trim() === NAME) return decodeURIComponent(part.slice(eq + 1).trim());
+    if (part.slice(0, eq).trim() === NAME) return safeDecodeURIComponent(part.slice(eq + 1).trim());
   }
   return null;
 }

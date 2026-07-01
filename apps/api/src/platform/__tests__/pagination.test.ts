@@ -73,6 +73,20 @@ describe('resolvePage', () => {
     expect(resolvePage({ page: '0' }, SPEC).page).toBe(1);
     expect(resolvePage({ page: '-5' }, SPEC).page).toBe(1);
   });
+
+  // INPUT_VALIDATION-02 (docs/audit/04-input-validation.md): page had no upper bound.
+  it('rejects an absurdly large page (PAGE_TOO_LARGE)', () => {
+    expect(() => resolvePage({ page: '999999999' }, SPEC)).toThrow(AppError);
+    try {
+      resolvePage({ page: '999999999' }, SPEC);
+    } catch (e) {
+      expect((e as AppError).code).toBe('PAGE_TOO_LARGE');
+    }
+  });
+
+  it('accepts a page right at the boundary', () => {
+    expect(resolvePage({ page: '1000000' }, SPEC).page).toBe(1_000_000);
+  });
 });
 
 describe('resolveFilters', () => {

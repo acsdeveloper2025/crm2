@@ -18,6 +18,7 @@ import { departmentService } from '../departments/service.js';
 import { designationService } from '../designations/service.js';
 import { hashPassword, generateTempPassword } from '../../platform/password.js';
 import { AppError } from '../../platform/errors.js';
+import { HTTP_STATUS } from '../../platform/http.js';
 import { requireVersion } from '../../platform/occ.js';
 import { resolvePage, resolveFilters, buildPage, type PageSpec } from '../../platform/pagination.js';
 import {
@@ -41,6 +42,7 @@ import { getStorage } from '../../platform/storage/index.js';
 import { getMailer } from '../../platform/mail/index.js';
 import { detectImage, MAX_IMAGE_BYTES } from '../../platform/image.js';
 import { scanBuffer } from '../../platform/av.js';
+import { getRoleAttributes } from '../../platform/access/index.js';
 
 /** Open role catalog (ADR-0022): the role query param is shape-checked, existence is the FK's job. */
 const ROLE_CODE_SHAPE = /^[A-Z][A-Z0-9_]{1,19}$/;
@@ -188,6 +190,22 @@ async function buildUserImportSpec(): Promise<ImportSpec<UserImportFile, CreateU
 }
 
 /**
+ * AUTHORIZATION-04 (docs/audit/02-authorization.md): USER_MANAGE conflates "can edit users" with "can
+ * assign any role including grantsAll/SUPER_ADMIN" — a USER_MANAGE holder who does NOT themselves hold
+ * a grantsAll role must not be able to grant one to someone else (self- or peer-escalation). Only
+ * matters for the target role, not the actor's existing one — demoting FROM grantsAll needs no extra
+ * check, only promoting TO it.
+ */
+async function assertCanAssignRole(actorRole: string, targetRole: string): Promise<void> {
+  const target = await getRoleAttributes(targetRole);
+  if (!target?.grantsAll) return;
+  const actor = await getRoleAttributes(actorRole);
+  // AppError.forbidden() hardcodes code='FORBIDDEN' (its arg is the message) — construct directly for a
+  // distinct, machine-checkable code, same pattern as auth/service.ts's mfaRequired()/accountLocked().
+  if (!actor?.grantsAll) throw new AppError(HTTP_STATUS.FORBIDDEN, 'CANNOT_GRANT_ELEVATED_ROLE');
+}
+
+/**
  * User service — admin identity master-data.
  *  - create/update validated against the shared zod schema
  *  - `username` correctable as a login rename (ADR-0020 — no FK deps); update merges only provided fields
@@ -271,8 +289,9 @@ export const userService = {
     return view;
   },
 
-  async create(input: unknown, userId: string): Promise<User> {
+  async create(input: unknown, userId: string, actorRole: string): Promise<User> {
     const v = CreateUserSchema.parse(input); // throws ZodError → 400
+    await assertCanAssignRole(actorRole, v.role);
     // employee_id is minted in the repo; an optional initial password is hashed here (strong policy
     // already enforced by the schema), else the admin sets it later via POST /:id/password.
     const passwordHash = v.password ? await hashPassword(v.password) : undefined;
@@ -301,22 +320,23 @@ export const userService = {
   async importPreview(file: Buffer) {
     return runImportPreview(file, await buildUserImportSpec());
   },
-  async importConfirm(file: Buffer, userId: string, fileName: string | undefined) {
+  async importConfirm(file: Buffer, userId: string, fileName: string | undefined, actorRole: string) {
     return runImportConfirm(
       file,
       await buildUserImportSpec(),
       async (input) => {
-        await userService.create(input, userId);
+        await userService.create(input, userId, actorRole);
       },
       { userId, fileName },
     );
   },
 
-  async update(id: string, input: unknown, userId: string): Promise<User> {
+  async update(id: string, input: unknown, userId: string, actorRole: string): Promise<User> {
     const v = UpdateUserSchema.parse(input); // field validation (400 VALIDATION)
     const expectedVersion = requireVersion(input); // OCC token (400 VERSION_REQUIRED)
     const existing = await repo.findById(id);
     if (!existing) throw AppError.notFound('USER_NOT_FOUND');
+    if (v.role !== existing.role) await assertCanAssignRole(actorRole, v.role);
     // ADR-0020: username is a login rename (no FK dependents — refs are by uuid); pass when changed.
     const usernameChanged = v.username !== undefined && v.username !== existing.username;
     return repo.update(

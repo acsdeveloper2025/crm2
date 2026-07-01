@@ -6,6 +6,7 @@ import { assertExportable, exportThreshold, type ResolvedExport } from '../../pl
 import type { ExportColumn } from '../../platform/export/index.js';
 import { getScopedUserIds, type Actor } from '../../platform/scope/index.js';
 import { AppError } from '../../platform/errors.js';
+import { istMidnightUtcMs } from '../../platform/istTime.js';
 
 /** Sortable columns (apiField → SQL expression). Every column lives in the shared FM FROM. */
 const FM_PAGE_SPEC: PageSpec = {
@@ -45,17 +46,12 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // Aging window: open work an agent has held longer than this is "overdue".
 const OVERDUE_WINDOW_HOURS = 24;
 const MS_PER_HOUR = 3_600_000;
-// IST = UTC+05:30 — "today" + the console's day boundary are IST (the field operates in India).
-const IST_OFFSET_MS = 19_800_000;
 
 /** The completed-today + overdue time windows (IST day boundary), as ISO strings for the query. */
 function windows(): { startOfToday: string; overdueCutoff: string } {
   const now = Date.now();
   const overdueCutoff = new Date(now - OVERDUE_WINDOW_HOURS * MS_PER_HOUR).toISOString();
-  const ist = new Date(now + IST_OFFSET_MS);
-  const istMidnightUtcMs =
-    Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()) - IST_OFFSET_MS;
-  return { startOfToday: new Date(istMidnightUtcMs).toISOString(), overdueCutoff };
+  return { startOfToday: new Date(istMidnightUtcMs(now)).toISOString(), overdueCutoff };
 }
 
 /**

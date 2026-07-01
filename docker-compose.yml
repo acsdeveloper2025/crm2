@@ -103,11 +103,15 @@ services:
   valkey:
     image: valkey/valkey:8-alpine
     container_name: crm2_valkey
-    # Host 6380 (v1's crm_redis owns 6379) → REDIS_QUEUE_URL/REDIS_CACHE_URL use redis://127.0.0.1:6380.
+    # REDIS_CACHE-01 (docs/audit/12-redis-cache.md): bound to loopback only (was every host interface)
+    # + --requirepass (dev-only password, not a secret) — was reachable from the LAN with no auth.
+    # Host 6380 (v1's crm_redis owns 6379) → REDIS_QUEUE_URL/REDIS_CACHE_URL use
+    # redis://:devonly-valkey-pw@127.0.0.1:6380.
+    command: ['valkey-server', '--requirepass', 'devonly-valkey-pw']
     ports:
-      - '6380:6379'
+      - '127.0.0.1:6380:6379'
     healthcheck:
-      test: ['CMD', 'valkey-cli', 'ping']
+      test: ['CMD', 'valkey-cli', '-a', 'devonly-valkey-pw', '--no-auth-warning', 'ping']
       interval: 5s
       timeout: 3s
       retries: 10

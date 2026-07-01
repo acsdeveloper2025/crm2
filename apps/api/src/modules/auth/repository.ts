@@ -1,5 +1,15 @@
 import type { AuthUser, PendingPolicy, SessionInfo } from '@crm2/sdk';
-import { query } from '../../platform/db.js';
+import { query, withTransaction } from '../../platform/db.js';
+
+interface RefreshInsert {
+  jti: string;
+  userId: string;
+  expiresAt: Date;
+  deviceId: string | null;
+  deviceInfo: string | null;
+  ip: string | null;
+  absoluteExpiresAt: Date | null;
+}
 
 interface Credentials {
   id: string;
@@ -166,15 +176,7 @@ export const authRepository = {
     return rows[0] ?? null;
   },
 
-  async insertRefresh(input: {
-    jti: string;
-    userId: string;
-    expiresAt: Date;
-    deviceId: string | null;
-    deviceInfo: string | null;
-    ip: string | null;
-    absoluteExpiresAt: Date | null;
-  }): Promise<void> {
+  async insertRefresh(input: RefreshInsert): Promise<void> {
     // last_used_at defaults to now() (DDL) — each freshly issued/rotated token stamps "last active now".
     await query(
       `INSERT INTO auth_refresh_tokens (jti, user_id, expires_at, device_id, device_info, ip, absolute_expires_at)
@@ -189,6 +191,32 @@ export const authRepository = {
         input.absoluteExpiresAt,
       ],
     );
+  },
+
+  /** Atomically revoke `oldJti` and insert its replacement (DATABASE-02, docs/audit/11-database.md) —
+   *  one transaction, so a crash between the two writes can't leave a revoked token with no
+   *  replacement. Owns the transaction itself (raw SQL + `withTransaction` stay repository-only —
+   *  `.dependency-cruiser.cjs`'s `db-access-only-in-repositories` boundary forbids service.ts from
+   *  importing platform/db.ts directly). */
+  async rotateRefresh(oldJti: string, newToken: RefreshInsert): Promise<void> {
+    await withTransaction(async (q) => {
+      await q(`UPDATE auth_refresh_tokens SET revoked_at = now() WHERE jti = $1 AND revoked_at IS NULL`, [
+        oldJti,
+      ]);
+      await q(
+        `INSERT INTO auth_refresh_tokens (jti, user_id, expires_at, device_id, device_info, ip, absolute_expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          newToken.jti,
+          newToken.userId,
+          newToken.expiresAt,
+          newToken.deviceId,
+          newToken.deviceInfo,
+          newToken.ip,
+          newToken.absoluteExpiresAt,
+        ],
+      );
+    });
   },
 
   async findRefresh(jti: string): Promise<RefreshRow | null> {

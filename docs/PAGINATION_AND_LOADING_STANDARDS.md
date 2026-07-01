@@ -151,6 +151,12 @@ Every paginated endpoint MUST: use **indexes** on the sort/filter columns · **a
 scans** · **avoid `SELECT *`** (return only required columns) · have its **query plan reviewed**.
 Count and page queries are parameterized and index-backed.
 
+<!-- DATABASE-03 (docs/audit/11-database.md): "query plan reviewed" is a MANUAL code-review practice,
+     not one of the §14 CI gates below — there is no automated EXPLAIN/query-plan check today. Stated
+     explicitly so this isn't read as machine-enforced when it isn't. -->
+"Query plan reviewed" is a **manual PR-review practice**, not a CI gate — none of the five automated
+checks in §14 run `EXPLAIN`. Treat it as a reviewer checklist item, not an enforced guarantee.
+
 ## 14 — Machine enforcement (CI gates)
 
 Automated tests fail CI when standards are violated:

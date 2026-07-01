@@ -146,6 +146,41 @@ describe.skipIf(!RUN)('auth API', () => {
     expect(r2.body.error).toBe('INVALID_REFRESH');
   });
 
+  // CSRF-01 (docs/audit/06-csrf.md): /auth/refresh is the one endpoint an ambient cookie alone can
+  // authenticate — verify the Origin/Referer cross-check.
+  describe('refresh CSRF defense', () => {
+    it('rejects a refresh whose Origin declares a different host (403)', async () => {
+      await makeUser({ username: 'csrf_victim', role: 'MANAGER' });
+      const res = await login('csrf_victim');
+      const cross = await request(app)
+        .post('/api/v2/auth/refresh')
+        .set('Origin', 'https://attacker.example')
+        .send({ refreshToken: res.body.tokens.refreshToken });
+      expect(cross.status).toBe(403);
+      expect(cross.body.error).toBe('CROSS_ORIGIN_REQUEST');
+    });
+
+    it('allows a refresh with no Origin/Referer at all (mobile / non-browser clients)', async () => {
+      await makeUser({ username: 'csrf_mobile', role: 'FIELD_AGENT' });
+      const res = await login('csrf_mobile');
+      const noOrigin = await request(app)
+        .post('/api/v2/auth/refresh')
+        .send({ refreshToken: res.body.tokens.refreshToken });
+      expect(noOrigin.status).toBe(200);
+    });
+
+    it('allows a refresh whose Origin matches the request host', async () => {
+      await makeUser({ username: 'csrf_same', role: 'MANAGER' });
+      const res = await login('csrf_same');
+      const same = await request(app)
+        .post('/api/v2/auth/refresh')
+        .set('Origin', 'http://127.0.0.1')
+        .set('Host', '127.0.0.1')
+        .send({ refreshToken: res.body.tokens.refreshToken });
+      expect(same.status).toBe(200);
+    });
+  });
+
   it('accepts deviceInfo as the field app device OBJECT (mobile compat, not just a string)', async () => {
     await makeUser({ username: 'devobj', role: 'FIELD_AGENT' });
     const res = await request(app)

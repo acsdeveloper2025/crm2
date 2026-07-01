@@ -5,7 +5,7 @@ import { clientService } from '../clients/service.js';
 import { tatPolicyService } from '../tatPolicies/service.js';
 import { locationService } from '../locations/service.js';
 import { AppError } from '../../platform/errors.js';
-import { HTTP_STATUS } from '../../platform/http.js';
+import { HTTP_STATUS, safeDecodeURIComponent } from '../../platform/http.js';
 import type { Actor } from '../../platform/scope/index.js';
 import { resolveExport, writeExport } from '../../platform/export/index.js';
 
@@ -416,8 +416,12 @@ export const caseController = {
       const file = req.body as unknown;
       if (!Buffer.isBuffer(file) || file.length === 0)
         throw AppError.badRequest('NO_FILE', { hint: 'POST the file bytes as the body' });
+      // INPUT_VALIDATION-01 (docs/audit/04-input-validation.md): a malformed %-sequence throws
+      // URIError, which isn't an AppError — it reached the generic 500 handler instead of failing
+      // gracefully. A bad filename header shouldn't reject an otherwise-valid upload, so fall back
+      // to the raw (undecoded) name rather than 500 or reject the file.
       const fn = req.headers['x-filename'];
-      const fileName = typeof fn === 'string' ? decodeURIComponent(fn) : 'attachment';
+      const fileName = typeof fn === 'string' ? safeDecodeURIComponent(fn) : 'attachment';
       const rawTask = req.query['taskId'];
       let taskId: string | undefined;
       if (rawTask !== undefined) {

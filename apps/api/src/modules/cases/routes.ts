@@ -13,7 +13,11 @@ export const caseRoutes: Router = Router();
 caseRoutes.post('/dedupe', authorize(PERMISSIONS.CASE_VIEW), c.dedupe);
 // Standalone Dedupe Check page — dedicated read-only perm (NOT case.view; scans ALL cases).
 // Static paths declared before /:id; the /export path before its bare sibling.
-caseRoutes.get('/dedupe-search/export', authorize(PERMISSIONS.DATA_EXPORT), c.dedupeSearchExport);
+// BUSINESS_LOGIC-02 (docs/audit/18-business-logic.md): export must gate on the SAME permission as its
+// view sibling (dedupe.view), not the generic data.export — unlike /cases/export (below), a data.export
+// holder here is NOT guaranteed to hold dedupe.view, so the old gate could let someone bulk-export the
+// cross-scope, all-cases duplicate-identifier dataset without ever being granted view access to it.
+caseRoutes.get('/dedupe-search/export', authorize(PERMISSIONS.DEDUPE_VIEW), c.dedupeSearchExport);
 caseRoutes.get('/dedupe-search', authorize(PERMISSIONS.DEDUPE_VIEW), c.dedupeSearch);
 caseRoutes.get('/available-units', authorize(PERMISSIONS.CASE_CREATE), c.availableUnits);
 caseRoutes.get('/rate-preview', authorize(PERMISSIONS.CASE_CREATE), c.ratePreview);

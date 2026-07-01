@@ -5,9 +5,20 @@ CRM2 data-retention & disposal policy. Architecture is **FROZEN** (see
 marked **PLANNED**.
 
 ## Ground truth
+<!-- Corrected DATABASE-05 / LOGGING-02 (docs/audit/11-database.md, docs/audit/14-logging.md): this
+     section previously claimed `legal_hold`/hash-chaining/partitioning already existed. They don't —
+     verified against the live schema and migrations. Marking the gap explicitly rather than silently
+     dropping it (it's tracked separately as compliance-registry item C-10). -->
 - **DPDP / PII:** verification units flagged `pii_sensitive` (IDENTITY /
-  FINANCIAL); `consent`, `retention`, `legal_hold` columns exist **day-1**.
-- **Audit log:** append-only, hash-chained, partitioned **monthly**.
+  FINANCIAL). `consent`/`retention` tracking exists at the entity level (e.g.
+  `consents`, policy-acceptance tables); a dedicated **`legal_hold` column does
+  NOT exist in the schema today** — the "Legal hold suspends disposal" rule
+  below is a **policy intent, not an enforced mechanism** until that column
+  (and the purge job that would read it) ship. **PLANNED**, not day-1.
+- **Audit log:** append-only (DB-trigger-enforced, migration 0017) **today**.
+  Hash-chaining + monthly partitioning + an off-DB copy are **deferred**
+  (migration 0017's own header names this explicitly) — tracked under
+  compliance-registry item C-10. **PLANNED**, not day-1.
 - **Evidence images:** §65B-style **sha256** integrity; immutable object store.
 - **Financial / commission records:** immutable, append-only.
 
@@ -18,7 +29,7 @@ marked **PLANNED**.
 | Entity | Retention (default) | Basis | Disposal method | Legal-hold override |
 |---|---|---|---|---|
 | Verification reports | 8–10 yrs | Bank contract / RBI record-keeping | Soft-delete → purge after window | Yes — suspends purge |
-| Audit logs | 8–10 yrs | Regulatory / forensic | Partition drop (hash-chain preserved) after window | Yes |
+| Audit logs | 8–10 yrs | Regulatory / forensic | Partition drop (hash-chain preserved) after window — **PLANNED**, table isn't partitioned/hash-chained yet, see Ground truth above | Yes |
 | Evidence images / attachments | **Per bank contract** (min report life) | Evidentiary (§65B) | Object-store delete + version expiry | Yes |
 | Billing records | 8–10 yrs | Financial / tax (GST) | Immutable; purge only post-window | Yes |
 | Commission records | 8–10 yrs | Financial reconciliation | Immutable; purge only post-window | Yes |

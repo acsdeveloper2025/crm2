@@ -8,8 +8,11 @@ import type { PendingPolicy } from './policies.js';
  * (MOBILE_API_COMPATIBILITY_MATRIX.md): login → { user, tokens{accessToken,refreshToken,expiresIn} }.
  */
 export const LoginSchema = z.object({
-  username: z.string().trim().min(1),
-  password: z.string().min(1),
+  // INPUT_VALIDATION-03 (docs/audit/04-input-validation.md): max() bounds matching the canonical
+  // username (50, users.ts)/StrongPasswordSchema (200) fields — login checks against a stored hash, so
+  // no format/strength regex here, just the same length ceiling those already impose at creation time.
+  username: z.string().trim().min(1).max(50),
+  password: z.string().min(1).max(200),
   /** TOTP or recovery code — required (in this same request) when the account has MFA enrolled. */
   mfaCode: z.string().trim().min(1).max(20).optional(),
   deviceId: z.string().max(128).optional(),
@@ -22,7 +25,9 @@ export const LoginSchema = z.object({
 });
 export type LoginInput = z.infer<typeof LoginSchema>;
 
-export const RefreshSchema = z.object({ refreshToken: z.string().min(1) });
+// 2000 chars is generous headroom over a real compact JWT refresh token (~150-300 chars) — matches the
+// deviceInfo field's cap above (INPUT_VALIDATION-03, docs/audit/04-input-validation.md).
+export const RefreshSchema = z.object({ refreshToken: z.string().min(1).max(2000) });
 export type RefreshInput = z.infer<typeof RefreshSchema>;
 
 export interface AuthUser {

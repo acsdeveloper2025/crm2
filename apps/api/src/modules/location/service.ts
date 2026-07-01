@@ -4,6 +4,7 @@ import { AppError } from '../../platform/errors.js';
 import { HTTP_STATUS } from '../../platform/http.js';
 import { getRealtime } from '../../platform/realtime/index.js';
 import type { Actor } from '../../platform/scope/index.js';
+import { istHour } from '../../platform/istTime.js';
 
 /**
  * Device location ingest (ADR-0026) honoring the LOCKED mobile capture contract. Forward-prep:
@@ -15,8 +16,6 @@ import type { Actor } from '../../platform/scope/index.js';
 // (the device drops a 403 OUTSIDE_SHIFT_WINDOW as non-retryable). ADMIN_PING is never gated.
 const TRACKING_SHIFT_START_HOUR = 8;
 const TRACKING_SHIFT_END_HOUR = 22;
-// IST = UTC+05:30. Evaluated against the device fix `timestamp` (deterministic + testable).
-const IST_OFFSET_MS = 19_800_000;
 
 // Clock-skew backstop (ADR-0028). A fix can be legitimately OLD (the offline queue replays captures
 // hours/days later), so we never reject a PAST timestamp. But a timestamp in the FUTURE means a
@@ -24,10 +23,6 @@ const IST_OFFSET_MS = 19_800_000;
 // could fool the shift-gate or notification ordering. Reject it; the device should stamp with the
 // ADR-0028 serverNow() so this never fires. Tolerance covers network latency + rounding.
 const MAX_CLIENT_CLOCK_AHEAD_MS = 120_000;
-
-function istHour(iso: string): number {
-  return new Date(Date.parse(iso) + IST_OFFSET_MS).getUTCHours();
-}
 
 export const locationService = {
   async capture(

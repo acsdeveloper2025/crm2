@@ -339,13 +339,24 @@ export const caseService = {
     // The schema already guarantees assigneeId ⇒ visitType (+ FIELD ⇒ area+pincode).
     const assigned = v.tasks.filter((t) => t.assigneeId);
     if (assigned.length > 0) {
+      // PERFORMANCE-01 (docs/audit/15-performance.md): tasks in the same request commonly share the
+      // same (visitType, pincodeId, areaId, verificationUnitId) tuple (multiple task types at one
+      // location) — cache the pool per unique tuple instead of re-querying it per task. Bounded by
+      // MAX_TASKS=50 either way; this cuts the common-case query count without restructuring the
+      // underlying single-tuple lookup into a batched query (a bigger, separate change).
+      const poolCache = new Map<string, AssignableUser[]>();
       for (const t of assigned) {
-        const pool = await repo.eligibleAssigneesForNew(
-          t.visitType!,
-          t.pincodeId,
-          t.areaId,
-          t.verificationUnitId,
-        );
+        const key = `${t.visitType} ${t.pincodeId ?? ''} ${t.areaId ?? ''} ${t.verificationUnitId ?? ''}`;
+        let pool = poolCache.get(key);
+        if (!pool) {
+          pool = await repo.eligibleAssigneesForNew(
+            t.visitType!,
+            t.pincodeId,
+            t.areaId,
+            t.verificationUnitId,
+          );
+          poolCache.set(key, pool);
+        }
         if (!pool.some((u) => u.id === t.assigneeId)) throw AppError.badRequest('INVALID_ASSIGNEE');
       }
     }

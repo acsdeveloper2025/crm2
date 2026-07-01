@@ -49,10 +49,24 @@ function resolveLevel(explicit?: LogLevel): LogLevel {
  */
 const SENSITIVE_KEY = /pass(word)?|secret|token|authorization|cookie|jwt|api[-_]?key|mfa|credential/i;
 const REDACTED = '[REDACTED]';
-function redact(record: Record<string, unknown>): Record<string, unknown> {
+// LOGGING-01 (docs/audit/14-logging.md): the old version only checked top-level keys, so
+// `logger.warn('x', { user: { password } })` or `{ items: [{ token }] }` passed the secret through
+// unmasked. Recurses into plain objects/arrays; a depth cap is the cycle guard (simpler than tracking
+// visited references, and this only ever sees log-call payloads, never runs on user-controlled depth).
+const MAX_REDACT_DEPTH = 6;
+function redactValue(value: unknown, depth: number): unknown {
+  if (depth > MAX_REDACT_DEPTH || value === null || typeof value !== 'object' || value instanceof Date) {
+    return value;
+  }
+  if (Array.isArray(value)) return value.map((v) => redactValue(v, depth + 1));
   const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(record)) out[k] = SENSITIVE_KEY.test(k) ? REDACTED : v;
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    out[k] = SENSITIVE_KEY.test(k) ? REDACTED : redactValue(v, depth + 1);
+  }
   return out;
+}
+function redact(record: Record<string, unknown>): Record<string, unknown> {
+  return redactValue(record, 0) as Record<string, unknown>;
 }
 
 export function createLogger(options: LoggerOptions = {}): Logger {

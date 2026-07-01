@@ -93,21 +93,44 @@ const EnvSchema = z
     // two crypto secrets. dev/test/CI legitimately fall back to these; prod sets real values
     // (secrets/.env.prod). Surfaces via loadEnv()'s existing throw, for every ROLE.
     if (env.NODE_ENV !== 'production') return;
-    if (env.JWT_SECRET === 'dev-only-insecure-secret-change-me') {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['JWT_SECRET'],
-        message: 'must be set to a real secret in production (insecure dev default detected)',
-      });
-    }
-    if (env.MFA_ENC_KEY === 'dev-only-insecure-mfa-key-change-me') {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['MFA_ENC_KEY'],
-        message: 'must be set to a real key in production (insecure dev default detected)',
-      });
-    }
+    checkSecretStrength(env.JWT_SECRET, 'JWT_SECRET', 'dev-only-insecure-secret-change-me', ctx);
+    checkSecretStrength(env.MFA_ENC_KEY, 'MFA_ENC_KEY', 'dev-only-insecure-mfa-key-change-me', ctx);
   });
+
+/**
+ * AUTHENTICATION-03 (docs/audit/01-authentication.md): the old check only rejected the exact dev-default
+ * string, so e.g. 16 repeated characters passed `min(16)` fine. Adds an entropy floor: a real length
+ * (`.env.prod.example` generates these with `openssl rand -base64 32/48`, i.e. 44-64 chars) and a
+ * distinct-character-count floor that catches "aaaa…a" / "0101…01"-style low-entropy strings a min-length
+ * check alone can't. Not a substitute for real randomness — a cheap, no-dependency floor above it.
+ */
+const MIN_SECRET_LENGTH = 32;
+const MIN_DISTINCT_CHARS = 10;
+function checkSecretStrength(value: string, path: string, devDefault: string, ctx: z.RefinementCtx): void {
+  if (value === devDefault) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: [path],
+      message: `must be set to a real secret in production (insecure dev default detected)`,
+    });
+    return;
+  }
+  if (value.length < MIN_SECRET_LENGTH) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: [path],
+      message: `must be at least ${MIN_SECRET_LENGTH} chars in production (got ${value.length}) — generate with e.g. \`openssl rand -base64 32\``,
+    });
+  }
+  const distinctChars = new Set(value).size;
+  if (distinctChars < MIN_DISTINCT_CHARS) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: [path],
+      message: `looks low-entropy (only ${distinctChars} distinct characters) — generate with e.g. \`openssl rand -base64 32\``,
+    });
+  }
+}
 
 export type Env = z.infer<typeof EnvSchema>;
 
