@@ -27,12 +27,19 @@ function frame(chunk: Buffer): Buffer {
   return Buffer.concat([header, chunk]);
 }
 
-/** Parse clamd's INSTREAM reply, e.g. "stream: OK" or "stream: Eicar-Signature FOUND". */
-export function parseClamdReply(reply: string): ScanResult {
-  const found = /stream:\s*(.+?)\s+FOUND/.exec(reply);
-  const signature = found?.[1];
-  if (signature !== undefined) return { clean: false, signature };
-  return { clean: true };
+/**
+ * Parse clamd's INSTREAM reply. FAIL-CLOSED (re-audit 2026-07-01, docs/audit/reaudit-2026-07-01):
+ * only the two well-formed verdicts are trusted — `stream: OK` (clean) and `stream: <sig> FOUND`
+ * (infected). ANYTHING else — clamd's `... ERROR` (e.g. `INSTREAM size limit exceeded. ERROR` when a
+ * file exceeds clamd's StreamMaxLength), an empty/truncated reply, or an unrecognized line — returns
+ * `null`, which `scanBuffer` turns into a rejection so the upload is refused rather than silently
+ * passed as clean. Returns null on a scan we cannot positively confirm clean.
+ */
+export function parseClamdReply(reply: string): ScanResult | null {
+  const found = /stream:\s*(.+?)\s+FOUND\b/.exec(reply);
+  if (found?.[1] !== undefined) return { clean: false, signature: found[1] };
+  if (/stream:\s*OK\b/.test(reply)) return { clean: true };
+  return null; // ERROR / empty / unrecognized → fail closed
 }
 
 /** Scan a buffer via clamd. Resolves `{clean: true}` immediately (no network call) if AV_SCAN_HOST is unset. */
@@ -58,7 +65,15 @@ export function scanBuffer(bytes: Buffer): Promise<ScanResult> {
     socket.on('data', (d: Buffer) => {
       reply += d.toString('utf8');
     });
-    socket.on('close', () => finish(() => resolve(parseClamdReply(reply))));
+    socket.on('close', () =>
+      finish(() => {
+        const result = parseClamdReply(reply);
+        // fail-closed: an ERROR / empty / unrecognized reply is a scan we can't confirm clean → reject,
+        // so the caller refuses the upload instead of persisting an unscanned file.
+        if (result) resolve(result);
+        else reject(new Error(`AV scan: unrecognized clamd reply: ${reply.trim() || '(empty)'}`));
+      }),
+    );
 
     socket.on('connect', () => {
       socket.write('zINSTREAM\0');

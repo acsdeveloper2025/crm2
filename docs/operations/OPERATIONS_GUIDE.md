@@ -50,13 +50,21 @@ Modular monolith, one image, ROLE-gated processes (`PROCESS_ROLE=api|worker|repo
   `DISASTER_RECOVERY.md`) to before the migration, then redeploy prior image.
   Prefer additive, backward-compatible migrations so code rollback stands alone.
 
+<!-- REDIS_CACHE-03 residual (re-audit 2026-07-01): corrected the phantom two-node Valkey topology +
+     per-dependency health payload. `/api/v2/health` is a STATIC stub (apps/api/src/http/app.ts) — it
+     does NOT check dependencies. Valkey is a SINGLE combined service (docker-compose.yml, container
+     crm2_db-adjacent `crm2_valkey`) and is DORMANT in prod today (jobs run in-process; the prod
+     valkey block is commented out). See runbooks/redis-outage.md for the accurate picture. -->
 ## Health / readiness
-- Aggregate health: `curl -fsS https://<host>/api/v2/health` → `200` healthy.
-  Reports per-dependency status (db, valkey-queue, valkey-cache, object-store).
-- **PostgreSQL:** `docker compose exec postgres pg_isready -U <user>` then
-  `psql -c 'select 1'`.
-- **Valkey (queue & cache):** `redis-cli -h <queue-host> -p <port> ping` → `PONG`;
-  same for cache host. Confirm policy: `redis-cli config get maxmemory-policy`.
+- Aggregate health: `curl -fsS https://<host>/api/v2/health` → `200`. NOTE: this is a **static
+  liveness stub** (`apps/api/src/http/app.ts`) — a `200` means the api process is up and serving; it
+  does **not** probe db / valkey / object-store. Check each dependency directly (below).
+- **PostgreSQL:** `docker compose exec db pg_isready -U <user>` then `psql -c 'select 1'`.
+- **Valkey (single combined service — queue + cache):** DORMANT in prod today (jobs run in-process,
+  the prod valkey block is commented out). When enabled:
+  `docker exec crm2_valkey valkey-cli -a <pw> --no-auth-warning ping` → `PONG`; confirm policy:
+  `valkey-cli config get maxmemory-policy`. There is ONE valkey instance, not separate queue/cache
+  nodes — see `runbooks/redis-outage.md`.
 - **Object store:** signed-URL HEAD on a known object, or `mc admin info <alias>`
   (MinIO). Verify a sample evidence object resolves (PLANNED: S3 reachability).
 

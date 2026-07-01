@@ -78,6 +78,20 @@ describe('av.scanBuffer', () => {
     __resetEnv();
     await expect(scanBuffer(Buffer.from('x'))).rejects.toThrow();
   });
+
+  // fail-closed (re-audit 2026-07-01): a clamd ERROR reply must REJECT, never resolve {clean:true},
+  // so an unscanned file (e.g. one over clamd's StreamMaxLength) is refused, not persisted.
+  it('rejects (fail-closed) when clamd returns an ERROR reply instead of a verdict', async () => {
+    const { server, port } = await fakeClamd('INSTREAM size limit exceeded. ERROR\0');
+    process.env['AV_SCAN_HOST'] = '127.0.0.1';
+    process.env['AV_SCAN_PORT'] = String(port);
+    __resetEnv();
+    try {
+      await expect(scanBuffer(Buffer.from('a big file'))).rejects.toThrow(/unrecognized clamd reply/);
+    } finally {
+      server.close();
+    }
+  });
 });
 
 describe('parseClamdReply', () => {
@@ -89,5 +103,16 @@ describe('parseClamdReply', () => {
       clean: false,
       signature: 'Win.Test.EICAR_HDB-1',
     });
+  });
+  // fail-closed (re-audit 2026-07-01): anything that isn't a well-formed OK/FOUND is null → the caller rejects.
+  it('returns null (fail-closed) on a clamd ERROR reply', () => {
+    expect(parseClamdReply('INSTREAM size limit exceeded. ERROR\0')).toBeNull();
+  });
+  it('returns null (fail-closed) on an empty or truncated reply', () => {
+    expect(parseClamdReply('')).toBeNull();
+    expect(parseClamdReply('stream:')).toBeNull();
+  });
+  it('returns null (fail-closed) on an unrecognized reply', () => {
+    expect(parseClamdReply('some garbage')).toBeNull();
   });
 });
