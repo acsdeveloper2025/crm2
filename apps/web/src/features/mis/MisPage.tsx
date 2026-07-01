@@ -196,33 +196,48 @@ function TabularView({
         apiExport(`/api/v2/mis/${encodeURIComponent(type)}/export?${exportQueryToParams(req).toString()}`)
       }
       toolbar={
-        <Popover label="Columns" trigger={<span>Columns</span>} panelClassName="w-72 max-h-96 overflow-auto">
-          <div className="mb-2 flex gap-3 border-b border-border px-2 pb-2 text-xs">
-            <button type="button" className="text-primary" onClick={onSelectAll}>
-              Select all
-            </button>
-            <button type="button" className="text-muted-foreground" onClick={onReset}>
-              Reset
-            </button>
-          </div>
-          {grouped.map(([group, cols]) => (
-            <div key={group} className="mb-2">
-              <div className="mb-1 px-2 text-xs font-medium text-muted-foreground">{group}</div>
-              {cols.map((c) => (
-                <label
-                  key={c.key}
-                  className="flex cursor-pointer items-center gap-2 px-2 py-1 text-sm hover:bg-row-hover"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedCols.includes(c.key)}
-                    onChange={() => onToggle(c.key)}
-                  />
-                  <span>{c.label}</span>
-                </label>
+        <Popover
+          label="Columns"
+          trigger={<span>Columns</span>}
+          align="start"
+          panelClassName="w-[min(720px,85vw)]"
+        >
+          {/* Scroll lives on this inner container — the panel itself is `overflow-hidden` (rounded
+              corners), so an `overflow-auto` there would be dropped by Tailwind and never scroll. */}
+          <div className="max-h-[70vh] overflow-y-auto">
+            <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-border bg-popover px-3 py-2 text-xs">
+              <button type="button" className="text-primary" onClick={onSelectAll}>
+                Select all
+              </button>
+              <button type="button" className="text-muted-foreground" onClick={onReset}>
+                Reset
+              </button>
+              <span className="ml-auto text-muted-foreground">
+                {selectedCols.length} of {columns.length} shown
+              </span>
+            </div>
+            {/* Every field in the report, grouped, flowed into columns — the user keeps/removes any. */}
+            <div className="gap-4 p-2 sm:columns-2 lg:columns-3">
+              {grouped.map(([group, cols]) => (
+                <div key={group} className="mb-3 break-inside-avoid">
+                  <div className="mb-1 px-1 text-xs font-medium text-muted-foreground">{group}</div>
+                  {cols.map((c) => (
+                    <label
+                      key={c.key}
+                      className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm hover:bg-row-hover"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedCols.includes(c.key)}
+                        onChange={() => onToggle(c.key)}
+                      />
+                      <span>{c.label}</span>
+                    </label>
+                  ))}
+                </div>
               ))}
             </div>
-          ))}
+          </div>
         </Popover>
       }
     />
