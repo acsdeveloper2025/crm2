@@ -705,6 +705,52 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
     expect(items.find((r) => r.periodKey === '2026-05-H2')!.commissionTotal).toBe(90); // 20th → H2
   });
 
+  it('ADR-0081 (Option A): summary carries billTotal; agentClientProductRateType splits by client+field rate type', async () => {
+    // plain agent grouping now carries billTotal (client bill sum) alongside commission
+    const agg = await billingRepository.commissionSummary(sumOpts({}));
+    expect(agg.items[0]!.billTotal).toBe(850); // 350 (T1) + 500 (T2), both COMPLETED
+    expect(agg.items[0]!.commissionTotal).toBe(140);
+    expect(agg.items[0]!.clientRateType).toBeNull(); // not split at this grain
+    expect(agg.items[0]!.fieldRateType).toBeNull();
+
+    // rate-type grouping → one row per (client_rate_type, field_rate_type) combo
+    const rt = await billingRepository.commissionSummary(sumOpts({ groupBy: 'agentClientProductRateType' }));
+    expect(rt.totalCount).toBe(2);
+    const local = rt.items.find((r) => r.fieldRateType === 'LOCAL')!; // T1
+    const ogl = rt.items.find((r) => r.fieldRateType === 'OGL')!; // T2
+    expect(local.clientRateType).toBe('LOCAL');
+    expect(local.billTotal).toBe(350);
+    expect(local.commissionTotal).toBe(50);
+    expect(ogl.clientRateType).toBe('LOCAL'); // both client bill rates are LOCAL
+    expect(ogl.billTotal).toBe(500);
+    expect(ogl.commissionTotal).toBe(90);
+    expect(local.clientName).not.toBeNull(); // client/product populated at this grain
+    expect(local.productName).not.toBeNull();
+  });
+
+  it('ADR-0081 (Option B): commissionDetail = per-task rows with both rate types + the real per-task rate', async () => {
+    const { items, totalCount } = await billingRepository.commissionDetail({
+      scope: {},
+      limit: 50,
+      offset: 0,
+    });
+    expect(totalCount).toBe(2);
+    const t1 = items.find((r) => r.taskNumber === t1Number)!;
+    const t2 = items.find((r) => r.taskNumber === t2Number)!;
+    expect(t1.clientRateType).toBe('LOCAL');
+    expect(t1.fieldRateType).toBe('LOCAL');
+    expect(t1.billAmount).toBe(350); // the REAL per-task client bill rate (not a total)
+    expect(t1.commissionAmount).toBe(50);
+    expect(t2.fieldRateType).toBe('OGL');
+    expect(t2.billAmount).toBe(500);
+    expect(t2.commissionAmount).toBe(90);
+    expect(t1.agentName).toBeTruthy();
+    expect(t1.clientName).toBeTruthy();
+    expect(t1.unitName).toBeTruthy();
+    expect(t1.caseNumber).toBeTruthy();
+    expect(t1.status).toBe('COMPLETED');
+  });
+
   // NOTE: mutates the shared seed (bill_count). `beforeEach` re-seeds, so isolation holds, but this
   // is kept as the LAST `it()` so the earlier §E bill_count=1 assertions (850/140) are unaffected.
   it('bill_count multiplies bill+commission and reports billable_units', async () => {

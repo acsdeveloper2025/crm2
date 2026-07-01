@@ -62,3 +62,25 @@ Access Control separately from `billing.view`.
   payroll/finance role gets only Commission Summary). Test: `billing.api.test.ts` asserts BACKEND_USER (holds
   it) → 200 and TEAM_LEADER (holds neither) → 403 on both the list and the export. No OpenAPI change (the
   permission is authorize-middleware, not in the spec).
+
+## Amendment (2026-07-01) — billing side + rate types + per-task detail (v1 line-export parity)
+
+Owner asked for the client-product **rate**, and the **rate type for both client (billing) and field
+(commission)**, matching how v1 exported it. v2 split client vs field rate type (ADR-0050), so both are
+surfaced. Two additions, read-model only (no migration):
+
+- **Option A — enriched summary:** `commissionSummary` now also returns **`billTotal`** (Σ client bill ×
+  bill_count over the bucket's COMPLETED tasks, from the `rates` engine) alongside `commissionTotal`, and a
+  third `groupBy` = **`agentClientProductRateType`** that additionally splits by **client rate type**
+  (`rt.client_rate_type`) + **field rate type** (`case_tasks.rate_type_id` → `rate_types.code`) — one row per
+  rate-type pair, the v1-pivot grain. `SUMMARY_FROM` gains `RATE_LATERAL` + a `rate_types frt` join. New export
+  columns: Client Rate Type · Field Rate Type · Bill Total.
+- **Option B — per-task detail (v1 line export):** new `GET /billing/commission-detail` (+ `/export`), same
+  `billing.commission_summary.view` gate + earned-at filter, one flat row per commissioned task:
+  Earned On · Agent · Client · Product · Unit · Case · Task · Visit Type · **Client Rate Type · Field Rate
+  Type · Client Bill (the real per-task rate) · Commission** · Bill Count · Status. This is the v2 equivalent
+  of v1's `commissionManagementController` line export (which had a single Rate Type + Base Amount; v2 shows
+  the split rate types + the actual client bill rate).
+- **Web:** the Commission Summary page gains a **View: Summary | Detail** toggle (Detail hides period/groupBy),
+  the third group-by option, and the new columns. Tests: summary billTotal + rate-type split, detail per-task
+  rows, SDK transport for both detail methods. OpenAPI regenerated (+2 detail paths).

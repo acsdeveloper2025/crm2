@@ -5,6 +5,7 @@ import type {
   BillingLocationGroup,
   BillingBandGroup,
   CommissionSummaryRow,
+  CommissionDetailRow,
   CommissionPeriod,
   CommissionGroupBy,
   SortOrder,
@@ -141,12 +142,16 @@ const PERIOD_SQL: Readonly<Record<CommissionPeriod, { key: string; start: string
   },
 };
 
-/** FROM for the commission summary — INNER JOIN users (assigned tasks only) + the shared commission lateral. */
+/** FROM for the commission summary — INNER JOIN users (assigned tasks only) + the shared rate/commission
+ *  laterals. `rt` = client bill (rates engine) — `rt.client_rate_type` + `rt.bill_amount`; `frt` = the task's
+ *  FIELD rate-type code (LOCAL/OGL/OFFICE, from `case_tasks.rate_type_id`); `com` = agent commission. */
 const SUMMARY_FROM = `FROM case_tasks ct
   JOIN cases cs ON cs.id = ct.case_id
   JOIN clients cl ON cl.id = cs.client_id
   JOIN products p ON p.id = cs.product_id
   JOIN users au ON au.id = ct.assigned_to
+  LEFT JOIN rate_types frt ON frt.id = ct.rate_type_id
+  ${RATE_LATERAL}
   ${COMMISSION_LATERAL}`;
 
 export interface CommissionSummaryOptions {
@@ -178,6 +183,53 @@ function buildCommissionSummaryWhere(o: CommissionSummaryOptions, params: unknow
     params.push(likeContains(o.search));
     const n = params.length;
     where.push(`(au.name ILIKE $${n} OR cl.name ILIKE $${n} OR p.name ILIKE $${n})`);
+  }
+  const scopePred = caseScopePredicate(params, o.scope);
+  if (scopePred) where.push(scopePred);
+  return `WHERE ${where.join(' AND ')}`;
+}
+
+/** FROM for the per-task commission DETAIL — like SUMMARY_FROM + the verification-unit name join (no aggregation). */
+const DETAIL_FROM = `FROM case_tasks ct
+  JOIN cases cs ON cs.id = ct.case_id
+  JOIN clients cl ON cl.id = cs.client_id
+  JOIN products p ON p.id = cs.product_id
+  JOIN verification_units vu ON vu.id = ct.verification_unit_id
+  JOIN users au ON au.id = ct.assigned_to
+  LEFT JOIN rate_types frt ON frt.id = ct.rate_type_id
+  ${RATE_LATERAL}
+  ${COMMISSION_LATERAL}`;
+
+export interface CommissionDetailOptions {
+  scope: Scope;
+  clientId?: number;
+  productId?: number;
+  /** Earned-at range (COALESCE(submitted_at, completed_at)); ISO strings. */
+  from?: string;
+  to?: string;
+  search?: string;
+  limit: number;
+  offset: number;
+}
+
+/** WHERE for the commission detail — same earned-at/status/client/product filter as the summary; search also
+ *  matches case + task numbers. Mutates `params`. */
+function buildCommissionDetailWhere(o: CommissionDetailOptions, params: unknown[]): string {
+  const where = [`ct.status IN ('SUBMITTED', 'COMPLETED')`];
+  const add = (clause: string, val: unknown) => {
+    params.push(val);
+    where.push(clause.replace('$?', `$${params.length}`));
+  };
+  if (o.from !== undefined) add(`${EARNED_AT} >= $?`, o.from);
+  if (o.to !== undefined) add(`${EARNED_AT} <= $?`, o.to);
+  if (o.clientId !== undefined) add('cs.client_id = $?', o.clientId);
+  if (o.productId !== undefined) add('cs.product_id = $?', o.productId);
+  if (o.search) {
+    params.push(likeContains(o.search));
+    const n = params.length;
+    where.push(
+      `(au.name ILIKE $${n} OR cl.name ILIKE $${n} OR p.name ILIKE $${n} OR cs.case_number ILIKE $${n} OR ct.task_number ILIKE $${n})`,
+    );
   }
   const scopePred = caseScopePredicate(params, o.scope);
   if (scopePred) where.push(scopePred);
@@ -294,15 +346,19 @@ export const billingRepository = {
     o: CommissionSummaryOptions,
   ): Promise<{ items: CommissionSummaryRow[]; totalCount: number }> {
     const period = PERIOD_SQL[o.period];
-    const grouped = o.groupBy === 'agentClientProduct';
-    const groupDims = grouped ? ', cs.client_id, cl.name, cs.product_id, p.name' : '';
-    const clientSel = grouped ? 'cs.client_id, cl.name' : 'NULL::int, NULL::text';
-    const productSel = grouped ? 'cs.product_id, p.name' : 'NULL::int, NULL::text';
+    // Three grain levels: agent · +client/product · +client-rate-type/field-rate-type (byRT ⟹ byCP).
+    const byCP = o.groupBy === 'agentClientProduct' || o.groupBy === 'agentClientProductRateType';
+    const byRT = o.groupBy === 'agentClientProductRateType';
+    const cpDims = byCP ? ', cs.client_id, cl.name, cs.product_id, p.name' : '';
+    const rtDims = byRT ? ', rt.client_rate_type, frt.code' : '';
+    const groupDims = cpDims + rtDims;
+    const orderExtra =
+      (byCP ? ', cl.name ASC, p.name ASC' : '') + (byRT ? ', rt.client_rate_type ASC, frt.code ASC' : '');
 
     const params: unknown[] = [];
     const clause = buildCommissionSummaryWhere(o, params);
 
-    // count = number of group rows (agent × period [× client × product]).
+    // count = number of group rows (agent × period [× client × product [× rate types]]).
     const [countRow] = await query<{ count: number }>(
       `SELECT count(*)::int AS count FROM (
          SELECT 1 ${SUMMARY_FROM} ${clause}
@@ -314,16 +370,54 @@ export const billingRepository = {
 
     const items = await query<CommissionSummaryRow>(
       `SELECT ct.assigned_to AS agent_id, au.name AS agent_name,
-              ${clientSel.split(', ')[0]} AS client_id, ${clientSel.split(', ')[1]} AS client_name,
-              ${productSel.split(', ')[0]} AS product_id, ${productSel.split(', ')[1]} AS product_name,
+              ${byCP ? 'cs.client_id' : 'NULL::int'} AS client_id, ${byCP ? 'cl.name' : 'NULL::text'} AS client_name,
+              ${byCP ? 'cs.product_id' : 'NULL::int'} AS product_id, ${byCP ? 'p.name' : 'NULL::text'} AS product_name,
+              ${byRT ? 'rt.client_rate_type' : 'NULL::text'} AS client_rate_type,
+              ${byRT ? 'frt.code' : 'NULL::text'} AS field_rate_type,
               ${period.key} AS period_key,
               to_char(${period.start}, 'YYYY-MM-DD') AS period_start,
               count(*)::int AS task_count,
               COALESCE(SUM(ct.bill_count), 0)::int AS billable_units,
+              COALESCE(SUM(rt.bill_amount * ct.bill_count) FILTER (WHERE ct.status = 'COMPLETED'), 0)::float8 AS bill_total,
               COALESCE(SUM(COALESCE(ct.commission_amount, com.commission_amount) * ct.bill_count), 0)::float8 AS commission_total
        ${SUMMARY_FROM} ${clause}
        GROUP BY ct.assigned_to, au.name${groupDims}, ${period.key}, ${period.start}
-       ORDER BY ${period.start} DESC, au.name ASC${grouped ? ', cl.name ASC, p.name ASC' : ''}
+       ORDER BY ${period.start} DESC, au.name ASC${orderExtra}
+       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, o.limit, o.offset],
+    );
+    return { items, totalCount };
+  },
+
+  /**
+   * Per-task commission/billing DETAIL (ADR-0081, v1 line-export parity) — one row per commissioned task
+   * over the same earned-at filter as the summary: agent, client, product, unit, case/task, BOTH rate types
+   * (client bill vs field commission), the resolved client bill rate, and the commission. Flat + paginated.
+   */
+  async commissionDetail(
+    o: CommissionDetailOptions,
+  ): Promise<{ items: CommissionDetailRow[]; totalCount: number }> {
+    const params: unknown[] = [];
+    const clause = buildCommissionDetailWhere(o, params);
+
+    const [countRow] = await query<{ count: number }>(
+      `SELECT count(*)::int AS count ${DETAIL_FROM} ${clause}`,
+      params,
+    );
+    const totalCount = countRow?.count ?? 0;
+
+    const items = await query<CommissionDetailRow>(
+      `SELECT ct.id AS task_id, ct.task_number, cs.case_number,
+              ct.assigned_to AS agent_id, au.name AS agent_name,
+              cl.name AS client_name, p.name AS product_name, vu.name AS unit_name,
+              ct.visit_type, rt.client_rate_type, frt.code AS field_rate_type,
+              CASE WHEN ct.status = 'COMPLETED' THEN rt.bill_amount END AS bill_amount,
+              COALESCE(ct.commission_amount, com.commission_amount) AS commission_amount,
+              ct.bill_count, ct.status,
+              to_char(${EARNED_AT}, 'YYYY-MM-DD') AS earned_on,
+              ct.submitted_at, ct.completed_at
+       ${DETAIL_FROM} ${clause}
+       ORDER BY ${EARNED_AT} DESC, ct.task_number
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, o.limit, o.offset],
     );

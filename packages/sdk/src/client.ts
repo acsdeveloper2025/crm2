@@ -45,6 +45,8 @@ import type {
   BillingBreakdownQuery,
   CommissionSummaryRow,
   CommissionSummaryQuery,
+  CommissionDetailRow,
+  CommissionDetailQuery,
 } from './billing.js';
 import type { MisRowsResponse, MisQuery } from './mis.js';
 import type {
@@ -160,6 +162,17 @@ function commissionSummaryParams(q: Omit<CommissionSummaryQuery, 'page' | 'pageS
   const p = new URLSearchParams();
   if (q.period) p.set('period', q.period);
   if (q.groupBy) p.set('groupBy', q.groupBy);
+  if (q.clientId !== undefined) p.set('clientId', String(q.clientId));
+  if (q.productId !== undefined) p.set('productId', String(q.productId));
+  if (q.from) p.set('from', q.from);
+  if (q.to) p.set('to', q.to);
+  if (q.search) p.set('search', q.search);
+  return p;
+}
+
+/** Shared query-string builder for the commission-detail list + export (everything but page/pageSize). */
+function commissionDetailParams(q: Omit<CommissionDetailQuery, 'page' | 'pageSize'>): URLSearchParams {
+  const p = new URLSearchParams();
   if (q.clientId !== undefined) p.set('clientId', String(q.clientId));
   if (q.productId !== undefined) p.set('productId', String(q.productId));
   if (q.from) p.set('from', q.from);
@@ -447,6 +460,25 @@ export function createSdk(opts: SdkOptions) {
         const extra: Record<string, string | undefined> = {};
         for (const [k, v] of commissionSummaryParams(q)) extra[k] = v;
         return reqBlob('billing/commission-summary', r, extra);
+      },
+
+      /** Per-task commission/billing detail (ADR-0081, v1 line-export parity) — real per-task rate + both rate types. */
+      commissionDetail: (q: CommissionDetailQuery = {}) => {
+        const p = commissionDetailParams(q);
+        if (q.page !== undefined) p.set('page', String(q.page));
+        if (q.pageSize !== undefined) p.set('limit', String(q.pageSize)); // server pagination reads `limit`
+        const qs = p.toString();
+        return req<Paginated<CommissionDetailRow>>(
+          'GET',
+          `/api/v2/billing/commission-detail${qs ? `?${qs}` : ''}`,
+        );
+      },
+
+      /** DataGrid export (IMPORT_EXPORT_STANDARD): same detail query + format/mode → a file blob. */
+      commissionDetailExport: (q: Omit<CommissionDetailQuery, 'page' | 'pageSize'>, r: ExportRequest) => {
+        const extra: Record<string, string | undefined> = {};
+        for (const [k, v] of commissionDetailParams(q)) extra[k] = v;
+        return reqBlob('billing/commission-detail', r, extra);
       },
     },
 

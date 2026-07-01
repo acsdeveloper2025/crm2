@@ -99,18 +99,26 @@ export interface BillingBreakdownQuery {
  */
 export type CommissionPeriod = 'week' | 'fortnight' | 'month' | 'quarter';
 
-/** `agent` = one row per field-user per period; `agentClientProduct` = also split by client + product. */
-export type CommissionGroupBy = 'agent' | 'agentClientProduct';
+/**
+ * `agent` = one row per field-user per period · `agentClientProduct` = also split by client + product ·
+ * `agentClientProductRateType` = additionally split by CLIENT rate type (billing) + FIELD rate type
+ * (commission), so each row carries a single rate-type pair (v1-pivot parity).
+ */
+export type CommissionGroupBy = 'agent' | 'agentClientProduct' | 'agentClientProductRateType';
 
 /** One rollup row: a field-user's earned commission within one period bucket (optionally per client+product). */
 export interface CommissionSummaryRow {
   agentId: string;
   agentName: string;
-  /** null unless groupBy = agentClientProduct. */
+  /** null unless groupBy includes client+product. */
   clientId: number | null;
   clientName: string | null;
   productId: number | null;
   productName: string | null;
+  /** CLIENT rate type (LOCAL/OGL) of the resolved bill rate; null unless groupBy = agentClientProductRateType. */
+  clientRateType: string | null;
+  /** FIELD rate type (LOCAL/OGL/OFFICE) driving commission; null unless groupBy = agentClientProductRateType. */
+  fieldRateType: string | null;
   /** Period label: `2026-W27` (week) · `2026-06-H1`/`-H2` (fortnight) · `2026-06` (month) · `2026-Q2` (quarter). */
   periodKey: string;
   /** ISO date of the bucket's first day (sortable). */
@@ -119,8 +127,48 @@ export interface CommissionSummaryRow {
   taskCount: number;
   /** Σ bill_count over the bucket (unit-weighted). */
   billableUnits: number;
+  /** Σ CLIENT bill amount × bill_count over the bucket's COMPLETED tasks (rates engine). */
+  billTotal: number;
   /** Σ agent commission × bill_count over the bucket. */
   commissionTotal: number;
+}
+
+/** One per-task commission/billing DETAIL line (v1 line-export parity) — the real rate + both rate types. */
+export interface CommissionDetailRow {
+  taskId: string;
+  taskNumber: string;
+  caseNumber: string;
+  agentId: string;
+  agentName: string;
+  clientName: string;
+  productName: string;
+  unitName: string;
+  visitType: string | null;
+  /** CLIENT rate type (LOCAL/OGL) of the resolved bill rate. */
+  clientRateType: string | null;
+  /** FIELD rate type (LOCAL/OGL/OFFICE) driving commission. */
+  fieldRateType: string | null;
+  /** the CLIENT bill rate for this task (rates engine); null until COMPLETED / when no active rate. */
+  billAmount: number | null;
+  /** agent commission for this task; null when the assignee has no matching commission_rate. */
+  commissionAmount: number | null;
+  billCount: number;
+  status: string;
+  /** earned-at date `COALESCE(submittedAt, completedAt)` (IST), YYYY-MM-DD. */
+  earnedOn: string | null;
+  submittedAt: string | null;
+  completedAt: string | null;
+}
+
+/** Query contract for `GET /billing/commission-detail` (+ `/export`). Same earned-at filters as the summary. */
+export interface CommissionDetailQuery {
+  clientId?: number;
+  productId?: number;
+  from?: string;
+  to?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
 }
 
 /** Query contract for `GET /billing/commission-summary` (+ `/export`). All optional; defaults month/agent. */

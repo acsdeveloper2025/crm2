@@ -31,3 +31,14 @@ billingRoutes.get(
   authorize(PERMISSIONS.BILLING_COMMISSION_SUMMARY_VIEW),
   c.commissionSummary,
 );
+// Per-task commission/billing DETAIL + export (ADR-0081, v1 line-export parity). Same gate as the summary.
+billingRoutes.get(
+  '/commission-detail/export',
+  authorize(PERMISSIONS.BILLING_COMMISSION_SUMMARY_VIEW),
+  c.commissionDetailExport,
+);
+billingRoutes.get(
+  '/commission-detail',
+  authorize(PERMISSIONS.BILLING_COMMISSION_SUMMARY_VIEW),
+  c.commissionDetail,
+);

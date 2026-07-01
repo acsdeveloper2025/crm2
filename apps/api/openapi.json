@@ -392,6 +392,44 @@
         ]
       }
     },
+    "/api/v2/billing/commission-detail": {
+      "get": {
+        "tags": [
+          "billing"
+        ],
+        "operationId": "get_api_v2_billing_commission_detail",
+        "summary": "GET /api/v2/billing/commission-detail",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/billing/commission-detail/export": {
+      "get": {
+        "tags": [
+          "billing"
+        ],
+        "operationId": "get_api_v2_billing_commission_detail_export",
+        "summary": "GET /api/v2/billing/commission-detail/export",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v2/billing/commission-summary": {
       "get": {
         "tags": [

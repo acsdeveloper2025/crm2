@@ -488,6 +488,82 @@ describe('createSdk — transport', () => {
     expect(burl).toContain('format=xlsx');
   });
 
+  it('billing.commissionDetail (ADR-0081) builds a per-task URL with filters + pagination', async () => {
+    const { impl, calls } = fakeFetch(200, {
+      items: [],
+      totalCount: 0,
+      page: 1,
+      pageSize: 50,
+      totalPages: 0,
+      sort: { sortBy: 'earnedOn', sortOrder: 'desc' },
+      filters: {},
+    });
+    const sdk = createSdk({ baseUrl: 'http://x', fetchImpl: impl });
+    await sdk.billing.commissionDetail({
+      clientId: 3,
+      productId: 7,
+      from: '2026-01-01',
+      to: '2026-03-31',
+      search: 'rahul',
+      page: 2,
+      pageSize: 25,
+    });
+    const url = calls[0]?.url ?? '';
+    expect(url).toContain('/api/v2/billing/commission-detail?');
+    expect(url).toContain('clientId=3');
+    expect(url).toContain('productId=7');
+    expect(url).toContain('from=2026-01-01');
+    expect(url).toContain('search=rahul');
+    expect(url).toContain('page=2');
+    expect(url).toContain('limit=25'); // pageSize → limit
+  });
+
+  it('billing.commissionDetail with no args omits the query string', async () => {
+    const { impl, calls } = fakeFetch(200, {
+      items: [],
+      totalCount: 0,
+      page: 1,
+      pageSize: 50,
+      totalPages: 0,
+      sort: { sortBy: 'earnedOn', sortOrder: 'desc' },
+      filters: {},
+    });
+    const sdk = createSdk({ baseUrl: 'http://x', fetchImpl: impl });
+    await sdk.billing.commissionDetail();
+    expect(calls[0]?.url).toBe('http://x/api/v2/billing/commission-detail');
+  });
+
+  it('billing.commissionDetailExport goes through the blob transport carrying the detail query', async () => {
+    const bcalls: { url: string }[] = [];
+    const bimpl = (async (u: string) => {
+      bcalls.push({ url: u });
+      return {
+        ok: true,
+        status: 200,
+        headers: {
+          get: (h: string) =>
+            h === 'content-disposition' ? 'attachment; filename="commission-detail-20260701.csv"' : null,
+        },
+        blob: async () => new Blob(['Earned On,Agent\n']),
+        text: async () => '',
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+    const sdk = createSdk({ baseUrl: 'http://x', fetchImpl: bimpl });
+    const out = await sdk.billing.commissionDetailExport(
+      { clientId: 9, from: '2026-06-01' },
+      {
+        format: 'csv',
+        mode: 'all',
+      },
+    );
+    expect(out.filename).toBe('commission-detail-20260701.csv');
+    const burl = bcalls[0]?.url ?? '';
+    expect(burl).toContain('/api/v2/billing/commission-detail/export?');
+    expect(burl).toContain('clientId=9');
+    expect(burl).toContain('from=2026-06-01');
+    expect(burl).toContain('format=csv');
+  });
+
   it('options endpoints (B-22) hit the unpaginated /options feeds', async () => {
     const { impl, calls } = fakeFetch(200, []);
     const s = createSdk({ baseUrl: 'http://x', fetchImpl: impl });
