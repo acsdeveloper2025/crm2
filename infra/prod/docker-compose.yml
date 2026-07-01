@@ -10,8 +10,19 @@
 #
 # Secrets arrive ONLY via env_file (/opt/crm2/secrets/.env.prod, mode 600, never
 # committed) + the firebase file mount. Images stay environment-neutral.
+#
+# Logging (audit LOGGING-03, docs/audit/14-logging.md): every service caps its json-file
+# driver at 20m x 10 files (200m/service ceiling) so stdout logs can no longer grow the
+# single box's disk unbounded — the same failure mode as the 2026-06-26 disk-exhaustion
+# outage (that one was un-pruned image layers; this closes the log-growth analogue).
 # =============================================================================
 name: crm2
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: '20m'
+    max-file: '10'
 
 services:
   db:
@@ -34,6 +45,7 @@ services:
       retries: 12
       start_period: 30s
     mem_limit: 4g
+    logging: *default-logging
 
   minio:
     image: minio/minio:latest
@@ -52,6 +64,7 @@ services:
       retries: 12
       start_period: 20s
     mem_limit: 1g
+    logging: *default-logging
 
   minio-init:
     image: minio/mc:latest
@@ -66,6 +79,7 @@ services:
       exit 0;
       "
     restart: 'no'
+    logging: *default-logging
 
   # One-shot: apply the 66 idempotent SQL migrations (ON_ERROR_STOP) then the
   # seeds (best-effort). Runs from the repo root so the locations \copy FROM
@@ -88,6 +102,7 @@ services:
       - /bin/sh
       - db/v2/migrate.sh
     restart: 'no'
+    logging: *default-logging
 
   api:
     image: ${IMAGE_REGISTRY:-ghcr.io/acsdeveloper2025}/crm2-api:${IMAGE_TAG:-latest}
@@ -123,6 +138,7 @@ services:
     stop_grace_period: 30s
     shm_size: 1gb
     mem_limit: 2g
+    logging: *default-logging
 
   edge:
     image: ${IMAGE_REGISTRY:-ghcr.io/acsdeveloper2025}/crm2-web:${IMAGE_TAG:-latest}
@@ -146,6 +162,7 @@ services:
       retries: 3
       start_period: 15s
     mem_limit: 256m
+    logging: *default-logging
 
   # ---- FUTURE: out-of-process job tier (enable with REDIS_QUEUE_URL set) -----
   # valkey:
