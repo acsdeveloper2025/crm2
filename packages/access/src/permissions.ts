@@ -79,6 +79,11 @@ export const PERMISSIONS = {
   BILLING_COMMISSION_SUMMARY_VIEW: 'billing.commission_summary.view',
   // platform capabilities — DataGrid export (IMPORT_EXPORT_STANDARD §1; default-deny, granted to web roles)
   DATA_EXPORT: 'data.export',
+  // reporting — MIS (ADR-0084): the rebuilt MIS page + report-type catalog + rows (mis.view) and its
+  // export (mis.export). Money columns inside MIS stay separately gated by billing.view; bulk PII export
+  // is owner-accepted (registry §MIS-2026-07-01). Operational web roles; SUPER_ADMIN via grants_all.
+  MIS_VIEW: 'mis.view',
+  MIS_EXPORT: 'mis.export',
 } as const;
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 
@@ -106,6 +111,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     PERMISSIONS.BILLING_VIEW,
     PERMISSIONS.BILLING_COMMISSION_SUMMARY_VIEW,
     PERMISSIONS.DATA_EXPORT,
+    PERMISSIONS.MIS_VIEW,
+    PERMISSIONS.MIS_EXPORT,
   ],
   TEAM_LEADER: [
     PERMISSIONS.MASTERDATA_VIEW,
@@ -120,6 +127,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     PERMISSIONS.FIELD_MONITORING_VIEW,
     PERMISSIONS.DASHBOARD_VIEW,
     PERMISSIONS.DATA_EXPORT,
+    PERMISSIONS.MIS_VIEW,
+    PERMISSIONS.MIS_EXPORT,
   ],
   BACKEND_USER: [
     PERMISSIONS.MASTERDATA_VIEW,
@@ -135,6 +144,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     PERMISSIONS.BILLING_VIEW,
     PERMISSIONS.BILLING_COMMISSION_SUMMARY_VIEW,
     PERMISSIONS.DATA_EXPORT,
+    PERMISSIONS.MIS_VIEW,
+    PERMISSIONS.MIS_EXPORT,
   ],
   FIELD_AGENT: [PERMISSIONS.CASE_VIEW, PERMISSIONS.LOCATION_CAPTURE, PERMISSIONS.TASK_EXECUTE],
   KYC_VERIFIER: [PERMISSIONS.CASE_VIEW, PERMISSIONS.DASHBOARD_VIEW],
@@ -169,4 +180,6 @@ export const PERMISSION_META: Record<Permission, { label: string; group: string 
   'billing.view': { label: 'Billing & Commission — View', group: 'Billing' },
   'billing.commission_summary.view': { label: 'Commission Summary — View', group: 'Billing' },
   'data.export': { label: 'Data Export', group: 'Platform' },
+  'mis.view': { label: 'MIS — View', group: 'Reports' },
+  'mis.export': { label: 'MIS — Export', group: 'Reports' },
 };
