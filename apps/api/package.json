@@ -21,7 +21,7 @@
     "@crm2/logger": "workspace:*",
     "@crm2/sdk": "workspace:*",
     "@socket.io/redis-adapter": "^8.3.0",
-    "archiver": "^7.0.1",
+    "archiver": "^8.0.0",
     "bullmq": "^5.78.1",
     "docx": "^9.7.1",
     "exceljs": "^4.4.0",
@@ -41,7 +41,7 @@
   },
   "devDependencies": {
     "@crm2/test-utils": "workspace:*",
-    "@types/archiver": "^6.0.3",
+    "@types/archiver": "^8.0.0",
     "@types/express": "^5.0.6",
     "@types/multer": "^2.1.0",
     "@types/node": "^24",
