@@ -113,6 +113,19 @@ services:
       retries: 10
     restart: unless-stopped
 
+  # Malware scanning (FILE_UPLOAD-01, docs/audit/08-file-upload.md) — commented out like valkey above:
+  # the clamav/clamav image is heavy (~1GB) and needs internet access to pull its virus-definition DB on
+  # first boot, so it's opt-in rather than always-on in dev. Uncomment + set AV_SCAN_HOST=127.0.0.1 (and
+  # AV_SCAN_PORT if you changed the host port below) to exercise apps/api/src/platform/av.ts locally —
+  # unset (the default), every upload skips scanning exactly as before this existed.
+  # clamav:
+  #   image: clamav/clamav:stable
+  #   container_name: crm2_clamav
+  #   ports:
+  #     - '3310:3310'
+  #   healthcheck: { test: ['CMD', 'clamdcheck.sh'], interval: 30s, timeout: 10s, retries: 10, start_period: 90s }
+  #   restart: unless-stopped
+
 volumes:
   crm2_dev_pgdata:
   crm2_test_pgdata:

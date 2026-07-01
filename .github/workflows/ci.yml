@@ -113,8 +113,18 @@ jobs:
             || (echo 'openapi.json is stale — run `pnpm openapi` and commit it' && exit 1)
       # Contract tests — BOTH consumers must still pass (ADR-0011/0012). A change
       # cannot merge unless current Web AND current Mobile contracts hold.
+      #
+      # MOBILE_API_COMPATIBILITY-03 (docs/audit/19-mobile-api-compatibility.md): the old
+      # `... || echo 'not yet wired'` swallowed a REAL contract:mobile failure too, so this
+      # step could never actually block a merge despite its name. contract:mobile exists and
+      # is now unconditional (a real failure fails the job); contract:web stays `--if-present`
+      # only because no such script exists yet — that's a legitimate not-yet-built gate, not a
+      # silenced one. Root package.json's `contract:mobile` targets 8 modules; the module list
+      # itself is intentionally out of scope for this fix (that's MOBILE_API_COMPATIBILITY-02).
       - name: Contract tests (web + mobile)
-        run: pnpm run --if-present contract:web && pnpm run --if-present contract:mobile || echo 'contract tests not yet wired (activate with SDK phase)'
+        run: |
+          pnpm run --if-present contract:web
+          pnpm run contract:mobile
       # 9. E2E (Playwright) — runs in its own job below (needs a Postgres service + a
       # booted API/web stack, which `build` does not have).
 

@@ -46,6 +46,8 @@ services:
       start_period: 30s
     mem_limit: 4g
     logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
 
   minio:
     image: minio/minio:latest
@@ -65,6 +67,8 @@ services:
       start_period: 20s
     mem_limit: 1g
     logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
 
   minio-init:
     image: minio/mc:latest
@@ -80,6 +84,8 @@ services:
       "
     restart: 'no'
     logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
 
   # One-shot: apply the 66 idempotent SQL migrations (ON_ERROR_STOP) then the
   # seeds (best-effort). Runs from the repo root so the locations \copy FROM
@@ -103,6 +109,8 @@ services:
       - db/v2/migrate.sh
     restart: 'no'
     logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
 
   api:
     image: ${IMAGE_REGISTRY:-ghcr.io/acsdeveloper2025}/crm2-api:${IMAGE_TAG:-latest}
@@ -139,6 +147,8 @@ services:
     shm_size: 1gb
     mem_limit: 2g
     logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
 
   edge:
     image: ${IMAGE_REGISTRY:-ghcr.io/acsdeveloper2025}/crm2-web:${IMAGE_TAG:-latest}
@@ -163,6 +173,24 @@ services:
       start_period: 15s
     mem_limit: 256m
     logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+
+  # ---- FUTURE: malware scanning (enable with AV_SCAN_HOST set) --------------
+  # FILE_UPLOAD-01 (docs/audit/08-file-upload.md): magic-byte validation confirms a file's TYPE, never
+  # its content. apps/api/src/platform/av.ts scans every attachment/photo/avatar upload via this clamd
+  # sidecar's INSTREAM protocol when AV_SCAN_HOST=clamav is set; unset (today), uploads skip scanning
+  # exactly as before this existed — same commented-until-enabled pattern as valkey below.
+  # clamav:
+  #   image: clamav/clamav:stable
+  #   container_name: crm2_clamav
+  #   restart: unless-stopped
+  #   healthcheck: { test: ["CMD","clamdcheck.sh"], interval: 30s, timeout: 10s, retries: 10, start_period: 90s }
+  #   volumes: [clamavdata:/var/lib/clamav]
+  #   mem_limit: 2g
+  #   logging: *default-logging
+  #   security_opt: [no-new-privileges:true]
+  # api: { <<: *api-like, depends_on: { clamav: { condition: service_healthy } } }
 
   # ---- FUTURE: out-of-process job tier (enable with REDIS_QUEUE_URL set) -----
   # valkey:
@@ -183,6 +211,7 @@ volumes:
   certbot_webroot:
     name: crm2_certbot_webroot
   # valkeydata: { name: crm2_valkeydata }
+  # clamavdata: { name: crm2_clamavdata }
 
 secrets:
   firebase-service-account:

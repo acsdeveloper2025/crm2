@@ -544,6 +544,23 @@ describe.skipIf(!RUN)('auth API', () => {
       expect(typeof withCode.body.tokens.accessToken).toBe('string');
     });
 
+    // AUTHENTICATION-01 (docs/audit/01-authentication.md): wrong TOTP codes must count toward the
+    // SAME lockout counter as wrong passwords — a missing code (the normal first login leg) must not.
+    it('wrong TOTP codes count toward lockout; a missing code (the normal MFA prompt) does not', async () => {
+      await makeUser({ username: 'mfa_lock', role: 'MANAGER' });
+      const { secret } = await enrol('mfa_lock');
+      // the normal "password ok, now show the MFA prompt" leg — must NOT count as a failed attempt
+      for (let i = 0; i < 5; i++) expect((await login('mfa_lock')).status).toBe(401);
+      expect((await login('mfa_lock', PASSWORD, totp(secret, Date.now()))).status).toBe(200); // still not locked, counter reset by the success
+      // 5 WRONG codes — each is a real failed attempt (the 5th trips the lock itself, mirroring the
+      // password-lockout test above, which doesn't assert per-attempt status for the same reason)
+      for (let i = 0; i < 5; i++) await login('mfa_lock', PASSWORD, '000000');
+      // locked now — even the correct password+code is refused with 423
+      const locked = await login('mfa_lock', PASSWORD, totp(secret, Date.now()));
+      expect(locked.status).toBe(423);
+      expect(locked.body.error).toBe('ACCOUNT_LOCKED');
+    });
+
     it('a recovery code logs in once, then is burned (reuse → MFA_REQUIRED)', async () => {
       await makeUser({ username: 'rec_user', role: 'MANAGER' });
       const { recoveryCodes } = await enrol('rec_user');

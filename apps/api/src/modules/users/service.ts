@@ -40,6 +40,7 @@ import { randomUUID } from 'node:crypto';
 import { getStorage } from '../../platform/storage/index.js';
 import { getMailer } from '../../platform/mail/index.js';
 import { detectImage, MAX_IMAGE_BYTES } from '../../platform/image.js';
+import { scanBuffer } from '../../platform/av.js';
 
 /** Open role catalog (ADR-0022): the role query param is shape-checked, existence is the FK's job. */
 const ROLE_CODE_SHAPE = /^[A-Z][A-Z0-9_]{1,19}$/;
@@ -413,6 +414,8 @@ export const userService = {
       throw AppError.badRequest('INVALID_IMAGE', { reason: 'size' });
     const image = detectImage(bytes);
     if (!image) throw AppError.badRequest('INVALID_IMAGE', { reason: 'type' });
+    const scan = await scanBuffer(bytes);
+    if (!scan.clean) throw AppError.badRequest('MALWARE_DETECTED', { signature: scan.signature });
     const storage = getStorage();
     const key = `users/${id}/${randomUUID()}.${image.ext}`;
     await storage.put(key, bytes, image.type); // throws 503 here when unconfigured — before any DB write

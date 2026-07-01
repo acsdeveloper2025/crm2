@@ -13,6 +13,7 @@ import { emitTaskUpdate } from '../cases/case-events.js';
 import { fieldReportService } from '../fieldReports/service.js';
 import { AppError } from '../../platform/errors.js';
 import { detectAttachment } from '../../platform/file.js';
+import { scanBuffer } from '../../platform/av.js';
 import { processFieldPhoto, MAX_FIELD_PHOTO_BYTES, MAX_FIELD_PHOTOS } from '../../platform/photo.js';
 import { getStorage } from '../../platform/storage/index.js';
 import { enqueueReverseGeocode } from '../../platform/geocode/queue.js';
@@ -232,6 +233,8 @@ export const verificationTaskService = {
         const detected = detectAttachment(f.buffer);
         if (!detected || !detected.type.startsWith('image/'))
           throw AppError.badRequest('UNSUPPORTED_FILE_TYPE');
+        const scan = await scanBuffer(f.buffer);
+        if (!scan.clean) throw AppError.badRequest('MALWARE_DETECTED', { signature: scan.signature });
         // Transit check: the device's hash vs the bytes WE received (matches v1; logged, never rejected).
         const hashVerified = clientSha !== null && clientSha === sha256(f.buffer);
         if (clientSha && !hashVerified)

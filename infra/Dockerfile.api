@@ -30,6 +30,13 @@ COPY packages ./packages
 COPY db ./db
 RUN pnpm install --frozen-lockfile
 
+# INFRASTRUCTURE-01 (docs/audit/13-infrastructure.md): the app process itself never needs root — only
+# the preceding apt-get/corepack/pnpm-install steps do. `node:*-bookworm-slim` ships the `node` user
+# (uid 1000) out of the box. Chromium's own `--no-sandbox` (apps/api/src/platform/pdf/index.ts) is
+# unrelated to this — that's the browser's internal sandbox, not the OS process owner.
+RUN chown -R node:node /app
+USER node
+
 WORKDIR /app/apps/api
 EXPOSE 4000
 ENTRYPOINT ["/usr/bin/tini", "--"]

@@ -56,6 +56,12 @@ const EnvSchema = z
     // MUST be the `caseflow-mobile` project (the device's). Inert unless set: with no path the pusher is a
     // disabled no-op (the in-app + socket legs still deliver). The file lives under secrets/ (gitignored).
     FIREBASE_SERVICE_ACCOUNT_PATH: z.string().optional(),
+    // Malware scanning for attachment/photo/avatar uploads (FILE_UPLOAD-01, docs/audit/08-file-upload.md)
+    // — a clamd daemon's INSTREAM protocol, plain node:net, no new dependency. Inert unless
+    // AV_SCAN_HOST is set: with no host, scanBuffer() is a no-op (uploads still go through magic-byte
+    // validation, just not malware-scanned) — same pattern as every other optional external service here.
+    AV_SCAN_HOST: z.string().optional(),
+    AV_SCAN_PORT: z.coerce.number().int().positive().default(3310), // clamd's default INSTREAM port
     /** Export rows below this generate synchronously; at/above it require a background job (≥10k → report-worker). */
     EXPORT_JOB_THRESHOLD: z.coerce.number().int().positive().default(10000),
     /**

@@ -41,6 +41,7 @@ import { resolveScope, scopedEntityIds, type Actor } from '../../platform/scope/
 import { getStorage } from '../../platform/storage/index.js';
 import { composeFieldPhotoOverlay } from '../../platform/photo.js';
 import { detectAttachment, MAX_ATTACHMENT_BYTES } from '../../platform/file.js';
+import { scanBuffer } from '../../platform/av.js';
 import { logger } from '@crm2/logger';
 import type { NotifyInput } from '@crm2/sdk';
 import { notificationService, notifyTaskAssigned } from '../notifications/service.js';
@@ -740,6 +741,8 @@ export const caseService = {
     if (bytes.length > MAX_ATTACHMENT_BYTES) throw AppError.badRequest('FILE_TOO_LARGE');
     const kind = detectAttachment(bytes);
     if (!kind) throw AppError.badRequest('UNSUPPORTED_FILE_TYPE');
+    const scan = await scanBuffer(bytes);
+    if (!scan.clean) throw AppError.badRequest('MALWARE_DETECTED', { signature: scan.signature });
     const scope = await resolveScope(actor);
     if (!(await repo.caseVisible(caseId, scope))) throw AppError.notFound('CASE_NOT_FOUND');
     if (taskId !== undefined && !(await repo.taskInCase(caseId, taskId)))

@@ -9,6 +9,10 @@
 #
 # db + minio are stable singletons (named volumes) and are never rolled back.
 # Idempotent: re-runs cleanly. Secrets come ONLY from $ENV_FILE (never logged).
+#
+# TLS renewal is a SEPARATE cron-driven script, not part of this deploy path
+# (INFRASTRUCTURE-03, docs/audit/13-infrastructure.md) — see infra/prod/renew-cert.sh.
+# This script only ever verifies the cert file exists below; it never renews it.
 # =============================================================================
 set -euo pipefail
 

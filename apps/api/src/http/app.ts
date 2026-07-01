@@ -50,6 +50,20 @@ import { timeRoutes } from '../modules/time/routes.js';
 const NS_PER_MS = 1e6;
 const MS_ROUNDING = 100; // 2-decimal ms
 
+/** Security response headers (MERGED-SECURITY-HEADERS, docs/audit/09-api-security.md — independently
+ *  raised by 4 audits). Every response here is JSON, never rendered as HTML/script/style, so a fully
+ *  locked-down `default-src 'none'` is correct (the browser-rendered SPA has its own, separate CSP set
+ *  by nginx in infra/prod/nginx.conf, which does need to allow its own scripts/styles/fonts). */
+function securityHeaders() {
+  return (_req: Request, res: Response, next: NextFunction): void => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+    next();
+  };
+}
+
 /** Observability (Part 36): every API request logs requestId, duration, status, userId. */
 function requestObservability() {
   return (req: Request, res: Response, next: NextFunction): void => {
@@ -82,6 +96,7 @@ export function createApp(opts: { enableTestAuth?: boolean } = {}): Express {
   // (required for per-IP rate limiting + correct audit IPs), not `true` which would let a client
   // spoof X-Forwarded-For to evade the limiters (ADR-0076).
   app.set('trust proxy', 1);
+  app.use(securityHeaders());
   app.use(express.json());
   if (opts.enableTestAuth ?? process.env['NODE_ENV'] !== 'production') app.use(testAuth());
   app.use(authenticate()); // real Bearer auth wins over the dev seam when a valid token is present

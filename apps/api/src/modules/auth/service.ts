@@ -188,8 +188,18 @@ export const authService = {
       throw isLocked(after.lockedUntil) ? accountLocked() : invalidCreds();
     }
     // MFA challenge: an enrolled user must supply a valid TOTP/recovery code in the same request.
-    // A missing/invalid code returns 401 MFA_REQUIRED so the client can re-login with `mfaCode`.
-    if (creds.mfaEnrolled && !(v.mfaCode && (await verifyMfaCode(creds.id, v.mfaCode)))) throw mfaRequired();
+    // A missing code is the normal first leg (password verified, prompting for the second factor) —
+    // not an attempt, so it doesn't touch the lockout counter. A *wrong* code is a real failed
+    // attempt (AUTHENTICATION-01, docs/audit/01-authentication.md): without this, an attacker holding
+    // a valid password could grind the 6-digit TOTP indefinitely, bounded only by the per-IP flood
+    // limiter. Mirrors the password branch above — same counter, same cooldown, fails closed.
+    if (creds.mfaEnrolled) {
+      if (!v.mfaCode) throw mfaRequired();
+      if (!(await verifyMfaCode(creds.id, v.mfaCode))) {
+        const after = await repo.recordFailedLogin(creds.id, MAX_FAILED_LOGINS, LOCKOUT_COOLDOWN_S);
+        throw isLocked(after.lockedUntil) ? accountLocked() : mfaRequired();
+      }
+    }
     await repo.resetLoginState(creds.id); // success clears the failed-attempt counter
     // Per-role policy (ADR-0022/0045): rotation expiry + the absolute session cap. Resolved once,
     // before issuing tokens, so the new refresh token can carry its hard deadline (null = no cap).
