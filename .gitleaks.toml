@@ -5,10 +5,20 @@ title = "CRM2 gitleaks"
 useDefault = true
 
 [allowlist]
-description = "Local-dev placeholders only — never real secrets."
+description = "Local-dev placeholders + known-fake test fixtures — never real secrets."
+# Match allowlist regexes against the whole LINE (not just the captured token), so a false positive
+# can be cleared by its surrounding context. The two dev-placeholder regexes still match — any line
+# containing them matches too.
+regexTarget = "line"
 regexes = [
   '''dev-only-insecure-secret-change-me''',
   '''postgresql://postgres@127\.0\.0\.1''',
+  # Wave-3 AUTHENTICATION-03 entropy-floor UNIT TEST (packages/config/src/index.test.ts) uses
+  # deliberately fake, high-entropy-looking strings so the generic-api-key rule flags them. Not real.
+  '''Zt8bQmP2vX9nK4wR7yL1cH6sJ0dF3gT5aE8iU2oN4qW7''',
+  '''Hq3vXpL9wK2mN7bR5tY8dJ1sF4gU6oE0aC3iZ7''',
+  # apps/api/src/modules/auth/routes.ts — a CODE COMMENT; generic-api-key trips on "API_SECURITY-02:".
+  '''API_SECURITY-02: enroll/verify/disable are account-security-sensitive''',
 ]
 paths = [
   '''pnpm-lock\.yaml''',
