@@ -25,6 +25,7 @@ export * from './system.js';
 export * from './auth.js';
 export * from './cases.js';
 export * from './tasks.js';
+export * from './mis.js';
 export * from './fieldMonitoring.js';
 export * from './dashboard.js';
 export * from './notifications.js';

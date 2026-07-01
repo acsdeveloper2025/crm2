@@ -10,6 +10,7 @@ import { enrichAuth } from './enrichAuth.js';
 import { authRoutes } from '../modules/auth/routes.js';
 import { caseRoutes } from '../modules/cases/routes.js';
 import { taskRoutes } from '../modules/tasks/routes.js';
+import { misRoutes } from '../modules/mis/routes.js';
 import { verificationTaskRoutes } from '../modules/verification-tasks/routes.js';
 import { fieldMonitoringRoutes } from '../modules/field-monitoring/routes.js';
 import { dashboardRoutes } from '../modules/dashboard/routes.js';
@@ -136,6 +137,7 @@ export function createApp(opts: { enableTestAuth?: boolean } = {}): Express {
   mount('/api/v2/cases', caseRoutes);
   mount('/api/v2/sync', syncRoutes);
   mount('/api/v2/tasks', taskRoutes);
+  mount('/api/v2/mis', misRoutes);
   mount('/api/v2/verification-tasks', verificationTaskRoutes); // field-execution (ADR-0032 slice 2c)
   mount('/api/v2/field-monitoring', fieldMonitoringRoutes);
   mount('/api/v2/dashboard', dashboardRoutes);

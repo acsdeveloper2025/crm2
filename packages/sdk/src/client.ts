@@ -6,6 +6,7 @@ import type {
 } from './verificationUnit.js';
 import type { Paginated, PageQuery } from './pagination.js';
 import { pageQueryToParams } from './pagination.js';
+import type { MisReportTypeMeta, MisRow } from './mis.js';
 import type { ExportRequest, ExportResult } from './export.js';
 import { exportQueryToParams } from './export.js';
 import type { Option } from './options.js';
@@ -718,6 +719,21 @@ export function createSdk(opts: SdkOptions) {
       bulkAssign: (input: BulkAssignInput) =>
         req<BulkAssignResult>('POST', '/api/v2/tasks/bulk-assign', input),
       export: (r: ExportRequest) => reqBlob('tasks', r),
+    },
+    /** MIS (ADR-0084): predefined report types + a code-owned column allow-list. `reportTypes` is the
+     *  catalog the picker renders (money columns present only for billing.view holders); `rows` fetches
+     *  a paginated report, optionally restricted to the given column keys. */
+    mis: {
+      reportTypes: () => req<MisReportTypeMeta[]>('GET', '/api/v2/mis/report-types'),
+      rows: (type: string, q: PageQuery = {}, cols?: string[]) => {
+        const params = pageQueryToParams(q);
+        if (cols && cols.length) params.set('cols', cols.join(','));
+        const qs = params.toString();
+        return req<Paginated<MisRow>>(
+          'GET',
+          `/api/v2/mis/${encodeURIComponent(type)}/rows${qs ? `?${qs}` : ''}`,
+        );
+      },
     },
     /** Field Monitoring console (ADR-0026): field executives in the actor's hierarchy scope. */
     fieldMonitoring: {
