@@ -674,4 +674,49 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
       expect(res.body).toBeNull();
     });
   });
+
+  // ── device→office lifecycle notifications (ADR-0027) ──
+  // A field agent's device action must reach the OFFICE assigner (assigned_by) on the durable feed —
+  // previously these paths only fired the silent office-refetch fan-out (emitTaskUpdate), so the web
+  // bell stayed empty for field submit/revoke. Recipient = assigned_by; the acting agent is skipped.
+  describe('device→office lifecycle notifications (ADR-0027)', () => {
+    it('device submit/complete notifies the office assigner (TASK_SUBMITTED_FOR_REVIEW), not the actor', async () => {
+      const { taskId, agent } = await seedAssignedTask('NDS');
+      const office = await createUser({ username: 'off_nds', name: 'OFFICE NDS', role: 'BACKEND_USER' });
+      await db!.pool.query(`UPDATE case_tasks SET assigned_by = $1::uuid WHERE id = $2`, [office, taskId]);
+      const h = hdr('FIELD_AGENT', agent);
+      expect((await request(app).post(`/api/v2/verification-tasks/${taskId}/start`).set(h)).status).toBe(200);
+      expect((await request(app).post(`/api/v2/verification-tasks/${taskId}/complete`).set(h)).status).toBe(
+        200,
+      );
+
+      const feed = await request(app).get('/api/v2/notifications').set(hdr('BACKEND_USER', office));
+      expect(feed.status).toBe(200);
+      expect(feed.body.items[0]).toMatchObject({
+        type: 'TASK_SUBMITTED_FOR_REVIEW',
+        actionType: 'OPEN_TASK',
+        payload: { taskId },
+      });
+      // the acting field agent is NOT notified about their own submission
+      const agentFeed = await request(app).get('/api/v2/notifications').set(h);
+      expect(
+        (agentFeed.body.items as { type: string }[]).some((n) => n.type === 'TASK_SUBMITTED_FOR_REVIEW'),
+      ).toBe(false);
+    });
+
+    it('device revoke notifies the office assigner (TASK_REVOKED)', async () => {
+      const { taskId, agent } = await seedAssignedTask('NDR');
+      const office = await createUser({ username: 'off_ndr', name: 'OFFICE NDR', role: 'BACKEND_USER' });
+      await db!.pool.query(`UPDATE case_tasks SET assigned_by = $1::uuid WHERE id = $2`, [office, taskId]);
+      const res = await request(app)
+        .post(`/api/v2/verification-tasks/${taskId}/revoke`)
+        .set(hdr('FIELD_AGENT', agent))
+        .send({ reason: 'cannot locate the address' });
+      expect(res.status).toBe(200);
+
+      const feed = await request(app).get('/api/v2/notifications').set(hdr('BACKEND_USER', office));
+      expect(feed.status).toBe(200);
+      expect(feed.body.items[0]).toMatchObject({ type: 'TASK_REVOKED', payload: { taskId } });
+    });
+  });
 });

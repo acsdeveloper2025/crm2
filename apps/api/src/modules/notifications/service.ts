@@ -49,11 +49,21 @@ function buildPushData(row: Notification): Record<string, string> {
  * Best-effort FCM "wake-leg": push the durable row to the recipient's active device tokens so a
  * killed/backgrounded app is woken (the socket leg only reaches a foregrounded app). Prunes tokens FCM
  * rejects. Returns true iff FCM accepted >=1 token (optimistic "delivered", matching v1). Never throws.
+ *
+ * A `notification` block (title/body) IS included so a backgrounded/killed device renders an OS tray
+ * item — the device's background FCM handler only acts on the silent LOCATION_REQUEST data-ping and
+ * drops every other data-only message, so a pure data payload would be invisible off-foreground (the
+ * device itself documents this: non-LOCATION_REQUEST messages surface "through the system tray when
+ * app is backgrounded WITH a notification block"). The silent LOCATION_REQUEST ping stays data-only
+ * (it omits the notification arg), so its LOCKED byte-compatible shape is unchanged.
  */
 async function deliverPush(userId: string, row: Notification): Promise<boolean> {
   const tokens = await tokenRepository.activeTokensFor(userId);
   if (tokens.length === 0) return false;
-  const result = await getPusher().sendDataMessage(tokens, buildPushData(row));
+  const result = await getPusher().sendDataMessage(tokens, buildPushData(row), {
+    title: row.title,
+    body: row.body ?? row.message ?? undefined,
+  });
   if (result.invalidTokens.length > 0) await tokenRepository.deactivate(result.invalidTokens);
   return result.successCount > 0;
 }
@@ -272,4 +282,77 @@ export function notifyTaskAssigned(task: AssignedTaskRef): void {
         error: e instanceof Error ? e.message : String(e),
       });
     });
+}
+
+/** The minimal task shape the lifecycle producers read (structurally satisfied by `CaseTaskView`). */
+type TaskRef = {
+  id: string;
+  caseId: string;
+  caseNumber: string;
+  taskNumber: string;
+  unitName: string;
+};
+
+/**
+ * Shared fire-and-forget shaper for a per-recipient task-lifecycle notification (ADR-0027). The ONE
+ * place TASK_REVOKED / TASK_SUBMITTED_FOR_REVIEW are shaped, so every trigger notifies identically.
+ * No-op when there is no recipient or the recipient IS the actor (never notify someone about their own
+ * action — mirrors the office-complete self-skip). A failed notification must NEVER break the task flow.
+ */
+function notifyTaskLifecycle(
+  recipientUserId: string | null,
+  actorUserId: string,
+  task: TaskRef,
+  type: 'TASK_REVOKED' | 'TASK_SUBMITTED_FOR_REVIEW',
+  title: string,
+): void {
+  if (!recipientUserId || recipientUserId === actorUserId) return;
+  notificationService
+    .notify({
+      userId: recipientUserId,
+      type,
+      title,
+      body: `${task.taskNumber} · ${task.unitName}`,
+      payload: {
+        caseId: task.caseId,
+        caseNumber: task.caseNumber,
+        taskId: task.id,
+        taskNumber: task.taskNumber,
+      },
+      actionType: 'OPEN_TASK',
+    })
+    .catch((e: unknown) => {
+      logger.warn('notification emit failed', {
+        type,
+        userId: recipientUserId,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    });
+}
+
+/**
+ * Producer (ADR-0027): a task was REVOKED — tell the affected user. Two triggers, one shape:
+ * office revoke → the (old) FIELD assignee is told their task was taken (the device's socket handler
+ * wipes it on `TASK_REVOKED`); device revoke → the OFFICE assigner is told the agent handed it back.
+ */
+export function notifyTaskRevoked(task: TaskRef, recipientUserId: string | null, actorUserId: string): void {
+  notifyTaskLifecycle(recipientUserId, actorUserId, task, 'TASK_REVOKED', 'Task revoked');
+}
+
+/**
+ * Producer (ADR-0027): a field agent SUBMITTED the verification from the device (submit==complete) —
+ * tell the OFFICE user who dispatched it (assigned_by) that it's ready for office review/finalize.
+ */
+export function notifyTaskSubmitted(
+  task: TaskRef,
+  recipientUserId: string | null,
+  actorUserId: string,
+): void {
+  notifyTaskLifecycle(
+    recipientUserId,
+    actorUserId,
+    task,
+    'TASK_SUBMITTED_FOR_REVIEW',
+    'Task submitted for review',
+  );
 }

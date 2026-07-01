@@ -1754,6 +1754,29 @@ describe.skipIf(!RUN)('cases API', () => {
       expect(blocked.status).toBe(409);
       expect(blocked.body.error).toBe('INVALID_TRANSITION');
     });
+
+    it('ADR-0027: office revoke notifies the (old) field assignee (TASK_REVOKED, device wipes the task)', async () => {
+      const { caseId, taskId } = await seedCaseWithTask('RVN');
+      const agent = await createUser({ username: 'fa_rvn', name: 'FA RVN', role: 'FIELD_AGENT' });
+      await db!.pool.query(
+        `UPDATE case_tasks SET status = 'ASSIGNED', assigned_to = $1::uuid, version = version + 1 WHERE id = $2`,
+        [agent, taskId],
+      );
+      const ok = await request(app)
+        .post(`/api/v2/cases/${caseId}/tasks/${taskId}/revoke`)
+        .set(SA)
+        .send({ reason: 'reassigning' });
+      expect(ok.status).toBe(200);
+      const feed = await request(app)
+        .get('/api/v2/notifications')
+        .set({ 'x-test-auth': `FIELD_AGENT:${agent}` });
+      expect(feed.status).toBe(200);
+      expect(feed.body.items[0]).toMatchObject({
+        type: 'TASK_REVOKED',
+        actionType: 'OPEN_TASK',
+        payload: { taskId, caseNumber: expect.stringMatching(/^CASE-/) },
+      });
+    });
   });
 
   describe('reference attachments (B2)', () => {

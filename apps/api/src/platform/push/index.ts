@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
-import type { Messaging } from 'firebase-admin/messaging';
+import type { Messaging, MulticastMessage } from 'firebase-admin/messaging';
 import type { Env } from '@crm2/config';
 import { loadEnv } from '@crm2/config';
 import { logger } from '@crm2/logger';
@@ -20,9 +20,22 @@ export interface PushResult {
   invalidTokens: string[];
 }
 
+/** Optional user-facing tray block. When present, a backgrounded/killed device renders an OS
+ *  notification (a pure data-only message is invisible off-foreground on the device). Omit it for the
+ *  silent LOCATION_REQUEST data-ping to keep that LOCKED shape byte-compatible. */
+export interface PushNotification {
+  title: string;
+  body?: string | undefined;
+}
+
 export interface Pusher {
-  /** Silent data-only message to FCM tokens (no notification block). Empty token list → no-op. */
-  sendDataMessage(tokens: string[], data: Record<string, string>): Promise<PushResult>;
+  /** Data message to FCM tokens; pass `notification` to also render an OS tray item (off-foreground).
+   *  Empty token list → no-op. Omitting `notification` sends a silent data-only message (LOCATION_REQUEST). */
+  sendDataMessage(
+    tokens: string[],
+    data: Record<string, string>,
+    notification?: PushNotification,
+  ): Promise<PushResult>;
   /** True once the Firebase Admin SDK has successfully initialized (for the health probe). */
   ready(): boolean;
 }
@@ -96,7 +109,7 @@ function createFirebasePusher(saPath: string): Pusher {
   }
 
   return {
-    async sendDataMessage(tokens, data) {
+    async sendDataMessage(tokens, data, notification) {
       if (tokens.length === 0) {
         // Warm-up / no recipients: still attempt init so the health probe is truthful.
         try {
@@ -112,9 +125,18 @@ function createFirebasePusher(saPath: string): Pusher {
       } catch {
         return EMPTY; // init failure must never throw into the caller (in-app + socket already delivered)
       }
-      // Silent data-only message, byte-compatible with the LOCKED device contract: data payload,
-      // android.priority high, NO notification block.
-      const res = await fcm.sendEachForMulticast({ tokens, data, android: { priority: 'high' } });
+      // Data payload + high priority (byte-compatible with the LOCKED device contract). A user-facing
+      // send also carries a `notification` block so a backgrounded/killed device renders an OS tray
+      // item; the silent LOCATION_REQUEST ping omits it and stays a pure data-only message.
+      const message: MulticastMessage = { tokens, data, android: { priority: 'high' } };
+      if (notification) {
+        // Build a clean block (body omitted when absent) — the FCM Notification type wants `body?: string`,
+        // not an explicit `undefined` (exactOptionalPropertyTypes).
+        message.notification = notification.body
+          ? { title: notification.title, body: notification.body }
+          : { title: notification.title };
+      }
+      const res = await fcm.sendEachForMulticast(message);
       const invalidTokens: string[] = [];
       res.responses.forEach((r, i) => {
         const code = r.error?.code;

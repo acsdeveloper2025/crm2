@@ -44,7 +44,7 @@ import { detectAttachment, MAX_ATTACHMENT_BYTES } from '../../platform/file.js';
 import { scanBuffer } from '../../platform/av.js';
 import { logger } from '@crm2/logger';
 import type { NotifyInput } from '@crm2/sdk';
-import { notificationService, notifyTaskAssigned } from '../notifications/service.js';
+import { notificationService, notifyTaskAssigned, notifyTaskRevoked } from '../notifications/service.js';
 
 /**
  * Notification producer (ADR-0027): fire-and-forget. A notification must NEVER break the core
@@ -569,6 +569,10 @@ export const caseService = {
     const state = await repo.taskAssignmentState(caseId, taskId, await resolveScope(actor));
     if (!state) throw AppError.notFound('TASK_NOT_FOUND');
     const view = await repo.revokeTaskInPlace(caseId, taskId, actor.userId, v.reason);
+    // ADR-0027: tell the (old) FIELD assignee their task was revoked — the durable row + socket wake
+    // the device to drop it (revokeTaskInPlace does not clear assigned_to, so view.assignedTo == the
+    // old assignee). No-op if unassigned or self-revoked. emitTaskUpdate still live-refreshes the office.
+    notifyTaskRevoked(view, state.assignedTo, actor.userId);
     emitTaskUpdate(view); // office REVOKED + case rollup → office views refetch live
     return view;
   },

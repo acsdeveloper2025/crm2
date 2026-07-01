@@ -10,6 +10,7 @@ import {
 import { logger } from '@crm2/logger';
 import { caseRepository as repo } from '../cases/repository.js';
 import { emitTaskUpdate } from '../cases/case-events.js';
+import { notifyTaskSubmitted, notifyTaskRevoked } from '../notifications/service.js';
 import { fieldReportService } from '../fieldReports/service.js';
 import { AppError } from '../../platform/errors.js';
 import { detectAttachment } from '../../platform/file.js';
@@ -61,6 +62,13 @@ async function ownedCaseId(taskId: string, actor: Actor): Promise<string> {
   const t = await repo.taskForAssignee(taskId, actor.userId);
   if (!t) throw AppError.notFound('TASK_NOT_FOUND');
   return t.caseId;
+}
+
+/** The OFFICE user who dispatched this task (assigned_by) — the recipient of a device→office lifecycle
+ *  notification (ADR-0027). An owned/assigned task always has assigned_by set; null → the producer no-ops. */
+async function assignerOf(caseId: string, taskId: string): Promise<string | null> {
+  const state = await repo.taskAssignmentState(caseId, taskId);
+  return state?.assignedBy ?? null;
 }
 
 // ── Device FIELD-PHOTO upload (ADR-0034) ──
@@ -119,19 +127,20 @@ export const verificationTaskService = {
   },
 
   async complete(taskId: string, actor: Actor): Promise<CaseTaskView> {
-    const view = await repo.submitTaskByDevice(await ownedCaseId(taskId, actor), taskId, actor.userId);
+    const caseId = await ownedCaseId(taskId, actor);
+    const view = await repo.submitTaskByDevice(caseId, taskId, actor.userId);
+    // ADR-0027: tell the OFFICE assigner the field task was submitted and awaits review/finalize.
+    notifyTaskSubmitted(view, await assignerOf(caseId, taskId), actor.userId);
     emitTaskUpdate(view); // device COMPLETED + case rollup → office views refetch live
     return view;
   },
 
   async revoke(taskId: string, input: unknown, actor: Actor): Promise<CaseTaskView> {
     const v = RevokeSchema.parse(input);
-    const view = await repo.revokeTaskInPlace(
-      await ownedCaseId(taskId, actor),
-      taskId,
-      actor.userId,
-      v.reason,
-    );
+    const caseId = await ownedCaseId(taskId, actor);
+    const view = await repo.revokeTaskInPlace(caseId, taskId, actor.userId, v.reason);
+    // ADR-0027: tell the OFFICE assigner the field agent handed the task back (needs reassignment).
+    notifyTaskRevoked(view, await assignerOf(caseId, taskId), actor.userId);
     emitTaskUpdate(view); // device REVOKED + case rollup → office views refetch live
     return view;
   },
@@ -185,6 +194,9 @@ export const verificationTaskService = {
     // ADR-0080: freeze the field-report narrative at submission — the immutable record of the agent's
     // report. Best-effort (never fails the submission); the read returns this snapshot from now on.
     await fieldReportService.snapshot(caseId, taskId, actor.userId);
+    // ADR-0027: this is the real device "Submit Verification" path → tell the OFFICE assigner it's
+    // submitted and awaits review/finalize (the device never calls /complete).
+    notifyTaskSubmitted(view, await assignerOf(caseId, taskId), actor.userId);
     emitTaskUpdate(view); // form submit==complete → office views refetch live
     return view;
   },

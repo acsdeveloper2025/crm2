@@ -231,11 +231,15 @@ describe.skipIf(!RUN)('notifications feed (ADR-0027)', () => {
 
   // ── FCM wake-leg + delivery lifecycle (ADR-0027 phase 2) ──
   describe('FCM push + delivery lifecycle', () => {
-    let captured: { tokens?: string[]; data?: Record<string, string> };
+    let captured: {
+      tokens?: string[];
+      data?: Record<string, string>;
+      notification?: { title: string; body?: string | undefined };
+    };
     function fakePusher(result: PushResult): Pusher {
       return {
-        sendDataMessage(tokens, data) {
-          captured = { tokens, data };
+        sendDataMessage(tokens, data, notification) {
+          captured = { tokens, data, ...(notification ? { notification } : {}) };
           return Promise.resolve(result);
         },
         ready: () => true,
@@ -276,6 +280,9 @@ describe.skipIf(!RUN)('notifications feed (ADR-0027)', () => {
         notificationId: row.id,
       });
       expect(captured.data).not.toHaveProperty('actionUrl');
+      // A user-facing push carries a notification block so a backgrounded/killed device renders an OS
+      // tray item (a pure data-only message is dropped off-foreground by the device's background handler).
+      expect(captured.notification).toEqual({ title: 'New task assigned', body: 'VT-1 · Unit A' });
       expect(row.deliveryStatus).toBe('DELIVERED');
       expect(row.sentAt).not.toBeNull();
       expect(row.deliveredAt).not.toBeNull();
