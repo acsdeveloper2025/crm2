@@ -30,6 +30,7 @@ import { SystemPage } from './features/system/SystemPage.js';
 import { CasesPage } from './features/cases/CasesPage.js';
 import { DashboardPage } from './features/dashboard/DashboardPage.js';
 import { PipelinePage } from './features/pipeline/PipelinePage.js';
+import { MisPage } from './features/mis/MisPage.js';
 import { FieldMonitoringPage } from './features/fieldMonitoring/FieldMonitoringPage.js';
 import { DedupePage } from './features/dedupe/DedupePage.js';
 import { CaseCreatePage } from './features/cases/CaseCreatePage.js';
@@ -101,6 +102,7 @@ export function App() {
         <Route path="/security" element={<SecurityPage />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/pipeline" element={<PipelinePage />} />
+        <Route path="/mis" element={<MisPage />} />
         <Route path="/field-monitoring" element={<FieldMonitoringPage />} />
         <Route path="/dedupe" element={<DedupePage />} />
         <Route path="/cases" element={<CasesPage />} />
