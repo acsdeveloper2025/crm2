@@ -35,9 +35,10 @@ user toggles/filters/groups/exports — no SQL grammar, no admin-authored column
   duplicate / wrong-type key → 400 (MIS does its own strict validation, not the lenient platform helpers).
   Filter values + LIMIT/OFFSET are bound; `ORDER BY` direction is a switch; `form_data` access is fixed
   fragments only (**no request-supplied jsonb path**). Injection surface removed by construction.
-- **Formats:** Tabular + Summary only. Summary sums reuse billing's **exact** expressions
-  (`FILTER(status='COMPLETED') · × bill_count · COALESCE(snapshot, live)`); a test asserts MIS summary ==
-  `/billing` for the same filter.
+- **Formats:** Tabular + Summary only. Summary sums reuse billing's **exact** expressions, copied verbatim
+  from the shared laterals (`FILTER(status='COMPLETED') · × bill_count · COALESCE(snapshot, live)`). A
+  summary money-value equality test vs the `/billing` endpoint is a tracked follow-up (registry
+  §MIS-2026-07-01); the shipped tests guard the money-gate + every column's SQL validity.
 - **Base predicate = all in-scope work, NOT the billing status filter.** Reuse the laterals for money only;
   the billing read-model's `status IN ('SUBMITTED','COMPLETED')` is **not** inherited (it would hide open
   work). Status is a user filter; open rows show `—` for money.

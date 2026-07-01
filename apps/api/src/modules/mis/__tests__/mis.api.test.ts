@@ -251,4 +251,20 @@ describe.skipIf(!RUN)('MIS API (ADR-0084)', () => {
     expect(tl.status).toBe(200);
     if (tl.body.items[0]) expect('caseBillTotal' in tl.body.items[0]).toBe(false);
   });
+
+  it('every catalog column has valid SQL — selecting ALL columns (rows + export) returns 200, both types', async () => {
+    // Guards the non-default projection surface: a column whose sql references a dropped/renamed DB
+    // column (e.g. the removed verification_units.kind) would 500 here. Exercises every column.
+    await seedCaseWithTasks('ALLCOLS', 1);
+    const cat = seeded<MisReportTypeMeta[]>(await request(app).get('/api/v2/mis/report-types').set(SA));
+    for (const rt of cat) {
+      const cols = rt.columns.map((c) => c.key).join(',');
+      const rows = await request(app).get(`/api/v2/mis/${rt.type}/rows?cols=${cols}`).set(SA);
+      expect(rows.status, `${rt.type} rows all-cols`).toBe(200);
+      const exp = await request(app)
+        .get(`/api/v2/mis/${rt.type}/export?format=csv&mode=all&cols=${cols}`)
+        .set(SA);
+      expect(exp.status, `${rt.type} export all-cols`).toBe(200);
+    }
+  });
 });

@@ -1767,3 +1767,27 @@ ceiling noted (PERFORMANCE-03 RATCHET) · status enums sourced from the DB CHECK
 **Net (design review):** approach upheld; 4 FIXED-IN-DESIGN clusters, 2 DEFERRED (async export, bank
 data-model), 1 ACCEPTED (PII export, owner-signed). Nothing silently dropped; FIXED-IN-DESIGN items are
 enforced by tests at their build slice.
+
+### Post-ship CEO/CTO/security/code-quality audit (2026-07-01, 4-lens, on the SHIPPED code)
+Security **GO** (no injection/money-leak/IDOR path survived; PII matches the accepted set) · CTO/architecture
+**GO** (conforms to ADR-0084 + governance; zero new deps; additive API; mig 0109 parity) · CEO/product **GO**
+(all owner asks met; 50 task / 25 case columns; simpler than the removed engine) · code-quality initially
+**NO-GO** → fixed. Dispositions:
+- **MIS-9 · `unitKind` → dropped `verification_units.kind` (HIGH runtime 500) — ✅ FIXED.** `reportTypes.ts`
+  had a `col('unitKind', … 'vu.kind')` referencing the column dropped by ADR-0070/mig 0097; not
+  default-visible so `verify` shipped green, but selecting/filtering "Unit Kind" would 500 on prod. Removed
+  the column (`worker_role` is the ADR-0070 discriminator) + added an **all-columns rows/export guard test**
+  (both report types) so any dropped/renamed column now fails CI. Fixed post-ship, re-verified.
+- **MIS-10 · Doc-integrity (2 LOW) — ✅ FIXED.** (a) ADR-0084 + spec claimed "a test asserts MIS summary ==
+  /billing" — that value-equality test was never written; softened the claim to reality (money SQL copied
+  verbatim from the billing laterals; money-gate + all-columns SQL-validity tests shipped) and logged the
+  equality test as a tracked follow-up (**MIS-11**, below). (b) spec §4/§13 said "conditional 1:1-join
+  composition" — the repo uses a fixed always-on 1:1 FROM (safe, no fan-out); corrected the wording. Also
+  removed the stale `unit_kind` from spec §8a.
+- **MIS-11 · Summary money-value equality test vs `/billing` — 🟡 DEFERRED (LOW).** Differing group grains
+  (MIS group-by-dimension vs billing field-user×period) make a literal endpoint-equality assertion
+  non-trivial; the money SQL is verbatim-copied from the shared laterals + the money-gate/all-columns tests
+  cover it. Add a seeded rated-task money-value test when convenient.
+
+**Audit verdict: GO** — one HIGH (dead column) found + fixed post-ship with a regression guard; remainder LOW
+doc-integrity (fixed) + one DEFERRED LOW test. Feature is sound.

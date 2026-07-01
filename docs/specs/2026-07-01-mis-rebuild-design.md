@@ -168,7 +168,8 @@ keys and 1-to-many columns are excluded by construction.
   (PENDING/ASSIGNED/IN_PROGRESS/SUBMITTED/COMPLETED/REVOKED/CANCELLED — enum from the DB CHECK),
   `task_verification_outcome ★` (official per-task result POSITIVE/NEGATIVE/REFER/FRAUD), `task_remark`,
   `visit_type`, `task_origin`, `priority`, `dispatch_address`, `trigger`, `latitude`, `longitude`.
-- **Unit / CPV (1:1):** `unit_category`, `unit_kind`, `worker_role`, `billing_profile`, `required_photos`,
+- **Unit / CPV (1:1):** `unit_category`, `worker_role` (the discriminator — `verification_units.kind` was
+  dropped by ADR-0070/mig 0097, so no `unit_kind` column), `billing_profile`, `required_photos`,
   `pii_sensitive`, `bill_count ★`.
 - **Rate & money (laterals, $):** `field_rate_type ★` (code — NOT money), `client_rate_type`,
   `rate_type_name`, `rate_type_category`, **`bill_amount ★ $`**, **`bill_line_amount $`** (`bill_amount ×
@@ -190,7 +191,10 @@ keys and 1-to-many columns are excluded by construction.
 `assignee`; outputs `count` + (gated) money sums using billing's **exact** expressions:
 `SUM(bill_amount × bill_count) FILTER (WHERE status='COMPLETED')`,
 `SUM(COALESCE(ct.commission_amount, com.commission_amount) × bill_count)`. FROM stays 1:1 + laterals so sums
-are exact. A test asserts these totals equal `/billing` for the same filter.
+are exact. The money SQL is copied verbatim from the billing laterals; the shipped tests guard the money-gate
++ every column's SQL validity (all-columns rows/export), and a summary money-value equality test vs the
+`/billing` endpoint is a tracked follow-up (registry §MIS-2026-07-01, differing group grains make a literal
+endpoint-equality assertion non-trivial).
 
 ### 8b — `CASE_OPERATIONAL` (one row per case — slice 5)
 - **Case (1:1):** `case_number ★`, `client_name ★`, `product_name ★`, `case_status ★`, `case_verdict ★`
@@ -258,15 +262,16 @@ report types).
 - **S0 — RBAC.** `mis.view` + `mis.export` in `@crm2/access` (+ PERMISSION_META "Reports"); mig `0109` seed.
   Tests: matrix parity, default-deny.
 - **S1a — Registry + rows query (the risky core).** Report-type registry + `TASK_OPERATIONAL` (§8a) +
-  repository: conditional 1:1-join composition, scope predicate, laterals-in/out by `billing.view`,
+  repository: a fixed 1:1-join FROM (all joins are 1:1 → no fan-out, so always-on is safe; not per-column
+  conditional), scope predicate, laterals-in/out by `billing.view`,
   bound-param filters, `ASC|DESC` switch, strict key validation. Tests: out-of-scope ⇒ 0 rows +
   `totalCount:0` · unknown/duplicate/wrong-type key ⇒ 400 · money dropped (+ not sortable/filterable/
   groupable) without `billing.view` · no 1-to-many fan-out (row count stable) · `form_data` fixed-fragment
   only.
 - **S1b — Wiring.** service/controller/routes (`/report-types` gated, `/:type/rows`) + SDK `mis.ts` +
   **explicit `pnpm openapi`** step (note: not in `verify`). Tests: contract.
-- **S2 — Summary.** `/:type/summary` group-by allow-listed key; billing-exact money sums; **MIS-summary ==
-  `/billing` equality test**; money-sum gated.
+- **S2 — Summary.** `/:type/summary` group-by allow-listed key; billing-exact money sums; money-sum gated.
+  (A summary money-value equality test vs `/billing` is a tracked follow-up — §MIS-2026-07-01.)
 - **S3 — Web page.** DataGrid + report-type switch + filter bar (incl. assignee + created/completed date
   mode) + Columns picker (grouped, select-all, money lock) + Tabular/Summary + all states. Browser-verify.
 - **S4 — Export (sync).** `writeExport` + money-stripped manifest + 413 at ≥10k. Tests: export columns ==

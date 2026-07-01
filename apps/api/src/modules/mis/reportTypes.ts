@@ -145,7 +145,7 @@ const TASK_OPERATIONAL: MisReportType = {
     }),
     col('unitCode', 'Unit Code', 'Unit / CPV', 'TEXT', 'vu.code', { filterable: true }),
     col('unitCategory', 'Unit Category', 'Unit / CPV', 'SELECT', 'vu.category', { filterable: true }),
-    col('unitKind', 'Unit Kind', 'Unit / CPV', 'SELECT', 'vu.kind', { filterable: true }),
+    // NB: verification_units.kind was dropped (ADR-0070, mig 0097) — worker_role is the discriminator.
     col('workerRole', 'Worker Role', 'Unit / CPV', 'SELECT', 'vu.worker_role', { filterable: true }),
     col('requiredPhotos', 'Required Photos', 'Unit / CPV', 'NUMBER', 'vu.required_photos'),
     col('piiSensitive', 'PII Sensitive', 'Unit / CPV', 'BOOLEAN', 'vu.pii_sensitive'),
