@@ -1697,3 +1697,73 @@ missing is actually enforced downstream in the shared `geocodeService.reverse()`
 
 **Net:** 0 Critical, 1 High (fixed), 8 Medium (7 fixed, 1 deferred), 33 Low (22 fixed, 7 deferred, 4
 accepted-risk), 12 Informational (6 fixed, 5 no-action, 1 accepted-risk). Nothing silently dropped.
+
+---
+
+## Section MIS-2026-07-01 — MIS rebuild design review (ADR-0084, pre-build)
+
+> Adversarial design review (3 reviewers: security / architecture / domain) of the MIS rebuild design
+> ([ADR-0084](adr/ADR-0084-mis-report-model.md) + [spec](specs/2026-07-01-mis-rebuild-design.md)). The
+> approach (code-owned allow-list + reused laterals + scope-append) was upheld — **no SQL-injection path
+> survived**. Confirmed defects were fixed **in the design** before any code; dispositions below. These are
+> design-stage; the FIXED-IN-DESIGN items become enforceable tests at their build slice.
+
+### MIS-1 · Operational report inherited billing's `status IN ('SUBMITTED','COMPLETED')` WHERE — ✅ FIXED-IN-DESIGN
+- **Finding (domain, CRITICAL):** reusing the billing read-model WHERE would hide PENDING/ASSIGNED/IN_PROGRESS
+  — a "state of all work" report that structurally can't show open work.
+- **Fix:** spec §4 — reuse the **laterals for money only**, base predicate = all in-scope; status is a user
+  filter; open rows show `—` for money. Verified at S1a.
+
+### MIS-2 · Money-gating leaked via summary sums / sort / filter / group-by + empty-cols fallback — ✅ FIXED-IN-DESIGN
+- **Finding (security, HIGH×3 + arch):** money is net-new code (no reusable drop-primitive); hidden money
+  reconstructable via `/summary` sums, `sort=commission_amount` (ordering oracle), `f_bill_amount_gte`
+  (bisection oracle), `group=` bucketing, and `selectColumns` empty→full-manifest fallback.
+- **Fix:** spec §3/§6 — gate by **omitting the laterals from FROM**; money keys excluded from catalog,
+  projection, **sort/filter/group**, and **summary sums** without `billing.view`; one shared
+  `assertNoMoneyWithout` guard + a money-keys × {rows,summary,export,sort,filter,group} test matrix; manifest
+  built already-money-stripped. `bill_total`/`commission_total` are summary/case-grain only.
+
+### MIS-3 · Grain mixing + 1-to-many fan-out (double-counted rows/money) — ✅ FIXED-IN-DESIGN
+- **Finding (all three):** case-level columns/counts on task-grain rows mislead when summed; `task_assignment_history`,
+  co-applicants, `photo_count` are 1-to-many joins that multiply rows and double-sum money.
+- **Fix:** spec §4/§8 — **split into two report types** (`TASK_OPERATIONAL`, `CASE_OPERATIONAL`); 1-to-many
+  columns excluded or computed as correlated subqueries; conditional 1:1-join composition; summary FROM stays
+  1:1 + `LATERAL … LIMIT 1` so sums are exact. Row-count-stability + summary==`/billing` tests at S1a/S2.
+
+### MIS-4 · Advertised columns that don't exist / wrong grain — ✅ FIXED-IN-DESIGN
+- **Finding (domain):** `device_outcome` is a `form_data` jsonb extract (not a column; legitimately blank);
+  `tat_days`, the `*_tasks` counts, `completed_tat_band` are case-level/derived, not task columns.
+- **Fix:** spec §8 — relabelled `agent_field_note` (fixed `form_data` key, no user-supplied path); case-level
+  rollups moved to `CASE_OPERATIONAL`; each column carries a `grain` + `kind` (scalar/subquery/money).
+
+### MIS-5 · ≥10k async export tier would leak scope/money (activates BUSINESS_LOGIC-03) — 🟡 DEFERRED
+- **Finding (security CRITICAL + arch):** `ExportBuild(query, actorId, cols, format)` passes no role/scope;
+  the only builder is `locations` (no scope/money). MIS registering one would export unscoped, money-included
+  data — the latent gap BUSINESS_LOGIC-03 flagged, made live.
+- **Disposition:** MVP is **sync export + honest 413 at ≥10k** (matches billing/tasks). A real async slice
+  (re-applying `resolveScope` + `billing.view` inside `exportAllForJob`, with a leak test) is deferred until
+  >10k MIS exports are needed. Spec §5.
+
+### MIS-6 · Bulk PII export (PAN / mobile / GPS / geocoded address) — 🟢 ACCEPTED (owner-signed 2026-07-01)
+- **Finding (security, MED):** MIS newly enables bulk export of plaintext PII; `pii_sensitive` masks nothing
+  (no masking machinery); extends the deferred DATABASE-04 (PII-at-rest) to bulk exfil.
+- **Disposition:** **ACCEPTED** — owner chose full PII export to `mis.export` holders, no extra gate/masking
+  (2026-07-01). Documented risk, not mitigated. Revisit if a DPDP control (searchable encryption / masking)
+  is adopted. Spec §3/§6.
+
+### MIS-7 · Bank-format MIS identifiers absent from the data model — 🟡 DEFERRED
+- **Finding (domain, HIGH):** LOS/LAN application id, case type (FRESH/CREDIT-REFER/RE-VERIFICATION/RENEWAL),
+  CPC/region/zone, sampling-TAT + bank-initiation timestamps, and the ~45-col doc-count matrix are **not in
+  the CRM2 schema** — so MIS cannot produce a bank-format export.
+- **Disposition:** v1 is explicitly an **internal operational MIS** (owner). Bank-format = a **separate
+  project**: schema columns + case-creation capture + its own ADR. Spec §14.
+
+### MIS-8 · Minor design hardening — ✅ FIXED-IN-DESIGN
+Strict unknown/duplicate/wrong-type key rejection (MIS-owned, not the lenient `resolveFilters`) · `mis.view`
+on `/report-types` · missing `assignee` + completed/submitted date-range filters added · S1 split into
+S1a/S1b · `pnpm openapi` as an explicit gated step (not in `verify`) · `field_report_narrative` blob export
+ceiling noted (PERFORMANCE-03 RATCHET) · status enums sourced from the DB CHECK. Spec §3/§5/§9/§13.
+
+**Net (design review):** approach upheld; 4 FIXED-IN-DESIGN clusters, 2 DEFERRED (async export, bank
+data-model), 1 ACCEPTED (PII export, owner-signed). Nothing silently dropped; FIXED-IN-DESIGN items are
+enforced by tests at their build slice.
