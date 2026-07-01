@@ -228,4 +228,27 @@ describe.skipIf(!RUN)('MIS API (ADR-0084)', () => {
       403,
     );
   });
+
+  it('CASE_OPERATIONAL: case grain — one row per case with rollups; money totals gated; summary counts cases', async () => {
+    await seedCaseWithTasks('C1', 2); // ONE case, TWO tasks
+    const cat = seeded<MisReportTypeMeta[]>(await request(app).get('/api/v2/mis/report-types').set(SA));
+    expect(cat.some((t) => t.type === 'CASE_OPERATIONAL')).toBe(true);
+
+    const res = await request(app).get('/api/v2/mis/CASE_OPERATIONAL/rows').set(SA);
+    expect(res.status).toBe(200);
+    expect(res.body.totalCount).toBe(1); // ONE case row (not 2 — case grain, no fan-out)
+    const row = res.body.items[0];
+    expect(row.caseNumber).toMatch(/^CASE-\d{6}$/);
+    expect(row.totalTasks).toBe(2); // rollup subquery over the case's tasks
+    expect('caseBillTotal' in row).toBe(true); // money present for a billing.view holder
+
+    const sum = await request(app).get('/api/v2/mis/CASE_OPERATIONAL/summary?group=clientName').set(SA);
+    expect(sum.status).toBe(200);
+    expect(sum.body.grandTotal.count).toBe(1); // case-grain summary counts CASES
+
+    // a non-billing holder: no money totals on the case row
+    const tl = await request(app).get('/api/v2/mis/CASE_OPERATIONAL/rows').set(TL);
+    expect(tl.status).toBe(200);
+    if (tl.body.items[0]) expect('caseBillTotal' in tl.body.items[0]).toBe(false);
+  });
 });

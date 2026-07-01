@@ -1,4 +1,5 @@
 import type { FilterField } from '../../platform/pagination.js';
+import { RATE_LATERAL, COMMISSION_LATERAL } from '../../platform/billing/laterals.js';
 
 /**
  * MIS report-type registry (ADR-0084). Report types + their column allow-lists are CODE, not DB
@@ -35,6 +36,8 @@ export interface MisColumn {
 export interface MisReportType {
   type: string;
   label: string;
+  /** row grain: 'task' = one row per case_task; 'case' = one row per case (rollups + money subqueries). */
+  grain: 'task' | 'case';
   columns: MisColumn[];
   /** default sort column key — MUST be a sortable, non-money column. */
   defaultSort: string;
@@ -61,6 +64,7 @@ const col = (
 const TASK_OPERATIONAL: MisReportType = {
   type: 'TASK_OPERATIONAL',
   label: 'Operational Case / Task MIS',
+  grain: 'task',
   defaultSort: 'taskCreatedAt',
   columns: [
     // Case context (1:1)
@@ -125,8 +129,8 @@ const TASK_OPERATIONAL: MisReportType = {
     col('priority', 'Priority', 'Task', 'SELECT', 'ct.priority', { sortable: true, filterable: true }),
     col('dispatchAddress', 'Dispatch Address', 'Task', 'TEXT', 'ct.address'),
     col('trigger', 'Bank Instruction', 'Task', 'TEXT', 'ct.trigger'),
-    col('latitude', 'Latitude', 'Task', 'NUMBER', 'ct.latitude'),
-    col('longitude', 'Longitude', 'Task', 'NUMBER', 'ct.longitude'),
+    col('latitude', 'Latitude', 'Task', 'NUMBER', 'ct.latitude::float8'),
+    col('longitude', 'Longitude', 'Task', 'NUMBER', 'ct.longitude::float8'),
     col('taskCreatedAt', 'Task Created', 'Task', 'DATE', 'ct.created_at', {
       sortable: true,
       filterable: true,
@@ -175,7 +179,7 @@ const TASK_OPERATIONAL: MisReportType = {
       'Commission (₹)',
       'Rate & Money',
       'NUMBER',
-      'COALESCE(ct.commission_amount, com.commission_amount)',
+      'COALESCE(ct.commission_amount, com.commission_amount)::float8',
       { money: true, defaultVisible: true },
     ),
     // TAT (per-task)
@@ -212,7 +216,143 @@ const TASK_OPERATIONAL: MisReportType = {
   ],
 };
 
-export const MIS_REPORT_TYPES: readonly MisReportType[] = [TASK_OPERATIONAL];
+/**
+ * CASE_OPERATIONAL — one row per case (bank-facing "one line per case"). Case scalars are 1:1; the
+ * rollups (task/outcome counts, photo count, TAT days) and the money totals are CORRELATED SUBQUERIES
+ * over the case's tasks — so nothing fans out and counting rows counts cases. Money totals reuse the
+ * billing laterals inside the subquery (money-gated: dropped without billing.view).
+ * FROM aliases: cs=cases, cl=clients, p=products, pa=case_applicants(primary), cb=users(completed_by).
+ */
+const CASE_OPERATIONAL: MisReportType = {
+  type: 'CASE_OPERATIONAL',
+  label: 'Operational Case MIS (one row per case)',
+  grain: 'case',
+  defaultSort: 'caseCreatedAt',
+  columns: [
+    col('caseNumber', 'Case Number', 'Case', 'TEXT', 'cs.case_number', {
+      sortable: true,
+      filterable: true,
+      defaultVisible: true,
+    }),
+    col('clientName', 'Client', 'Case', 'TEXT', 'cl.name', {
+      sortable: true,
+      filterable: true,
+      defaultVisible: true,
+    }),
+    col('productName', 'Product', 'Case', 'TEXT', 'p.name', {
+      sortable: true,
+      filterable: true,
+      defaultVisible: true,
+    }),
+    col('caseStatus', 'Case Status', 'Case', 'SELECT', 'cs.status', {
+      filterable: true,
+      defaultVisible: true,
+    }),
+    col('caseVerdict', 'Case Verdict', 'Case', 'SELECT', 'cs.verification_outcome', {
+      filterable: true,
+      defaultVisible: true,
+    }),
+    col('caseResultRemark', 'Case Result Remark', 'Case', 'TEXT', 'cs.result_remark'),
+    col('backendContactNumber', 'Office Contact', 'Case', 'TEXT', 'cs.backend_contact_number'),
+    col('caseCreatedAt', 'Case Created', 'Case', 'DATE', 'cs.created_at', {
+      sortable: true,
+      filterable: true,
+      defaultVisible: true,
+    }),
+    col('caseCompletedAt', 'Case Completed', 'Case', 'DATE', 'cs.completed_at', {
+      sortable: true,
+      filterable: true,
+      defaultVisible: true,
+    }),
+    col('completedByName', 'Completed By', 'Case', 'TEXT', 'cb.name'),
+    // Primary applicant (1:1)
+    col('primaryName', 'Applicant', 'Applicant', 'TEXT', 'pa.name', {
+      filterable: true,
+      defaultVisible: true,
+    }),
+    col('primaryMobile', 'Mobile', 'Applicant', 'TEXT', 'pa.mobile', { filterable: true }),
+    col('primaryPan', 'PAN', 'Applicant', 'TEXT', 'pa.pan', { filterable: true }),
+    col('applicantType', 'Applicant Type', 'Applicant', 'SELECT', 'pa.applicant_type', { filterable: true }),
+    // Rollups (correlated subqueries over the case's tasks)
+    col(
+      'totalTasks',
+      'Total Tasks',
+      'Rollup',
+      'NUMBER',
+      '(SELECT count(*)::int FROM case_tasks x WHERE x.case_id = cs.id)',
+      { defaultVisible: true },
+    ),
+    col(
+      'completedTasks',
+      'Completed Tasks',
+      'Rollup',
+      'NUMBER',
+      "(SELECT count(*)::int FROM case_tasks x WHERE x.case_id = cs.id AND x.status = 'COMPLETED')",
+      { defaultVisible: true },
+    ),
+    col(
+      'positiveTasks',
+      'Positive Tasks',
+      'Rollup',
+      'NUMBER',
+      "(SELECT count(*)::int FROM case_tasks x WHERE x.case_id = cs.id AND x.verification_outcome = 'POSITIVE')",
+    ),
+    col(
+      'negativeTasks',
+      'Negative Tasks',
+      'Rollup',
+      'NUMBER',
+      "(SELECT count(*)::int FROM case_tasks x WHERE x.case_id = cs.id AND x.verification_outcome = 'NEGATIVE')",
+    ),
+    col(
+      'referTasks',
+      'Refer Tasks',
+      'Rollup',
+      'NUMBER',
+      "(SELECT count(*)::int FROM case_tasks x WHERE x.case_id = cs.id AND x.verification_outcome = 'REFER')",
+    ),
+    col(
+      'fraudTasks',
+      'Fraud Tasks',
+      'Rollup',
+      'NUMBER',
+      "(SELECT count(*)::int FROM case_tasks x WHERE x.case_id = cs.id AND x.verification_outcome = 'FRAUD')",
+    ),
+    col(
+      'photoCount',
+      'Field Photos',
+      'Rollup',
+      'NUMBER',
+      "(SELECT count(*)::int FROM case_attachments a WHERE a.case_id = cs.id AND a.kind = 'FIELD_PHOTO')",
+    ),
+    col(
+      'caseTatDays',
+      'Turnaround Days',
+      'Rollup',
+      'NUMBER',
+      'CASE WHEN cs.completed_at IS NULL THEN NULL ELSE round(extract(epoch FROM (cs.completed_at - cs.created_at)) / 86400.0)::int END',
+    ),
+    // Money totals (billing.view-gated subqueries)
+    col(
+      'caseBillTotal',
+      'Bill Total (₹)',
+      'Rate & Money',
+      'NUMBER',
+      `(SELECT COALESCE(SUM(rt.bill_amount * ct.bill_count), 0)::float8 FROM case_tasks ct ${RATE_LATERAL} WHERE ct.case_id = cs.id AND ct.status = 'COMPLETED')`,
+      { money: true, defaultVisible: true },
+    ),
+    col(
+      'caseCommissionTotal',
+      'Commission Total (₹)',
+      'Rate & Money',
+      'NUMBER',
+      `(SELECT COALESCE(SUM(COALESCE(ct.commission_amount, com.commission_amount) * ct.bill_count), 0)::float8 FROM case_tasks ct ${COMMISSION_LATERAL} WHERE ct.case_id = cs.id AND ct.status IN ('SUBMITTED','COMPLETED'))`,
+      { money: true, defaultVisible: true },
+    ),
+  ],
+};
+
+export const MIS_REPORT_TYPES: readonly MisReportType[] = [TASK_OPERATIONAL, CASE_OPERATIONAL];
 
 export function getReportType(type: string): MisReportType | undefined {
   return MIS_REPORT_TYPES.find((rt) => rt.type === type);

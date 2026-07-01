@@ -110,6 +110,7 @@ export const misService = {
     const scope = await resolveScope(actor);
 
     const { items, totalCount } = await repo.rows({
+      grain: rt.grain,
       columns,
       billing: canViewBilling,
       filters,
@@ -147,6 +148,7 @@ export const misService = {
     const scope = await resolveScope(actor);
 
     const { rows, grandTotal } = await repo.summary({
+      grain: rt.grain,
       groupColumn: groupCol.sql,
       billing: canViewBilling,
       filters,
@@ -182,16 +184,18 @@ export const misService = {
     const scope = await resolveScope(actor);
 
     // Pre-check the match count so an oversized set 413s BEFORE the full projection is fetched.
-    const totalCount = await repo.count({ filters, scope });
+    const totalCount = await repo.count({ grain: rt.grain, filters, scope });
     assertExportable(totalCount);
 
     const defaultCol = rt.columns.find((c) => c.key === rt.defaultSort);
+    const fallbackSort = rt.grain === 'case' ? 'cs.created_at' : 'ct.created_at';
     const { items } = await repo.rows({
+      grain: rt.grain,
       columns: cols,
       billing: canViewBilling,
       filters,
       scope,
-      sortColumn: defaultCol ? defaultCol.sql : 'ct.created_at',
+      sortColumn: defaultCol ? defaultCol.sql : fallbackSort,
       sortOrder: 'desc',
       limit: Math.min(totalCount, exportThreshold()),
       offset: 0,

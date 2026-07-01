@@ -1,17 +1,23 @@
 import type { MisRow, SortOrder } from '@crm2/sdk';
 import { filterClauses, type AppliedFilter } from '../../platform/pagination.js';
 import { query } from '../../platform/db.js';
-import { taskScopePredicate, type Scope } from '../../platform/scope/index.js';
+import { composeScopePredicate, taskScopePredicate, type Scope } from '../../platform/scope/index.js';
 import { RATE_LATERAL, COMMISSION_LATERAL } from '../../platform/billing/laterals.js';
 import type { MisColumn } from './reportTypes.js';
 
 /**
- * MIS TASK_OPERATIONAL repository (ADR-0084). All joins are 1:1 (or the assigned/applicant LEFT joins)
- * so no row fans out; case_tasks stays the row grain. The billing laterals (rt/com) are appended to the
- * FROM ONLY when the actor holds billing.view (`billing`) — the money-gate is lateral-presence, not a
- * SELECT-time null-swap, so a non-billing query never even resolves rate/commission. The scope predicate
- * (out-of-scope ⇒ 0 rows) and the bound column filters are shared between the COUNT and the page.
+ * MIS repository (ADR-0084). Two grains, one query builder:
+ *  - task  (TASK_OPERATIONAL): one row per case_task. Money is per-row via the billing laterals,
+ *    appended to FROM ONLY with billing.view (never sortable/filterable → no oracle). Scope leg =
+ *    task-visibility.
+ *  - case  (CASE_OPERATIONAL): one row per case. Rollups + money totals are CORRELATED SUBQUERIES on
+ *    the case's tasks (self-contained; money subqueries only appear when the money column is selected,
+ *    which the service gates by billing.view). Scope leg = case-visibility.
+ * Every base FROM is 1:1 (no fan-out) so count(*) and the money sums stay exact.
  */
+
+type Grain = 'task' | 'case';
+
 const MIS_FROM = `
   FROM case_tasks ct
   JOIN cases cs ON cs.id = ct.case_id
@@ -25,22 +31,60 @@ const MIS_FROM = `
 const MIS_FROM_BILLING = `${MIS_FROM}
   ${RATE_LATERAL}
   ${COMMISSION_LATERAL}`;
+const CASE_FROM = `
+  FROM cases cs
+  JOIN clients cl ON cl.id = cs.client_id
+  JOIN products p ON p.id = cs.product_id
+  LEFT JOIN case_applicants pa ON pa.case_id = cs.id AND pa.is_primary
+  LEFT JOIN users cb ON cb.id = cs.completed_by`;
 
-/** Grouped aggregates for the Summary format. Money totals reuse billing's exact idioms:
- *  bill = `SUM(bill_amount × bill_count) FILTER (COMPLETED)`, commission = `SUM(COALESCE(snapshot,
- *  live) × bill_count) FILTER (SUBMITTED|COMPLETED)`. FROM stays 1:1 + LATERAL…LIMIT 1, so the sums
- *  are exact (no fan-out). Without billing.view the money totals are NULL (laterals not even joined). */
-const SUMMARY_AGG = `
+/** SELECT/count FROM for the page (task grain gets the money laterals only with billing.view). */
+function fromFor(grain: Grain, billing: boolean): string {
+  if (grain === 'case') return CASE_FROM;
+  return billing ? MIS_FROM_BILLING : MIS_FROM;
+}
+/** Count/scope FROM — never needs the task money laterals (money is never a filter). */
+function baseFrom(grain: Grain): string {
+  return grain === 'case' ? CASE_FROM : MIS_FROM;
+}
+/** Row-scope: out-of-scope ⇒ 0 rows (never IDOR). Task-visibility vs case-visibility leg by grain. */
+function scopePredicate(params: unknown[], scope: Scope, grain: Grain): string {
+  if (grain === 'case')
+    return composeScopePredicate(
+      params,
+      scope,
+      (ph) =>
+        `cs.created_by = ANY(${ph}) OR EXISTS (SELECT 1 FROM case_tasks ct WHERE ct.case_id = cs.id AND ct.assigned_to = ANY(${ph}))`,
+      'CASE',
+    );
+  return taskScopePredicate(params, scope);
+}
+
+// Summary aggregates — task grain counts tasks (ct.*), case grain counts cases (cs.*).
+const TASK_SUMMARY_AGG = `
   count(*)::int AS count,
   count(*) FILTER (WHERE ct.status = 'COMPLETED')::int AS completed,
   count(*) FILTER (WHERE ct.verification_outcome = 'POSITIVE')::int AS positive,
   count(*) FILTER (WHERE ct.verification_outcome = 'NEGATIVE')::int AS negative,
   count(*) FILTER (WHERE ct.verification_outcome = 'REFER')::int AS refer,
   count(*) FILTER (WHERE ct.verification_outcome = 'FRAUD')::int AS fraud`;
-const MONEY_AGG = `,
+const TASK_MONEY_AGG = `,
   SUM(rt.bill_amount * ct.bill_count) FILTER (WHERE ct.status = 'COMPLETED')::float8 AS "billTotal",
   SUM(COALESCE(ct.commission_amount, com.commission_amount) * ct.bill_count)
     FILTER (WHERE ct.status IN ('SUBMITTED','COMPLETED'))::float8 AS "commissionTotal"`;
+const CASE_SUMMARY_AGG = `
+  count(*)::int AS count,
+  count(*) FILTER (WHERE cs.status = 'COMPLETED')::int AS completed,
+  count(*) FILTER (WHERE cs.verification_outcome = 'POSITIVE')::int AS positive,
+  count(*) FILTER (WHERE cs.verification_outcome = 'NEGATIVE')::int AS negative,
+  count(*) FILTER (WHERE cs.verification_outcome = 'REFER')::int AS refer,
+  count(*) FILTER (WHERE cs.verification_outcome = 'FRAUD')::int AS fraud`;
+const CASE_MONEY_AGG = `,
+  SUM((SELECT COALESCE(SUM(rt.bill_amount * ct.bill_count), 0) FROM case_tasks ct ${RATE_LATERAL}
+       WHERE ct.case_id = cs.id AND ct.status = 'COMPLETED'))::float8 AS "billTotal",
+  SUM((SELECT COALESCE(SUM(COALESCE(ct.commission_amount, com.commission_amount) * ct.bill_count), 0)
+       FROM case_tasks ct ${COMMISSION_LATERAL}
+       WHERE ct.case_id = cs.id AND ct.status IN ('SUBMITTED','COMPLETED')))::float8 AS "commissionTotal"`;
 const NULL_MONEY_AGG = `, NULL::float8 AS "billTotal", NULL::float8 AS "commissionTotal"`;
 
 export interface MisSummaryAgg {
@@ -54,17 +98,10 @@ export interface MisSummaryAgg {
   commissionTotal: number | null;
 }
 
-export interface MisSummaryOptions {
-  groupColumn: string; // registry SQL expression (whitelisted, safe to interpolate)
-  billing: boolean;
-  filters: AppliedFilter[];
-  scope: Scope;
-  limit: number;
-}
-
 export interface MisRowsOptions {
+  grain: Grain;
   columns: MisColumn[]; // resolved + allowed (money already gated by the service)
-  billing: boolean; // laterals joined?
+  billing: boolean; // task-grain laterals joined?
   filters: AppliedFilter[];
   scope: Scope;
   sortColumn: string; // registry SQL expression (whitelisted, safe to interpolate)
@@ -73,28 +110,35 @@ export interface MisRowsOptions {
   offset: number;
 }
 
+export interface MisSummaryOptions {
+  grain: Grain;
+  groupColumn: string; // registry SQL expression (whitelisted)
+  billing: boolean;
+  filters: AppliedFilter[];
+  scope: Scope;
+  limit: number;
+}
+
 export const misRepository = {
   async rows(o: MisRowsOptions): Promise<{ items: MisRow[]; totalCount: number }> {
     const params: unknown[] = [];
     const where: string[] = [];
-    const scopePred = taskScopePredicate(params, o.scope);
-    if (scopePred) where.push(scopePred);
+    const sp = scopePredicate(params, o.scope, o.grain);
+    if (sp) where.push(sp);
     where.push(...filterClauses(o.filters, params));
     const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
-    // COUNT over the base 1:1 FROM (no laterals): every filterable column is on a base join (money is
-    // never filterable), so the count is exact and the laterals stay off the count path.
     const [countRow] = await query<{ count: number }>(
-      `SELECT count(*)::int AS count ${MIS_FROM} ${clause}`,
+      `SELECT count(*)::int AS count ${baseFrom(o.grain)} ${clause}`,
       params,
     );
     const totalCount = countRow?.count ?? 0;
 
     const selectList = o.columns.map((c) => `${c.sql} AS "${c.key}"`).join(', ');
-    const from = o.billing ? MIS_FROM_BILLING : MIS_FROM;
+    const tie = o.grain === 'case' ? 'cs.id' : 'ct.id';
     const items = await query<MisRow>(
-      `SELECT ${selectList} ${from} ${clause}
-       ORDER BY ${o.sortColumn} ${o.sortOrder}, ct.id ${o.sortOrder}
+      `SELECT ${selectList} ${fromFor(o.grain, o.billing)} ${clause}
+       ORDER BY ${o.sortColumn} ${o.sortOrder}, ${tie} ${o.sortOrder}
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, o.limit, o.offset],
     );
@@ -106,23 +150,24 @@ export const misRepository = {
   ): Promise<{ rows: Array<MisSummaryAgg & { group: string | null }>; grandTotal: MisSummaryAgg }> {
     const params: unknown[] = [];
     const where: string[] = [];
-    const scopePred = taskScopePredicate(params, o.scope);
-    if (scopePred) where.push(scopePred);
+    const sp = scopePredicate(params, o.scope, o.grain);
+    if (sp) where.push(sp);
     where.push(...filterClauses(o.filters, params));
     const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
-    const from = o.billing ? MIS_FROM_BILLING : MIS_FROM;
-    const money = o.billing ? MONEY_AGG : NULL_MONEY_AGG;
+
+    const agg = o.grain === 'case' ? CASE_SUMMARY_AGG : TASK_SUMMARY_AGG;
+    const money = o.billing ? (o.grain === 'case' ? CASE_MONEY_AGG : TASK_MONEY_AGG) : NULL_MONEY_AGG;
+    const from = fromFor(o.grain, o.billing);
 
     const rows = await query<MisSummaryAgg & { group: string | null }>(
-      `SELECT ${o.groupColumn} AS "group", ${SUMMARY_AGG}${money}
+      `SELECT ${o.groupColumn} AS "group", ${agg}${money}
        ${from} ${clause}
        GROUP BY ${o.groupColumn}
        ORDER BY count(*) DESC, ${o.groupColumn} ASC NULLS LAST
        LIMIT $${params.length + 1}`,
       [...params, o.limit],
     );
-    // Grand total over ALL matching rows (not just the capped groups) — a separate ungrouped aggregate.
-    const [grand] = await query<MisSummaryAgg>(`SELECT ${SUMMARY_AGG}${money} ${from} ${clause}`, params);
+    const [grand] = await query<MisSummaryAgg>(`SELECT ${agg}${money} ${from} ${clause}`, params);
     const grandTotal: MisSummaryAgg = grand ?? {
       count: 0,
       completed: 0,
@@ -136,17 +181,17 @@ export const misRepository = {
     return { rows, grandTotal };
   },
 
-  /** Scoped + filtered match count (base 1:1 FROM, no laterals) — the export guard's pre-check so a
-   *  ≥threshold set 413s BEFORE the full projection is fetched. */
-  async count(o: { filters: AppliedFilter[]; scope: Scope }): Promise<number> {
+  /** Scoped + filtered match count — the export guard's pre-check so a ≥threshold set 413s BEFORE the
+   *  full projection is fetched. */
+  async count(o: { grain: Grain; filters: AppliedFilter[]; scope: Scope }): Promise<number> {
     const params: unknown[] = [];
     const where: string[] = [];
-    const scopePred = taskScopePredicate(params, o.scope);
-    if (scopePred) where.push(scopePred);
+    const sp = scopePredicate(params, o.scope, o.grain);
+    if (sp) where.push(sp);
     where.push(...filterClauses(o.filters, params));
     const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
     const [row] = await query<{ count: number }>(
-      `SELECT count(*)::int AS count ${MIS_FROM} ${clause}`,
+      `SELECT count(*)::int AS count ${baseFrom(o.grain)} ${clause}`,
       params,
     );
     return row?.count ?? 0;
