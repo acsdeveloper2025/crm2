@@ -35,7 +35,6 @@ const PAGES: PageSpec[] = [
   { name: 'Field Monitoring', path: '/field-monitoring' },
   { name: 'Billing', path: '/billing', card: true },
   { name: 'Commission Rates', path: '/admin/commission-rates', primary: /New/, card: true },
-  { name: 'MIS Layouts', path: '/admin/report-layouts', primary: /New Layout/, card: true },
   { name: 'Departments', path: '/admin/departments', primary: /Add row/, card: true },
   { name: 'Designations', path: '/admin/designations', primary: /Add row/, card: true },
   { name: 'Policies', path: '/admin/policies', primary: /New Policy/, card: true },

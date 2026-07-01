@@ -35,13 +35,10 @@ import { rateTypeAssignmentRoutes } from '../modules/rateTypeAssignments/routes.
 import { commissionRateRoutes } from '../modules/commissionRates/routes.js';
 import { tatPolicyRoutes } from '../modules/tatPolicies/routes.js';
 import { billingRoutes } from '../modules/billing/routes.js';
-import { misRoutes } from '../modules/mis/routes.js';
 import { locationRoutes } from '../modules/locations/routes.js';
 import { userRoutes } from '../modules/users/routes.js';
 import { accessRoutes } from '../modules/access/routes.js';
 import { roleRoutes } from '../modules/roles/routes.js';
-import { reportLayoutRoutes } from '../modules/reportLayouts/routes.js';
-import { caseDataEntryRoutes } from '../modules/caseDataEntries/routes.js';
 import { departmentRoutes } from '../modules/departments/routes.js';
 import { designationRoutes } from '../modules/designations/routes.js';
 import { systemRoutes } from '../modules/system/routes.js';
@@ -129,13 +126,10 @@ export function createApp(opts: { enableTestAuth?: boolean } = {}): Express {
   mount('/api/v2/commission-rates', commissionRateRoutes);
   mount('/api/v2/tat-policies', tatPolicyRoutes);
   mount('/api/v2/billing', billingRoutes);
-  mount('/api/v2/mis', misRoutes);
   mount('/api/v2/locations', locationRoutes);
   mount('/api/v2/users', userRoutes);
   mount('/api/v2/access', accessRoutes);
   mount('/api/v2/roles', roleRoutes);
-  mount('/api/v2/report-layouts', reportLayoutRoutes);
-  mount('/api/v2/data-entry', caseDataEntryRoutes);
   mount('/api/v2/departments', departmentRoutes);
   mount('/api/v2/designations', designationRoutes);
   mount('/api/v2/system', systemRoutes);

@@ -37,7 +37,6 @@ const PAGES: { name: string; path: string }[] = [
   { name: 'Field Monitoring', path: '/field-monitoring' },
   { name: 'Billing', path: '/billing' },
   { name: 'Commission Rates', path: '/admin/commission-rates' },
-  { name: 'MIS Layouts', path: '/admin/report-layouts' },
   { name: 'Departments', path: '/admin/departments' },
   { name: 'Designations', path: '/admin/designations' },
   { name: 'Policies', path: '/admin/policies' },

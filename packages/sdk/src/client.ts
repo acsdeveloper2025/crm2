@@ -48,17 +48,7 @@ import type {
   CommissionDetailRow,
   CommissionDetailQuery,
 } from './billing.js';
-import type { MisRowsResponse, MisQuery } from './mis.js';
-import type {
-  ReportLayout,
-  ReportLayoutView,
-  ReportLayoutDetail,
-  LayoutKind,
-  CreateReportLayoutInput,
-  UpdateReportLayoutInput,
-  FieldReportView,
-} from './reportLayouts.js';
-import type { CaseDataEntry, SaveDataEntryInput, CasePickup, SavePickupInput } from './caseDataEntries.js';
+import type { FieldReportView } from './reportLayouts.js';
 import type {
   Location,
   CreateLocationInput,
@@ -382,44 +372,6 @@ export function createSdk(opts: SdkOptions) {
         req<TatPolicy>('POST', `/api/v2/tat-policies/${id}/deactivate`, { version }),
     },
 
-    /** MIS layout config (ADR-0037) — per-(client,product) data-entry / MIS / Billing-MIS column
-     *  layouts. Admin-only (report_template.manage). `:id` integer; update/(de)activate OCC-guarded. */
-    reportLayouts: {
-      list: (q: PageQuery = {}) => {
-        const qs = pageQueryToParams(q).toString();
-        return req<Paginated<ReportLayoutView>>('GET', `/api/v2/report-layouts${qs ? `?${qs}` : ''}`);
-      },
-      get: (id: number) => req<ReportLayoutDetail>('GET', `/api/v2/report-layouts/${id}`),
-      byConfig: (clientId: number, productId: number, kind: LayoutKind, verificationType?: string) =>
-        req<ReportLayoutDetail | null>(
-          'GET',
-          `/api/v2/report-layouts/by-config?clientId=${clientId}&productId=${productId}&kind=${kind}` +
-            (verificationType ? `&verificationType=${encodeURIComponent(verificationType)}` : ''),
-        ),
-      create: (input: CreateReportLayoutInput) =>
-        req<ReportLayoutDetail>('POST', '/api/v2/report-layouts', input),
-      // OCC (ADR-0019): update/(de)activate carry the current row's `version`; 409 STALE_UPDATE on conflict.
-      update: (id: number, input: UpdateReportLayoutInput & { version: number }) =>
-        req<ReportLayoutDetail>('PUT', `/api/v2/report-layouts/${id}`, input),
-      activate: (id: number, version: number) =>
-        req<ReportLayout>('POST', `/api/v2/report-layouts/${id}/activate`, { version }),
-      deactivate: (id: number, version: number) =>
-        req<ReportLayout>('POST', `/api/v2/report-layouts/${id}/deactivate`, { version }),
-    },
-
-    /** Office data-entry (ADR-0037) — key a CASE's MIS fields against its (client,product) active
-     *  DATA_ENTRY layout. Gated data_entry.manage; case scope-guarded (404 IDOR-safe). save() OCC on
-     *  `version`. */
-    dataEntry: {
-      get: (caseId: string) => req<CaseDataEntry>('GET', `/api/v2/data-entry/cases/${caseId}`),
-      save: (caseId: string, input: SaveDataEntryInput) =>
-        req<CaseDataEntry>('PUT', `/api/v2/data-entry/cases/${caseId}`, input),
-      /** Pickup Information — the fixed per-case office box (Zion NewDataQC). */
-      getPickup: (caseId: string) => req<CasePickup>('GET', `/api/v2/data-entry/cases/${caseId}/pickup`),
-      savePickup: (caseId: string, input: SavePickupInput) =>
-        req<CasePickup>('PUT', `/api/v2/data-entry/cases/${caseId}/pickup`, input),
-    },
-
     /** Billing & Commission read-model (ADR-0036, slice 5b) — per-case money view, gated billing.view. */
     billing: {
       cases: (q: PageQuery = {}) => {
@@ -480,35 +432,6 @@ export function createSdk(opts: SdkOptions) {
         for (const [k, v] of commissionDetailParams(q)) extra[k] = v;
         return reqBlob('billing/commission-detail', r, extra);
       },
-    },
-
-    /**
-     * MIS (ADR-0037) — layout-driven tabular view of COMPLETED tasks. Gated `page.mis`.
-     * Money columns (RATE_AMOUNT / COMMISSION_AMOUNT) are present only when the actor also holds
-     * `billing.view`; the endpoint never 403s on billing.view absence — it silently strips them.
-     * No active layout for the clientId/productId pair → `{ columns: [], rows: [], totalCount: 0 }`.
-     */
-    mis: {
-      rows: (q: MisQuery) => {
-        const p = new URLSearchParams();
-        p.set('clientId', String(q.clientId));
-        p.set('productId', String(q.productId));
-        if (q.completedFrom !== undefined) p.set('completedFrom', q.completedFrom);
-        if (q.completedTo !== undefined) p.set('completedTo', q.completedTo);
-        if (q.search) p.set('search', q.search);
-        if (q.page !== undefined) p.set('page', String(q.page));
-        if (q.pageSize !== undefined) p.set('pageSize', String(q.pageSize));
-        return req<MisRowsResponse>('GET', `/api/v2/mis/rows?${p.toString()}`);
-      },
-      /** DataGrid export (IMPORT_EXPORT_STANDARD): same query + format/mode → a file blob. */
-      export: (q: Omit<MisQuery, 'page' | 'pageSize'>, r: ExportRequest) =>
-        reqBlob('mis', r, {
-          clientId: String(q.clientId),
-          productId: String(q.productId),
-          ...(q.completedFrom !== undefined ? { completedFrom: q.completedFrom } : {}),
-          ...(q.completedTo !== undefined ? { completedTo: q.completedTo } : {}),
-          ...(q.search ? { search: q.search } : {}),
-        }),
     },
 
     rateTypes: {

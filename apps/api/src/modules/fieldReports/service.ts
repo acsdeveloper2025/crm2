@@ -4,7 +4,6 @@ import { fieldReportRepository as repo, type TaskRenderContext } from './reposit
 import { renderNarrative } from './render.js';
 import { canonicalizeRenderContext } from './canonicalize.js';
 import { buildSections } from './sections.js';
-import { reportLayoutRepository } from '../reportLayouts/repository.js';
 import { AppError } from '../../platform/errors.js';
 import { resolveScope, type Actor } from '../../platform/scope/index.js';
 
@@ -13,46 +12,29 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const MAX_OUTCOME_LEN = 120;
 
 /**
- * Resolve the FIELD_REPORT template (most-specific → least-specific, v1 TemplateReportService parity)
- * and render it against the canonicalized context (codes → v1 verbose labels, split → combined periods;
- * read-time only, stored data untouched — ADR-0057):
- *  1. an admin-authored `report_layouts` row for (client, product, verificationType) — overrides;
- *  2. else the built-in standard default for the verification type (`FIELD_REPORT_DEFAULTS`, ADR-0079);
- *  3. else null (a non-field / KYC type with no standard default).
+ * Resolve the FIELD_REPORT narrative from the built-in standard default for the verification type
+ * (`FIELD_REPORT_DEFAULTS`, ADR-0079), rendered against the canonicalized context (codes → v1 verbose
+ * labels, split → combined periods; read-time only, stored data untouched — ADR-0057). Admin-authored
+ * `report_layouts` overrides were removed with the MIS/report-layout engine (ADR-0083). Returns null
+ * for a non-field / KYC type with no standard default.
  */
-async function resolveNarrative(
+function resolveNarrative(
   ctx: TaskRenderContext,
-): Promise<{ narrative: string; layoutId: number | null; layoutName: string | null } | null> {
-  const layout = await reportLayoutRepository.findActiveByConfig(
-    ctx.clientId,
-    ctx.productId,
-    'FIELD_REPORT',
-    ctx.verificationType,
-  );
-  const canon = canonicalizeRenderContext(ctx);
-  if (layout?.templateBody != null) {
-    return {
-      narrative: renderNarrative(layout.templateBody, layout.columns, canon),
-      layoutId: layout.id,
-      layoutName: layout.name,
-    };
-  }
+): { narrative: string; layoutId: number | null; layoutName: string | null } | null {
   const std = FIELD_REPORT_DEFAULTS[ctx.verificationType];
-  if (std) {
-    // the default catalog is the write-shape (ReportLayoutColumnInput); read off the 3 fields the
-    // renderer needs so the standard and custom-layout paths share one RenderColumn contract.
-    const columns = std.columns.map((c) => ({
-      columnKey: c.columnKey,
-      sourceType: c.sourceType,
-      sourceRef: c.sourceRef ?? null,
-    }));
-    return {
-      narrative: renderNarrative(std.templateBody, columns, canon),
-      layoutId: null,
-      layoutName: `Standard ${ctx.verificationType}`,
-    };
-  }
-  return null;
+  if (!std) return null;
+  // the default catalog is the write-shape (ReportLayoutColumnInput); read off the 3 fields the
+  // renderer needs so the standard path matches the RenderColumn contract.
+  const columns = std.columns.map((c) => ({
+    columnKey: c.columnKey,
+    sourceType: c.sourceType,
+    sourceRef: c.sourceRef ?? null,
+  }));
+  return {
+    narrative: renderNarrative(std.templateBody, columns, canonicalizeRenderContext(ctx)),
+    layoutId: null,
+    layoutName: `Standard ${ctx.verificationType}`,
+  };
 }
 
 /** The device's submitted outcome (first form-type slug's `verificationOutcome`) — snapshot metadata. */
@@ -101,7 +83,7 @@ export const fieldReportService = {
     }
 
     // No snapshot (not yet submitted, or a task that predates snapshotting) → render live.
-    const r = await resolveNarrative(ctx);
+    const r = resolveNarrative(ctx);
     return {
       taskId,
       verificationType: ctx.verificationType,
@@ -123,7 +105,7 @@ export const fieldReportService = {
     try {
       const ctx = await repo.loadContext(caseId, taskId, undefined);
       if (!ctx) return;
-      const r = await resolveNarrative(ctx);
+      const r = resolveNarrative(ctx);
       if (!r) return; // a non-field / KYC type with no template → nothing to freeze
       await repo.upsertSnapshot({
         caseTaskId: taskId,

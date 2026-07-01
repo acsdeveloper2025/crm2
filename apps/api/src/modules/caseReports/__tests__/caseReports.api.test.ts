@@ -116,8 +116,6 @@ describe.skipIf(!RUN)('case-report preview API (ADR-0041 S5 slice 1)', () => {
   beforeEach(async () => {
     await db!.truncate(
       'case_attachments',
-      'report_layout_columns',
-      'report_layouts',
       'case_tasks',
       'case_applicants',
       'cases',
@@ -140,44 +138,6 @@ describe.skipIf(!RUN)('case-report preview API (ADR-0041 S5 slice 1)', () => {
       }),
       taskId,
     ]);
-
-    // a FIELD_REPORT template so per-task narrative renders (otherwise narrative=null is also valid)
-    seeded(
-      await request(app)
-        .post('/api/v2/report-layouts')
-        .set(SA)
-        .send({
-          clientId: ctx.clientId,
-          productId: ctx.productId,
-          kind: 'FIELD_REPORT',
-          name: 'Per-task',
-          verificationType: ctx.unitCode,
-          templateBody: 'Visited {{addr}} for {{applicant}} in {{loc}}.',
-          columns: [
-            {
-              columnKey: 'loc',
-              headerLabel: 'loc',
-              sourceType: 'FORM_DATA_PATH',
-              sourceRef: `${ctx.unitCode}.formData.area`,
-              dataType: 'TEXT',
-            },
-            {
-              columnKey: 'addr',
-              headerLabel: 'addr',
-              sourceType: 'TASK_FIELD',
-              sourceRef: 'address',
-              dataType: 'TEXT',
-            },
-            {
-              columnKey: 'applicant',
-              headerLabel: 'applicant',
-              sourceType: 'APPLICANT_FIELD',
-              sourceRef: 'name',
-              dataType: 'TEXT',
-            },
-          ],
-        }),
-    );
 
     // two FIELD_PHOTOs on the task — one with a frozen address, one without
     await db!.pool.query(
@@ -219,12 +179,13 @@ describe.skipIf(!RUN)('case-report preview API (ADR-0041 S5 slice 1)', () => {
     expect(res.body.applicants).toHaveLength(1);
     expect(res.body.applicants[0].isPrimary).toBe(true);
 
-    // per-task: outcome null (no result yet), narrative rendered, sections present, photos grouped
+    // per-task: outcome null (no result yet), sections present, photos grouped. narrative is null —
+    // U_PV is not a FIELD_REPORT_DEFAULTS key and admin layouts were removed (ADR-0083).
     expect(res.body.tasks).toHaveLength(1);
     const task = res.body.tasks[0];
     expect(task.id).toBe(taskId);
     expect(task.verificationType).toBe(ctx.unitCode);
-    expect(task.narrative).toBe('Visited 12 MG ROAD for RAJESH KUMAR in BTM LAYOUT.');
+    expect(task.narrative).toBeNull();
     expect(task.sections[0].fields).toEqual([
       { label: 'Area', value: 'BTM LAYOUT' },
       { label: 'Verification Outcome', value: 'POSITIVE' },
@@ -260,29 +221,6 @@ describe.skipIf(!RUN)('case-report preview API (ADR-0041 S5 slice 1)', () => {
     expect(res.body.layout).toBeNull();
   });
 
-  it('surfaces the active CASE_REPORT layout pointer when one is configured', async () => {
-    const ctx = await seedCpv('LAY');
-    const { caseId } = await seedCaseWithTask(ctx);
-    // Insert a CASE_REPORT layout directly (Slice 3 wires the Designer; Slice 1 just needs the read).
-    await db!.pool.query(
-      `INSERT INTO report_layouts
-         (client_id, product_id, kind, name, template_body, page_size, page_orientation,
-          is_active, version, created_by, updated_by)
-       VALUES ($1, $2, 'CASE_REPORT', 'Default Client Report', '<html>X</html>', 'A4', 'portrait',
-               true, 1, NULL, NULL)`,
-      [ctx.clientId, ctx.productId],
-    );
-
-    const res = await request(app).get(`/api/v2/cases/${caseId}/report/preview`).set(SA);
-    expect(res.status).toBe(200);
-    expect(res.body.layout).toMatchObject({
-      name: 'Default Client Report',
-      pageSize: 'A4',
-      pageOrientation: 'portrait',
-      version: 1,
-    });
-  });
-
   it('non-uuid → 400; absent case → 404 (IDOR-safe scope guard)', async () => {
     expect((await request(app).get('/api/v2/cases/not-a-uuid/report/preview').set(SA)).status).toBe(400);
     expect(
@@ -308,28 +246,6 @@ describe.skipIf(!RUN)('case-report preview API (ADR-0041 S5 slice 1)', () => {
     // Security BLOCK-level: the payload is escaped, no live <script> in the output.
     expect(res.text).not.toContain('<script>alert(1)</script>');
     expect(res.text).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
-  });
-
-  it('report.html renders the active CASE_REPORT layout body (admin template) end-to-end', async () => {
-    const ctx = await seedCpv('CRLAY');
-    const { caseId } = await seedCaseWithTask(ctx);
-    await db!.pool.query(
-      `INSERT INTO report_layouts
-         (client_id, product_id, kind, name, template_body, page_size, page_orientation,
-          is_active, version, created_by, updated_by)
-       VALUES ($1, $2, 'CASE_REPORT', 'Custom', $3, 'A4', 'portrait', true, 1, NULL, NULL)`,
-      [
-        ctx.clientId,
-        ctx.productId,
-        '<main data-tpl="custom"><h1>{{client.name}}</h1>{{case.caseNumber}}</main>',
-      ],
-    );
-
-    const res = await request(app).get(`/api/v2/cases/${caseId}/report.html`).set(SA);
-    expect(res.status).toBe(200);
-    expect(res.text).toContain('data-tpl="custom"'); // the admin body rendered, not the built-in default
-    expect(res.text).not.toContain('<!doctype html>'); // built-in default's marker is absent
-    expect(res.text).toContain('CASE-'); // case number interpolated + escaped
   });
 
   it('report.html 400 on bad UUID; 404 on unknown case', async () => {

@@ -1,6 +1,8 @@
 # ADR-0049: MIS generation & export engine (pure-MIS page)
 
-- **Status:** Accepted
+- **Status:** SUPERSEDED by [ADR-0083](ADR-0083-remove-mis-report-layout-engine.md) (2026-07-01) — the
+  `/mis` page + generation engine were removed (mig 0108) for a clean-slate MIS rebuild. Historical only.
+- **Status (original):** Accepted
 - **Date:** 2026-06-19
 - **Realizes:** ADR-0037 (mis-layout-engine) **generation slice**; ADR-0015 (config-driven per-CPV reporting) MIS side.
 - **Builds on:** ADR-0036/0046/0048 (rate + commission laterals), ADR-0010 (reporting strategy), ADR-0022 (role_permissions runtime model).

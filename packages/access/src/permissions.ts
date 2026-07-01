@@ -22,9 +22,6 @@ export const PERMISSIONS = {
   USER_VIEW: 'page.users',
   USER_MANAGE: 'user.manage',
   ACCESS_VIEW: 'page.access',
-  // Anchors the Report/MIS Layout designer (modules/reportLayouts) — key kept for RBAC-data
-  // compatibility (live role_permissions reference the string); ADR-0063 retired Report Templates.
-  TEMPLATE_MANAGE: 'report_template.manage',
   SYSTEM_VIEW: 'page.system',
   POLICY_VIEW: 'page.policies',
   POLICY_MANAGE: 'policy.manage',
@@ -55,9 +52,6 @@ export const PERMISSIONS = {
   // BACKEND_USER/SA + MANAGER/TEAM_LEADER (ADR-0050, owner 2026-06-20). NOT the office relay
   // role (KYC_VERIFIER), whose job is the external email loop only — it never completes.
   FIELD_REVIEW_COMPLETE: 'field_review.complete',
-  // office data-entry (ADR-0037, MIS engine) — an office operator keys the structured MIS fields for
-  // a task against its CPV's active DATA_ENTRY layout. Office roles (MANAGER + BACKEND_USER + SA).
-  DATA_ENTRY_MANAGE: 'data_entry.manage',
   // field operations console (ADR-0026) — supervisors watch the field executives in their
   // hierarchy scope (roster + throughput + last-seen). SA/MANAGER/TEAM_LEADER.
   FIELD_MONITORING_VIEW: 'page.field_monitoring',
@@ -85,8 +79,6 @@ export const PERMISSIONS = {
   BILLING_COMMISSION_SUMMARY_VIEW: 'billing.commission_summary.view',
   // platform capabilities — DataGrid export (IMPORT_EXPORT_STANDARD §1; default-deny, granted to web roles)
   DATA_EXPORT: 'data.export',
-  // MIS report page (ADR-0049) — the structured MIS data view for desk roles.
-  MIS_VIEW: 'page.mis',
 } as const;
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 
@@ -113,9 +105,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     PERMISSIONS.BILLING_GENERATE,
     PERMISSIONS.BILLING_VIEW,
     PERMISSIONS.BILLING_COMMISSION_SUMMARY_VIEW,
-    PERMISSIONS.DATA_ENTRY_MANAGE,
     PERMISSIONS.DATA_EXPORT,
-    PERMISSIONS.MIS_VIEW,
   ],
   TEAM_LEADER: [
     PERMISSIONS.MASTERDATA_VIEW,
@@ -130,7 +120,6 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     PERMISSIONS.FIELD_MONITORING_VIEW,
     PERMISSIONS.DASHBOARD_VIEW,
     PERMISSIONS.DATA_EXPORT,
-    PERMISSIONS.MIS_VIEW,
   ],
   BACKEND_USER: [
     PERMISSIONS.MASTERDATA_VIEW,
@@ -145,9 +134,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     PERMISSIONS.DASHBOARD_VIEW,
     PERMISSIONS.BILLING_VIEW,
     PERMISSIONS.BILLING_COMMISSION_SUMMARY_VIEW,
-    PERMISSIONS.DATA_ENTRY_MANAGE,
     PERMISSIONS.DATA_EXPORT,
-    PERMISSIONS.MIS_VIEW,
   ],
   FIELD_AGENT: [PERMISSIONS.CASE_VIEW, PERMISSIONS.LOCATION_CAPTURE, PERMISSIONS.TASK_EXECUTE],
   KYC_VERIFIER: [PERMISSIONS.CASE_VIEW, PERMISSIONS.DASHBOARD_VIEW],
@@ -161,7 +148,6 @@ export const PERMISSION_META: Record<Permission, { label: string; group: string 
   'page.users': { label: 'User Management — View', group: 'Administration' },
   'user.manage': { label: 'User Management — Manage', group: 'Administration' },
   'page.access': { label: 'Access Control — View', group: 'Administration' },
-  'report_template.manage': { label: 'MIS Layouts — Manage', group: 'Administration' },
   'page.system': { label: 'System Health — View', group: 'Administration' },
   'page.policies': { label: 'Policies — View', group: 'Administration' },
   'policy.manage': { label: 'Policies — Manage', group: 'Administration' },
@@ -174,7 +160,6 @@ export const PERMISSION_META: Record<Permission, { label: string; group: string 
   'task.rework': { label: 'Task — Revisit / Reassign', group: 'Operations' },
   'dedupe.view': { label: 'Dedupe — Check', group: 'Operations' },
   'field_review.complete': { label: 'Field Review — Complete', group: 'Operations' },
-  'data_entry.manage': { label: 'Data Entry — Manage', group: 'Operations' },
   'page.field_monitoring': { label: 'Field Monitoring — View', group: 'Operations' },
   'page.dashboard': { label: 'Dashboard — View', group: 'Operations' },
   'location.capture': { label: 'Location — Capture (field app)', group: 'Operations' },
@@ -184,5 +169,4 @@ export const PERMISSION_META: Record<Permission, { label: string; group: string 
   'billing.view': { label: 'Billing & Commission — View', group: 'Billing' },
   'billing.commission_summary.view': { label: 'Commission Summary — View', group: 'Billing' },
   'data.export': { label: 'Data Export', group: 'Platform' },
-  'page.mis': { label: 'MIS — View', group: 'Operations' },
 };

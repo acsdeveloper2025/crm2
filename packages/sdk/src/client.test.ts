@@ -189,31 +189,6 @@ describe('createSdk — transport', () => {
       s.tatPolicies.revise(1, { label: '4 hrs', version: 1 }),
       s.tatPolicies.activate(1, 1),
       s.tatPolicies.deactivate(1, 1),
-      s.reportLayouts.list(),
-      s.reportLayouts.get(1),
-      s.reportLayouts.byConfig(1, 2, 'MIS'),
-      s.reportLayouts.create({
-        clientId: 1,
-        productId: 2,
-        kind: 'MIS',
-        name: 'L',
-        columns: [
-          {
-            columnKey: 'case_no',
-            headerLabel: 'Case',
-            sourceType: 'CASE_FIELD',
-            sourceRef: 'case_number',
-            dataType: 'TEXT',
-          },
-        ],
-      }),
-      s.reportLayouts.update(1, { name: 'L2', version: 1 }),
-      s.reportLayouts.activate(1, 1),
-      s.reportLayouts.deactivate(1, 1),
-      s.dataEntry.get('00000000-0000-0000-0000-0000000000aa'),
-      s.dataEntry.save('00000000-0000-0000-0000-0000000000aa', { data: { x: 1 }, version: 1 }),
-      s.dataEntry.getPickup('00000000-0000-0000-0000-0000000000aa'),
-      s.dataEntry.savePickup('00000000-0000-0000-0000-0000000000aa', { pickupTrigger: 'x', version: 1 }),
       s.billing.cases({ filters: { clientId: 1 } }),
       s.billing.caseTasks('00000000-0000-0000-0000-0000000000aa'),
       s.billing.breakdown(),
@@ -370,23 +345,14 @@ describe('createSdk — transport', () => {
       s.savedViews.remove('00000000-0000-0000-0000-0000000000aa'),
       s.savedViews.setDefault('00000000-0000-0000-0000-0000000000aa', true),
     ]);
-    expect(calls.length).toBe(156); // ADR-0063: removed reportTemplates.{list,create,update,activate,deactivate}
+    expect(calls.length).toBe(145); // ADR-0083: removed reportLayouts.{list,get,byConfig,create,update,activate,deactivate} + dataEntry.{get,save,getPickup,savePickup}
     expect(calls.some((c) => c.url === 'http://x/api/v2/commission-rates')).toBe(true);
     expect(calls.some((c) => c.url === 'http://x/api/v2/tat-policies')).toBe(true);
-    expect(calls.some((c) => c.url === 'http://x/api/v2/report-layouts')).toBe(true);
     expect(
       calls.some(
         (c) =>
           c.url ===
           'http://x/api/v2/cases/00000000-0000-0000-0000-000000000001/tasks/00000000-0000-0000-0000-000000000002/field-report',
-      ),
-    ).toBe(true);
-    expect(
-      calls.some((c) => c.url === 'http://x/api/v2/data-entry/cases/00000000-0000-0000-0000-0000000000aa'),
-    ).toBe(true);
-    expect(
-      calls.some(
-        (c) => c.url === 'http://x/api/v2/data-entry/cases/00000000-0000-0000-0000-0000000000aa/pickup',
       ),
     ).toBe(true);
     expect(calls.some((c) => c.url.startsWith('http://x/api/v2/billing/cases'))).toBe(true);
@@ -629,32 +595,5 @@ describe('createSdk — transport', () => {
         'http://x/api/v2/billing/cases/c1/tasks',
       ]),
     );
-  });
-
-  it('mis.rows builds URL with required + optional params; mis.export routes to /mis/export', async () => {
-    const { impl, calls } = fakeFetch(200, { columns: [], rows: [], totalCount: 0 });
-    const s = createSdk({ baseUrl: 'http://x', fetchImpl: impl });
-    // required params only
-    await s.mis.rows({ clientId: 3, productId: 7 });
-    expect(calls[0]?.url).toBe('http://x/api/v2/mis/rows?clientId=3&productId=7');
-    expect(calls[0]?.init.method).toBe('GET');
-    // with optional date-range + search + pagination
-    await s.mis.rows({
-      clientId: 3,
-      productId: 7,
-      completedFrom: '2026-01-01T00:00:00.000Z',
-      completedTo: '2026-06-30T23:59:59.999Z',
-      search: 'HDFC',
-      page: 2,
-      pageSize: 100,
-    });
-    const q = new URL(calls[1]!.url).searchParams;
-    expect(q.get('clientId')).toBe('3');
-    expect(q.get('productId')).toBe('7');
-    expect(q.get('completedFrom')).toBe('2026-01-01T00:00:00.000Z');
-    expect(q.get('completedTo')).toBe('2026-06-30T23:59:59.999Z');
-    expect(q.get('search')).toBe('HDFC');
-    expect(q.get('page')).toBe('2');
-    expect(q.get('pageSize')).toBe('100');
   });
 });

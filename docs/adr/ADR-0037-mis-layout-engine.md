@@ -1,6 +1,9 @@
 # ADR-0037: MIS Layout Engine — per-(client,product) config for data-entry, MIS & Billing MIS
 
-- **Status:** Accepted
+- **Status:** SUPERSEDED by [ADR-0083](ADR-0083-remove-mis-report-layout-engine.md) (2026-07-01) — the
+  whole MIS / report-layout / office data-entry engine was removed (tables dropped in mig 0108) for a
+  clean-slate rebuild; field/case report rendering was decoupled onto built-in defaults. Historical only.
+- **Status (original):** Accepted
 - **Date:** 2026-06-16
 - **Realizes / refines:** ADR-0015 (config-driven per-client+product reporting engine). ADR-0015 named
   two kinds `MIS_EXCEL` + `CASE_REPORT`; this ADR refines the MIS side into **three kinds**

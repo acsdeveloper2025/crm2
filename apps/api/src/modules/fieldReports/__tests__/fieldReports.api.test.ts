@@ -93,14 +93,6 @@ async function seedCaseWithTask(ctx: {
   return { caseId, taskId: (task as { id: string }).id };
 }
 
-const frCol = (columnKey: string, sourceRef: string) => ({
-  columnKey,
-  headerLabel: columnKey,
-  sourceType: 'FORM_DATA_PATH',
-  sourceRef,
-  dataType: 'TEXT',
-});
-
 async function createUser(username: string, role: string): Promise<string> {
   const res = await request(app).post('/api/v2/users').set(SA).send({ username, name: username, role });
   expect(res.status).toBe(201);
@@ -123,8 +115,6 @@ describe.skipIf(!RUN)('field-report API (ADR-0039)', () => {
   });
   beforeEach(async () => {
     await db!.truncate(
-      'report_layout_columns',
-      'report_layouts',
       'case_tasks',
       'case_applicants',
       'cases',
@@ -137,71 +127,7 @@ describe.skipIf(!RUN)('field-report API (ADR-0039)', () => {
     );
   });
 
-  it('renders the active FIELD_REPORT for a task against its form_data + context', async () => {
-    const ctx = await seedCpv('FR');
-    const { caseId, taskId } = await seedCaseWithTask(ctx);
-    // Inject a device form blob on the task. NOTE: the engine walks WHATEVER top-level key the
-    // template's FORM_DATA_PATH refs (it's path-faithful). On a REAL device the top-level key is the
-    // lowercase form SLUG (e.g. `residence`); the verification_type that SELECTS the template is the
-    // unit CODE (e.g. RESIDENCE) — two independent things. Here we key the blob by the synthetic unit
-    // code and author the template's paths to match, which exercises the path-walk end to end.
-    await db!.pool.query('UPDATE case_tasks SET form_data = $1::jsonb WHERE id = $2', [
-      JSON.stringify({
-        [ctx.unitCode]: { formData: { area: 'BTM LAYOUT' }, verificationOutcome: 'POSITIVE' },
-      }),
-      taskId,
-    ]);
-    // a FIELD_REPORT layout keyed by the unit code
-    seeded(
-      await request(app)
-        .post('/api/v2/report-layouts')
-        .set(SA)
-        .send({
-          clientId: ctx.clientId,
-          productId: ctx.productId,
-          kind: 'FIELD_REPORT',
-          name: 'Residence Report',
-          verificationType: ctx.unitCode,
-          // NB: variable keys must NOT collide with a helper name (e.g. `area` is a helper) — use `loc`.
-          templateBody:
-            'Visited {{addr}} for {{applicant}}. Area: {{loc}}.{{#eq outcome "POSITIVE"}} Marked positive.{{/eq}}',
-          columns: [
-            frCol('loc', `${ctx.unitCode}.formData.area`),
-            frCol('outcome', `${ctx.unitCode}.verificationOutcome`),
-            {
-              columnKey: 'addr',
-              headerLabel: 'addr',
-              sourceType: 'TASK_FIELD',
-              sourceRef: 'address',
-              dataType: 'TEXT',
-            },
-            {
-              columnKey: 'applicant',
-              headerLabel: 'applicant',
-              sourceType: 'APPLICANT_FIELD',
-              sourceRef: 'name',
-              dataType: 'TEXT',
-            },
-          ],
-        }),
-    );
-
-    const res = await request(app).get(`/api/v2/cases/${caseId}/tasks/${taskId}/field-report`).set(SA);
-    expect(res.status).toBe(200);
-    expect(res.body.verificationType).toBe(ctx.unitCode);
-    expect(res.body.layoutName).toBe('RESIDENCE REPORT'); // entity name uppercased on store/return (ADR-0058)
-    expect(res.body.narrative).toBe(
-      'Visited 12 MG ROAD for RAJESH KUMAR. Area: BTM LAYOUT. Marked positive.',
-    );
-    // combined view (R1): raw submitted fields come back sectioned, alongside the narrative
-    expect(res.body.sections).toHaveLength(1);
-    expect(res.body.sections[0].fields).toEqual([
-      { label: 'Area', value: 'BTM LAYOUT' },
-      { label: 'Verification Outcome', value: 'POSITIVE' },
-    ]);
-  });
-
-  it('no layout AND not a standard field type (U_NOFR) → 200 with narrative null', async () => {
+  it('not a standard field type (U_NOFR) → 200 with narrative null', async () => {
     const ctx = await seedCpv('NOFR'); // unit code U_NOFR — NOT a FIELD_REPORT_DEFAULTS key
     const { caseId, taskId } = await seedCaseWithTask(ctx);
     const res = await request(app).get(`/api/v2/cases/${caseId}/tasks/${taskId}/field-report`).set(SA);

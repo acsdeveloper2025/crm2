@@ -15,10 +15,10 @@ export interface RenderColumn {
 /**
  * FIELD_REPORT render (ADR-0039). A layout's columns are its VARIABLE CATALOG: each `columnKey` is a
  * Handlebars variable resolved from a bound source, then the `templateBody` is compiled+run against
- * that context (with the grammar helper library — see helpers.ts). Templates are admin-authored
- * (SUPER_ADMIN, report_template.manage); data values are HTML-escaped by Handlebars default
- * (output-encoding); json-paths are walked by property access only (param-bound, never eval'd).
- * Prototype access is blocked by Handlebars' runtime options below.
+ * that context (with the grammar helper library — see helpers.ts). Templates are the built-in standard
+ * defaults (`FIELD_REPORT_DEFAULTS`; the admin-authored override layer was removed in ADR-0083). Data
+ * values are HTML-escaped by Handlebars default (output-encoding); json-paths are walked by property
+ * access only (param-bound, never eval'd). Prototype access is blocked by Handlebars' runtime options.
  */
 
 /** Walk a dot-path into the form blob by plain property access (no eval, no interpolation). */

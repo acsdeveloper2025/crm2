@@ -61,7 +61,7 @@ BEGIN
 END $$;
 
 -- Wave-4 D4/D3 record-page + inline-edit specs each edit the FIRST row of a list, so each needs a row
--- (the locations / commission_rates / report_layouts tables are otherwise empty here). Idempotent.
+-- (the locations / commission_rates tables are otherwise empty here). Idempotent.
 
 -- locations.spec: clicks the Area cell of the first row to edit it inline.
 INSERT INTO locations (pincode, area, city, state, country)
@@ -77,15 +77,6 @@ WHERE u.username = 'admin'
     SELECT 1 FROM commission_rates cr
     WHERE cr.user_id = u.id AND cr.rate_type_id = (SELECT id FROM rate_types WHERE code = 'OFFICE')
   );
-
--- reportLayouts.spec: a row's Edit → /admin/report-layouts/:id. CASE_REPORT needs a template body +
--- page size/orientation (table CHECK); no columns.
-INSERT INTO report_layouts (client_id, product_id, kind, name, template_body, page_size, page_orientation)
-SELECT c.id, p.id, 'CASE_REPORT', 'E2E Case Report', '<h1>{{caseNumber}}</h1>', 'A4', 'portrait'
-FROM clients c, products p
-WHERE c.code = 'HDFC'
-  AND p.code = 'HL'
-  AND NOT EXISTS (SELECT 1 FROM report_layouts WHERE kind = 'CASE_REPORT' AND name = 'E2E Case Report');
 
 -- rateManagement.spec: a row's Revise → /admin/rates/:id. A FIELD rate keyed on HDFC/HL × the first
 -- FIELD_VISIT unit × the Fort location (seeded above) with a LOCAL rate type. The no-overlap EXCLUDE

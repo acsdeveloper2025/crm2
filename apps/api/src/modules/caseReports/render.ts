@@ -14,8 +14,8 @@ export { DEFAULT_PDF_PAGE_SIZE, DEFAULT_PDF_ORIENTATION, DEFAULT_CASE_REPORT_TEM
  * come from upstream as PLAIN TEXT (the FIELD_REPORT engine renders with noEscape:true). This is the
  * sink — `{{var}}` HTML-escapes them here, so an applicant name like `<script>` becomes inert text.
  * Templates MUST NOT use triple-stash `{{{var}}}` on any context value; the only raw interpolation is
- * structural HTML in the template itself, which is trusted (built-in default, or admin-authored under
- * report_template.manage with a `{{{`-reject lint gate at save in slice 3). The `nl2br` helper below
+ * structural HTML in the template itself, which is trusted (the built-in default template — the
+ * admin-authored CASE_REPORT layout body was removed in ADR-0083). The `nl2br` helper below
  * escapes FIRST, then converts newlines to <br> — it is the only SafeString producer and it never
  * emits unescaped user input.
  */

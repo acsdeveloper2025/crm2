@@ -3,8 +3,6 @@ import type {
   CaseReportTask,
   CaseReportPhoto,
   CaseReportFormat,
-  PageSize,
-  PageOrientation,
   JobView,
 } from '@crm2/sdk';
 import { AppError } from '../../platform/errors.js';
@@ -14,7 +12,6 @@ import { getStaticMapProvider } from '../../platform/staticmap/index.js';
 import { enqueue } from '../../platform/jobs/index.js';
 import { caseRepository } from '../cases/repository.js';
 import { fieldReportService } from '../fieldReports/service.js';
-import { reportLayoutRepository } from '../reportLayouts/repository.js';
 import { caseReportRepository } from './repository.js';
 import { renderCaseReportHtml } from './render.js';
 import type { CaseReportJobPayload } from './types.js';
@@ -158,22 +155,10 @@ async function assemble(
     photoCount: photoRows.length,
   };
 
-  // 5) Active CASE_REPORT layout (null when none configured — renderer slice 2+ supplies a default).
-  const layoutRow = await reportLayoutRepository.findActiveByConfig(
-    detail.clientId,
-    detail.productId,
-    'CASE_REPORT',
-  );
-  const layout =
-    layoutRow && layoutRow.pageSize && layoutRow.pageOrientation
-      ? {
-          id: layoutRow.id,
-          name: layoutRow.name,
-          pageSize: layoutRow.pageSize as PageSize,
-          pageOrientation: layoutRow.pageOrientation as PageOrientation,
-          version: layoutRow.version,
-        }
-      : null;
+  // 5) CASE_REPORT layout engine removed with the MIS/report-layout system (ADR-0083). Always null →
+  // the renderer supplies the built-in default template + page geometry (the prior "no layout
+  // configured" path, which prod already used exclusively — zero report_layouts rows existed).
+  const layout = null;
 
   // 6) TAT — completed minus created, in whole days; null when not completed.
   const tatDays =
@@ -227,5 +212,5 @@ async function assemble(
     },
     layout,
   };
-  return { context, layoutBody: layout ? (layoutRow?.templateBody ?? null) : null };
+  return { context, layoutBody: null };
 }

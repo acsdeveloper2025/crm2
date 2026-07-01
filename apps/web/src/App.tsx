@@ -39,9 +39,6 @@ import { ProfilePage } from './features/profile/ProfilePage.js';
 import { BillingPage } from './features/billing/BillingPage.js';
 import { CommissionRatesPage } from './features/commissionRates/CommissionRatesPage.js';
 import { CommissionRateRecordPage } from './features/commissionRates/CommissionRateRecordPage.js';
-import { ReportLayoutsPage } from './features/reportLayouts/ReportLayoutsPage.js';
-import { ReportLayoutRecordPage } from './features/reportLayouts/ReportLayoutRecordPage.js';
-import { MisPage } from './features/mis/MisPage.js';
 import { CommissionSummaryPage } from './features/commissionSummary/CommissionSummaryPage.js';
 
 export function App() {
@@ -88,9 +85,6 @@ export function App() {
         <Route path="/admin/commission-rates" element={<CommissionRatesPage />} />
         <Route path="/admin/commission-rates/new" element={<CommissionRateRecordPage />} />
         <Route path="/admin/commission-rates/:id" element={<CommissionRateRecordPage />} />
-        <Route path="/admin/report-layouts" element={<ReportLayoutsPage />} />
-        <Route path="/admin/report-layouts/new" element={<ReportLayoutRecordPage />} />
-        <Route path="/admin/report-layouts/:id" element={<ReportLayoutRecordPage />} />
         <Route path="/admin/locations" element={<LocationsPage />} />
         <Route path="/admin/users" element={<UsersPage />} />
         <Route path="/admin/users/new" element={<UserRecordPage />} />
@@ -112,7 +106,6 @@ export function App() {
         <Route path="/cases" element={<CasesPage />} />
         <Route path="/cases/new" element={<CaseCreatePage />} />
         <Route path="/cases/:id" element={<CaseDetailPage />} />
-        <Route path="/mis" element={<MisPage />} />
         <Route path="/billing" element={<BillingPage />} />
         <Route path="/billing/commission-summary" element={<CommissionSummaryPage />} />
         <Route path="*" element={<div className="text-muted-foreground">Not built yet.</div>} />
