@@ -288,4 +288,29 @@ describe.skipIf(!RUN)('billing API (ADR-0036 slice 5b)', () => {
       403,
     );
   });
+
+  it('ADR-0081: Commission Summary is gated by its DEDICATED billing.commission_summary.view (list + export)', async () => {
+    // BACKEND_USER holds billing.commission_summary.view (mig 0107 + ROLE_PERMISSIONS) → 200.
+    expect((await request(app).get('/api/v2/billing/commission-summary?period=month').set(BE)).status).toBe(
+      200,
+    );
+    expect(
+      (
+        await request(app)
+          .get('/api/v2/billing/commission-summary/export?period=month&format=csv&mode=all')
+          .set(BE)
+      ).status,
+    ).toBe(200);
+    // TEAM_LEADER holds NEITHER billing.view NOR the dedicated perm → 403 on both (independent gate).
+    expect((await request(app).get('/api/v2/billing/commission-summary?period=month').set(TL)).status).toBe(
+      403,
+    );
+    expect(
+      (
+        await request(app)
+          .get('/api/v2/billing/commission-summary/export?period=month&format=csv&mode=all')
+          .set(TL)
+      ).status,
+    ).toBe(403);
+  });
 });

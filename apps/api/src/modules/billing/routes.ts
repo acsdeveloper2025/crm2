@@ -19,10 +19,15 @@ billingRoutes.get('/cases/:id/tasks', authorize(PERMISSIONS.BILLING_VIEW), c.cas
 // Per-pincode/area + completed-in-band totals (ADR-0046 §4.3). Same query contract + gate as /cases.
 billingRoutes.get('/breakdown', authorize(PERMISSIONS.BILLING_VIEW), c.breakdown);
 // Periodic per-field-user commission rollup + export (ADR-0081). `/export` is a literal 2-segment path —
-// declare before the bare list. Both gate `billing.view` (the export carries the SAME comp amounts).
+// declare before the bare list. Gated by a DEDICATED `billing.commission_summary.view` (independent of the
+// per-case `billing.view`); both list + export share it (the export carries the SAME comp amounts).
 billingRoutes.get(
   '/commission-summary/export',
-  authorize(PERMISSIONS.BILLING_VIEW),
+  authorize(PERMISSIONS.BILLING_COMMISSION_SUMMARY_VIEW),
   c.commissionSummaryExport,
 );
-billingRoutes.get('/commission-summary', authorize(PERMISSIONS.BILLING_VIEW), c.commissionSummary);
+billingRoutes.get(
+  '/commission-summary',
+  authorize(PERMISSIONS.BILLING_COMMISSION_SUMMARY_VIEW),
+  c.commissionSummary,
+);

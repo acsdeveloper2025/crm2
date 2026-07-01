@@ -1,8 +1,8 @@
 # ADR-0081: Periodic per-field-user commission summary export
 
-- **Status:** Accepted (CTO) · owner sign-off pending at push
+- **Status:** Accepted · base shipped 2026-07-01 (`b19039e`); **dedicated-permission amendment (mig 0107) pending push**
 - **Date:** 2026-07-01
-- **Relates to:** ADR-0036 (billing/commission read-model, export-only scope) · ADR-0046/0050 (commission resolution) · ADR-0047 (commission frozen at SUBMIT) · ADR-0056 (field_rate_type derived) · ADR-0037 (MIS). No migration.
+- **Relates to:** ADR-0036 (billing/commission read-model, export-only scope) · ADR-0046/0050 (commission resolution) · ADR-0047 (commission frozen at SUBMIT) · ADR-0056 (field_rate_type derived) · ADR-0037 (MIS) · ADR-0022 (DB-backed RBAC). Base = no migration; the dedicated-permission amendment adds **mig 0107**.
 - **Extends:** ADR-0036 — adds a second commission read-model grain (per-agent × period); does **not** change resolution, the schema, or any existing endpoint. Stays inside the **export-only** scope (no invoice / GST / payout engine — those remain WONTFIX).
 - **Audit:** closes `docs/engineering/FIELD_COMMISSION_EXPORT_AUDIT_2026-07-01.md` gaps **FC-1** (periodic export) + **FC-2** (per-field-user aggregation) and bakes in **FC-5** (earned-at anchor). FC-3/FC-4 stay DEFERRED (15-day was implemented anyway — see Decision); FC-6/FC-7/FC-8 stay WONTFIX.
 
@@ -42,3 +42,23 @@ Read-only, derived, no persisted state. No migration, no schema change. Mobile/`
 - **Reuse MIS layouts.** Rejected — MIS is per-task, per single client+product, layout-authored; it can show an assignee column but cannot aggregate per agent across clients or bucket by period.
 - **Persist a commission ledger / payout run.** Out of scope — ADR-0036 keeps billing/commission export-only (WONTFIX); this is a read-model, not a payout engine.
 - **Rolling-14-day fortnight.** Rejected as the default in favour of twice-monthly (matches "15-day" literally + common Indian payroll); swappable in one SQL fragment if the owner's cycle differs.
+
+## Amendment (2026-07-01) — dedicated RBAC permission
+
+The base ship gated Commission Summary on `billing.view` (shared with the per-case Billing page). Owner
+requested **independent per-role control**, so Commission Summary now has its **own** permission
+`billing.commission_summary.view` ("Commission Summary — View", Billing group), grantable/revocable from
+Access Control separately from `billing.view`.
+
+- **Catalog + defaults** (`@crm2/access` `permissions.ts`): new `PERMISSIONS.BILLING_COMMISSION_SUMMARY_VIEW`
+  + `PERMISSION_META` label/group; added to `ROLE_PERMISSIONS` for **MANAGER + BACKEND_USER** (SUPER_ADMIN via
+  `grants_all`) — the same roles that hold `billing.view`, so **no access regression**.
+- **DB (ADR-0022):** `role_permissions` is the runtime source of truth → **mig 0107** grants the perm to
+  MANAGER + BACKEND_USER on live/existing DBs (idempotent `ON CONFLICT DO NOTHING`, mirrors mig 0082). The
+  roles-parity test asserts DB == `ROLE_PERMISSIONS`, so code + migration must agree.
+- **Gates repointed** to the new perm: the 2 API routes (`authorize(BILLING_COMMISSION_SUMMARY_VIEW)`), the
+  web page (`has('billing.commission_summary.view')`), and the sidebar nav item.
+- **Independence:** a role can now hold `billing.view` without Commission Summary, or vice versa (e.g. a
+  payroll/finance role gets only Commission Summary). Test: `billing.api.test.ts` asserts BACKEND_USER (holds
+  it) → 200 and TEAM_LEADER (holds neither) → 403 on both the list and the export. No OpenAPI change (the
+  permission is authorize-middleware, not in the spec).

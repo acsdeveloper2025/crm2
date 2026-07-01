@@ -41,7 +41,7 @@ const OPERATIONS: { label: string; to?: string; perm?: string }[] = [
   { label: 'Dedupe Check', to: '/dedupe', perm: 'dedupe.view' },
   { label: 'MIS', to: '/mis', perm: 'page.mis' },
   { label: 'Billing & Commission', to: '/billing', perm: 'billing.view' },
-  { label: 'Commission Summary', to: '/billing/commission-summary', perm: 'billing.view' },
+  { label: 'Commission Summary', to: '/billing/commission-summary', perm: 'billing.commission_summary.view' },
   { label: 'Field Monitoring', to: '/field-monitoring', perm: 'page.field_monitoring' },
 ];
 // Each item carries the SAME permission its page's read endpoint enforces (so the nav mirrors the

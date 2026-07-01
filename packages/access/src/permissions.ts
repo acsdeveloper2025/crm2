@@ -79,6 +79,10 @@ export const PERMISSIONS = {
   // (bill + agent-commission amounts per completed task). Billing operators (office/finance), NOT
   // the broad masterdata viewers. The commission-rate CONFIG list stays masterdata.manage (SA-only).
   BILLING_VIEW: 'billing.view',
+  // Dedicated per-role toggle for the periodic Commission Summary page + export (ADR-0081). Grantable
+  // INDEPENDENTLY of billing.view (the per-case Billing page) so a payroll/finance role can hold one
+  // without the other. Defaults to the same roles as billing.view (no access regression).
+  BILLING_COMMISSION_SUMMARY_VIEW: 'billing.commission_summary.view',
   // platform capabilities — DataGrid export (IMPORT_EXPORT_STANDARD §1; default-deny, granted to web roles)
   DATA_EXPORT: 'data.export',
   // MIS report page (ADR-0049) — the structured MIS data view for desk roles.
@@ -108,6 +112,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     PERMISSIONS.DASHBOARD_VIEW,
     PERMISSIONS.BILLING_GENERATE,
     PERMISSIONS.BILLING_VIEW,
+    PERMISSIONS.BILLING_COMMISSION_SUMMARY_VIEW,
     PERMISSIONS.DATA_ENTRY_MANAGE,
     PERMISSIONS.DATA_EXPORT,
     PERMISSIONS.MIS_VIEW,
@@ -139,6 +144,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     PERMISSIONS.TASK_REWORK,
     PERMISSIONS.DASHBOARD_VIEW,
     PERMISSIONS.BILLING_VIEW,
+    PERMISSIONS.BILLING_COMMISSION_SUMMARY_VIEW,
     PERMISSIONS.DATA_ENTRY_MANAGE,
     PERMISSIONS.DATA_EXPORT,
     PERMISSIONS.MIS_VIEW,
@@ -176,6 +182,7 @@ export const PERMISSION_META: Record<Permission, { label: string; group: string 
   'role.manage': { label: 'Roles — Manage (permission sets)', group: 'Administration' },
   'billing.generate': { label: 'Billing — Generate', group: 'Billing' },
   'billing.view': { label: 'Billing & Commission — View', group: 'Billing' },
+  'billing.commission_summary.view': { label: 'Commission Summary — View', group: 'Billing' },
   'data.export': { label: 'Data Export', group: 'Platform' },
   'page.mis': { label: 'MIS — View', group: 'Operations' },
 };
