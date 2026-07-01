@@ -1557,3 +1557,143 @@ verified SOUND/read-derived; the gaps were all on the export/aggregation side. D
   export-only (owner 2026-06-25); paid externally (Tally/manual).
 - **FC-8** `bill_count` multiplier vestigial (every task ×1 since SHIP-2) — 🟢 **WONTFIX (note)** — harmless;
   full retirement is a later cleanup.
+
+## Section AUDIT-2026-07-01 — Enterprise security & production audit (19 areas → independent re-verification → 4-wave remediation)
+
+Full audit trail: `docs/audit/01-authentication.md` … `19-mobile-api-compatibility.md` (original
+findings) → `docs/audit/MASTER_REPORT.md` (synthesis, Risk Score 18/100, READY FOR PRODUCTION) →
+`docs/audit/FINDING_VERIFICATION.md` (independent adversarial re-check: 54 TRUE_POSITIVE/
+ACCEPTED_RISK, 3 FALSE_POSITIVE retracted, 4 duplicate clusters merged) → `docs/audit/
+REMEDIATION_PLAN.md` (4-phase plan) → this section (actual disposition after execution).
+Commits: `955ca91` (Wave 1/High), `987f01f` (Wave 2/Medium), `db87685` (Wave 3/Low), `ed8ec86`
+(Wave 4/Informational). `pnpm verify` green after every wave.
+
+**🔴→🟢 FIXED — High (1/1):**
+- **LOGGING-03** No Docker log-rotation on any prod service (repeat of the 2026-06-26 disk-exhaustion
+  outage's failure mode, different source). FIX: `logging:` cap (20m×10 files) on all 6 services.
+
+**🟡→🟢 FIXED — Medium (7/8):**
+- **AUTHENTICATION-01** Wrong TOTP/MFA codes didn't count toward lockout. FIX: same counter as wrong
+  passwords; a missing code (normal MFA prompt) still doesn't count.
+- **FILE_UPLOAD-01** No malware scanning, magic-byte check only. FIX: `platform/av.ts` — a clamd
+  INSTREAM client (plain `node:net`, no new dependency), wired at all 3 upload call sites, inert
+  unless `AV_SCAN_HOST` is set (matches the codebase's existing optional-integration pattern);
+  docker-compose scaffolding included, commented out until a clamd sidecar is provisioned.
+- **INFRASTRUCTURE-01** Containers ran as root. FIX: apps/api's Dockerfile now runs as the non-root
+  `node` user (build+boot+Chromium-launch verified); nginx already ran workers non-root by design.
+  `no-new-privileges` added to every prod service.
+- **INFRASTRUCTURE-03** deploy.sh only checked the TLS cert exists, never renewed it. FIX:
+  `infra/prod/renew-cert.sh` (one-shot certbot/certbot container against the existing webroot volume),
+  documented as a cron/systemd-timer install step (not part of the CI-gated deploy path).
+- **PERFORMANCE-04** `case_tasks.completed_at`/`submitted_at` unindexed despite being the MIS/Billing/
+  Commission-Summary hot filter key. FIX: migration 0105.
+- **MOBILE_API_COMPATIBILITY-03** The mobile-contract CI step's `|| echo` swallowed real test failures,
+  not just the "not wired" case. FIX: `contract:mobile` is now unconditional (243 tests, green).
+- **MERGED-SECURITY-HEADERS** (canonical merge of **XSS-01 / API_SECURITY-01 / FRONTEND_SECURITY-02 /
+  INFRASTRUCTURE-02** — 4 audits independently found the same gap) No CSP/HSTS/X-Frame-Options
+  anywhere. FIX: `nosniff`/`frame-deny`/referrer-policy/CSP on every API response (Express); a strict
+  same-origin CSP + HSTS + Permissions-Policy on the SPA edge (nginx, incl. the two locations that
+  break `add_header` inheritance).
+
+**🟡 DEFERRED — Medium (1/8):**
+- **DATABASE-04** `case_applicants.name/mobile/pan` stored+indexed in plaintext despite a
+  `pii_sensitive` flag implying intent. **Why deferred, not fixed:** `cases/repository.ts` does
+  exact-match dedupe checks cross-scope on these raw columns AND a separate ILIKE substring search on
+  applicant name (both live, deliberately-designed features) — naive encryption (deterministic or
+  otherwise) breaks one or both. Needs a real searchable-encryption design decision (deterministic
+  encryption / blind indexing / accept losing substring search) + a superseding ADR before touching
+  it, not a mechanical patch. Tracked here as the concrete next step when prioritized.
+
+**🟢 FIXED — Low (22/33):**
+AUTHENTICATION-03 (secret entropy floor beyond the literal dev-default check) · AUTHORIZATION-04
+(USER_MANAGE could assign SUPER_ADMIN — new `assertCanAssignRole()`, actor must already hold
+grantsAll to grant it; 4 tests) · INPUT_VALIDATION-01 (`safeDecodeURIComponent` — malformed
+%-sequence no longer 500s) · INPUT_VALIDATION-02 (`page` ceiling, `PAGE_TOO_LARGE`) ·
+INPUT_VALIDATION-03 (`.max()` on login/refresh schema fields) · CSRF-01 (`verifySameOrigin` — Origin/
+Referer cross-check on `/auth/refresh`, the one cookie-authenticated endpoint) · API_SECURITY-02
+(rate limiter on change-password/MFA endpoints, same as login/refresh) · DATABASE-01 (index on
+`case_tasks.verification_unit_id`, migration 0106) · DATABASE-02 (refresh-token rotation is one
+atomic transaction via `repo.rotateRefresh()`, kept inside the repository layer per the
+`db-access-only-in-repositories` boundary) · DATABASE-03 (doc-corrected: "query plan reviewed" is a
+manual practice, not a CI gate) · DATABASE-05 (doc-corrected: `DATA_RETENTION_POLICY.md`'s
+`legal_hold`-exists-day-1 claim was false, marked PLANNED) · REDIS_CACHE-01 (dev Valkey now requires
+auth + binds loopback-only) · REDIS_CACHE-02 (the inert future prod Valkey block gained a
+`--maxmemory` ceiling + resource limits) · REDIS_CACHE-03 (rewrote the outage runbook, which
+described a two-node topology and a Redis-aware health check that don't exist) · INFRASTRUCTURE-04
+(`cpus` limits on all 4 long-running services + `mem_limit`/`cpus` on the 2 one-shot services that
+had neither) · INFRASTRUCTURE-05 (explicit ECDHE-only cipher allowlist, Mozilla Intermediate) ·
+LOGGING-01 (`redact()` now recurses into nested objects/arrays, depth-capped) · LOGGING-02
+(doc-corrected: audit-log hash-chaining/partitioning claimed day-1, actually deferred per migration
+0017's own comment) · PERFORMANCE-01 (`addTasks()` caches the eligible-assignee pool per unique
+location/unit tuple instead of re-querying per task) · CODE_QUALITY-02 (extracted
+`platform/istTime.ts` — the IST-midnight formula was duplicated verbatim across 3 services) ·
+BUSINESS_LOGIC-02 (`/dedupe-search/export` now gates on `dedupe.view`, matching its view sibling,
+not the generic `data.export`) · MOBILE_API_COMPATIBILITY-01 (doc-corrected: the compatibility matrix
+referenced the superseded `/auth/accept-policies`; real endpoint is `/consents/accept`).
+
+**🟡 DEFERRED — Low (7/33):**
+- **AUTHORIZATION-01** `case:updated` realtime broadcast reaches every office-role socket regardless
+  of client/product/territory scope (case number + status only, no PII — REST reads stay properly
+  scoped). Real fix needs scope-aware socket rooms; a rushed retrofit risks destabilizing the scope
+  system the Authorization audit itself verified sound. Deferred, not declined.
+- **DATABASE-06** API runtime shares the schema-owning DB role with migrations (no privilege
+  separation against the audit-log trigger). Needs live DB-admin access to create + test a
+  least-privilege role without risking the actual prod database — out of scope for this pass.
+- **CODE_QUALITY-01** 19 unused exports + 14 unused exported types (knip). Zero functional/security
+  impact; mechanical but individually-verifiable cleanup better suited to a dedicated follow-up than
+  bundled into a security remediation pass. Full list captured in the knip output at audit time.
+- **CODE_QUALITY-03** `CaseDetailPage.tsx`, a 2332-line God-component. The finding's own text concedes
+  zero security exploitability — pure velocity/maintainability debt; a multi-day decomposition, not a
+  fix-in-pass item.
+- **CODE_QUALITY-05** Oversized, multi-responsibility functions in `cases/repository.ts`. Working,
+  tested, parameterized-query code — refactoring it carries real behavior-change risk for a
+  non-security finding; deferred rather than rushed.
+- **MOBILE_API_COMPATIBILITY-02** `forms`/`telemetry` modules have zero test coverage. Both are
+  trivial non-persisting stubs today (low blast radius); genuine test-writing effort, not a quick fix.
+- **MOBILE_API_COMPATIBILITY-04** Idempotency dedupe is `operation_id`-only, doesn't compare replay
+  body against the documented "method+body+key" contract. Touches a LOCKED mobile contract
+  (`crm-mobile-native`, separate repo, never-break-mobile rule) — needs more care/coordination than
+  this pass allows, not a same-repo mechanical fix.
+
+**⚪ ACCEPTED_RISK, untouched by design (4/33 Low)** — independently re-verified as already
+knowingly accepted by the team (not unacknowledged gaps): **MERGED-ACCESS-TOKEN-LOCALSTORAGE**
+(AUTHENTICATION-02 + FRONTEND_SECURITY-03 — ADR-0076 SEC-10's deliberate scoping, refresh token
+alone moved to httpOnly cookie) · **FRONTEND_SECURITY-01** (this registry's own SR-11 entry, already
+deferred at LOW citing backend `authorize()` gating) · **PERFORMANCE-02** (`docker-compose.yml`'s own
+comment + ADR-0030 — in-process job tier is an intentional, config-gated design property) ·
+**BUSINESS_LOGIC-01** (ADR-0078 lines 49-50 explicitly names the function and states it deliberately
+stays hierarchy-scoped). Reversing any of these needs a superseding ADR + CTO + domain-owner
+sign-off per governance, not a remediation-pass code change.
+
+**🟢 FIXED — Informational (6/12):**
+- **MERGED-SOCKETIO-CORS** (AUTHORIZATION-02 + CSRF-02) `origin: true` reflected any origin. FIX:
+  explicit allowlist (prod hostname / dev localhost); latent, not actively exploitable (handshake
+  already requires a bearer JWT), but now a real second factor.
+- **INPUT_VALIDATION-04** `CreateCaseSchema.applicants` had no ceiling. FIX: `.max(10)`.
+- **MERGED-UNUSED-VITEST-DEPS** (DEPENDENCY_AUDIT-01 + CODE_QUALITY-04) Unused root `vitest`/
+  `@vitest/coverage-v8`. FIX: removed; knip's unused-devDependency section is now empty.
+- **DEPENDENCY_AUDIT-04** No Dependabot. FIX: `.github/dependabot.yml` (weekly, npm + github-actions).
+- **API_SECURITY-04** No ADR recorded the deliberate same-origin/no-CORS decision. FIX: ADR-0082.
+- **FRONTEND_SECURITY-04** ADR-0009 (feature flags) claimed Accepted with no implementation-status
+  caveat. FIX: status corrected to "Accepted (design) · NOT IMPLEMENTED", verified zero code hits.
+
+**⚪ NO ACTION — Informational (5/12), already correct or non-issues:**
+AUTHORIZATION-03 (verification note only — confirms a working control, not a gap) ·
+INFRASTRUCTURE-06 (gzip-on-JSON BREACH precondition, no concrete exploit path — track only) ·
+DEPENDENCY_AUDIT-02 (license-sweep scope note, spot-checked clean) · BUSINESS_LOGIC-03 (YAGNI — zero
+scope-sensitive export builders registered today) · CODE_QUALITY-06 (`location` vs `locations`
+naming-clarity nit, no functional bug — optional rename, opportunistic only).
+
+**⚪ ACCEPTED_RISK, no action (1/12):**
+- **PERFORMANCE-03** XLSX export buffers the full workbook in memory. Already an explicit,
+  pre-existing RATCHET (`docs/agents/performance.md`, filed 2026-06-07, reaffirmed 2026-06-15) with a
+  sized upgrade trigger — not a new finding to act on.
+
+**⚫ RETRACTED — false positives (3, excluded from the 54 above):** independent re-verification
+found these did not hold up against the live code — **SSRF-01** (the bound-check the finding claimed
+missing is actually enforced downstream in the shared `geocodeService.reverse()`), **API_SECURITY-03**
+(self-disclosed by the original finding as "not actually a problem"), **DEPENDENCY_AUDIT-03**
+(contradicted by pnpm v9's default-blocked lifecycle scripts — no such postinstall hook runs).
+
+**Net:** 0 Critical, 1 High (fixed), 8 Medium (7 fixed, 1 deferred), 33 Low (22 fixed, 7 deferred, 4
+accepted-risk), 12 Informational (6 fixed, 5 no-action, 1 accepted-risk). Nothing silently dropped.
