@@ -346,7 +346,7 @@ export const caseService = {
       // underlying single-tuple lookup into a batched query (a bigger, separate change).
       const poolCache = new Map<string, AssignableUser[]>();
       for (const t of assigned) {
-        const key = `${t.visitType} ${t.pincodeId ?? ''} ${t.areaId ?? ''} ${t.verificationUnitId ?? ''}`;
+        const key = `${t.visitType}\0${t.pincodeId ?? ''}\0${t.areaId ?? ''}\0${t.verificationUnitId ?? ''}`;
         let pool = poolCache.get(key);
         if (!pool) {
           pool = await repo.eligibleAssigneesForNew(
