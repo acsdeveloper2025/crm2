@@ -31,3 +31,24 @@ export interface MisReportTypeMeta {
 /** A report row: values keyed by the selected column keys. Money cells are null without billing.view. */
 export type MisCell = string | number | boolean | null;
 export type MisRow = Record<string, MisCell>;
+
+/** One grouped row of the Summary format: the group value + task/outcome counts + (gated) money totals. */
+export interface MisSummaryRow {
+  group: MisCell;
+  count: number;
+  completed: number;
+  positive: number;
+  negative: number;
+  refer: number;
+  fraud: number;
+  /** billing.view-gated — null for actors without it. */
+  billTotal: number | null;
+  commissionTotal: number | null;
+}
+
+/** Summary (grouped) result: the group-by key, the group rows (capped), and the grand total over all matches. */
+export interface MisSummary {
+  groupBy: string;
+  rows: MisSummaryRow[];
+  grandTotal: Omit<MisSummaryRow, 'group'>;
+}

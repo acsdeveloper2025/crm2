@@ -316,6 +316,9 @@ describe('createSdk — transport', () => {
         billCount: 1,
       }),
       s.sync.download({ lastSyncTimestamp: '2026-06-11T00:00:00.000Z', limit: 50, offset: 0 }),
+      s.mis.reportTypes(),
+      s.mis.rows('TASK_OPERATIONAL', { page: 1 }, ['taskNumber', 'caseNumber']),
+      s.mis.summary('TASK_OPERATIONAL', 'clientName'),
       s.fieldMonitoring.agents({ page: 1 }),
       s.fieldMonitoring.stats(),
       s.location.capture({
@@ -345,7 +348,7 @@ describe('createSdk — transport', () => {
       s.savedViews.remove('00000000-0000-0000-0000-0000000000aa'),
       s.savedViews.setDefault('00000000-0000-0000-0000-0000000000aa', true),
     ]);
-    expect(calls.length).toBe(145); // ADR-0083: removed reportLayouts.{list,get,byConfig,create,update,activate,deactivate} + dataEntry.{get,save,getPickup,savePickup}
+    expect(calls.length).toBe(148); // ADR-0084: +mis.{reportTypes,rows,summary}; ADR-0083 removed reportLayouts.{list,get,byConfig,create,update,activate,deactivate} + dataEntry.{get,save,getPickup,savePickup}
     expect(calls.some((c) => c.url === 'http://x/api/v2/commission-rates')).toBe(true);
     expect(calls.some((c) => c.url === 'http://x/api/v2/tat-policies')).toBe(true);
     expect(

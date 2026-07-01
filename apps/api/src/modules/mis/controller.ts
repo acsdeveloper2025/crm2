@@ -32,4 +32,14 @@ export const misController = {
       next(e);
     }
   },
+  async summary(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const type = String(req.params['type'] ?? '');
+      res.json(
+        await svc.summary(type, req.query as Record<string, unknown>, actor(req), canViewBilling(req)),
+      );
+    } catch (e) {
+      next(e);
+    }
+  },
 };

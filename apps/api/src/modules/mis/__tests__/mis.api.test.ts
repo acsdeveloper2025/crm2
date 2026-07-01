@@ -184,4 +184,31 @@ describe.skipIf(!RUN)('MIS API (ADR-0084)', () => {
     expect((await request(app).get(`${ROWS}?sortBy=not_sortable`).set(SA)).status).toBe(400);
     expect((await request(app).get('/api/v2/mis/NOPE/rows').set(SA)).status).toBe(404);
   });
+
+  it('summary: groups by an allowed column with counts + grand total; money totals are gated', async () => {
+    await seedCaseWithTasks('S1', 2); // one client → two tasks
+    const res = await request(app).get('/api/v2/mis/TASK_OPERATIONAL/summary?group=clientName').set(SA);
+    expect(res.status).toBe(200);
+    expect(res.body.groupBy).toBe('clientName');
+    expect(res.body.rows.length).toBeGreaterThanOrEqual(1);
+    expect(res.body.rows[0].count).toBe(2);
+    expect('billTotal' in res.body.rows[0]).toBe(true); // billing.view → money key present
+    expect(res.body.grandTotal.count).toBe(2);
+    // a mis.view-only role gets null money totals (laterals not joined)
+    const tl = await request(app).get('/api/v2/mis/TASK_OPERATIONAL/summary?group=clientName').set(TL);
+    expect(tl.status).toBe(200);
+    if (tl.body.rows[0]) expect(tl.body.rows[0].billTotal).toBeNull();
+  });
+
+  it('summary: rejects grouping by a money / unknown / non-groupable (date) column → 400', async () => {
+    expect(
+      (await request(app).get('/api/v2/mis/TASK_OPERATIONAL/summary?group=billAmount').set(SA)).status,
+    ).toBe(400);
+    expect((await request(app).get('/api/v2/mis/TASK_OPERATIONAL/summary?group=nope').set(SA)).status).toBe(
+      400,
+    );
+    expect(
+      (await request(app).get('/api/v2/mis/TASK_OPERATIONAL/summary?group=caseCreatedAt').set(SA)).status,
+    ).toBe(400);
+  });
 });

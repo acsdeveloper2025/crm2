@@ -1,4 +1,4 @@
-import type { MisColumnMeta, MisReportTypeMeta, MisRow, Paginated } from '@crm2/sdk';
+import type { MisColumnMeta, MisReportTypeMeta, MisRow, MisSummary, Paginated } from '@crm2/sdk';
 import { AppError } from '../../platform/errors.js';
 import {
   resolvePage,
@@ -31,6 +31,14 @@ function toMeta(c: MisColumn): MisColumnMeta {
 
 const filterKindFor = (c: MisColumn): FilterField['kind'] =>
   c.filterKind ?? (c.dataType === 'DATE' ? 'date' : c.dataType === 'SELECT' ? 'code' : 'text');
+
+/** Summary caps the number of returned groups (the grand total still covers ALL matching rows). */
+const MIS_SUMMARY_MAX_GROUPS = 500;
+
+/** Groupable = an allowed, non-money TEXT/SELECT column. Grouping by a date/number/money is rejected. */
+function isGroupable(c: MisColumn): boolean {
+  return !c.money && (c.dataType === 'TEXT' || c.dataType === 'SELECT');
+}
 
 export const misService = {
   /** The catalog the picker renders. Money columns are omitted entirely without billing.view. */
@@ -106,5 +114,39 @@ export const misService = {
       offset: r.offset,
     });
     return buildPage(items, totalCount, r);
+  },
+
+  /** Summary (grouped) format: group by one allowed non-money TEXT/SELECT column → task/outcome counts
+   *  + billing.view-gated money totals. Filters are shared with rows; money totals are null without
+   *  billing.view (the laterals aren't even joined). */
+  async summary(
+    type: string,
+    rawQuery: Record<string, unknown>,
+    actor: Actor,
+    canViewBilling: boolean,
+  ): Promise<MisSummary> {
+    const rt = getReportType(type);
+    if (!rt) throw AppError.notFound('MIS_REPORT_TYPE_NOT_FOUND');
+
+    const allowed = allowedColumns(rt, canViewBilling);
+    const byKey = new Map(allowed.map((c) => [c.key, c]));
+    const groupKey = typeof rawQuery['group'] === 'string' ? rawQuery['group'].trim() : '';
+    const groupCol = byKey.get(groupKey);
+    if (!groupCol || !isGroupable(groupCol))
+      throw AppError.badRequest('INVALID_MIS_GROUP', { group: groupKey });
+
+    const filterMap: Record<string, FilterField> = {};
+    for (const c of allowed) if (c.filterable) filterMap[c.key] = { column: c.sql, kind: filterKindFor(c) };
+    const filters = resolveFilters(rawQuery, { sortMap: {}, filterMap, defaultSort: groupKey });
+    const scope = await resolveScope(actor);
+
+    const { rows, grandTotal } = await repo.summary({
+      groupColumn: groupCol.sql,
+      billing: canViewBilling,
+      filters,
+      scope,
+      limit: MIS_SUMMARY_MAX_GROUPS,
+    });
+    return { groupBy: groupKey, rows, grandTotal };
   },
 };

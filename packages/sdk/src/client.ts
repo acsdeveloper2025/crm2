@@ -6,7 +6,7 @@ import type {
 } from './verificationUnit.js';
 import type { Paginated, PageQuery } from './pagination.js';
 import { pageQueryToParams } from './pagination.js';
-import type { MisReportTypeMeta, MisRow } from './mis.js';
+import type { MisReportTypeMeta, MisRow, MisSummary } from './mis.js';
 import type { ExportRequest, ExportResult } from './export.js';
 import { exportQueryToParams } from './export.js';
 import type { Option } from './options.js';
@@ -733,6 +733,11 @@ export function createSdk(opts: SdkOptions) {
           'GET',
           `/api/v2/mis/${encodeURIComponent(type)}/rows${qs ? `?${qs}` : ''}`,
         );
+      },
+      summary: (type: string, groupBy: string, q: PageQuery = {}) => {
+        const params = pageQueryToParams(q);
+        params.set('group', groupBy);
+        return req<MisSummary>('GET', `/api/v2/mis/${encodeURIComponent(type)}/summary?${params.toString()}`);
       },
     },
     /** Field Monitoring console (ADR-0026): field executives in the actor's hierarchy scope. */
