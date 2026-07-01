@@ -110,7 +110,7 @@ jobs:
       IMAGE_TAG: ${{ needs.build-images.outputs.tag }}
     steps:
       - name: Install SSH agent
-        uses: webfactory/ssh-agent@v0.9.0
+        uses: webfactory/ssh-agent@v0.10.0
         with:
           ssh-private-key: ${{ secrets.PRODUCTION_SSH_KEY }}
       - name: Pin known_hosts
