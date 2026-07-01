@@ -8,6 +8,12 @@ import {
   type PageSpec,
 } from '../../platform/pagination.js';
 import { resolveScope, type Actor } from '../../platform/scope/index.js';
+import {
+  assertExportable,
+  exportThreshold,
+  type ExportColumn,
+  type ResolvedExport,
+} from '../../platform/export/index.js';
 import { MIS_REPORT_TYPES, getReportType, type MisColumn, type MisReportType } from './reportTypes.js';
 import { misRepository as repo } from './repository.js';
 
@@ -148,5 +154,53 @@ export const misService = {
       limit: MIS_SUMMARY_MAX_GROUPS,
     });
     return { groupBy: groupKey, rows, grandTotal };
+  },
+
+  /** Export the current (scoped, filtered, money-gated) view. Sync-only: a match count at/above the
+   *  threshold 413s (the async job tier is deferred — its builder can't reconstruct scope/money). The
+   *  visible columns come from `ex.cols`, restricted to the allowed set (money can never leak). */
+  async exportData(
+    type: string,
+    rawQuery: Record<string, unknown>,
+    ex: ResolvedExport,
+    actor: Actor,
+    canViewBilling: boolean,
+  ): Promise<{ rows: MisRow[]; columns: ExportColumn<MisRow>[] }> {
+    const rt = getReportType(type);
+    if (!rt) throw AppError.notFound('MIS_REPORT_TYPE_NOT_FOUND');
+
+    const allowed = allowedColumns(rt, canViewBilling);
+    const allowedKeys = new Set(allowed.map((c) => c.key));
+    // Visible columns from the grid's export request → allowed only (money-safe); else default-visible.
+    const wanted = ex.cols.filter((k) => allowedKeys.has(k));
+    const picked = allowed.filter((c) => wanted.includes(c.key));
+    const cols = picked.length ? picked : allowed.filter((c) => c.defaultVisible);
+
+    const filterMap: Record<string, FilterField> = {};
+    for (const c of allowed) if (c.filterable) filterMap[c.key] = { column: c.sql, kind: filterKindFor(c) };
+    const filters = resolveFilters(rawQuery, { sortMap: {}, filterMap, defaultSort: rt.defaultSort });
+    const scope = await resolveScope(actor);
+
+    // Pre-check the match count so an oversized set 413s BEFORE the full projection is fetched.
+    const totalCount = await repo.count({ filters, scope });
+    assertExportable(totalCount);
+
+    const defaultCol = rt.columns.find((c) => c.key === rt.defaultSort);
+    const { items } = await repo.rows({
+      columns: cols,
+      billing: canViewBilling,
+      filters,
+      scope,
+      sortColumn: defaultCol ? defaultCol.sql : 'ct.created_at',
+      sortOrder: 'desc',
+      limit: Math.min(totalCount, exportThreshold()),
+      offset: 0,
+    });
+    const columns: ExportColumn<MisRow>[] = cols.map((c) => ({
+      id: c.key,
+      header: c.label,
+      value: (row) => row[c.key] ?? null,
+    }));
+    return { rows: items, columns };
   },
 };

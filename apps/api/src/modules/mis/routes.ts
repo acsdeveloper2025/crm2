@@ -12,3 +12,4 @@ export const misRoutes: Router = Router();
 misRoutes.get('/report-types', authorize(PERMISSIONS.MIS_VIEW), c.reportTypes);
 misRoutes.get('/:type/rows', authorize(PERMISSIONS.MIS_VIEW), c.rows);
 misRoutes.get('/:type/summary', authorize(PERMISSIONS.MIS_VIEW), c.summary);
+misRoutes.get('/:type/export', authorize(PERMISSIONS.MIS_EXPORT), c.export);

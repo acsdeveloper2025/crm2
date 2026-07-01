@@ -1,7 +1,9 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
+  exportQueryToParams,
   pageQueryToParams,
+  type ExportRequest,
   type MisCell,
   type MisColumnMeta,
   type MisDataType,
@@ -11,7 +13,7 @@ import {
   type PageQuery,
   type Paginated,
 } from '@crm2/sdk';
-import { api } from '../../lib/sdk.js';
+import { api, apiExport } from '../../lib/sdk.js';
 import { formatDateTime } from '../../lib/format.js';
 import { useAuth } from '../../lib/AuthContext.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
@@ -190,6 +192,9 @@ function TabularView({
       searchPlaceholder="Search this report…"
       dateFilters={dateFilters}
       loadingLabel="MIS"
+      exportFn={(req: ExportRequest) =>
+        apiExport(`/api/v2/mis/${encodeURIComponent(type)}/export?${exportQueryToParams(req).toString()}`)
+      }
       toolbar={
         <Popover label="Columns" trigger={<span>Columns</span>} panelClassName="w-72 max-h-96 overflow-auto">
           <div className="mb-2 flex gap-3 border-b border-border px-2 pb-2 text-xs">

@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { PERMISSIONS } from '@crm2/access';
 import { misService as svc } from './service.js';
 import { AppError } from '../../platform/errors.js';
+import { resolveExport, writeExport } from '../../platform/export/index.js';
 import type { Actor } from '../../platform/scope/index.js';
 
 const actor = (req: Request): Actor => {
@@ -38,6 +39,25 @@ export const misController = {
       res.json(
         await svc.summary(type, req.query as Record<string, unknown>, actor(req), canViewBilling(req)),
       );
+    } catch (e) {
+      next(e);
+    }
+  },
+  async export(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const type = String(req.params['type'] ?? '');
+      const q = req.query as Record<string, unknown>;
+      const ex = resolveExport(q);
+      const a = actor(req);
+      const { rows, columns } = await svc.exportData(type, q, ex, a, canViewBilling(req));
+      await writeExport(res, {
+        rows,
+        columns,
+        ex,
+        filenameBase: `mis-${type.toLowerCase()}`,
+        resource: `mis/${type}`,
+        actorId: a.userId,
+      });
     } catch (e) {
       next(e);
     }

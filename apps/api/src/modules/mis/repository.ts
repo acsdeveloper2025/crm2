@@ -135,4 +135,20 @@ export const misRepository = {
     };
     return { rows, grandTotal };
   },
+
+  /** Scoped + filtered match count (base 1:1 FROM, no laterals) — the export guard's pre-check so a
+   *  ≥threshold set 413s BEFORE the full projection is fetched. */
+  async count(o: { filters: AppliedFilter[]; scope: Scope }): Promise<number> {
+    const params: unknown[] = [];
+    const where: string[] = [];
+    const scopePred = taskScopePredicate(params, o.scope);
+    if (scopePred) where.push(scopePred);
+    where.push(...filterClauses(o.filters, params));
+    const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const [row] = await query<{ count: number }>(
+      `SELECT count(*)::int AS count ${MIS_FROM} ${clause}`,
+      params,
+    );
+    return row?.count ?? 0;
+  },
 };

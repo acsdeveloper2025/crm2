@@ -211,4 +211,21 @@ describe.skipIf(!RUN)('MIS API (ADR-0084)', () => {
       (await request(app).get('/api/v2/mis/TASK_OPERATIONAL/summary?group=caseCreatedAt').set(SA)).status,
     ).toBe(400);
   });
+
+  it('export: streams the scoped view as CSV; money columns gated; mis.export required', async () => {
+    await seedCaseWithTasks('X1', 1);
+    const sa = await request(app).get('/api/v2/mis/TASK_OPERATIONAL/export?format=csv&mode=all').set(SA);
+    expect(sa.status).toBe(200);
+    expect(sa.headers['content-disposition']).toMatch(/attachment/);
+    expect(sa.text).toContain('Case Number');
+    expect(sa.text).toContain('Bill Amount'); // money header present for a billing.view holder
+    // a mis.view/mis.export holder without billing.view gets no money columns in the file
+    const tl = await request(app).get('/api/v2/mis/TASK_OPERATIONAL/export?format=csv&mode=all').set(TL);
+    expect(tl.status).toBe(200);
+    expect(tl.text).not.toContain('Bill Amount');
+    // no mis.export → 403
+    expect((await request(app).get('/api/v2/mis/TASK_OPERATIONAL/export?format=csv').set(FA)).status).toBe(
+      403,
+    );
+  });
 });
