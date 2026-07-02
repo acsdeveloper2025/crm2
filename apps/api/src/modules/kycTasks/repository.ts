@@ -20,6 +20,7 @@ const KYC_QUEUE_FROM = `
   JOIN clients cl ON cl.id = cs.client_id
   JOIN products p ON p.id = cs.product_id
   JOIN case_applicants ta ON ta.id = ct.applicant_id
+  LEFT JOIN users ab ON ab.id = ct.assigned_by
   LEFT JOIN task_export_events fe ON fe.task_id = ct.id AND NOT fe.is_reexport
   LEFT JOIN users ue ON ue.id = fe.exported_by`;
 

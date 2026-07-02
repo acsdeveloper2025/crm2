@@ -174,6 +174,7 @@ export const kycTasksService = {
       'trigger',
       'priority',
       'assignedAt',
+      'assignedByName',
     ];
     const wanted = ex.cols.filter((k) => KYC_QUEUE_COLUMNS_BY_KEY.has(k));
     const pickedKeys = wanted.length ? wanted : EXPORT_DEFAULT_KEYS;
@@ -184,7 +185,10 @@ export const kycTasksService = {
         id: c.key,
         header: c.label,
         value: (row) => {
-          const v = row[c.key];
+          const v = row[c.key] as unknown;
+          // pg returns timestamptz as Date — pass it through (the builders render ISO); only a real
+          // object (a jsonb map on a non-detail column) needs stringifying.
+          if (v instanceof Date) return v;
           return v !== null && typeof v === 'object'
             ? JSON.stringify(v)
             : (v as string | number | boolean | null);

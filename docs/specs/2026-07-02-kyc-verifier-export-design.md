@@ -130,7 +130,7 @@ unknown; no money columns in v1). Base query: `case_tasks ct JOIN cases cs … W
     `is_reexport=true` events with the reason; streams the file. Blank reason → 400 (CHECK is the backstop).
 - Columns (registry v1 — superset of v1's 16-column verifier sheet): `taskNumber, caseNumber, clientName,
   productName, unitCategory, unitName, documentNumber, documentHolderName, documentDetails, applicantName,
-  applicantPan, applicantMobile, applicantCompany, trigger, priority, assignedAt, createdAt, tatHours, status,
+  applicantPan, applicantMobile, applicantCompany, trigger, priority, assignedAt, assignedByName, attachmentCount, createdAt, tatHours, status,
   exportedAt, exportedBy, exportCount` (last three EXPORTED-state only). Export file default = the
   verify-relevant subset (identifiers + document fields). v1 columns dropped deliberately: Verified By /
   Remarks / Rejection Reason / Verified Date (completion-track data — the verifier exports BEFORE

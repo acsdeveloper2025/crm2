@@ -123,6 +123,24 @@ export const KYC_QUEUE_COLUMNS: KycQueueColumn[] = [
     filterKind: 'date',
     defaultVisible: true,
   },
+  // Who gave the verifier this task (owner 2026-07-02) — his relay contact back into the office.
+  {
+    key: 'assignedByName',
+    label: 'Assigned by',
+    dataType: 'TEXT',
+    sql: 'ab.name',
+    filterable: true,
+    defaultVisible: true,
+  },
+  // Reference documents the creator attached to THIS task (ADR-0025 B2) — the verifier fetches them
+  // from the case page (row click); the count tells him there's something to fetch.
+  {
+    key: 'attachmentCount',
+    label: 'Attachments',
+    dataType: 'NUMBER',
+    sql: '(SELECT count(*)::int FROM case_attachments ca WHERE ca.task_id = ct.id AND ca.deleted_at IS NULL)',
+    defaultVisible: true,
+  },
   { key: 'createdAt', label: 'Created', dataType: 'DATE', sql: 'ct.created_at', sortable: true },
   { key: 'tatHours', label: 'TAT (h)', dataType: 'NUMBER', sql: 'ct.tat_hours' },
   {

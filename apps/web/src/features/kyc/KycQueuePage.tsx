@@ -31,7 +31,9 @@ const TO_EXPORT_COLS = [
   'documentHolderName',
   'documentDetails',
   'applicantName',
+  'attachmentCount',
   'assignedAt',
+  'assignedByName',
 ] as const;
 const EXPORTED_COLS = [
   'taskNumber',
@@ -54,6 +56,8 @@ const LABELS: Record<string, string> = {
   documentDetails: 'Details',
   applicantName: 'Applicant',
   assignedAt: 'Assigned',
+  assignedByName: 'Assigned by',
+  attachmentCount: 'Attachments',
   exportedAt: 'Exported',
   exportedBy: 'Exported by',
   exportCount: 'Exports',
@@ -87,6 +91,15 @@ function cellFor(key: string, row: KycTaskRow): ReactNode {
   if (key === 'assignedAt' || key === 'exportedAt') return formatDateTime(String(v));
   if (key === 'status')
     return <span className="rounded bg-surface-muted px-2 py-0.5 text-xs font-medium">{String(v)}</span>;
+  if (key === 'attachmentCount')
+    // the creator's reference document(s) — open the row (case page) to download before verifying
+    return Number(v) > 0 ? (
+      <span className="rounded bg-surface-muted px-2 py-0.5 text-xs font-medium">
+        {String(v)} file{Number(v) === 1 ? '' : 's'}
+      </span>
+    ) : (
+      <span className="text-muted-foreground">—</span>
+    );
   return String(v);
 }
 

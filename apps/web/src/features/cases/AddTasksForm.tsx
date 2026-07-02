@@ -297,7 +297,9 @@ function TaskRowEditor({
   };
   // Dispatch fields (address/trigger/attachment) are shown ONLY once the visit type is chosen — they
   // depend on HOW the task is verified. A create-only role (no visit-type picker) keeps them visible.
-  const showDispatch = !canAssign || !!row.visitType;
+  // ADR-0085: a KYC unit shows them immediately — the reference-document attachment belongs with the
+  // document details, before the visit type is picked (owner 2026-07-02).
+  const showDispatch = !canAssign || !!row.visitType || isKycUnit;
 
   // ADR-0056 rate-type preview: shown AFTER the executive is chosen. CLIENT = the location bill label
   // (Rate Management); FIELD = the chosen executive's derived trip band (Commission) — scoped by assigneeId.

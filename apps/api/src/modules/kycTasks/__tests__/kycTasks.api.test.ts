@@ -162,7 +162,11 @@ describe.skipIf(!RUN)('KYC-verifier queue (ADR-0085 S2)', () => {
     });
 
     const H = hdr('KYC_VERIFIER', mine);
-    const toExport = await request(app).get(`${LIST}?state=TO_EXPORT`).set(H);
+    const toExport = await request(app)
+      .get(
+        `${LIST}?state=TO_EXPORT&cols=documentNumber,documentDetails,status,exportedAt,assignedByName,attachmentCount`,
+      )
+      .set(H);
     expect(toExport.status).toBe(200);
     expect(toExport.body.totalCount).toBe(1);
     const row = toExport.body.items[0];
@@ -170,6 +174,10 @@ describe.skipIf(!RUN)('KYC-verifier queue (ADR-0085 S2)', () => {
     expect(row.documentDetails).toEqual({ 'BANK NAME': 'HDFC' });
     expect(row.status).toBe('ASSIGNED');
     expect(row.exportedAt).toBeNull();
+    // owner 2026-07-02: who assigned it (the SA test-auth actor is synthetic — not a users row → null
+    // is the LEFT-JOIN contract; a real assigner resolves to their name) + the task's attachment count.
+    expect(row).toHaveProperty('assignedByName');
+    expect(row.attachmentCount).toBe(0);
 
     // the other verifier sees NOTHING (SELF scope; out-of-scope = 0 rows, never an error)
     const others = await request(app).get(`${LIST}?state=TO_EXPORT`).set(hdr('KYC_VERIFIER', other));
@@ -206,6 +214,9 @@ describe.skipIf(!RUN)('KYC-verifier queue (ADR-0085 S2)', () => {
     expect(csv).toContain('ACCOUNT NO');
     expect(csv).toContain('BANK NAME');
     expect(csv).toContain('HDFC');
+    // owner 2026-07-02: the assigner rides the file; Date cells are ISO, never JSON-quoted
+    expect(csv).toContain('Assigned by');
+    expect(csv).not.toContain('"""');
     // CWE-1236: the leading '=' is neutralized
     expect(csv).toContain(`'=CMD()`);
 
