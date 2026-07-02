@@ -141,11 +141,17 @@ unknown; no money columns in v1). Base query: `case_tasks ct JOIN cases cs … W
   verify-relevant subset (identifiers + document fields). v1 columns dropped deliberately: Verified By /
   Remarks / Rejection Reason / Verified Date (completion-track data — the verifier exports BEFORE
   verification, so they're always blank; visible in the grid via `status` instead).
-- **`documentDetails` in the FILE = one column per label** (owner 2026-07-02 — NOT v1's single flattened
-  cell): the export builder takes the union of detail labels across the exported rows and appends one column
-  per label after the fixed set; a row without that label stays blank. Labels are data (operator-entered,
-  ≤60 chars), used ONLY as header strings through the same CWE-1236 formula escape — never in SQL, so no
-  injection surface. Column order: fixed registry columns first, then labels alphabetically.
+- **`documentDetails` in the FILE = one column per label, INLINE** (owner 2026-07-02): the export builder
+  takes the union of detail labels across the exported rows and splices one column per label **at the
+  documentDetails position** — between Document type and Document number — so 2–3 details (BANK NAME ·
+  STATEMENT PERIOD · …) sit together where the operator expects. A row without that label stays blank.
+  Labels are data (operator-entered, ≤60 chars), used ONLY as header strings through the CWE-1236 formula
+  escape — never in SQL. Detail labels are alphabetical within the slot.
+- **Export column order (owner 2026-07-02, from the CASE-000022 layout):** `Task # · Case # · Client ·
+  Product · Applicant · Document type · [detail columns] · Document number · Trigger · Priority · Assigned ·
+  Assigned by · Backend contact no`. **Dropped from the export:** Name on document, Applicant PAN, Applicant
+  mobile (owner: if the verifier needs those they go in the document number/details). **Added:** Backend
+  contact no (`cases.backend_contact_number`) — the office contact the verifier calls to relay the result.
 - Every export logs the standard `data export` structured line (actor, rowCount) **and** is now DB-queryable
   via the events table.
 - **Filename = IST date-time + export number** (owner 2026-07-02): `kyc-tasks-<yyyymmdd>-<hhmm>-exp<N>.<ext>`,

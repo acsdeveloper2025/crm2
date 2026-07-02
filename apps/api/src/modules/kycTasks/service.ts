@@ -158,30 +158,55 @@ export const kycTasksService = {
       idFilter: claimed,
     });
 
-    // Fixed columns: the grid's visible cols ∩ registry, else the verify-relevant default set.
+    // Export column order (owner 2026-07-02). The `documentDetails` slot expands INLINE into one
+    // column per detail label, so 2–3 details (BANK NAME · STATEMENT PERIOD · …) sit together right
+    // after Document type and before Document number — matching the operator's layout. Name-on-
+    // document / applicant PAN / mobile are deliberately NOT in the export (owner: if the verifier
+    // needs them they go in the document number/details).
     const EXPORT_DEFAULT_KEYS = [
       'taskNumber',
       'caseNumber',
       'clientName',
       'productName',
-      'unitName',
-      'documentNumber',
-      'documentHolderName',
-      'documentDetails',
       'applicantName',
-      'applicantPan',
-      'applicantMobile',
+      'unitName',
+      'documentDetails', // ← expands to the per-label detail columns at THIS position
+      'documentNumber',
       'trigger',
       'priority',
       'assignedAt',
       'assignedByName',
+      'backendContactNumber',
     ];
     const wanted = ex.cols.filter((k) => KYC_QUEUE_COLUMNS_BY_KEY.has(k));
     const pickedKeys = wanted.length ? wanted : EXPORT_DEFAULT_KEYS;
-    const fixed = pickedKeys
-      .filter((k) => k !== 'documentDetails')
-      .map((k) => KYC_QUEUE_COLUMNS_BY_KEY.get(k)!)
-      .map<ExportColumn<KycTaskRow>>((c) => ({
+
+    // The per-label detail columns (union over the exported rows, alphabetical) — built once, then
+    // spliced in at the documentDetails position so they land inline, not appended at the end.
+    const labels = new Set<string>();
+    for (const row of items) {
+      const d = row['documentDetails'];
+      if (d && typeof d === 'object') for (const k of Object.keys(d)) labels.add(k);
+    }
+    const detailCols = [...labels].sort().map<ExportColumn<KycTaskRow>>((label) => ({
+      id: `detail:${label}`,
+      // operator-authored label — formula-guarded (the XLSX builder doesn't neutralize headers).
+      header: String(neutralizeFormula(label)),
+      value: (row) => {
+        const d = row['documentDetails'];
+        return d && typeof d === 'object' ? ((d as Record<string, string>)[label] ?? null) : null;
+      },
+    }));
+
+    const columns: ExportColumn<KycTaskRow>[] = [];
+    for (const k of pickedKeys) {
+      if (k === 'documentDetails') {
+        columns.push(...detailCols);
+        continue;
+      }
+      const c = KYC_QUEUE_COLUMNS_BY_KEY.get(k);
+      if (!c) continue;
+      columns.push({
         id: c.key,
         header: c.label,
         value: (row) => {
@@ -193,26 +218,8 @@ export const kycTasksService = {
             ? JSON.stringify(v)
             : (v as string | number | boolean | null);
         },
-      }));
-
-    // documentDetails → one column per label (union over the exported rows, alphabetical).
-    let detail: ExportColumn<KycTaskRow>[] = [];
-    if (pickedKeys.includes('documentDetails')) {
-      const labels = new Set<string>();
-      for (const row of items) {
-        const d = row['documentDetails'];
-        if (d && typeof d === 'object') for (const k of Object.keys(d)) labels.add(k);
-      }
-      detail = [...labels].sort().map<ExportColumn<KycTaskRow>>((label) => ({
-        id: `detail:${label}`,
-        // operator-authored label — formula-guarded (the XLSX builder doesn't neutralize headers).
-        header: String(neutralizeFormula(label)),
-        value: (row) => {
-          const d = row['documentDetails'];
-          return d && typeof d === 'object' ? ((d as Record<string, string>)[label] ?? null) : null;
-        },
-      }));
+      });
     }
-    return { rows: items, columns: [...fixed, ...detail], exportNo: exportNo ?? 0 };
+    return { rows: items, columns, exportNo: exportNo ?? 0 };
   },
 };

@@ -219,6 +219,18 @@ describe.skipIf(!RUN)('KYC-verifier queue (ADR-0085 S2)', () => {
     expect(csv).not.toContain('"""');
     // CWE-1236: the leading '=' is neutralized
     expect(csv).toContain(`'=CMD()`);
+    // owner 2026-07-02 export layout: Applicant before Document type; detail columns INLINE between
+    // Document type and Document number; Backend contact no present; holder/PAN/mobile dropped.
+    const header = csv.split('\r\n')[0]!.split(',');
+    const at = (h: string) => header.indexOf(h);
+    expect(at('Applicant')).toBeGreaterThan(-1);
+    expect(at('Applicant')).toBeLessThan(at('Document type'));
+    expect(at('Document type')).toBeLessThan(at('BANK NAME')); // detail column inline after Document type
+    expect(at('BANK NAME')).toBeLessThan(at('Document number')); // …and before Document number
+    expect(at('Backend contact no')).toBeGreaterThan(-1);
+    expect(at('Name on document')).toBe(-1);
+    expect(at('Applicant PAN')).toBe(-1);
+    expect(at('Applicant mobile')).toBe(-1);
 
     // the claim wrote exactly one first-export event; the derived state flipped
     const { rows } = await db!.pool.query(

@@ -151,6 +151,13 @@ export const KYC_QUEUE_COLUMNS: KycQueueColumn[] = [
     sortable: true,
     defaultVisible: true,
   },
+  // The office contact the verifier calls to relay the result back (owner 2026-07-02 — in the export).
+  {
+    key: 'backendContactNumber',
+    label: 'Backend contact no',
+    dataType: 'TEXT',
+    sql: 'cs.backend_contact_number',
+  },
   { key: 'exportedBy', label: 'Exported by', dataType: 'TEXT', sql: 'ue.name', defaultVisible: true },
   {
     key: 'exportCount',
