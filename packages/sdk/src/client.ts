@@ -741,7 +741,9 @@ export function createSdk(opts: SdkOptions) {
         return req<MisSummary>('GET', `/api/v2/mis/${encodeURIComponent(type)}/summary?${params.toString()}`);
       },
     },
-    /** KYC-verifier queue (ADR-0085): the actor's OFFICE tasks by derived export state. */
+    /** KYC-verifier queue (ADR-0085): the actor's OFFICE tasks by derived export state. Export IS
+     *  the claim action (first export dedups at the DB); `reexportReason` makes it an explicit,
+     *  reasoned re-export of already-exported selected rows. */
     kycTasks: {
       list: (state: KycQueueState, q: PageQuery = {}, cols?: string[]) => {
         const params = pageQueryToParams(q);
@@ -749,6 +751,8 @@ export function createSdk(opts: SdkOptions) {
         if (cols && cols.length) params.set('cols', cols.join(','));
         return req<Paginated<KycTaskRow>>('GET', `/api/v2/kyc-tasks?${params.toString()}`);
       },
+      export: (r: ExportRequest, reexportReason?: string) =>
+        reqBlob('kyc-tasks', r, reexportReason ? { reexportReason } : undefined),
     },
     /** Field Monitoring console (ADR-0026): field executives in the actor's hierarchy scope. */
     fieldMonitoring: {

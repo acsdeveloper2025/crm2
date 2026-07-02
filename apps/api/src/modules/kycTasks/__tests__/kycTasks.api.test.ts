@@ -186,6 +186,104 @@ describe.skipIf(!RUN)('KYC-verifier queue (ADR-0085 S2)', () => {
     expect(exported.body.items[0].status).toBe('ASSIGNED'); // task status untouched (derived state)
   });
 
+  it('export claims + streams + dedups: file has per-label detail columns; task moves to EXPORTED; repeat → 409', async () => {
+    const mine = await createUser('KYC_VERIFIER', 'kv_exp');
+    const { taskId } = await seedOfficeTask('S3A', mine, {
+      documentNumber: '=CMD()', // formula-injection probe — must be neutralized in the file
+      documentDetails: { 'BANK NAME': 'HDFC', 'ACCOUNT NO': '50100' },
+    });
+    const H = hdr('KYC_VERIFIER', mine);
+
+    const res = await request(app)
+      .get(`/api/v2/kyc-tasks/export?format=csv&mode=selected&ids=${taskId}`)
+      .set(H);
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('text/csv');
+    const csv = res.text;
+    // per-label detail columns (alphabetical), NOT one flattened cell
+    expect(csv).toContain('ACCOUNT NO');
+    expect(csv).toContain('BANK NAME');
+    expect(csv).toContain('HDFC');
+    // CWE-1236: the leading '=' is neutralized
+    expect(csv).toContain(`'=CMD()`);
+
+    // the claim wrote exactly one first-export event; the derived state flipped
+    const { rows } = await db!.pool.query(
+      `SELECT is_reexport, exported_by, format FROM task_export_events WHERE task_id = $1`,
+      [taskId],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ is_reexport: false, exported_by: mine, format: 'csv' });
+    expect((await request(app).get(`${LIST}?state=TO_EXPORT`).set(H)).body.totalCount).toBe(0);
+    expect((await request(app).get(`${LIST}?state=EXPORTED`).set(H)).body.totalCount).toBe(1);
+
+    // a second plain export of the same id → nothing claimable → 409 ALREADY_EXPORTED
+    const again = await request(app)
+      .get(`/api/v2/kyc-tasks/export?format=csv&mode=selected&ids=${taskId}`)
+      .set(H);
+    expect(again.status).toBe(409);
+    expect(again.body.error).toBe('ALREADY_EXPORTED');
+  });
+
+  it('re-export needs a non-blank reason + selected already-exported ids; appends a reasoned event', async () => {
+    const mine = await createUser('KYC_VERIFIER', 'kv_re');
+    const { caseId, taskId } = await seedOfficeTask('S3B', mine, { documentNumber: 'GST99' });
+    const H = hdr('KYC_VERIFIER', mine);
+
+    // not exported yet → re-export refused (all-or-nothing)
+    const early = await request(app)
+      .get(`/api/v2/kyc-tasks/export?format=csv&mode=selected&ids=${taskId}&reexportReason=LOST`)
+      .set(H);
+    expect(early.status).toBe(409);
+    expect(early.body.error).toBe('NOT_RE_EXPORTABLE');
+
+    await stampFirstExport(caseId, taskId, mine);
+
+    // blank reason → 400
+    const blank = await request(app)
+      .get(`/api/v2/kyc-tasks/export?format=csv&mode=selected&ids=${taskId}&reexportReason=%20%20`)
+      .set(H);
+    expect(blank.status).toBe(400);
+
+    const ok = await request(app)
+      .get(`/api/v2/kyc-tasks/export?format=csv&mode=selected&ids=${taskId}&reexportReason=EMAIL%20BOUNCED`)
+      .set(H);
+    expect(ok.status).toBe(200);
+    expect(ok.text).toContain('GST99');
+    const { rows } = await db!.pool.query(
+      `SELECT is_reexport, reexport_reason FROM task_export_events WHERE task_id = $1 ORDER BY id`,
+      [taskId],
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows[1]).toMatchObject({ is_reexport: true, reexport_reason: 'EMAIL BOUNCED' });
+    // exportCount reflects both events
+    const exported = await request(app).get(`${LIST}?state=EXPORTED`).set(H);
+    expect(exported.body.items[0].exportCount).toBe(2);
+  });
+
+  it('export scope + RBAC: another verifier claiming my task → 409 (0 claimed, no data); FIELD_AGENT → 403; bad ids → 400', async () => {
+    const mine = await createUser('KYC_VERIFIER', 'kv_sc1');
+    const thief = await createUser('KYC_VERIFIER', 'kv_sc2');
+    const { taskId } = await seedOfficeTask('S3C', mine);
+
+    const steal = await request(app)
+      .get(`/api/v2/kyc-tasks/export?format=csv&mode=selected&ids=${taskId}`)
+      .set(hdr('KYC_VERIFIER', thief));
+    expect(steal.status).toBe(409); // out-of-scope id is silently not claimed → nothing to export
+    // and NO event was written for the out-of-scope attempt
+    const { rows } = await db!.pool.query(`SELECT 1 FROM task_export_events WHERE task_id = $1`, [taskId]);
+    expect(rows).toHaveLength(0);
+
+    expect((await request(app).get(`/api/v2/kyc-tasks/export?format=csv&mode=all`).set(FA)).status).toBe(403);
+    expect(
+      (
+        await request(app)
+          .get(`/api/v2/kyc-tasks/export?format=csv&mode=selected&ids=nope`)
+          .set(hdr('KYC_VERIFIER', mine))
+      ).status,
+    ).toBe(400);
+  });
+
   it('FIELD tasks never appear; SA (grants-all, unrestricted scope) sees all OFFICE rows', async () => {
     const verifier = await createUser('KYC_VERIFIER', 'kv_field');
     await seedOfficeTask('S2B', verifier);

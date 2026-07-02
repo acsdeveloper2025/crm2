@@ -10,3 +10,6 @@ import { kycTasksController as c } from './controller.js';
 export const kycTaskRoutes: Router = Router();
 
 kycTaskRoutes.get('/', authorize(PERMISSIONS.KYC_TASKS_VIEW), c.list);
+// The claim action: first export writes the first-export events (dedup at the DB), re-export
+// (`?reexportReason=`) appends reasoned events. GET streams the file (DataGrid export transport).
+kycTaskRoutes.get('/export', authorize(PERMISSIONS.KYC_TASKS_EXPORT), c.export);
