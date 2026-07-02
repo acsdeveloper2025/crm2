@@ -84,6 +84,16 @@ export const PERMISSIONS = {
   // is owner-accepted (registry §MIS-2026-07-01). Operational web roles; SUPER_ADMIN via grants_all.
   MIS_VIEW: 'mis.view',
   MIS_EXPORT: 'mis.export',
+  // KYC-verifier export workflow (ADR-0085): the /kyc-queue page + self-scoped OFFICE-task list
+  // (kyc_tasks.view) and its export/re-export action (kyc_tasks.export). Deliberately NOT
+  // data.export — that would open every bulk export endpoint. KYC_VERIFIER (+ SA grants_all).
+  KYC_TASKS_VIEW: 'kyc_tasks.view',
+  KYC_TASKS_EXPORT: 'kyc_tasks.export',
+  // Web-layer gate for the Pipeline + Cases LIST pages (ADR-0085, owner 2026-07-02): splits "can
+  // read case data" (case.view — unchanged, still gates the APIs + case detail) from "sees the ops
+  // list surfaces". KYC_VERIFIER's nav collapses to Dashboard + KYC verification; FIELD_AGENT
+  // (mobile-first) loses the incidental web lists too. /api/v2 gates untouched (additive-only).
+  PAGE_OPERATIONS: 'page.operations',
 } as const;
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 
@@ -113,6 +123,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     PERMISSIONS.DATA_EXPORT,
     PERMISSIONS.MIS_VIEW,
     PERMISSIONS.MIS_EXPORT,
+    PERMISSIONS.PAGE_OPERATIONS,
   ],
   TEAM_LEADER: [
     PERMISSIONS.MASTERDATA_VIEW,
@@ -129,6 +140,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     PERMISSIONS.DATA_EXPORT,
     PERMISSIONS.MIS_VIEW,
     PERMISSIONS.MIS_EXPORT,
+    PERMISSIONS.PAGE_OPERATIONS,
   ],
   BACKEND_USER: [
     PERMISSIONS.MASTERDATA_VIEW,
@@ -146,9 +158,16 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     PERMISSIONS.DATA_EXPORT,
     PERMISSIONS.MIS_VIEW,
     PERMISSIONS.MIS_EXPORT,
+    PERMISSIONS.PAGE_OPERATIONS,
   ],
   FIELD_AGENT: [PERMISSIONS.CASE_VIEW, PERMISSIONS.LOCATION_CAPTURE, PERMISSIONS.TASK_EXECUTE],
-  KYC_VERIFIER: [PERMISSIONS.CASE_VIEW, PERMISSIONS.DASHBOARD_VIEW],
+  KYC_VERIFIER: [
+    PERMISSIONS.CASE_VIEW,
+    PERMISSIONS.DASHBOARD_VIEW,
+    // ADR-0085: his whole job — see + export HIS assigned OFFICE tasks. Still no complete/close.
+    PERMISSIONS.KYC_TASKS_VIEW,
+    PERMISSIONS.KYC_TASKS_EXPORT,
+  ],
 };
 
 /** Human-readable label + grouping for each permission (Access Control / Roles admin views). */
@@ -182,4 +201,7 @@ export const PERMISSION_META: Record<Permission, { label: string; group: string 
   'data.export': { label: 'Data Export', group: 'Platform' },
   'mis.view': { label: 'MIS — View', group: 'Reports' },
   'mis.export': { label: 'MIS — Export', group: 'Reports' },
+  'kyc_tasks.view': { label: 'KYC Queue — View', group: 'Operations' },
+  'kyc_tasks.export': { label: 'KYC Queue — Export', group: 'Operations' },
+  'page.operations': { label: 'Operations Lists — View (Pipeline / Cases)', group: 'Operations' },
 };

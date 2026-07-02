@@ -260,7 +260,7 @@ async function deriveFieldRateTypeForNewTask(
  *  honouring the temporal window. Null ONLY when no active rate exists for the CPV at all. */
 const TASK_VIEW_COLS = `ct.id, ct.case_id, cs.case_number, ct.verification_unit_id, vu.code AS unit_code, vu.name AS unit_name,
          ct.task_number, ct.task_origin, ct.parent_task_id, ct.applicant_id, ap.name AS applicant_name,
-         ct.address, ct.trigger, ct.priority,
+         ct.address, ct.trigger, ct.document_number, ct.document_holder_name, ct.document_details, ct.priority,
          ct.status, ct.assigned_to, au.name AS assigned_to_name,
          ct.visit_type, (SELECT code FROM rate_types WHERE id = ct.rate_type_id) AS field_rate_type, ct.bill_count, ct.pincode_id, ct.area_id,
          (SELECT rt.code FROM rates r
@@ -656,6 +656,10 @@ export const caseRepository = {
       pincodeId?: number | undefined;
       areaId?: number | undefined;
       assigneeId?: string | undefined;
+      // ADR-0085 unified KYC document fields — nullable; FIELD tasks omit them.
+      documentNumber?: string | undefined;
+      documentHolderName?: string | undefined;
+      documentDetails?: Record<string, string> | undefined;
     }[],
     userId: string,
   ): Promise<CaseTaskView[]> {
@@ -695,7 +699,8 @@ export const caseRepository = {
                (case_id, verification_unit_id, applicant_id, address, trigger, priority,
                 visit_type, rate_type_id, pincode_id, area_id, assigned_to,
                 assigned_by, assigned_at, status,
-                task_number, created_by, updated_by, latitude, longitude, tat_hours)
+                task_number, created_by, updated_by, latitude, longitude, tat_hours,
+                document_number, document_holder_name, document_details)
              VALUES ($1, $2, $3, $4, $5, $6,
                      -- ADR-0050/0068: an OFFICE task's rate type is auto-stamped 'OFFICE' (desk work
                      -- has no LOCAL/OGL trip band); FIELD uses the picked $16 (LOCAL/OGL). The code is
@@ -712,7 +717,8 @@ export const caseRepository = {
                      -- compare must not re-deduce it as text (else inconsistent types for parameter $6).
                      COALESCE($15::int, CASE $6::varchar
                        WHEN 'URGENT' THEN 4 WHEN 'HIGH' THEN 8 WHEN 'MEDIUM' THEN 24 WHEN 'LOW' THEN 48
-                       ELSE 24 END))
+                       ELSE 24 END),
+                     $17, $18, $19::jsonb)
              RETURNING id`,
             [
               caseId,
@@ -731,6 +737,9 @@ export const caseRepository = {
               t.longitude ?? null,
               t.tatHours ?? null,
               fieldRateType,
+              t.documentNumber ?? null,
+              t.documentHolderName ?? null,
+              t.documentDetails ? JSON.stringify(t.documentDetails) : null,
             ],
           );
           // Append-only assignment history for a task assigned at creation (first event = ASSIGNED).
@@ -1210,11 +1219,13 @@ export const caseRepository = {
           `INSERT INTO case_tasks
              (case_id, verification_unit_id, applicant_id, address, trigger, priority,
               visit_type, pincode_id, area_id, status,
-              task_number, parent_task_id, task_origin, created_by, updated_by)
+              task_number, parent_task_id, task_origin, created_by, updated_by,
+              document_number, document_holder_name, document_details)
            SELECT p.case_id, p.verification_unit_id, p.applicant_id, p.address, p.trigger, p.priority,
                   p.visit_type, p.pincode_id, p.area_id, 'PENDING',
                   (SELECT case_number FROM cases WHERE id = $1) || '-' || $3::text,
-                  p.id, 'REVISIT', $4, $4
+                  p.id, 'REVISIT', $4, $4,
+                  p.document_number, p.document_holder_name, p.document_details
            FROM case_tasks p
            WHERE p.id = $2 AND p.case_id = $1
            RETURNING id`,
@@ -1286,7 +1297,8 @@ export const caseRepository = {
              (case_id, verification_unit_id, applicant_id, address, trigger, priority,
               visit_type, pincode_id, area_id, rate_type_id, bill_count, assigned_to,
               assigned_by, assigned_at, status,
-              task_number, parent_task_id, task_origin, created_by, updated_by)
+              task_number, parent_task_id, task_origin, created_by, updated_by,
+              document_number, document_holder_name, document_details)
            SELECT p.case_id, p.verification_unit_id, p.applicant_id, p.address, p.trigger, p.priority,
                   -- ADR-0050/0068: a reassigned OFFICE task also auto-stamps 'OFFICE' (else its desk
                   -- commission can't resolve); the code resolves to rate_types.id (NULL code → NULL id).
@@ -1294,7 +1306,8 @@ export const caseRepository = {
                   $3, p.pincode_id, p.area_id, (SELECT id FROM rate_types WHERE code = CASE WHEN $3::varchar = 'OFFICE' THEN 'OFFICE' ELSE $4 END), $5, $6,
                   $7, now(), 'ASSIGNED',
                   (SELECT case_number FROM cases WHERE id = $1) || '-' || $8::text,
-                  p.id, p.task_origin, $7, $7
+                  p.id, p.task_origin, $7, $7,
+                  p.document_number, p.document_holder_name, p.document_details
            FROM case_tasks p
            WHERE p.id = $2 AND p.case_id = $1
            RETURNING id`,

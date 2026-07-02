@@ -748,6 +748,70 @@ describe.skipIf(!RUN)('cases API', () => {
     return { caseId, taskId: task.id };
   }
 
+  // ── unified KYC document fields (ADR-0085, mig 0110) ───────────────────────
+  describe('unified KYC document fields on add-tasks (ADR-0085)', () => {
+    it('persists number/holder/details (uppercased) and returns them on the task view; omitted → null', async () => {
+      const ctx = await seedCpv('DOC1', { workerRole: 'KYC_VERIFIER' });
+      const caseId = seeded<{ id: string }>(
+        await request(app)
+          .post('/api/v2/cases')
+          .set(SA)
+          .send({
+            clientId: ctx.clientId,
+            productId: ctx.productId,
+            backendContactNumber: BC,
+            applicants: [{ name: 'DOC ONE' }],
+            dedupeDecision: 'NO_DUPLICATES_FOUND',
+          }),
+      ).id;
+      const detail = await request(app).get(`/api/v2/cases/${caseId}`).set(SA);
+      const applicantId = detail.body.applicants[0].id as string;
+      const res = await request(app)
+        .post(`/api/v2/cases/${caseId}/tasks`)
+        .set(SA)
+        .send({
+          tasks: [
+            {
+              verificationUnitId: ctx.enabledUnitId,
+              applicantId,
+              documentNumber: 'ab12cd3456',
+              documentHolderName: 'rahul sharma',
+              documentDetails: { 'Bank name': 'hdfc bank', 'Account type': 'savings' },
+            },
+            { verificationUnitId: ctx.enabledUnitId, applicantId },
+          ],
+        });
+      expect(res.status).toBe(201);
+      const [withDoc, bare] = res.body as Array<{
+        documentNumber: string | null;
+        documentHolderName: string | null;
+        documentDetails: Record<string, string> | null;
+      }>;
+      // ADR-0058 store-uppercase applies to the number, holder, and BOTH sides of each detail.
+      expect(withDoc!.documentNumber).toBe('AB12CD3456');
+      expect(withDoc!.documentHolderName).toBe('RAHUL SHARMA');
+      expect(withDoc!.documentDetails).toEqual({ 'BANK NAME': 'HDFC BANK', 'ACCOUNT TYPE': 'SAVINGS' });
+      expect(bare!.documentNumber).toBeNull();
+      expect(bare!.documentHolderName).toBeNull();
+      expect(bare!.documentDetails).toBeNull();
+    });
+
+    it('rejects >12 details and blank labels → 400', async () => {
+      const { caseId } = await seedCaseWithTask('DOC2', { workerRole: 'KYC_VERIFIER' });
+      const detail = await request(app).get(`/api/v2/cases/${caseId}`).set(SA);
+      const applicantId = detail.body.applicants[0].id as string;
+      const unitId = detail.body.tasks[0].verificationUnitId as number;
+      const tooMany = Object.fromEntries(Array.from({ length: 13 }, (_, i) => [`K${i}`, 'V']));
+      for (const documentDetails of [tooMany, { '   ': 'BLANK LABEL' }]) {
+        const res = await request(app)
+          .post(`/api/v2/cases/${caseId}/tasks`)
+          .set(SA)
+          .send({ tasks: [{ verificationUnitId: unitId, applicantId, documentDetails }] });
+        expect(res.status).toBe(400);
+      }
+    });
+  });
+
   // ── case-create RBAC + portfolio scope (ADR-0065; audit SR-1..6) ───────────
   describe('case-create RBAC + portfolio scope (ADR-0065)', () => {
     async function assignScope(userId: string, dimension: string, entityIds: number[]): Promise<void> {
@@ -1538,6 +1602,12 @@ describe.skipIf(!RUN)('cases API', () => {
 
     it('REVISIT a COMPLETED task → a NEW billed task (lineage) re-opens the case + invalidates the verdict; parent untouched', async () => {
       const { caseId, taskId } = await seedCaseWithTask('RV1', { workerRole: 'KYC_VERIFIER', withDoc: true });
+      // ADR-0085: lineage tasks carry the document fields over from the parent (test seam — the
+      // seeding helper predates the fields).
+      await db!.pool.query(
+        `UPDATE case_tasks SET document_number = 'DOC-RV1', document_details = '{"BANK NAME":"HDFC"}' WHERE id = $1`,
+        [taskId],
+      );
       await settle(caseId, taskId, 'RV1');
 
       const res = await request(app)
@@ -1560,6 +1630,9 @@ describe.skipIf(!RUN)('cases API', () => {
       // in place — mobile landmine #2: a delivered task is never re-activated).
       expect(child.verificationUnitId).toBe(parent.verificationUnitId);
       expect(child.applicantId).toBe(parent.applicantId);
+      // ADR-0085: the revisit clone keeps the verification subject (document fields).
+      expect(child.documentNumber).toBe('DOC-RV1');
+      expect(child.documentDetails).toEqual({ 'BANK NAME': 'HDFC' });
       expect(parent.status).toBe('COMPLETED');
       expect(parent.taskOrigin).toBe('ORIGINAL');
     });

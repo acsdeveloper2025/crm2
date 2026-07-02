@@ -123,6 +123,37 @@ describe('Case contract', () => {
     const withTat = AddTasksSchema.safeParse({ tasks: [{ ...taskBase, tatHours: 8 }] });
     expect(withTat.success).toBe(true);
     if (withTat.success) expect(withTat.data.tasks[0]?.tatHours).toBe(8);
+    // ADR-0085 unified KYC document fields: optional; number/holder + BOTH sides of every detail
+    // uppercase (ADR-0058); labels trimmed; >12 details or a blank label rejected.
+    const withDoc = AddTasksSchema.safeParse({
+      tasks: [
+        {
+          ...taskBase,
+          documentNumber: 'ab12cd3456',
+          documentHolderName: 'rahul sharma',
+          documentDetails: { ' Bank name ': 'hdfc bank' },
+        },
+      ],
+    });
+    expect(withDoc.success).toBe(true);
+    if (withDoc.success) {
+      expect(withDoc.data.tasks[0]?.documentNumber).toBe('AB12CD3456');
+      expect(withDoc.data.tasks[0]?.documentHolderName).toBe('RAHUL SHARMA');
+      expect(withDoc.data.tasks[0]?.documentDetails).toEqual({ 'BANK NAME': 'HDFC BANK' });
+    }
+    expect(
+      AddTasksSchema.safeParse({ tasks: [{ ...taskBase, documentDetails: { '  ': 'X' } }] }).success,
+    ).toBe(false);
+    expect(
+      AddTasksSchema.safeParse({
+        tasks: [
+          {
+            ...taskBase,
+            documentDetails: Object.fromEntries(Array.from({ length: 13 }, (_, i) => [`K${i}`, 'V'])),
+          },
+        ],
+      }).success,
+    ).toBe(false);
   });
 
   it('ADR-0058: uppercases the task trigger server-side', () => {

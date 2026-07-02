@@ -219,6 +219,14 @@ export interface CaseTaskView {
   address: string;
   /** Bank instruction shown on the device as `notes`. */
   trigger: string;
+  /** Unified KYC document fields (ADR-0085) — captured at task creation for OFFICE/KYC tasks; the
+   *  identifier on the document (PAN/Aadhaar/mobile/GST/bill number…). Null on FIELD tasks. */
+  documentNumber: string | null;
+  /** Name printed on the document (defaults to the applicant's name in the create form). */
+  documentHolderName: string | null;
+  /** Flat label→value map for type-specific extras (bank name, account no, statement period…).
+   *  Rendered one line per label; exported one COLUMN per label — never flattened into one cell. */
+  documentDetails: Record<string, string> | null;
   priority: Priority;
   status: CaseTaskStatus;
   assignedTo: string | null;
@@ -424,6 +432,27 @@ export const AddTasksSchema = z.object({
           latitude: z.number().gte(-90).lte(90).optional(),
           longitude: z.number().gte(-180).lte(180).optional(),
           trigger: z.string().trim().max(MAX_TRIGGER).transform(toUpper).default(''),
+          // Unified KYC document fields (ADR-0085) — one set for every KYC unit, no per-type schemas.
+          // Optional at create (blanks render as —); the FE surfaces them for OFFICE tasks only.
+          documentNumber: z.string().trim().max(100).transform(toUpper).optional(),
+          documentHolderName: z.string().trim().max(200).transform(toUpper).optional(),
+          // Flat label→value map ("Add detail" repeater). Keys are operator-authored labels — they
+          // become export column HEADERS (formula-escaped), never SQL. ≤12 entries, no blank labels.
+          documentDetails: z
+            .record(z.string(), z.string())
+            .superRefine((m, ctx) => {
+              const keys = Object.keys(m);
+              if (keys.length > 12)
+                ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'at most 12 details' });
+              if (keys.some((k) => k.trim().length < 1 || k.trim().length > 60))
+                ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'detail labels must be 1–60 chars' });
+              if (Object.values(m).some((v) => v.length > 500))
+                ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'detail values must be ≤500 chars' });
+            })
+            .transform((m) =>
+              Object.fromEntries(Object.entries(m).map(([k, v]) => [toUpper(k.trim()), toUpper(v.trim())])),
+            )
+            .optional(),
           priority: z.enum(PRIORITIES).default('MEDIUM'),
           // Target TAT in hours (ADR-0044). Optional override; omitted → derived from priority server-side
           // (URGENT 4 · HIGH 8 · MEDIUM 24 · LOW 48). Additive — mobile (ADR-0012) is unaffected.
