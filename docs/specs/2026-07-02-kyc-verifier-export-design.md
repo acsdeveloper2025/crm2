@@ -103,8 +103,14 @@ drops only the per-type admin schema layer:
   form logic or config. Prefill: `PAN_CARD` → applicant PAN, `MOBILE_DETAILS` → applicant mobile (2-entry
   code-owned map, still editable); holder name prefills from the applicant's name. Optional at create (no hard
   block); the queue shows blanks as `—` so the backend can see what's missing before the verifier exports.
-  (If operator label spelling drifts in practice, a code-owned suggested-labels map per unit is a 10-line
-  follow-up — deliberately NOT in v1 of this feature.)
+  **Detail LABEL = a standard pick-list (owner 2026-07-02, from live cases 20/21):** operators were
+  free-typing the bank NAME as the label ("ICICI BANK" → header), so each bank became its own sparse
+  column. The label is now a code-owned dropdown — `BANK NAME · ACCOUNT NUMBER · IFSC · BRANCH ·
+  STATEMENT PERIOD · TRANSACTION DATE · TRANSACTION DETAILS · REMARK` + "Other…" free-text fallback —
+  so the vocabulary is consistent → the export gets a stable "BANK NAME" column with the bank as the
+  VALUE (readable per row). Common across all KYC types (no per-type schema); the export code is
+  unchanged (one column per label — now the labels are stable). The requirement stays in `Trigger`
+  (owner kept the name).
 - **No edit endpoint in v1 of this feature** — a wrong number is fixed by revoke → recreate (existing paths).
   A small additive task-edit endpoint is a tracked follow-up (registry).
 

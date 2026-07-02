@@ -1830,3 +1830,16 @@ Owner: the shared ops dashboard is wrong for the verifier (pipeline-centric; its
 | DASH-3 (auditor graded HIGH) — "`/api/v2/cases` lists all cases in scope" | **REFUTED** — same SELF-scope; the verifier sees only the case his task belongs to (1 row, live-verified). |
 | DASH-4 (pre-existing, MED) — billing/mis/field-monitoring/dedupe pages lack a page-level `has()` guard (they 403 on the data call, not the page) | **DEFERRED (not KYC-specific)** — those pages aren't in the verifier's nav and 403 safely on data; a page-guard sweep is a separate cleanup, out of scope for this task. |
 | DASH-5 (verified safe) — `/dashboard/portfolio` scope for the verifier | **NO-OP** — `caseScopePredicate` limits it to his own cases (SELF); confirmed safe. |
+
+### KYC detail-label consistency (2026-07-02, from live cases 20/21)
+
+Owner exported CASE-000020/021 and found the details unreadable: operators had free-typed the bank
+NAME into the detail LABEL ("BANK OF INDIA", "ICICI BANK"), so the one-column-per-label export made
+each bank its own header with a sparse blank matrix — "can't tell whose bank". Requirement text was
+also duplicated between the Trigger column and detail values.
+
+| Finding | Disposition |
+|---|---|
+| DETAIL-1 — free-text detail label lets operators type VALUES (bank names) as KEYS → sparse per-bank export columns | **FIXED** — the "Add detail" label is now a code-owned pick-list (BANK NAME / ACCOUNT NUMBER / IFSC / BRANCH / STATEMENT PERIOD / TRANSACTION DATE / TRANSACTION DETAILS / REMARK) + "Other…" fallback. Consistent labels → stable export columns (BANK NAME column, bank as the VALUE). No export-code change; no per-type schema. Live-verified: 2 tasks → one BANK NAME column with ICICI BANK / BANK OF INDIA as values. |
+| DETAIL-2 — the Trigger column was already present + populated with the requirement; owner chose to KEEP the name "Trigger" (not rename to "Requirement") | **NO-OP (owner decision)** — Trigger stays; operators should put the requirement there, not in a detail value. |
+| DETAIL-3 — existing prod cases 20/21 hold bank-name-as-key data (pre-fix) | **OPEN (owner to decide)** — auto-migration is ambiguous (value is sometimes a date, sometimes a requirement); offer to re-map {bank: x} → {BANK NAME: bank} on request, else re-create. |

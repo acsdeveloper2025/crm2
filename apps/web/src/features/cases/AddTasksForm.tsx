@@ -40,9 +40,29 @@ interface TaskRow {
   // when the chosen unit's workerRole is KYC_VERIFIER; the verifier's export carries them.
   documentNumber: string;
   documentHolderName: string;
-  /** "Add detail" repeater rows (label + value) → the documentDetails map. */
-  details: { label: string; value: string }[];
+  /** "Add detail" repeater rows (label + value) → the documentDetails map. `custom` = the label was
+   *  typed free-hand (the "Other…" pick), so the label field renders as text not the pick-list. */
+  details: { label: string; value: string; custom?: boolean }[];
 }
+
+/**
+ * ADR-0085 (owner 2026-07-02): a code-owned pick-list for the detail LABEL so operators use a
+ * CONSISTENT vocabulary (not free-typed bank names) — the export then has stable columns ("Bank
+ * Name" with the bank as the VALUE, readable per row) instead of one column per bank. Common across
+ * ALL KYC types (no per-type schema); "Other…" keeps a free-text escape hatch. Uppercase to match
+ * the store-uppercase rule so the label matches whether picked or typed.
+ */
+const DETAIL_LABELS = [
+  'BANK NAME',
+  'ACCOUNT NUMBER',
+  'IFSC',
+  'BRANCH',
+  'STATEMENT PERIOD',
+  'TRANSACTION DATE',
+  'TRANSACTION DETAILS',
+  'REMARK',
+] as const;
+const OTHER_LABEL = '__OTHER__';
 const emptyTask = (): TaskRow => ({
   id: crypto.randomUUID(),
   verificationUnitId: '',
@@ -473,42 +493,58 @@ function TaskRowEditor({
                 />
               </FieldLabel>
             </div>
-            <div className="mt-3 space-y-2">
-              {row.details.map((d, di) => (
-                <div key={di} className="grid grid-cols-[1fr_1.4fr_auto] gap-2">
-                  <Input
-                    className="input"
-                    value={d.label}
-                    onChange={(e) =>
-                      onChange({
-                        details: row.details.map((x, xi) =>
-                          xi === di ? { ...x, label: e.target.value } : x,
-                        ),
-                      })
-                    }
-                    placeholder="Label (e.g. BANK NAME)"
-                  />
-                  <Input
-                    className="input"
-                    value={d.value}
-                    onChange={(e) =>
-                      onChange({
-                        details: row.details.map((x, xi) =>
-                          xi === di ? { ...x, value: e.target.value } : x,
-                        ),
-                      })
-                    }
-                    placeholder="Value"
-                  />
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => onChange({ details: row.details.filter((_, xi) => xi !== di) })}
-                  >
-                    Remove
-                  </Button>
-                </div>
-              ))}
+            <p className="mt-3 mb-1 text-xs text-muted-foreground">
+              Pick a standard label so the export groups them into clean columns (e.g. Bank Name →
+              &ldquo;ICICI BANK&rdquo;). The bank name is the VALUE, not the label.
+            </p>
+            <div className="space-y-2">
+              {row.details.map((d, di) => {
+                const patch = (p: Partial<TaskRow['details'][number]>) =>
+                  onChange({ details: row.details.map((x, xi) => (xi === di ? { ...x, ...p } : x)) });
+                return (
+                  <div key={di} className="grid grid-cols-[1fr_1.4fr_auto] gap-2">
+                    {d.custom ? (
+                      <Input
+                        className="input"
+                        value={d.label}
+                        onChange={(e) => patch({ label: e.target.value })}
+                        placeholder="Custom label"
+                      />
+                    ) : (
+                      <select
+                        className="input"
+                        value={d.label}
+                        onChange={(e) =>
+                          e.target.value === OTHER_LABEL
+                            ? patch({ custom: true, label: '' })
+                            : patch({ label: e.target.value })
+                        }
+                      >
+                        <option value="">Select label…</option>
+                        {DETAIL_LABELS.map((l) => (
+                          <option key={l} value={l}>
+                            {l}
+                          </option>
+                        ))}
+                        <option value={OTHER_LABEL}>Other…</option>
+                      </select>
+                    )}
+                    <Input
+                      className="input"
+                      value={d.value}
+                      onChange={(e) => patch({ value: e.target.value })}
+                      placeholder="Value (e.g. ICICI BANK)"
+                    />
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => onChange({ details: row.details.filter((_, xi) => xi !== di) })}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                );
+              })}
               <Button
                 variant="secondary"
                 size="sm"
