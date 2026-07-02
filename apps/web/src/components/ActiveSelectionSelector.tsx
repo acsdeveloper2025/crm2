@@ -4,6 +4,7 @@ import type { Option, ClientProductView, Paginated } from '@crm2/sdk';
 import { api } from '../lib/sdk.js';
 import { SearchableSelect, type Opt } from './ui/SearchableSelect.js';
 import { useActiveSelection } from '../lib/ActiveSelectionContext.js';
+import { useAuth } from '../lib/AuthContext.js';
 
 /**
  * Navbar global client + product selector (ADR-0066). Both dropdowns are SCOPE-LIMITED: the
@@ -25,21 +26,29 @@ const toOpts = (rows: { id: number; name: string }[], allLabel: string): Opt[] =
 
 export function ActiveSelectionSelector() {
   const { clientId, productId, setClientId, setProductId } = useActiveSelection();
+  // The `/clients|products/options` feeds require `page.masterdata` (same as the endpoints). Roles
+  // without it (KYC_VERIFIER, FIELD_AGENT on web) would 403 on every page — and every role that can
+  // actually use this filter (page.operations ⇒ Cases/Pipeline) also holds page.masterdata. Gate the
+  // fetches so an unauthorised role never fires them (the selector already hides when there's nothing).
+  const { has } = useAuth();
+  const canView = has('page.masterdata');
 
   const clients = useQuery({
     queryKey: ['clients', 'options'],
+    enabled: canView,
     queryFn: () => api<Option[]>('GET', '/api/v2/clients/options'),
   });
   // All in-scope products — shown when no client is chosen.
   const products = useQuery({
     queryKey: ['products', 'options'],
+    enabled: canView,
     queryFn: () => api<Option[]>('GET', '/api/v2/products/options'),
   });
   // Products mapped to the chosen client (CPV). The CPV list endpoint is not user-scoped, so the
   // result is intersected with the scoped product list below — never widening beyond the user's scope.
   const clientProducts = useQuery({
     queryKey: ['client-products', 'selector', clientId],
-    enabled: clientId !== null,
+    enabled: canView && clientId !== null,
     queryFn: () =>
       api<Paginated<ClientProductView>>('GET', `/api/v2/client-products?clientId=${clientId}&limit=500`),
   });

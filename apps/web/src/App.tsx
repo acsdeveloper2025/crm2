@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { useAuth } from './lib/AuthContext.js';
@@ -43,6 +43,19 @@ import { CommissionRatesPage } from './features/commissionRates/CommissionRatesP
 import { CommissionRateRecordPage } from './features/commissionRates/CommissionRateRecordPage.js';
 import { CommissionSummaryPage } from './features/commissionSummary/CommissionSummaryPage.js';
 
+/**
+ * Page-permission gate for the Administration routes. An unauthorised role that types an `/admin/*`
+ * URL directly (the nav only shows what it may open) gets the same clean "no access" state the
+ * operational pages render inline — instead of the full page chrome plus a burst of forbidden data
+ * calls. Blocking the render here also means the page never mounts, so its data queries never fire.
+ * The perm passed to each route mirrors the nav gate in `Layout.tsx` (which mirrors the API).
+ */
+function RequirePerm({ perm, children }: { perm: string; children: ReactNode }) {
+  const { has } = useAuth();
+  if (!has(perm)) return <div className="text-destructive">You don&apos;t have access to this page.</div>;
+  return <>{children}</>;
+}
+
 export function App() {
   const { user, ready, mustChangePassword, mustAcceptPolicies } = useAuth();
 
@@ -71,35 +84,240 @@ export function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/admin/verification-units" element={<VerificationUnitsPage />} />
-        <Route path="/admin/verification-units/new" element={<VerificationUnitRecordPage />} />
-        <Route path="/admin/verification-units/:id" element={<VerificationUnitRecordPage />} />
-        <Route path="/admin/clients" element={<ClientsPage />} />
-        <Route path="/admin/products" element={<ProductsPage />} />
-        <Route path="/admin/cpv" element={<CpvPage />} />
-        <Route path="/admin/rates" element={<RateManagementPage />} />
-        <Route path="/admin/rates/new" element={<RateRecordPage />} />
-        <Route path="/admin/rates/:id" element={<RateRecordPage />} />
-        <Route path="/admin/rate-types" element={<RateTypesPage />} />
-        <Route path="/admin/rate-type-assignments" element={<RateTypeAssignmentsPage />} />
-        <Route path="/admin/rate-type-assignments/new" element={<RateTypeAssignmentRecordPage />} />
-        <Route path="/admin/rate-type-assignments/:id" element={<RateTypeAssignmentRecordPage />} />
-        <Route path="/admin/commission-rates" element={<CommissionRatesPage />} />
-        <Route path="/admin/commission-rates/new" element={<CommissionRateRecordPage />} />
-        <Route path="/admin/commission-rates/:id" element={<CommissionRateRecordPage />} />
-        <Route path="/admin/locations" element={<LocationsPage />} />
-        <Route path="/admin/users" element={<UsersPage />} />
-        <Route path="/admin/users/new" element={<UserRecordPage />} />
-        <Route path="/admin/users/:id" element={<UserRecordPage />} />
-        <Route path="/admin/departments" element={<DepartmentsPage />} />
-        <Route path="/admin/designations" element={<DesignationsPage />} />
-        <Route path="/admin/rbac" element={<RolesPage />} />
-        <Route path="/admin/rbac/new" element={<RoleRecordPage />} />
-        <Route path="/admin/rbac/:code" element={<RoleRecordPage />} />
-        <Route path="/admin/system" element={<SystemPage />} />
-        <Route path="/admin/policies" element={<PoliciesPage />} />
-        <Route path="/admin/policies/new" element={<PolicyRecordPage />} />
-        <Route path="/admin/policies/:id" element={<PolicyRecordPage />} />
+        {/* Administration routes are page-permission-gated (RequirePerm) so an unauthorised role that
+            types the URL sees a clean "no access" state, not the page chrome + forbidden data calls. */}
+        <Route
+          path="/admin/verification-units"
+          element={
+            <RequirePerm perm="page.masterdata">
+              <VerificationUnitsPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="/admin/verification-units/new"
+          element={
+            <RequirePerm perm="page.masterdata">
+              <VerificationUnitRecordPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="/admin/verification-units/:id"
+          element={
+            <RequirePerm perm="page.masterdata">
+              <VerificationUnitRecordPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="/admin/clients"
+          element={
+            <RequirePerm perm="page.masterdata">
+              <ClientsPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="/admin/products"
+          element={
+            <RequirePerm perm="page.masterdata">
+              <ProductsPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="/admin/cpv"
+          element={
+            <RequirePerm perm="page.masterdata">
+              <CpvPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="/admin/rates"
+          element={
+            <RequirePerm perm="page.masterdata">
+              <RateManagementPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="/admin/rates/new"
+          element={
+            <RequirePerm perm="page.masterdata">
+              <RateRecordPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="/admin/rates/:id"
+          element={
+            <RequirePerm perm="page.masterdata">
+              <RateRecordPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="/admin/rate-types"
+          element={
+            <RequirePerm perm="page.masterdata">
+              <RateTypesPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="/admin/rate-type-assignments"
+          element={
+            <RequirePerm perm="page.masterdata">
+              <RateTypeAssignmentsPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="/admin/rate-type-assignments/new"
+          element={
+            <RequirePerm perm="page.masterdata">
+              <RateTypeAssignmentRecordPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="/admin/rate-type-assignments/:id"
+          element={
+            <RequirePerm perm="page.masterdata">
+              <RateTypeAssignmentRecordPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="/admin/commission-rates"
+          element={
+            <RequirePerm perm="masterdata.manage">
+              <CommissionRatesPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="/admin/commission-rates/new"
+          element={
+            <RequirePerm perm="masterdata.manage">
+              <CommissionRateRecordPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="/admin/commission-rates/:id"
+          element={
+            <RequirePerm perm="masterdata.manage">
+              <CommissionRateRecordPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="/admin/locations"
+          element={
+            <RequirePerm perm="page.masterdata">
+              <LocationsPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="/admin/users"
+          element={
+            <RequirePerm perm="page.users">
+              <UsersPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="/admin/users/new"
+          element={
+            <RequirePerm perm="page.users">
+              <UserRecordPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="/admin/users/:id"
+          element={
+            <RequirePerm perm="page.users">
+              <UserRecordPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="/admin/departments"
+          element={
+            <RequirePerm perm="page.users">
+              <DepartmentsPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="/admin/designations"
+          element={
+            <RequirePerm perm="page.users">
+              <DesignationsPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="/admin/rbac"
+          element={
+            <RequirePerm perm="page.access">
+              <RolesPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="/admin/rbac/new"
+          element={
+            <RequirePerm perm="page.access">
+              <RoleRecordPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="/admin/rbac/:code"
+          element={
+            <RequirePerm perm="page.access">
+              <RoleRecordPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="/admin/system"
+          element={
+            <RequirePerm perm="page.system">
+              <SystemPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="/admin/policies"
+          element={
+            <RequirePerm perm="page.policies">
+              <PoliciesPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="/admin/policies/new"
+          element={
+            <RequirePerm perm="page.policies">
+              <PolicyRecordPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="/admin/policies/:id"
+          element={
+            <RequirePerm perm="page.policies">
+              <PolicyRecordPage />
+            </RequirePerm>
+          }
+        />
         <Route path="/security" element={<SecurityPage />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/pipeline" element={<PipelinePage />} />
