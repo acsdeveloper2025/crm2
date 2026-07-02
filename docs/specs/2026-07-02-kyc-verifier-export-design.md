@@ -105,12 +105,15 @@ drops only the per-type admin schema layer:
   block); the queue shows blanks as `—` so the backend can see what's missing before the verifier exports.
   **Detail LABEL = a standard pick-list (owner 2026-07-02, from live cases 20/21):** operators were
   free-typing the bank NAME as the label ("ICICI BANK" → header), so each bank became its own sparse
-  column. The label is now a code-owned dropdown — `BANK NAME · ACCOUNT NUMBER · IFSC · BRANCH ·
-  STATEMENT PERIOD · TRANSACTION DATE · TRANSACTION DETAILS · REMARK` + "Other…" free-text fallback —
-  so the vocabulary is consistent → the export gets a stable "BANK NAME" column with the bank as the
-  VALUE (readable per row). Common across all KYC types (no per-type schema); the export code is
-  unchanged (one column per label — now the labels are stable). The requirement stays in `Trigger`
-  (owner kept the name).
+  column. The label is now a code-owned dropdown that **adapts to the unit's category** (owner 2026-07-02 — a
+  bank-only list didn't fit the 58 other units): FINANCIAL → BANK NAME/ACCOUNT NUMBER/IFSC/BRANCH/
+  STATEMENT PERIOD/…; IDENTITY → DATE OF BIRTH/FATHER NAME/EXPIRY/ISSUING AUTHORITY/…; BUSINESS →
+  GSTIN/LEGAL NAME/TRADE NAME/…; ADDRESS → BILL NUMBER/BILL DATE/PROVIDER/…; PROPERTY/LEGAL/
+  VERIFICATION/MEDICAL/OTHER each have their own set — + a common REMARK + "Other…" free-text. All 59
+  units covered via 9 categories (`AvailableUnit.category` drives it); no per-type SCHEMA (just smarter
+  suggestions, free-text fallback). The export code is unchanged (one column per label — now stable).
+  The requirement stays in `Trigger` (owner kept the name); Trigger is also a visible+filterable
+  column in the verifier's queue grid.
 - **No edit endpoint in v1 of this feature** — a wrong number is fixed by revoke → recreate (existing paths).
   A small additive task-edit endpoint is a tracked follow-up (registry).
 

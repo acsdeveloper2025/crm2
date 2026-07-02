@@ -544,7 +544,7 @@ export const caseRepository = {
    *  ones. Same rule as cpvUnitRepository.availableUnits — keep them in sync. */
   async availableUnits(clientId: number, productId: number): Promise<AvailableUnit[]> {
     return query<AvailableUnit>(
-      `SELECT vu.id AS verification_unit_id, vu.code, vu.name, vu.worker_role
+      `SELECT vu.id AS verification_unit_id, vu.code, vu.name, vu.worker_role, vu.category
        FROM verification_units vu
        WHERE vu.is_active AND vu.effective_from <= now()
          AND (

@@ -294,6 +294,9 @@ export interface AvailableUnit {
   name: string;
   /** ADR-0085: KYC_VERIFIER units surface the unified document fields in the task-creation form. */
   workerRole: 'FIELD_AGENT' | 'KYC_VERIFIER';
+  /** The unit's category (IDENTITY/FINANCIAL/BUSINESS/ADDRESS/PROPERTY/LEGAL/VERIFICATION/MEDICAL/
+   *  OTHER) — drives the per-category detail-label suggestions in the KYC document block (ADR-0085). */
+  category: string;
 }
 
 /** Rate-type preview for a chosen client+product+unit+location during task creation (ADR-0050): the

@@ -48,20 +48,60 @@ interface TaskRow {
 /**
  * ADR-0085 (owner 2026-07-02): a code-owned pick-list for the detail LABEL so operators use a
  * CONSISTENT vocabulary (not free-typed bank names) — the export then has stable columns ("Bank
- * Name" with the bank as the VALUE, readable per row) instead of one column per bank. Common across
- * ALL KYC types (no per-type schema); "Other…" keeps a free-text escape hatch. Uppercase to match
- * the store-uppercase rule so the label matches whether picked or typed.
+ * Name" with the bank as the VALUE, readable per row) instead of one column per bank. The list
+ * ADAPTS to the chosen unit's CATEGORY (all 59 KYC units covered via 9 categories); a common set is
+ * appended and "Other…" is the free-text escape hatch. No rigid per-type schema — just smarter
+ * suggestions. Uppercase to match the store-uppercase rule so a picked label matches a typed one.
  */
-const DETAIL_LABELS = [
-  'BANK NAME',
-  'ACCOUNT NUMBER',
-  'IFSC',
-  'BRANCH',
-  'STATEMENT PERIOD',
-  'TRANSACTION DATE',
-  'TRANSACTION DETAILS',
-  'REMARK',
-] as const;
+const DETAIL_LABELS_BY_CATEGORY: Record<string, readonly string[]> = {
+  FINANCIAL: [
+    'BANK NAME',
+    'ACCOUNT NUMBER',
+    'IFSC',
+    'BRANCH',
+    'STATEMENT PERIOD',
+    'TRANSACTION DATE',
+    'TRANSACTION DETAILS',
+    'AMOUNT',
+  ],
+  IDENTITY: [
+    'DATE OF BIRTH',
+    'FATHER / GUARDIAN NAME',
+    'ADDRESS',
+    'ISSUING AUTHORITY',
+    'EXPIRY DATE',
+    'GENDER',
+  ],
+  BUSINESS: [
+    'GSTIN / REG NUMBER',
+    'LEGAL NAME',
+    'TRADE NAME',
+    'REGISTERED ADDRESS',
+    'DATE OF REGISTRATION',
+    'PROPRIETOR / DIRECTOR',
+  ],
+  ADDRESS: ['CONSUMER / BILL NUMBER', 'BILL DATE', 'SERVICE PROVIDER', 'ADDRESS', 'BILLING PERIOD'],
+  PROPERTY: [
+    'DOCUMENT / DEED NUMBER',
+    'PROPERTY ADDRESS',
+    'PARTY NAME',
+    'EXECUTION DATE',
+    'REGISTRATION OFFICE',
+    'SURVEY NUMBER',
+  ],
+  LEGAL: ['REFERENCE NUMBER', 'ISSUING AUTHORITY', 'DATE', 'PARTY NAME', 'SUBJECT'],
+  VERIFICATION: ['NAME', 'ADDRESS', 'RELATIONSHIP', 'CONTACT NUMBER'],
+  MEDICAL: ['CERTIFICATE / BILL NUMBER', 'HOSPITAL / DOCTOR NAME', 'DATE', 'PATIENT NAME', 'AMOUNT'],
+  OTHER: ['REFERENCE NUMBER', 'NAME', 'DATE', 'ADDRESS'],
+};
+/** Appended to every category (generic across all document types). */
+const COMMON_DETAIL_LABELS = ['REMARK'] as const;
+/** The suggested labels for a unit's category (+ the common set), deduped. Unknown/absent category
+ *  falls back to the OTHER set — every unit still gets sensible suggestions + the free-text escape. */
+function detailLabelsFor(category: string | undefined): string[] {
+  const base = (category && DETAIL_LABELS_BY_CATEGORY[category]) || DETAIL_LABELS_BY_CATEGORY['OTHER']!;
+  return [...new Set([...base, ...COMMON_DETAIL_LABELS])];
+}
 const OTHER_LABEL = '__OTHER__';
 const emptyTask = (): TaskRow => ({
   id: crypto.randomUUID(),
@@ -521,7 +561,7 @@ function TaskRowEditor({
                         }
                       >
                         <option value="">Select label…</option>
-                        {DETAIL_LABELS.map((l) => (
+                        {detailLabelsFor(chosenUnit?.category).map((l) => (
                           <option key={l} value={l}>
                             {l}
                           </option>
