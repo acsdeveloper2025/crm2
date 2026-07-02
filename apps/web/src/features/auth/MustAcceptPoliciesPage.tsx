@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { useAuth } from '../../lib/AuthContext.js';
 import { Button } from '../../components/ui/Button.js';
+import { AppFooter } from '../../components/AppFooter.js';
 
 export function MustAcceptPoliciesPage() {
   const { pendingPolicies, acceptPolicies, logout } = useAuth();
@@ -23,7 +24,7 @@ export function MustAcceptPoliciesPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-surface-muted p-4 text-foreground">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-surface-muted p-4 text-foreground">
       <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-lg border border-border bg-card shadow-sm">
         <div className="border-b border-border p-6">
           <div className="text-lg font-bold tracking-tight">Please review and accept to continue</div>
@@ -55,6 +56,9 @@ export function MustAcceptPoliciesPage() {
           </Button>
         </div>
       </div>
+      <footer className="mt-4 w-full max-w-2xl">
+        <AppFooter />
+      </footer>
     </div>
   );
 }

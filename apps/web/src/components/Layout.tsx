@@ -5,6 +5,8 @@ import { useFocusTrap } from '../lib/useFocusTrap.js';
 import { NotificationBell } from './NotificationBell.js';
 import { JobsTray } from './JobsTray.js';
 import { HeaderClock } from './HeaderClock.js';
+import { Logo } from './Logo.js';
+import { AppFooter } from './AppFooter.js';
 import { ActiveSelectionSelector } from './ActiveSelectionSelector.js';
 import { UserMenu } from './UserMenu.js';
 import { ThemeToggle } from './ThemeToggle.js';
@@ -30,8 +32,6 @@ function PanelLeftIcon() {
     </svg>
   );
 }
-
-const BRAND = 'CRM2';
 
 /** Frozen CRM2 navigation (web). Operations land later; all Administration screens are built. */
 const OPERATIONS: { label: string; to?: string; perm?: string }[] = [
@@ -119,7 +119,7 @@ function NavContent({ onNavigate }: { onNavigate?: () => void }) {
       )}
       {/* Footer carries identity only — Profile / Security / Sign Out moved to the header account menu. */}
       {user && (
-        <div className="mt-auto border-t border-border px-4 pt-3">
+        <div className="mt-auto flex min-h-14 flex-col justify-center border-t border-border px-4">
           <div className="truncate text-sm font-medium text-foreground">{user.name}</div>
           <div className="text-xs uppercase tracking-wide text-muted-foreground">
             {user.role.replace(/_/g, ' ')}
@@ -196,7 +196,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         {/* Logo bar — brand + collapse toggle. Same h-14 + border-b as the header so the two bottom
             borders meet as one continuous line across the full width. */}
         <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
-          <span className="text-base font-bold tracking-tight text-foreground">{BRAND}</span>
+          <Logo />
           <button
             type="button"
             aria-label="Collapse menu"
@@ -207,8 +207,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <PanelLeftIcon />
           </button>
         </div>
-        {/* Nav sits a little below the header line; scrolls if it outgrows the viewport. */}
-        <div className="flex flex-1 flex-col overflow-y-auto pb-4 pt-5">
+        {/* Nav sits a little below the header line; scrolls if it outgrows the viewport. The identity
+            bar below is flush to the bottom (no pb-4) so its top border lines up with the content footer. */}
+        <div className="flex flex-1 flex-col overflow-y-auto pt-5">
           <NavContent onNavigate={closeOnMobileNav} />
         </div>
       </aside>
@@ -230,7 +231,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           >
             <PanelLeftIcon />
           </button>
-          {!open && <span className="text-base font-bold tracking-tight text-foreground">{BRAND}</span>}
+          {!open && <Logo />}
           {/* Global client+product filter (ADR-0066) — desktop only (hidden <lg to avoid header
               overflow; auto-hides for single-client users). Convenience narrowing, not a security gate. */}
           <div className="ml-4 hidden lg:flex">
@@ -247,6 +248,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <main id="main" tabIndex={-1} className="min-w-0 flex-1 p-4 md:p-6 focus:outline-none">
           {children}
         </main>
+        <footer className="flex min-h-14 shrink-0 items-center border-t border-border px-4">
+          <AppFooter className="w-full" />
+        </footer>
       </div>
     </div>
   );

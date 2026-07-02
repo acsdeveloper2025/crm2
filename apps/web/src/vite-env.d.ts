@@ -5,3 +5,6 @@
 // untyped modules (they are resolved and bundled by Vite at build time).
 declare module '@fontsource-variable/inter';
 declare module '@fontsource-variable/jetbrains-mono';
+
+// Injected at build time from apps/web/package.json (vite.config.ts `define`).
+declare const __APP_VERSION__: string;

@@ -74,6 +74,8 @@ packages/sdk                 # zod contracts (the type source for API+UI+tests)
 **Design goals locked:** professional · data-dense · fast · enterprise · low cognitive load · long-hour comfort.
 **Banned aesthetics:** neobrutalism, glassmorphism, heavy gradients, Dribbble effects, decorative animation. Motion only for state feedback (≤150ms).
 
+**Brand & logo policy (owner-set 2026-07-03):** CRM2 is an **independent product — NOT All Check Services (ACS) software.** Do **not** use the ACS logo, name, or marks anywhere in the web app — including the browser **favicon**, the sidebar/header lockup, and the login screen. CRM2 ships its **own** brand: the in-app logo is `apps/web/src/components/Logo.tsx` (tokenized SVG mark + "CRM2" wordmark) and the favicon is `apps/web/public/favicon.svg` — together the single source for the mark. Every brand surface reuses that component; no ad-hoc wordmarks or third-party logos.
+
 ---
 
 ## PART 4 — THEME SYSTEM (design tokens)

@@ -1,12 +1,82 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../../lib/AuthContext.js';
 import { Button } from '../../components/ui/Button.js';
 import { Input } from '../../components/ui/Input.js';
+import { Logo } from '../../components/Logo.js';
+import { AppFooter } from '../../components/AppFooter.js';
 
 const ERROR_LABELS: Record<string, string> = {
   INVALID_CREDENTIALS: 'Incorrect username or password.',
   UNAUTHENTICATED: 'Session expired. Please sign in again.',
 };
+
+// Owner: swap in a real helpdesk email/phone if you have one (see login footer).
+const SUPPORT_HINT = 'Trouble signing in? Contact your administrator.';
+
+/** Inline eye / eye-off (no icon dep — matches Layout's raw-SVG convention). */
+function EyeIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+function EyeOffIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c6.5 0 10 7 10 7a13.2 13.2 0 0 1-1.67 2.68" />
+      <path d="M6.06 6.06C3.6 7.6 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.94-1.94" />
+      <path d="m3 3 18 18" />
+      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+    </svg>
+  );
+}
+
+const HEADLINE = 'Verification, organized.';
+
+/** One-time typewriter reveal for the brand panel; respects prefers-reduced-motion (full text, no motion). */
+function useTypewriter(text: string, speed = 45) {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setCount(text.length);
+      return;
+    }
+    setCount(0);
+    const id = setInterval(() => {
+      setCount((n) => {
+        if (n >= text.length) {
+          clearInterval(id);
+          return n;
+        }
+        return n + 1;
+      });
+    }, speed);
+    return () => clearInterval(id);
+  }, [text, speed]);
+  return text.slice(0, count);
+}
 
 export function LoginPage() {
   const { login, logoutReason } = useAuth();
@@ -16,6 +86,10 @@ export function LoginPage() {
   const [mfaNeeded, setMfaNeeded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showPw, setShowPw] = useState(false);
+  const [capsOn, setCapsOn] = useState(false);
+  const typed = useTypewriter(HEADLINE);
+  const typedDone = typed.length === HEADLINE.length;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,73 +112,132 @@ export function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-surface-muted text-foreground">
-      <form
-        onSubmit={submit}
-        className="w-full max-w-sm rounded-lg border border-border bg-card p-6 shadow-sm"
-      >
-        <div className="mb-1 text-lg font-bold tracking-tight">CRM2</div>
-        <p className="mb-5 text-sm text-muted-foreground">Sign in to continue.</p>
-
-        {logoutReason && (
-          <p className="mb-4 rounded-md border border-border bg-surface-muted px-3 py-2 text-sm text-muted-foreground">
-            {logoutReason}
+    <div className="min-h-screen bg-surface-muted text-foreground lg:grid lg:grid-cols-2">
+      {/* Brand panel — desktop only. Solid brand color + reversed logo (no gradient, per freeze). */}
+      <aside className="hidden flex-col bg-primary p-10 text-primary-foreground lg:flex">
+        <Logo tone="inverse" size={30} wordmarkClass="text-xl" />
+        <div className="flex max-w-md flex-1 flex-col justify-center">
+          <h2 className="text-3xl font-bold leading-tight tracking-tight" aria-label={HEADLINE}>
+            <span aria-hidden="true">{typed}</span>
+            {!typedDone && (
+              <span
+                aria-hidden="true"
+                className="ml-1 inline-block h-[0.9em] w-0.5 animate-pulse bg-primary-foreground align-middle"
+              />
+            )}
+          </h2>
+          <p
+            className={`mt-3 text-sm transition-opacity duration-500 ${typedDone ? 'opacity-80' : 'opacity-0'}`}
+          >
+            Field visits, office checks, and KYC — every case tracked end to end, in one place.
           </p>
-        )}
+        </div>
+      </aside>
 
-        <label className="mb-3 block">
-          <span className="mb-1 block text-xs font-medium text-foreground">Username</span>
-          <Input
-            className="input"
-            uppercase={false}
-            value={username}
-            autoFocus
-            autoComplete="username"
-            onChange={(e) => setUsername(e.target.value)}
-          />
-        </label>
-        <label className="mb-3 block">
-          <span className="mb-1 block text-xs font-medium text-foreground">Password</span>
-          <Input
-            className="input"
-            type="password"
-            uppercase={false}
-            value={password}
-            autoComplete="current-password"
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </label>
+      <div className="flex min-h-screen flex-col items-center justify-center p-4 lg:min-h-0">
+        <form
+          onSubmit={submit}
+          aria-labelledby="login-title"
+          className="w-full max-w-sm rounded-lg border border-border bg-card p-6 shadow-sm"
+        >
+          <Logo size={28} wordmarkClass="text-lg" className="mb-4 lg:hidden" />
+          <h1 id="login-title" className="text-lg font-bold tracking-tight">
+            Sign in
+          </h1>
+          <p className="mb-5 mt-1 text-sm text-muted-foreground">Enter your credentials to continue.</p>
 
-        {mfaNeeded && (
+          {logoutReason && (
+            <p
+              role="status"
+              className="mb-4 rounded-md border border-border bg-surface-muted px-3 py-2 text-sm text-muted-foreground"
+            >
+              {logoutReason}
+            </p>
+          )}
+
           <label className="mb-3 block">
-            <span className="mb-1 block text-xs font-medium text-foreground">Authentication code</span>
+            <span className="mb-1 block text-xs font-medium text-foreground">Username</span>
             <Input
               className="input"
               uppercase={false}
-              value={mfaCode}
+              value={username}
               autoFocus
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              placeholder="6-digit code or recovery code"
-              onChange={(e) => setMfaCode(e.target.value)}
+              autoComplete="username"
+              onChange={(e) => setUsername(e.target.value)}
             />
-            <span className="mt-1 block text-xs text-muted-foreground">
-              Enter the code from your authenticator app.
-            </span>
           </label>
-        )}
+          <label className="mb-3 block">
+            <span className="mb-1 block text-xs font-medium text-foreground">Password</span>
+            <div className="relative">
+              <Input
+                className="input pr-10"
+                type={showPw ? 'text' : 'password'}
+                uppercase={false}
+                value={password}
+                autoComplete="current-password"
+                onChange={(e) => setPassword(e.target.value)}
+                onKeyUp={(e) => setCapsOn(e.getModifierState('CapsLock'))}
+                onKeyDown={(e) => setCapsOn(e.getModifierState('CapsLock'))}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPw((v) => !v)}
+                aria-label={showPw ? 'Hide password' : 'Show password'}
+                aria-pressed={showPw}
+                className="absolute inset-y-0 right-0 flex items-center rounded-r-md px-3 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {showPw ? <EyeOffIcon /> : <EyeIcon />}
+              </button>
+            </div>
+            {capsOn && (
+              <span
+                role="status"
+                className="mt-1 inline-block rounded bg-warning px-1.5 py-0.5 text-xs font-medium text-warning-foreground"
+              >
+                Caps Lock is on
+              </span>
+            )}
+          </label>
 
-        {error && <p className="mb-3 text-sm text-destructive">{error}</p>}
+          {mfaNeeded && (
+            <label className="mb-3 block">
+              <span className="mb-1 block text-xs font-medium text-foreground">Authentication code</span>
+              <Input
+                className="input"
+                uppercase={false}
+                value={mfaCode}
+                autoFocus
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="6-digit code or recovery code"
+                onChange={(e) => setMfaCode(e.target.value)}
+              />
+              <span className="mt-1 block text-xs text-muted-foreground">
+                Enter the code from your authenticator app.
+              </span>
+            </label>
+          )}
 
-        <Button
-          className="w-full"
-          type="submit"
-          loading={busy}
-          disabled={!username || !password || (mfaNeeded && !mfaCode)}
-        >
-          {mfaNeeded ? 'Verify & Sign In' : 'Sign In'}
-        </Button>
-      </form>
+          {error && (
+            <p role="alert" className="mb-3 text-sm text-destructive">
+              {error}
+            </p>
+          )}
+
+          <Button
+            className="w-full"
+            type="submit"
+            loading={busy}
+            disabled={!username || !password || (mfaNeeded && !mfaCode)}
+          >
+            {mfaNeeded ? 'Verify & Sign In' : 'Sign In'}
+          </Button>
+        </form>
+        <footer className="mt-4 w-full max-w-sm">
+          <p className="text-center text-xs text-muted-foreground">{SUPPORT_HINT}</p>
+          <AppFooter className="mt-1" />
+        </footer>
+      </div>
     </div>
   );
 }

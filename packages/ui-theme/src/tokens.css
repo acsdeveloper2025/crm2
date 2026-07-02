@@ -13,6 +13,11 @@
  */
 
 :root {
+  /* Tell the browser the active scheme so UA-painted surfaces (scrollbar, canvas underflow
+     past the content, overscroll/rubber-band, native form controls) match the theme. Swapped
+     by `.dark`. Without it, an OS-dark user who toggles the app to light sees a dark strip
+     below the content (the UA canvas defaulting to the OS scheme). */
+  color-scheme: light;
   /* ---- Base surfaces (White + Slate) ---------------------------------------------- */
   --background: 0 0% 100%; /* page            (white)        */
   --foreground: 217 33% 17%; /* primary text    (slate-800)    */
@@ -102,6 +107,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   /* ---- Base surfaces (Charcoal + Slate) ------------------------------------------- */
   --background: 222 28% 9%; /* charcoal                     */
   --foreground: 210 20% 92%;
