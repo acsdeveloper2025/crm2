@@ -1843,3 +1843,13 @@ also duplicated between the Trigger column and detail values.
 | DETAIL-1 — free-text detail label lets operators type VALUES (bank names) as KEYS → sparse per-bank export columns | **FIXED** — the "Add detail" label is now a code-owned pick-list (BANK NAME / ACCOUNT NUMBER / IFSC / BRANCH / STATEMENT PERIOD / TRANSACTION DATE / TRANSACTION DETAILS / REMARK) + "Other…" fallback. Consistent labels → stable export columns (BANK NAME column, bank as the VALUE). No export-code change; no per-type schema. Live-verified: 2 tasks → one BANK NAME column with ICICI BANK / BANK OF INDIA as values. |
 | DETAIL-2 — the Trigger column was already present + populated with the requirement; owner chose to KEEP the name "Trigger" (not rename to "Requirement") | **NO-OP (owner decision)** — Trigger stays; operators should put the requirement there, not in a detail value. |
 | DETAIL-3 — existing prod cases 20/21 hold bank-name-as-key data (pre-fix) | **OPEN (owner to decide)** — auto-migration is ambiguous (value is sometimes a date, sometimes a requirement); offer to re-map {bank: x} → {BANK NAME: bank} on request, else re-create. |
+
+### KYC verifier — full case/task lockdown (2026-07-02, owner)
+
+Owner: clicking a KYC queue row opened the full Case Detail page — the verifier should never reach case/task detail. Locked it fully (mig 0111): removed case.view from KYC_VERIFIER + removed the queue row-click; his own-task reference attachments moved to a kyc_tasks.view-gated endpoint (he keeps "see + download HIS attachments only").
+
+| Finding | Disposition |
+|---|---|
+| LOCK-1 — KYC queue row-click navigated to /cases/:id (full case detail) | **FIXED** — `onRowClick` removed; the queue is terminal (export is the action). |
+| LOCK-2 — verifier held case.view → could reach /cases, /cases/:id, /tasks (SELF-scoped, no leak, but more than his job) | **FIXED** — mig 0111 drops case.view from KYC_VERIFIER (constant + seed byte-consistent; roles.parity green). His perms now: page.dashboard, kyc_tasks.view, kyc_tasks.export. /cases + /tasks + case detail → 403. |
+| LOCK-3 — attachment access was via /cases/:id/attachments (case.view) — closed by LOCK-2 | **REPLACED** — new GET /api/v2/kyc-tasks/:taskId/attachments + /:attachmentId/url (kyc_tasks.view), row-scoped to the verifier's OWN OFFICE task (foreign task → [] / 404, IDOR-safe). Web: the queue's Attachments count is a button → dialog → presigned download. Live-verified end-to-end; another verifier → [] + 404; no kyc_tasks.view → 403. |

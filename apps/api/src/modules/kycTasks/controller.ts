@@ -18,6 +18,26 @@ export const kycTasksController = {
       next(e);
     }
   },
+  async listAttachments(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      res.json(await svc.listAttachments(String(req.params['taskId'] ?? ''), actor(req)));
+    } catch (e) {
+      next(e);
+    }
+  },
+  async attachmentUrl(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      res.json(
+        await svc.attachmentUrl(
+          String(req.params['taskId'] ?? ''),
+          String(req.params['attachmentId'] ?? ''),
+          actor(req),
+        ),
+      );
+    } catch (e) {
+      next(e);
+    }
+  },
   async export(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const q = req.query as Record<string, unknown>;

@@ -1912,57 +1912,30 @@ describe.skipIf(!RUN)('cases API', () => {
       expect(bad.body.error).toBe('UNSUPPORTED_FILE_TYPE');
     });
 
-    it('scope + RBAC: the assigned desk user reads; an outsider 404; case.view-only cannot upload (403)', async () => {
+    it('ADR-0085: the KYC verifier has NO case-page attachment access (case.view removed); the office does', async () => {
       const { caseId, taskId } = await seedCaseWithTask('AT3', { workerRole: 'KYC_VERIFIER' });
       const verifier = await createUser({ username: 'kyc_at3', name: 'DESK A', role: 'KYC_VERIFIER' });
       await request(app)
         .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
         .set(SA)
         .send({ assignedTo: verifier, visitType: 'OFFICE', billCount: 1, version: 1 });
-      // grant the case's client+product portfolio so the assigned desk user is in the case's scope
-      // (reads its own assigned task's documents).
-      const { client_id, product_id } = (
-        await db!.pool.query<{ client_id: number; product_id: number }>(
-          `SELECT client_id, product_id FROM cases WHERE id = $1`,
-          [caseId],
-        )
-      ).rows[0]!;
-      await request(app)
-        .post(`/api/v2/users/${verifier}/scope-assignments`)
-        .set(SA)
-        .send({ dimension: 'CLIENT', entityIds: [client_id] });
-      await request(app)
-        .post(`/api/v2/users/${verifier}/scope-assignments`)
-        .set(SA)
-        .send({ dimension: 'PRODUCT', entityIds: [product_id] });
       const att = await upload(caseId, PDF_BYTES, 'kyc.pdf', taskId);
       expect(att.status).toBe(201);
 
-      // the assigned desk user (case.view) sees + signs their task's document
-      const vList = await request(app)
-        .get(`/api/v2/cases/${caseId}/attachments`)
-        .set(hdr('KYC_VERIFIER', verifier));
-      expect(vList.status).toBe(200);
-      expect(vList.body).toHaveLength(1);
+      // ADR-0085 (mig 0111): the verifier no longer holds case.view → the CASE attachment endpoints
+      // 403 at the authorize gate. His OWN-task attachment access moved to /api/v2/kyc-tasks/:id/
+      // attachments (covered by kycTasks.api.test.ts). No case.create either → upload also 403.
+      const V = hdr('KYC_VERIFIER', verifier);
+      expect((await request(app).get(`/api/v2/cases/${caseId}/attachments`).set(V)).status).toBe(403);
       expect(
-        (
-          await request(app)
-            .get(`/api/v2/cases/${caseId}/attachments/${att.body.id}/url`)
-            .set(hdr('KYC_VERIFIER', verifier))
-        ).status,
-      ).toBe(200);
+        (await request(app).get(`/api/v2/cases/${caseId}/attachments/${att.body.id}/url`).set(V)).status,
+      ).toBe(403);
+      expect((await upload(caseId, PDF_BYTES, 'x.pdf', taskId, V)).status).toBe(403);
 
-      // a verifier NOT on this case → case invisible → 404 (IDOR-safe)
-      const outsider = await createUser({ username: 'kyc_at3_out', name: 'OUT', role: 'KYC_VERIFIER' });
-      expect(
-        (await request(app).get(`/api/v2/cases/${caseId}/attachments`).set(hdr('KYC_VERIFIER', outsider)))
-          .status,
-      ).toBe(404);
-
-      // case.view-only (no case.create) cannot upload → 403 at the authorize gate
-      expect((await upload(caseId, PDF_BYTES, 'x.pdf', taskId, hdr('KYC_VERIFIER', verifier))).status).toBe(
-        403,
-      );
+      // the office (SA, case.view) still reads the task's reference document
+      const saList = await request(app).get(`/api/v2/cases/${caseId}/attachments`).set(SA);
+      expect(saList.status).toBe(200);
+      expect(saList.body).toHaveLength(1);
     });
 
     it('IDOR (A2026-0623-06): an out-of-scope actor cannot sign a URL for, or delete, a case-level attachment', async () => {
@@ -1973,13 +1946,15 @@ describe.skipIf(!RUN)('cases API', () => {
       expect(a1.status).toBe(201);
       expect(a1.body.taskId).toBeNull(); // case-level
 
-      // read IDOR: a KYC verifier on NO case must not sign a URL to the pii_sensitive doc
-      const reader = await createUser({ username: 'kyc_at4_out', name: 'OUT R', role: 'KYC_VERIFIER' });
+      // read IDOR: a case.view holder on NO case must not sign a URL to the pii_sensitive doc. Uses a
+      // FIELD_AGENT (still holds case.view; SELF-scoped) — the KYC verifier now has NO case.view at
+      // all (ADR-0085, mig 0111), so it can't exercise the scope guard here (it 403s at the gate).
+      const reader = await createUser({ username: 'fa_at4_out', name: 'OUT R', role: 'FIELD_AGENT' });
       expect(
         (
           await request(app)
             .get(`/api/v2/cases/${caseId}/attachments/${a1.body.id}/url`)
-            .set(hdr('KYC_VERIFIER', reader))
+            .set(hdr('FIELD_AGENT', reader))
         ).status,
       ).toBe(404);
 

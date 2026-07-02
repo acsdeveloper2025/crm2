@@ -1,6 +1,7 @@
-import type { KycQueueState, KycTaskRow, Paginated } from '@crm2/sdk';
+import type { KycAttachment, KycQueueState, KycTaskRow, Paginated } from '@crm2/sdk';
 import { KYC_QUEUE_STATES } from '@crm2/sdk';
 import { AppError } from '../../platform/errors.js';
+import { getStorage } from '../../platform/storage/index.js';
 import {
   resolvePage,
   resolveFilters,
@@ -86,6 +87,20 @@ export const kycTasksService = {
       offset: r.offset,
     });
     return buildPage(items, totalCount, r);
+  },
+
+  /** Reference attachments on the verifier's OWN KYC task (ADR-0085) — scoped to a task assigned to
+   *  him; an out-of-scope taskId returns [] (never leaks another verifier's docs). */
+  async listAttachments(taskId: string, actor: Actor): Promise<KycAttachment[]> {
+    return repo.taskAttachments(taskId, await resolveScope(actor));
+  },
+
+  /** A presigned download URL for ONE attachment on the actor's own task (same scope guard). An
+   *  out-of-scope task / mismatched id → 404 (IDOR-safe). */
+  async attachmentUrl(taskId: string, attachmentId: string, actor: Actor): Promise<{ url: string }> {
+    const key = await repo.attachmentStorageKey(taskId, attachmentId, await resolveScope(actor));
+    if (!key) throw AppError.notFound('ATTACHMENT_NOT_FOUND');
+    return { url: await getStorage().signedUrl(key) };
   },
 
   /**

@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import type { ExportFormat, KycTaskRow, PageQuery, Paginated } from '@crm2/sdk';
+import { useSearchParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import type { ExportFormat, KycAttachment, KycTaskRow, PageQuery, Paginated } from '@crm2/sdk';
 import { api, apiExport } from '../../lib/sdk.js';
 import { formatDateTime } from '../../lib/format.js';
 import { useAuth } from '../../lib/AuthContext.js';
@@ -92,16 +93,27 @@ function cellFor(key: string, row: KycTaskRow): ReactNode {
   if (key === 'assignedAt' || key === 'exportedAt') return formatDateTime(String(v));
   if (key === 'status')
     return <span className="rounded bg-surface-muted px-2 py-0.5 text-xs font-medium">{String(v)}</span>;
-  if (key === 'attachmentCount')
-    // the creator's reference document(s) — open the row (case page) to download before verifying
-    return Number(v) > 0 ? (
-      <span className="rounded bg-surface-muted px-2 py-0.5 text-xs font-medium">
-        {String(v)} file{Number(v) === 1 ? '' : 's'}
-      </span>
-    ) : (
-      <span className="text-muted-foreground">—</span>
-    );
+  // attachmentCount is rendered as an interactive button in the columns map (needs a handler).
   return String(v);
+}
+
+/** The Attachments cell — a button that opens the own-task download dialog (ADR-0085; the verifier
+ *  has no case page, so this is his only way to fetch the creator's reference docs). */
+function attachmentCell(
+  row: KycTaskRow,
+  onOpen: (t: { taskId: string; taskNumber: string }) => void,
+): ReactNode {
+  const n = Number(row['attachmentCount'] ?? 0);
+  if (!n) return <span className="text-muted-foreground">—</span>;
+  return (
+    <button
+      type="button"
+      className="rounded bg-surface-muted px-2 py-0.5 text-xs font-medium text-primary hover:underline"
+      onClick={() => onOpen({ taskId: String(row['id']), taskNumber: String(row['taskNumber']) })}
+    >
+      {n} file{n === 1 ? '' : 's'}
+    </button>
+  );
 }
 
 function saveBlob(blob: Blob, filename: string): void {
@@ -114,7 +126,6 @@ function saveBlob(blob: Blob, filename: string): void {
 }
 
 export function KycQueuePage() {
-  const navigate = useNavigate();
   const { has } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const tab: Tab = searchParams.get('tab') === 'EXPORTED' ? 'EXPORTED' : 'TO_EXPORT';
@@ -125,6 +136,7 @@ export function KycQueuePage() {
   const [reexport, setReexport] = useState<{ selection: BulkSelection<KycTaskRow>; reason: string } | null>(
     null,
   );
+  const [attach, setAttach] = useState<{ taskId: string; taskNumber: string } | null>(null);
   // Focus-trap + Escape for the re-export dialog (app dialog pattern — adversarial review 2026-07-02).
   const dialogRef = useFocusTrap<HTMLDivElement>(!!reexport, () => setReexport(null));
 
@@ -136,7 +148,8 @@ export function KycQueuePage() {
         header: LABELS[k] ?? k,
         sortable: SORTABLE.has(k),
         filterable: FILTERABLE.has(k),
-        cell: (row: KycTaskRow) => cellFor(k, row),
+        cell: (row: KycTaskRow) =>
+          k === 'attachmentCount' ? attachmentCell(row, setAttach) : cellFor(k, row),
       })),
     [keys],
   );
@@ -235,7 +248,6 @@ export function KycQueuePage() {
         searchPlaceholder="Search case / document / applicant…"
         dateFilters={tab === 'TO_EXPORT' ? [{ id: 'assignedAt', label: 'Assigned' }] : []}
         loadingLabel="KYC queue"
-        onRowClick={(row) => navigate(`/cases/${String(row['caseId'])}`)}
         selectable={canExport}
         bulkActions={(selection) =>
           tab === 'TO_EXPORT' ? (
@@ -316,6 +328,88 @@ export function KycQueuePage() {
           </div>
         </div>
       )}
+
+      {attach && <AttachmentsDialog task={attach} onClose={() => setAttach(null)} />}
+    </div>
+  );
+}
+
+/** Own-task reference-document downloader (ADR-0085). Lists the task's attachments (scoped server-side
+ *  to the verifier's own task) and opens a presigned URL per file — the verifier's only doc-fetch path
+ *  now that he has no case page. */
+function AttachmentsDialog({
+  task,
+  onClose,
+}: {
+  task: { taskId: string; taskNumber: string };
+  onClose: () => void;
+}) {
+  const ref = useFocusTrap<HTMLDivElement>(true, onClose);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const list = useQuery({
+    queryKey: ['kyc-attachments', task.taskId],
+    queryFn: () => api<KycAttachment[]>('GET', `/api/v2/kyc-tasks/${task.taskId}/attachments`),
+  });
+
+  const download = async (a: KycAttachment): Promise<void> => {
+    setDownloadingId(a.id);
+    try {
+      const { url } = await api<{ url: string }>(
+        'GET',
+        `/api/v2/kyc-tasks/${task.taskId}/attachments/${a.id}/url`,
+      );
+      window.open(url, '_blank', 'noopener');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-foreground/70 p-4"
+      onClick={onClose}
+    >
+      <div
+        ref={ref}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Task attachments"
+        className="w-full max-w-md rounded-lg border border-border bg-card p-4 shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-base font-semibold">Attachments — {task.taskNumber}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Reference documents attached to your task. Click to download.
+        </p>
+        <div className="mt-3 space-y-2">
+          {list.isLoading ? (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : list.isError ? (
+            <p className="text-sm text-destructive">Couldn&apos;t load attachments.</p>
+          ) : (list.data?.length ?? 0) === 0 ? (
+            <p className="text-sm text-muted-foreground">No attachments.</p>
+          ) : (
+            list.data!.map((a) => (
+              <div
+                key={a.id}
+                className="flex items-center justify-between gap-3 rounded border border-border p-2"
+              >
+                <span className="min-w-0 flex-1 truncate text-sm" title={a.originalName}>
+                  {a.originalName}
+                </span>
+                <Button size="sm" loading={downloadingId === a.id} onClick={() => void download(a)}>
+                  Download
+                </Button>
+              </div>
+            ))
+          )}
+        </div>
+        <div className="mt-3 flex justify-end">
+          <Button variant="ghost" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

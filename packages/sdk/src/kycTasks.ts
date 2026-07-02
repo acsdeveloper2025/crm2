@@ -11,3 +11,13 @@ export type KycQueueState = (typeof KYC_QUEUE_STATES)[number];
 /** A queue row: values keyed by column key. `documentDetails` is the label→value map. */
 export type KycTaskCell = string | number | boolean | null | Record<string, string>;
 export type KycTaskRow = Record<string, KycTaskCell>;
+
+/** A reference document the creator attached to a KYC task — the verifier sees + downloads only his
+ *  OWN task's attachments (ADR-0085; he has no case-page access). */
+export interface KycAttachment {
+  id: string;
+  originalName: string;
+  mimeType: string;
+  fileSize: number;
+  createdAt: string;
+}

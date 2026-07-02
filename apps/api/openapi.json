@@ -2612,6 +2612,44 @@
         ]
       }
     },
+    "/api/v2/kyc-tasks/{taskId}/attachments": {
+      "get": {
+        "tags": [
+          "kyc-tasks"
+        ],
+        "operationId": "get_api_v2_kyc_tasks_taskId_attachments",
+        "summary": "GET /api/v2/kyc-tasks/{taskId}/attachments",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/kyc-tasks/{taskId}/attachments/{attachmentId}/url": {
+      "get": {
+        "tags": [
+          "kyc-tasks"
+        ],
+        "operationId": "get_api_v2_kyc_tasks_taskId_attachments_attachmentId_url",
+        "summary": "GET /api/v2/kyc-tasks/{taskId}/attachments/{attachmentId}/url",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v2/kyc-tasks/export": {
       "get": {
         "tags": [

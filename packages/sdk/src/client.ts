@@ -7,7 +7,7 @@ import type {
 import type { Paginated, PageQuery } from './pagination.js';
 import { pageQueryToParams } from './pagination.js';
 import type { MisReportTypeMeta, MisRow, MisSummary } from './mis.js';
-import type { KycQueueState, KycTaskRow } from './kycTasks.js';
+import type { KycAttachment, KycQueueState, KycTaskRow } from './kycTasks.js';
 import type { ExportRequest, ExportResult } from './export.js';
 import { exportQueryToParams } from './export.js';
 import type { Option } from './options.js';
@@ -753,6 +753,14 @@ export function createSdk(opts: SdkOptions) {
       },
       export: (r: ExportRequest, reexportReason?: string) =>
         reqBlob('kyc-tasks', r, reexportReason ? { reexportReason } : undefined),
+      /** Reference attachments on the verifier's OWN task (he has no case-page access). */
+      attachments: (taskId: string) =>
+        req<KycAttachment[]>('GET', `/api/v2/kyc-tasks/${encodeURIComponent(taskId)}/attachments`),
+      attachmentUrl: (taskId: string, attachmentId: string) =>
+        req<{ url: string }>(
+          'GET',
+          `/api/v2/kyc-tasks/${encodeURIComponent(taskId)}/attachments/${encodeURIComponent(attachmentId)}/url`,
+        ),
     },
     /** Field Monitoring console (ADR-0026): field executives in the actor's hierarchy scope. */
     fieldMonitoring: {

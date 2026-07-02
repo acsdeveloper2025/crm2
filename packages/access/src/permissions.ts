@@ -161,13 +161,10 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     PERMISSIONS.PAGE_OPERATIONS,
   ],
   FIELD_AGENT: [PERMISSIONS.CASE_VIEW, PERMISSIONS.LOCATION_CAPTURE, PERMISSIONS.TASK_EXECUTE],
-  KYC_VERIFIER: [
-    PERMISSIONS.CASE_VIEW,
-    PERMISSIONS.DASHBOARD_VIEW,
-    // ADR-0085: his whole job — see + export HIS assigned OFFICE tasks. Still no complete/close.
-    PERMISSIONS.KYC_TASKS_VIEW,
-    PERMISSIONS.KYC_TASKS_EXPORT,
-  ],
+  // ADR-0085 (owner 2026-07-02): the read-only KYC verifier NEVER opens case/task detail — NO
+  // case.view (mig 0111). His whole surface is the KYC queue (see + export HIS assigned OFFICE tasks)
+  // + his own tasks' reference attachments (kyc_tasks.view-gated). Still no complete/close.
+  KYC_VERIFIER: [PERMISSIONS.DASHBOARD_VIEW, PERMISSIONS.KYC_TASKS_VIEW, PERMISSIONS.KYC_TASKS_EXPORT],
 };
 
 /** Human-readable label + grouping for each permission (Access Control / Roles admin views). */

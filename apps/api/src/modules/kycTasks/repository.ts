@@ -1,4 +1,4 @@
-import type { KycTaskRow, SortOrder } from '@crm2/sdk';
+import type { KycAttachment, KycTaskRow, SortOrder } from '@crm2/sdk';
 import { filterClauses, type AppliedFilter } from '../../platform/pagination.js';
 import { query, withTransaction } from '../../platform/db.js';
 import { AppError } from '../../platform/errors.js';
@@ -76,6 +76,46 @@ export const kycTasksRepository = {
       [...params, o.limit, o.offset],
     );
     return { items, totalCount };
+  },
+
+  /**
+   * Reference attachments for ONE of the actor's OWN KYC tasks (ADR-0085, owner 2026-07-02). The
+   * verifier no longer has case.view / the case page, so this is his ONLY attachment path — scoped
+   * to a task assigned to him (taskScopePredicate) with visit_type='OFFICE'; an out-of-scope taskId
+   * simply returns []. Excludes device FIELD_PHOTO rows + soft-deleted. SA (no scope) sees all OFFICE.
+   */
+  async taskAttachments(taskId: string, scope: Scope): Promise<KycAttachment[]> {
+    const params: unknown[] = [taskId];
+    const pred = taskScopePredicate(params, scope);
+    const scopeLeg = pred ? `AND (${pred})` : '';
+    return query<KycAttachment>(
+      `SELECT ca.id, ca.original_name AS "originalName", ca.mime_type AS "mimeType",
+              ca.file_size AS "fileSize", ca.created_at AS "createdAt"
+       FROM case_attachments ca
+       WHERE ca.task_id = $1 AND ca.deleted_at IS NULL AND ca.kind IS DISTINCT FROM 'FIELD_PHOTO'
+         AND EXISTS (SELECT 1 FROM case_tasks ct JOIN cases cs ON cs.id = ct.case_id
+                     WHERE ct.id = $1 AND ct.visit_type = 'OFFICE' ${scopeLeg})
+       ORDER BY ca.created_at DESC`,
+      params,
+    );
+  },
+
+  /** The storage key of ONE attachment on the actor's own OFFICE task (same guard as taskAttachments)
+   *  — for the presigned-download endpoint. null when the task is out of scope or the id doesn't match. */
+  async attachmentStorageKey(taskId: string, attachmentId: string, scope: Scope): Promise<string | null> {
+    const params: unknown[] = [taskId, attachmentId];
+    const pred = taskScopePredicate(params, scope);
+    const scopeLeg = pred ? `AND (${pred})` : '';
+    const [row] = await query<{ storageKey: string }>(
+      `SELECT ca.storage_key AS "storageKey"
+       FROM case_attachments ca
+       WHERE ca.task_id = $1 AND ca.id = $2 AND ca.deleted_at IS NULL
+         AND ca.kind IS DISTINCT FROM 'FIELD_PHOTO'
+         AND EXISTS (SELECT 1 FROM case_tasks ct JOIN cases cs ON cs.id = ct.case_id
+                     WHERE ct.id = $1 AND ct.visit_type = 'OFFICE' ${scopeLeg})`,
+      params,
+    );
+    return row?.storageKey ?? null;
   },
 
   /** Scoped + filtered match count (the export guard's pre-check). */

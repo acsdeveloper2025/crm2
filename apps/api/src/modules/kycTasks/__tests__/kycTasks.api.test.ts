@@ -9,6 +9,15 @@ import {
 } from '@crm2/test-utils';
 import { createApp } from '../../../http/app.js';
 import { setPool } from '../../../platform/db.js';
+import { setStorage, type StorageProvider } from '../../../platform/storage/index.js';
+
+const fakeStorage: StorageProvider = {
+  put: (key) => Promise.resolve({ key }),
+  get: () => Promise.resolve(Buffer.from('')),
+  signedUrl: (key) => Promise.resolve(`https://signed.example/${key}`),
+  remove: () => Promise.resolve(),
+};
+const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01]);
 
 /**
  * KYC-verifier queue (ADR-0085 S2): self-scoped OFFICE-task read model with the DERIVED export
@@ -130,8 +139,10 @@ describe.skipIf(!RUN)('KYC-verifier queue (ADR-0085 S2)', () => {
   beforeAll(async () => {
     await db!.migrate();
     setPool(db!.pool);
+    setStorage(fakeStorage);
   });
   afterAll(async () => {
+    setStorage(null);
     await db!.end();
   });
 
@@ -307,6 +318,40 @@ describe.skipIf(!RUN)('KYC-verifier queue (ADR-0085 S2)', () => {
           .set(hdr('KYC_VERIFIER', mine))
       ).status,
     ).toBe(400);
+  });
+
+  it('own-task attachments: verifier lists + downloads HIS task doc; another verifier → [] and 404 (ADR-0085)', async () => {
+    const mine = await createUser('KYC_VERIFIER', 'kv_att');
+    const other = await createUser('KYC_VERIFIER', 'kv_att2');
+    const { caseId, taskId } = await seedOfficeTask('S4A', mine);
+    // attach a reference doc to the task (raw-bytes upload, SA — the office attaches; fake storage)
+    const up = await request(app)
+      .post(`/api/v2/cases/${caseId}/attachments?taskId=${taskId}`)
+      .set(SA)
+      .set('x-filename', 'ref.png')
+      .set('content-type', 'application/octet-stream')
+      .send(PNG_BYTES);
+    expect(up.status).toBe(201);
+    const attId = up.body.id as string;
+
+    const H = hdr('KYC_VERIFIER', mine);
+    const listed = await request(app).get(`/api/v2/kyc-tasks/${taskId}/attachments`).set(H);
+    expect(listed.status).toBe(200);
+    expect(listed.body).toHaveLength(1);
+    expect(listed.body[0]).toMatchObject({ id: attId, originalName: 'ref.png' });
+    // a presigned URL for MY task's attachment
+    const url = await request(app).get(`/api/v2/kyc-tasks/${taskId}/attachments/${attId}/url`).set(H);
+    expect(url.status).toBe(200);
+    expect(typeof url.body.url).toBe('string');
+
+    // another verifier sees NOTHING for the same task (SELF scope) — list [] + url 404 (IDOR-safe)
+    const O = hdr('KYC_VERIFIER', other);
+    expect((await request(app).get(`/api/v2/kyc-tasks/${taskId}/attachments`).set(O)).body).toHaveLength(0);
+    expect(
+      (await request(app).get(`/api/v2/kyc-tasks/${taskId}/attachments/${attId}/url`).set(O)).status,
+    ).toBe(404);
+    // no kyc_tasks.view → 403
+    expect((await request(app).get(`/api/v2/kyc-tasks/${taskId}/attachments`).set(FA)).status).toBe(403);
   });
 
   it('FIELD tasks never appear; SA (grants-all, unrestricted scope) sees all OFFICE rows', async () => {

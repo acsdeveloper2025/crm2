@@ -599,4 +599,19 @@ describe('createSdk — transport', () => {
       ]),
     );
   });
+
+  it('wires the KYC-verifier queue endpoints (ADR-0085): list, own-task attachments + presigned url', async () => {
+    const { impl, calls } = fakeFetch(200, []);
+    const s = createSdk({ baseUrl: 'http://x', fetchImpl: impl, getAuthToken: () => 'Bearer t' });
+    await s.kycTasks.list('TO_EXPORT', { page: 1 }, ['taskNumber', 'documentNumber']);
+    await s.kycTasks.attachments('t1');
+    await s.kycTasks.attachmentUrl('t1', 'a1');
+    expect(calls).toHaveLength(3);
+    expect(calls.every((c) => c.init.method === 'GET')).toBe(true);
+    expect(calls[0]?.url).toContain('/api/v2/kyc-tasks?');
+    expect(calls[0]?.url).toContain('state=TO_EXPORT');
+    expect(calls[0]?.url).toContain('cols=taskNumber%2CdocumentNumber');
+    expect(calls[1]?.url).toBe('http://x/api/v2/kyc-tasks/t1/attachments');
+    expect(calls[2]?.url).toBe('http://x/api/v2/kyc-tasks/t1/attachments/a1/url');
+  });
 });

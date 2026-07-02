@@ -72,6 +72,14 @@ two-tab web page. The `case_tasks` status machine, completion track, and mobile 
    **no cross-scope leak** — he is pure SELF (`assigned_to = me`) after mig 0089, so `/api/v2/tasks` and
    `/api/v2/cases` return only his own OFFICE task + its case (empirically verified). Registry §KYC-verifier
    separate dashboard + RBAC re-audit.
+10. **Full case/task lockdown (2026-07-02, mig 0111).** The verifier must NEVER open case/task detail:
+    `case.view` is removed from KYC_VERIFIER (his perms are now `page.dashboard` + `kyc_tasks.view` +
+    `kyc_tasks.export`) and the KYC-queue row-click is gone. This also closes his incidental `/cases` +
+    `/tasks` reach (they were SELF-scoped — no leak, but not his job). He keeps **see + download HIS OWN
+    task's reference attachments** via a new `kyc_tasks.view`-gated pair — `GET /api/v2/kyc-tasks/:taskId/
+    attachments` + `/:attachmentId/url` — row-scoped to a task assigned to him (foreign task → [] / 404,
+    IDOR-safe); the queue's Attachments count is a button → dialog → presigned download. Registry
+    §KYC verifier full case/task lockdown.
 
 ## Consequences
 
