@@ -7,6 +7,7 @@ import type {
 import type { Paginated, PageQuery } from './pagination.js';
 import { pageQueryToParams } from './pagination.js';
 import type { MisReportTypeMeta, MisRow, MisSummary } from './mis.js';
+import type { KycQueueState, KycTaskRow } from './kycTasks.js';
 import type { ExportRequest, ExportResult } from './export.js';
 import { exportQueryToParams } from './export.js';
 import type { Option } from './options.js';
@@ -738,6 +739,15 @@ export function createSdk(opts: SdkOptions) {
         const params = pageQueryToParams(q);
         params.set('group', groupBy);
         return req<MisSummary>('GET', `/api/v2/mis/${encodeURIComponent(type)}/summary?${params.toString()}`);
+      },
+    },
+    /** KYC-verifier queue (ADR-0085): the actor's OFFICE tasks by derived export state. */
+    kycTasks: {
+      list: (state: KycQueueState, q: PageQuery = {}, cols?: string[]) => {
+        const params = pageQueryToParams(q);
+        params.set('state', state);
+        if (cols && cols.length) params.set('cols', cols.join(','));
+        return req<Paginated<KycTaskRow>>('GET', `/api/v2/kyc-tasks?${params.toString()}`);
       },
     },
     /** Field Monitoring console (ADR-0026): field executives in the actor's hierarchy scope. */

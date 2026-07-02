@@ -2593,6 +2593,25 @@
         ]
       }
     },
+    "/api/v2/kyc-tasks": {
+      "get": {
+        "tags": [
+          "kyc-tasks"
+        ],
+        "operationId": "get_api_v2_kyc_tasks",
+        "summary": "GET /api/v2/kyc-tasks",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v2/location/capture": {
       "post": {
         "tags": [
