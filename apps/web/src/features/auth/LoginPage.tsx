@@ -166,10 +166,15 @@ export function LoginPage() {
               onChange={(e) => setUsername(e.target.value)}
             />
           </label>
-          <label className="mb-3 block">
-            <span className="mb-1 block text-xs font-medium text-foreground">Password</span>
+          <div className="mb-3">
+            {/* Explicit htmlFor (not an implicit wrapping label) so the show/hide button below is
+                NOT part of the input's accessible name — the field is named exactly "Password". */}
+            <label htmlFor="login-password" className="mb-1 block text-xs font-medium text-foreground">
+              Password
+            </label>
             <div className="relative">
               <Input
+                id="login-password"
                 className="input pr-10"
                 type={showPw ? 'text' : 'password'}
                 uppercase={false}
@@ -197,7 +202,7 @@ export function LoginPage() {
                 Caps Lock is on
               </span>
             )}
-          </label>
+          </div>
 
           {mfaNeeded && (
             <label className="mb-3 block">

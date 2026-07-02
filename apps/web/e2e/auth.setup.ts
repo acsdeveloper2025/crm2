@@ -12,7 +12,9 @@ const PASSWORD = process.env['E2E_PASSWORD'] ?? 'admin123';
 setup('authenticate', async ({ page }) => {
   await page.goto('/');
   await page.getByLabel('Username').fill(USERNAME);
-  await page.getByLabel('Password').fill(PASSWORD);
+  // exact: the login field is named "Password"; the show/hide button ("Show password") also
+  // substring-matches, so an inexact getByLabel would be ambiguous (strict-mode violation).
+  await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
   await page.getByRole('button', { name: 'Sign In' }).click();
 
   // ADR-0043 login gate: an active policy gates every user (incl. admin) on login into a
