@@ -1805,3 +1805,16 @@ Audit + design: [docs/specs/2026-07-02-kyc-verifier-workflow-audit.md](./specs/2
 | KYC-EXPORT-3 — no task document-field edit endpoint (a wrong document number after create = revoke → recreate) | **DEFERRED** — small additive `PATCH` when ops friction shows up. |
 | KYC-EXPORT-4 — async ≥10k export tier (413 is the honest ceiling, same as ADR-0084) | **DEFERRED** — mirrors §MIS deferral; a verifier's personal queue approaching 10k is not a real workload. |
 | KYC-EXPORT-5 — exported-state column on the shared Pipeline grid (ops oversight beyond the CaseDetail chip) | **DEFERRED** — the CaseDetail chip covers the per-case question; add a Pipeline column if ops asks. |
+
+### KYC-EXPORT post-ship adversarial review (2026-07-02, 4 agents: security / correctness / frontend / governance)
+
+Security + governance: SHIP-OK, zero must-fix (18 attack surfaces verified; contracts/migration/RBAC-parity/docs all pass).
+
+| Finding | Disposition |
+|---|---|
+| R-1 (correctness, graded HIGH by reviewer) — count-then-claim TOCTOU: the 413 pre-check and the claim are separate statements, so the claimed set can drift from the counted set by concurrent assign/revoke in the window | **ACCEPTED (re-graded LOW)** — the count exists only for the 413 ceiling; the FILE always contains exactly the claimed rows (post-claim fetch by claimed ids), so "fewer rows" = correct reality at claim time, and "more rows than the ceiling" is bounded by ms-window assignment volume on a personal queue. Same shape as the MIS export pre-check (ADR-0084). |
+| R-2 (correctness, MODERATE) — documentDetails labels that collapse after trim+uppercase silently dropped a value (last-wins) | **FIXED** — zod superRefine rejects post-normalization duplicates (`duplicate detail labels`) + SDK test. |
+| R-3 (frontend, graded HIGH by reviewer) — "rules-of-hooks violation: early return after hooks" in KycQueuePage | **REFUTED** — every hook runs before the permission return on every render (hook order is branch-invariant); identical to the MisPage/CasesPage/PipelinePage gate pattern the same review passed. |
+| R-4 (frontend, MED) — re-export dialog lacked focus-trap/Escape (app dialog pattern) | **FIXED** — `useFocusTrap` + Escape-to-close wired. |
+| R-5 (frontend, MED) — tab switch clears grid filters; header export buttons bypass the DataGrid Export menu | **WONTFIX (documented by-design)** — independent tab states (different column sets) + export-as-claim needs a controlled refresh; noted in the design spec §6. |
+| R-6 (correctness, LOW) — `Number()` on bigint event ids for the filename export№ | **ACCEPTED** — precision loss needs >2^53 export events. |

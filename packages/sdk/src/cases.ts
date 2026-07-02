@@ -453,6 +453,11 @@ export const AddTasksSchema = z.object({
                 ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'detail labels must be 1–60 chars' });
               if (Object.values(m).some((v) => v.length > 500))
                 ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'detail values must be ≤500 chars' });
+              // labels that collapse after trim+uppercase (" bank name " vs "BANK NAME") would silently
+              // drop a value in the transform below — reject instead (adversarial review 2026-07-02).
+              const normalized = keys.map((k) => toUpper(k.trim()));
+              if (new Set(normalized).size !== normalized.length)
+                ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'duplicate detail labels' });
             })
             .transform((m) =>
               Object.fromEntries(Object.entries(m).map(([k, v]) => [toUpper(k.trim()), toUpper(v.trim())])),

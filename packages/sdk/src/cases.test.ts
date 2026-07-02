@@ -144,6 +144,12 @@ describe('Case contract', () => {
     expect(
       AddTasksSchema.safeParse({ tasks: [{ ...taskBase, documentDetails: { '  ': 'X' } }] }).success,
     ).toBe(false);
+    // labels that collapse after normalization would silently lose a value → rejected
+    expect(
+      AddTasksSchema.safeParse({
+        tasks: [{ ...taskBase, documentDetails: { ' Bank name ': 'HDFC', 'BANK NAME': 'ICICI' } }],
+      }).success,
+    ).toBe(false);
     expect(
       AddTasksSchema.safeParse({
         tasks: [

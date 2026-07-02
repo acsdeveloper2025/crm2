@@ -169,6 +169,11 @@ the additive `AddTasksSchema` fields + `CaseTaskView` document fields.
 - **Details rendering (owner 2026-07-02 — never one blob):** the grid's Details cell renders one
   `label · value` line per entry (multi-line cell — plain rendering, no DataGrid row-expansion feature);
   the CaseDetail task panel lists them as separate label/value rows.
+- **Deliberate page behaviors (adversarial review 2026-07-02):** switching tabs clears the grid's
+  search/filters (the tabs carry different column sets — independent states by design); the header
+  "Export all pending" buttons + bulk-bar export live OUTSIDE the DataGrid Export menu deliberately —
+  this export MUTATES state (the claim) and needs a controlled post-download refresh, so it is the
+  page's primary action, not a grid menu item (documented DATAGRID_STANDARD §11 exception).
 - **Affordances:** the page offers **export only** — no complete/close/submit control exists for the role
   anywhere (unchanged). Empty To-Export state: "No tasks waiting for export."
 - **CaseDetailPage:** task panel shows the 3 document fields + an "Exported ✓ <time> by <name>" chip when a

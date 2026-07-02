@@ -4,6 +4,7 @@ import type { ExportFormat, KycTaskRow, PageQuery, Paginated } from '@crm2/sdk';
 import { api, apiExport } from '../../lib/sdk.js';
 import { formatDateTime } from '../../lib/format.js';
 import { useAuth } from '../../lib/AuthContext.js';
+import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { DataGrid, type BulkSelection, type DataGridColumn } from '../../components/ui/data-grid/index.js';
 import { Button } from '../../components/ui/Button.js';
 import { Tabs } from '../../components/ui/Tabs.js';
@@ -124,6 +125,8 @@ export function KycQueuePage() {
   const [reexport, setReexport] = useState<{ selection: BulkSelection<KycTaskRow>; reason: string } | null>(
     null,
   );
+  // Focus-trap + Escape for the re-export dialog (app dialog pattern — adversarial review 2026-07-02).
+  const dialogRef = useFocusTrap<HTMLDivElement>(!!reexport, () => setReexport(null));
 
   const keys = tab === 'TO_EXPORT' ? TO_EXPORT_COLS : EXPORTED_COLS;
   const columns = useMemo<DataGridColumn<KycTaskRow>[]>(
@@ -271,6 +274,7 @@ export function KycQueuePage() {
           onClick={() => setReexport(null)}
         >
           <div
+            ref={dialogRef}
             role="dialog"
             aria-modal="true"
             aria-label="Re-export tasks"
