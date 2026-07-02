@@ -1818,3 +1818,15 @@ Security + governance: SHIP-OK, zero must-fix (18 attack surfaces verified; cont
 | R-4 (frontend, MED) — re-export dialog lacked focus-trap/Escape (app dialog pattern) | **FIXED** — `useFocusTrap` + Escape-to-close wired. |
 | R-5 (frontend, MED) — tab switch clears grid filters; header export buttons bypass the DataGrid Export menu | **WONTFIX (documented by-design)** — independent tab states (different column sets) + export-as-claim needs a controlled refresh; noted in the design spec §6. |
 | R-6 (correctness, LOW) — `Number()` on bigint event ids for the filename export№ | **ACCEPTED** — precision loss needs >2^53 export events. |
+
+### KYC-verifier separate dashboard + RBAC re-audit (2026-07-02)
+
+Owner: the shared ops dashboard is wrong for the verifier (pipeline-centric; its tiles link into /pipeline he can't open). Built a KYC-specific dashboard (branch in DashboardPage: `kyc_tasks.view && !page.operations` → `<KycDashboard>`), reusing the shipped `/kyc-tasks` counts — no new API/route/migration/RBAC. A full RBAC audit of the verifier's reachable pages/routes ran alongside.
+
+| Finding | Disposition |
+|---|---|
+| DASH-1 (UX, real) — shared dashboard tiles (counter bar + Out-of-TAT + Oldest-Unassigned) link to `/pipeline`, dead for the verifier (page.operations-gated) | **FIXED** — verifier now gets `KycDashboard` (To Export / Exported / Total / Oldest-waiting cards, all → `/kyc-queue`); his `/dashboard/stats` call is suppressed (`enabled:false`). |
+| DASH-2 (auditor graded CRITICAL) — "`/api/v2/tasks` exposes cross-role FIELD tasks to the verifier via case.view" | **REFUTED (empirically)** — verifier is pure SELF (`assigned_to = me`) after mig 0089 dropped his PINCODE/AREA wiring (ADR-0061). Live test on dev: `/api/v2/tasks` returns 2 rows, BOTH OFFICE + his own, out of 103 total (101 FIELD); `/api/v2/cases` returns 1 (his own). The auditor missed mig 0089 and assumed territory EXPAND was active. No leak. |
+| DASH-3 (auditor graded HIGH) — "`/api/v2/cases` lists all cases in scope" | **REFUTED** — same SELF-scope; the verifier sees only the case his task belongs to (1 row, live-verified). |
+| DASH-4 (pre-existing, MED) — billing/mis/field-monitoring/dedupe pages lack a page-level `has()` guard (they 403 on the data call, not the page) | **DEFERRED (not KYC-specific)** — those pages aren't in the verifier's nav and 403 safely on data; a page-guard sweep is a separate cleanup, out of scope for this task. |
+| DASH-5 (verified safe) — `/dashboard/portfolio` scope for the verifier | **NO-OP** — `caseScopePredicate` limits it to his own cases (SELF); confirmed safe. |

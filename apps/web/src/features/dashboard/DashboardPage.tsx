@@ -7,6 +7,7 @@ import { CounterBar } from './components/CounterBar.js';
 import { KpiCard } from './components/KpiCard.js';
 import { PortfolioTable } from './components/PortfolioTable.js';
 import { RosterSummary } from './components/RosterSummary.js';
+import { KycDashboard } from './KycDashboard.js';
 
 const BASE = '/api/v2/dashboard';
 const QK = 'dashboard';
@@ -22,11 +23,19 @@ export function DashboardPage() {
   const { user } = useAuth();
   const has = (perm: string) =>
     !!user && (user.grantsAll === true || (user.permissions ?? []).includes(perm));
+  // ADR-0085: the read-only KYC verifier (kyc_tasks.view, but NOT the page.operations ops role) gets
+  // a KYC-specific dashboard — the shared ops overview is pipeline-centric (its tiles link into
+  // /pipeline, which he can't open). SUPER_ADMIN has grantsAll → both true → keeps the ops overview.
+  const isReadOnlyKyc = has('kyc_tasks.view') && !has('page.operations');
   const stats = useQuery({
     queryKey: [QK, 'stats'],
     queryFn: () => api<DashboardStats>('GET', `${BASE}/stats`),
+    // Don't fetch pipeline data for the verifier — his dashboard reads the /kyc-tasks model instead.
+    enabled: !isReadOnlyKyc,
   });
   const s = stats.data;
+
+  if (isReadOnlyKyc) return <KycDashboard {...(user ? { name: user.name } : {})} />;
 
   return (
     <div className="space-y-5">

@@ -63,6 +63,15 @@ two-tab web page. The `case_tasks` status machine, completion track, and mobile 
 8. **The verifier still never completes.** No new write permission beyond the export event; the UI offers
    export affordances only. Backend completion + case finalize (ADR-0032) unchanged. Notifications unchanged
    (assign/revoke/rework producers already cover the role — verified live).
+9. **Separate KYC dashboard (2026-07-02).** The shared ops dashboard is pipeline-centric — its tiles link
+   into `/pipeline`, which the verifier can no longer open (`page.operations`). So the read-only KYC verifier
+   (`kyc_tasks.view && !page.operations`) gets a KYC-specific dashboard at the same `/dashboard` route:
+   To Export / Exported / Total / Oldest-waiting cards computed from the shipped `/kyc-tasks` counts, each
+   routing into `/kyc-queue`. No new API/route/migration/RBAC (reuses `page.dashboard` + the queue endpoint);
+   his `/dashboard/stats` fetch is suppressed. A full RBAC re-audit of the verifier's reachable routes found
+   **no cross-scope leak** — he is pure SELF (`assigned_to = me`) after mig 0089, so `/api/v2/tasks` and
+   `/api/v2/cases` return only his own OFFICE task + its case (empirically verified). Registry §KYC-verifier
+   separate dashboard + RBAC re-audit.
 
 ## Consequences
 
