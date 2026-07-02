@@ -32,6 +32,7 @@ const TO_EXPORT_COLS = [
   'documentNumber',
   'documentHolderName',
   'documentDetails',
+  'trigger',
   'applicantName',
   'attachmentCount',
   'assignedAt',
@@ -43,6 +44,7 @@ const EXPORTED_COLS = [
   'unitName',
   'documentNumber',
   'documentDetails',
+  'trigger',
   'exportedAt',
   'exportedBy',
   'exportCount',
@@ -56,6 +58,7 @@ const LABELS: Record<string, string> = {
   documentNumber: 'Document number',
   documentHolderName: 'Name on document',
   documentDetails: 'Details',
+  trigger: 'Trigger',
   applicantName: 'Applicant',
   assignedAt: 'Assigned',
   assignedByName: 'Assigned by',
@@ -72,6 +75,7 @@ const FILTERABLE = new Set([
   'clientName',
   'unitName',
   'documentNumber',
+  'trigger',
   'applicantName',
 ]);
 

@@ -95,7 +95,7 @@ export const KYC_QUEUE_COLUMNS: KycQueueColumn[] = [
   { key: 'applicantPan', label: 'Applicant PAN', dataType: 'TEXT', sql: 'ta.pan' },
   { key: 'applicantMobile', label: 'Applicant mobile', dataType: 'TEXT', sql: 'ta.mobile' },
   { key: 'applicantCompany', label: 'Applicant company', dataType: 'TEXT', sql: 'ta.company_name' },
-  { key: 'trigger', label: 'Trigger', dataType: 'TEXT', sql: 'ct.trigger' },
+  { key: 'trigger', label: 'Trigger', dataType: 'TEXT', sql: 'ct.trigger', filterable: true },
   {
     key: 'priority',
     label: 'Priority',
