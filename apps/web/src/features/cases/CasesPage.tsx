@@ -73,6 +73,10 @@ export function CasesPage() {
     [],
   );
 
+  // ADR-0085: the ops LIST surface is page.operations-gated (case DETAIL stays case.view).
+  if (!has('page.operations'))
+    return <div className="text-destructive">You don&apos;t have access to the Cases list.</div>;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">

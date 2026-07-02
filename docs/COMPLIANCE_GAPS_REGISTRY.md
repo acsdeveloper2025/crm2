@@ -1791,3 +1791,17 @@ Security **GO** (no injection/money-leak/IDOR path survived; PII matches the acc
 
 **Audit verdict: GO** — one HIGH (dead column) found + fixed post-ship with a regression guard; remainder LOW
 doc-integrity (fixed) + one DEFERRED LOW test. Feature is sound.
+
+## Section KYC-EXPORT-2026-07-02 — KYC-verifier export workflow (ADR-0085, mig 0110)
+
+Audit + design: [docs/specs/2026-07-02-kyc-verifier-workflow-audit.md](./specs/2026-07-02-kyc-verifier-workflow-audit.md) ·
+[docs/specs/2026-07-02-kyc-verifier-export-design.md](./specs/2026-07-02-kyc-verifier-export-design.md) ·
+[ADR-0085](./adr/ADR-0085-kyc-verifier-export-workflow.md). Owner-approved 2026-07-02; built S1–S4.
+
+| Item | Disposition |
+|---|---|
+| KYC-EXPORT-1 — **PII in the verifier's export file** (applicant name/PAN/mobile + document number/holder/details leave plaintext in XLSX/CSV to the `kyc_tasks.export` holder) | **ACCEPTED (owner-signed 2026-07-02)** — the verifier's job requires the identifiers; extends the ADR-0084 §MIS-2026-07-01 acceptance. Accountability: every export/re-export is an immutable `task_export_events` row (who/when/format/reason). |
+| KYC-EXPORT-2 — mobile down-sync lacks a `visit_type <> 'OFFICE'` predicate (`sync/repository.ts` — a verifier logging into the mobile app would receive OFFICE tasks on-device; ADR-0025 carry-over) | **DEFERRED** — defense-in-depth only; verifiers are web-only today (no FCM tokens, mobile role-gate deferred with it). |
+| KYC-EXPORT-3 — no task document-field edit endpoint (a wrong document number after create = revoke → recreate) | **DEFERRED** — small additive `PATCH` when ops friction shows up. |
+| KYC-EXPORT-4 — async ≥10k export tier (413 is the honest ceiling, same as ADR-0084) | **DEFERRED** — mirrors §MIS deferral; a verifier's personal queue approaching 10k is not a real workload. |
+| KYC-EXPORT-5 — exported-state column on the shared Pipeline grid (ops oversight beyond the CaseDetail chip) | **DEFERRED** — the CaseDetail chip covers the per-case question; add a Pipeline column if ops asks. |

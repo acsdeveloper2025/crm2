@@ -74,13 +74,16 @@ export async function writeExport<T>(
     ex: ResolvedExport;
     /** download filename base, e.g. `clients` → `clients-20260607.csv`. */
     filenameBase: string;
+    /** full filename override (extension appended) — e.g. a date-time + export-number name
+     *  (`kyc-tasks-20260702-1213-exp12`). Default stays `<filenameBase>-<yyyymmdd>`. */
+    filename?: string;
     /** resource + actor for the export-audit log line. */
     resource: string;
     actorId: string;
   },
 ): Promise<void> {
   const columns = selectColumns(opts.columns, opts.ex.cols);
-  const filename = `${opts.filenameBase}-${stamp()}.${opts.ex.format}`;
+  const filename = `${opts.filename ?? `${opts.filenameBase}-${stamp()}`}.${opts.ex.format}`;
   const body =
     opts.ex.format === 'csv'
       ? Buffer.from(toCsv(opts.rows, columns), 'utf8')

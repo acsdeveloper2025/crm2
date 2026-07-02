@@ -100,7 +100,7 @@ export const kycTasksService = {
     rawQuery: Record<string, unknown>,
     ex: ResolvedExport,
     actor: Actor,
-  ): Promise<{ rows: KycTaskRow[]; columns: ExportColumn<KycTaskRow>[] }> {
+  ): Promise<{ rows: KycTaskRow[]; columns: ExportColumn<KycTaskRow>[]; exportNo: number }> {
     const scope = await resolveScope(actor);
     const reasonRaw = rawQuery['reexportReason'];
     const reason = typeof reasonRaw === 'string' ? reasonRaw.trim() : '';
@@ -116,11 +116,14 @@ export const kycTasksService = {
     const filters = resolveFilters(rawQuery, { sortMap: {}, filterMap, defaultSort: 'assignedAt' });
 
     let claimed: string[];
+    let exportNo: number | null;
     if (reasonRaw !== undefined) {
       // Re-export: explicit + reasoned + selected-only (the Exported tab's row action).
       if (!reason) throw AppError.badRequest('REEXPORT_REASON_REQUIRED');
       if (ex.mode !== 'selected' || !ids?.length) throw AppError.badRequest('REEXPORT_REQUIRES_SELECTED_IDS');
-      claimed = await repo.appendReexports({ ids, scope, format: ex.format, actorId: actor.userId, reason });
+      const re = await repo.appendReexports({ ids, scope, format: ex.format, actorId: actor.userId, reason });
+      claimed = re.taskIds;
+      exportNo = re.exportNo;
     } else {
       // First export: 413-guard the matching set BEFORE claiming (a claim must never exceed the file).
       const matching = await repo.count({
@@ -130,13 +133,15 @@ export const kycTasksService = {
         ...(ids ? { idFilter: ids } : {}),
       });
       assertExportable(matching);
-      claimed = await repo.claimFirstExports({
+      const claim = await repo.claimFirstExports({
         filters,
         scope,
         ...(ids ? { idFilter: ids } : {}),
         format: ex.format,
         actorId: actor.userId,
       });
+      claimed = claim.taskIds;
+      exportNo = claim.exportNo;
       if (claimed.length === 0) throw AppError.conflict('ALREADY_EXPORTED');
     }
 
@@ -204,6 +209,6 @@ export const kycTasksService = {
         },
       }));
     }
-    return { rows: items, columns: [...fixed, ...detail] };
+    return { rows: items, columns: [...fixed, ...detail], exportNo: exportNo ?? 0 };
   },
 };

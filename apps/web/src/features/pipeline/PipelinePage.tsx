@@ -19,6 +19,7 @@ import { api, apiExport } from '../../lib/sdk.js';
 import { formatDateTime } from '../../lib/format.js';
 import { useActiveSelectionFilters } from '../../lib/ActiveSelectionContext.js';
 import { useFocusTrap } from '../../lib/useFocusTrap.js';
+import { useAuth } from '../../lib/AuthContext.js';
 import { DataGrid, type BulkSelection, type DataGridColumn } from '../../components/ui/data-grid/index.js';
 import { Button } from '../../components/ui/Button.js';
 import { WorkStatusChip } from '../../components/WorkStatusChip.js';
@@ -57,6 +58,7 @@ const BUCKETS: {
  */
 export function PipelinePage() {
   const navigate = useNavigate();
+  const { has } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const status = searchParams.get('status') ?? '';
   const overdue = searchParams.get('overdue') === '1';
@@ -204,6 +206,11 @@ export function PipelinePage() {
     ],
     [],
   );
+
+  // ADR-0085: the ops LIST surface is page.operations-gated (the KYC verifier works from /kyc-queue;
+  // case DETAIL stays case.view). After every hook so the hook order is render-stable.
+  if (!has('page.operations'))
+    return <div className="text-destructive">You don&apos;t have access to the Pipeline.</div>;
 
   return (
     <div className="space-y-4">

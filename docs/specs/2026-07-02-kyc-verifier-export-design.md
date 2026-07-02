@@ -142,6 +142,10 @@ unknown; no money columns in v1). Base query: `case_tasks ct JOIN cases cs … W
   injection surface. Column order: fixed registry columns first, then labels alphabetically.
 - Every export logs the standard `data export` structured line (actor, rowCount) **and** is now DB-queryable
   via the events table.
+- **Filename = IST date-time + export number** (owner 2026-07-02): `kyc-tasks-<yyyymmdd>-<hhmm>-exp<N>.<ext>`,
+  where `N` = the batch's first `task_export_events.id` — unique, sequential, quotable when the verifier
+  relays the file externally ("see export #12"). No schema addition (`writeExport` gained an optional
+  filename override).
 
 **Notifications:** none added — `CASE_ASSIGNED` on all 4 assign paths, `TASK_REVOKED` to the old assignee,
 and rework→assign already cover the loop (verified live). **Completion track untouched** (ADR-0032):

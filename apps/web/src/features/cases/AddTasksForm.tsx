@@ -36,6 +36,12 @@ interface TaskRow {
   assigneeId: string;
   /** Optional per-task reference document (ADR-0025 B2) — uploaded to the new task after it's created. */
   file: File | null;
+  // ADR-0085 unified KYC document fields — ONE set for every KYC unit, no per-type schemas. Shown
+  // when the chosen unit's workerRole is KYC_VERIFIER; the verifier's export carries them.
+  documentNumber: string;
+  documentHolderName: string;
+  /** "Add detail" repeater rows (label + value) → the documentDetails map. */
+  details: { label: string; value: string }[];
 }
 const emptyTask = (): TaskRow => ({
   id: crypto.randomUUID(),
@@ -49,7 +55,16 @@ const emptyTask = (): TaskRow => ({
   locationId: '',
   assigneeId: '',
   file: null,
+  documentNumber: '',
+  documentHolderName: '',
+  details: [],
 });
+
+/** ADR-0085 prefill: the two units whose identifier already lives on the applicant (owner examples). */
+const DOC_PREFILL: Record<string, 'pan' | 'mobile'> = {
+  PAN_CARD: 'pan',
+  MOBILE_DETAILS: 'mobile',
+};
 
 const LOCATION_LIMIT = 50;
 const ATTACH_ACCEPT = '.pdf,image/*';
@@ -74,7 +89,7 @@ export function AddTasksForm({
   caseId: string;
   clientId: number;
   productId: number;
-  applicants: Pick<CaseApplicant, 'id' | 'name' | 'applicantType'>[];
+  applicants: Pick<CaseApplicant, 'id' | 'name' | 'applicantType' | 'pan' | 'mobile'>[];
   canAssign?: boolean;
   submitLabel?: string;
   onAdded: () => void;
@@ -129,12 +144,19 @@ export function AddTasksForm({
         tasks: valid.map((r) => {
           const assigning = canAssign && !!r.visitType;
           const locationId = r.locationId ? Number(r.locationId) : undefined;
+          // ADR-0085: the "Add detail" rows → the documentDetails map (blank labels dropped).
+          const details = Object.fromEntries(
+            r.details.filter((d) => d.label.trim()).map((d) => [d.label.trim(), d.value.trim()]),
+          );
           return {
             verificationUnitId: Number(r.verificationUnitId),
             applicantId: r.applicantId,
             address: r.address.trim(),
             trigger: r.trigger.trim(),
             tatHours: r.tatHours, // ADR-0044 target TAT; priority defaults MEDIUM server-side (vestigial)
+            ...(r.documentNumber.trim() ? { documentNumber: r.documentNumber.trim() } : {}),
+            ...(r.documentHolderName.trim() ? { documentHolderName: r.documentHolderName.trim() } : {}),
+            ...(Object.keys(details).length ? { documentDetails: details } : {}),
             ...(assigning ? { visitType: r.visitType as VisitType } : {}),
             // A FIELD task carries its location (= area = pincode row); OFFICE has none.
             ...(assigning && r.visitType === 'FIELD' && locationId
@@ -250,7 +272,7 @@ function TaskRowEditor({
   row: TaskRow;
   units: AvailableUnit[];
   tatBands: TatPolicyOption[];
-  applicants: Pick<CaseApplicant, 'id' | 'name' | 'applicantType'>[];
+  applicants: Pick<CaseApplicant, 'id' | 'name' | 'applicantType' | 'pan' | 'mobile'>[];
   canAssign: boolean;
   onChange: (patch: Partial<TaskRow>) => void;
   onBlockedChange: (id: string, blocked: boolean) => void;
@@ -259,6 +281,20 @@ function TaskRowEditor({
   const isField = row.visitType === 'FIELD';
   // OFFICE/desk (incl. KYC document) tasks have no visit address and no LOCAL/OGL field rate type.
   const isOffice = row.visitType === 'OFFICE';
+  // ADR-0085: a KYC unit surfaces the unified document fields (number + holder + detail repeater) —
+  // unit-driven, NOT visit-type-driven, so create-only roles (no visit picker) still capture them.
+  const chosenUnit = units.find((u) => String(u.verificationUnitId) === row.verificationUnitId);
+  const isKycUnit = chosenUnit?.workerRole === 'KYC_VERIFIER';
+  const applicant = applicants.find((a) => a.id === row.applicantId);
+  /** Prefill empty document fields from the applicant (PAN_CARD → PAN, MOBILE_DETAILS → mobile). */
+  const docPrefill = (unit: AvailableUnit | undefined, ap: typeof applicant): Partial<TaskRow> => {
+    if (unit?.workerRole !== 'KYC_VERIFIER') return {};
+    const key = DOC_PREFILL[unit.code];
+    return {
+      ...(row.documentNumber || !key || !ap?.[key] ? {} : { documentNumber: ap[key] ?? '' }),
+      ...(row.documentHolderName || !ap ? {} : { documentHolderName: ap.name }),
+    };
+  };
   // Dispatch fields (address/trigger/attachment) are shown ONLY once the visit type is chosen — they
   // depend on HOW the task is verified. A create-only role (no visit-type picker) keeps them visible.
   const showDispatch = !canAssign || !!row.visitType;
@@ -334,7 +370,10 @@ function TaskRowEditor({
           <select
             className="input"
             value={row.applicantId}
-            onChange={(e) => onChange({ applicantId: e.target.value })}
+            onChange={(e) => {
+              const ap = applicants.find((a) => a.id === e.target.value);
+              onChange({ applicantId: e.target.value, ...docPrefill(chosenUnit, ap) });
+            }}
           >
             <option value="">Select applicant…</option>
             {applicants.map((a) => (
@@ -348,7 +387,10 @@ function TaskRowEditor({
           <select
             className="input"
             value={row.verificationUnitId}
-            onChange={(e) => onChange({ verificationUnitId: e.target.value })}
+            onChange={(e) => {
+              const unit = units.find((u) => String(u.verificationUnitId) === e.target.value);
+              onChange({ verificationUnitId: e.target.value, ...docPrefill(unit, applicant) });
+            }}
           >
             <option value="">Select unit…</option>
             {units.map((u) => (
@@ -401,6 +443,80 @@ function TaskRowEditor({
           </FieldLabel>
         ) : (
           <span className="hidden lg:block" aria-hidden />
+        )}
+
+        {/* ADR-0085: unified KYC document fields — the SAME three inputs for all KYC units (no
+            per-type schemas); multi-detail types (bank statement…) use the "Add detail" repeater.
+            These feed the KYC verifier's export file (one column per detail label). */}
+        {isKycUnit && (
+          <div className="rounded-md border border-border bg-surface-muted p-3 sm:col-span-2 lg:col-span-4">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Document details (exported to the KYC verifier)
+            </p>
+            <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
+              <FieldLabel label="Document number">
+                <Input
+                  className="input"
+                  value={row.documentNumber}
+                  onChange={(e) => onChange({ documentNumber: e.target.value })}
+                  placeholder="PAN / Aadhaar / account / GST number…"
+                />
+              </FieldLabel>
+              <FieldLabel label="Name on document">
+                <Input
+                  className="input"
+                  value={row.documentHolderName}
+                  onChange={(e) => onChange({ documentHolderName: e.target.value })}
+                  placeholder="As printed on the document"
+                />
+              </FieldLabel>
+            </div>
+            <div className="mt-3 space-y-2">
+              {row.details.map((d, di) => (
+                <div key={di} className="grid grid-cols-[1fr_1.4fr_auto] gap-2">
+                  <Input
+                    className="input"
+                    value={d.label}
+                    onChange={(e) =>
+                      onChange({
+                        details: row.details.map((x, xi) =>
+                          xi === di ? { ...x, label: e.target.value } : x,
+                        ),
+                      })
+                    }
+                    placeholder="Label (e.g. BANK NAME)"
+                  />
+                  <Input
+                    className="input"
+                    value={d.value}
+                    onChange={(e) =>
+                      onChange({
+                        details: row.details.map((x, xi) =>
+                          xi === di ? { ...x, value: e.target.value } : x,
+                        ),
+                      })
+                    }
+                    placeholder="Value"
+                  />
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => onChange({ details: row.details.filter((_, xi) => xi !== di) })}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ))}
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={row.details.length >= 12}
+                onClick={() => onChange({ details: [...row.details, { label: '', value: '' }] })}
+              >
+                + Add detail
+              </Button>
+            </div>
+          </div>
         )}
 
         {/* Dispatch fields appear only once a visit type is chosen (showDispatch) — they depend on HOW

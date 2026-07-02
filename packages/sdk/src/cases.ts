@@ -227,6 +227,9 @@ export interface CaseTaskView {
   /** Flat label→value map for type-specific extras (bank name, account no, statement period…).
    *  Rendered one line per label; exported one COLUMN per label — never flattened into one cell. */
   documentDetails: Record<string, string> | null;
+  /** ADR-0085 derived export state: when the KYC verifier first exported this task (null = never). */
+  exportedAt: string | null;
+  exportedByName: string | null;
   priority: Priority;
   status: CaseTaskStatus;
   assignedTo: string | null;
@@ -289,6 +292,8 @@ export interface AvailableUnit {
   verificationUnitId: number;
   code: string;
   name: string;
+  /** ADR-0085: KYC_VERIFIER units surface the unified document fields in the task-creation form. */
+  workerRole: 'FIELD_AGENT' | 'KYC_VERIFIER';
 }
 
 /** Rate-type preview for a chosen client+product+unit+location during task creation (ADR-0050): the

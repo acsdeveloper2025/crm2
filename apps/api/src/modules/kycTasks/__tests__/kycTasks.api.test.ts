@@ -199,6 +199,8 @@ describe.skipIf(!RUN)('KYC-verifier queue (ADR-0085 S2)', () => {
       .set(H);
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toContain('text/csv');
+    // filename = IST date-time + the export number (the batch's first event id) — owner 2026-07-02
+    expect(res.headers['content-disposition']).toMatch(/kyc-tasks-\d{8}-\d{4}-exp\d+\.csv/);
     const csv = res.text;
     // per-label detail columns (alphabetical), NOT one flattened cell
     expect(csv).toContain('ACCOUNT NO');

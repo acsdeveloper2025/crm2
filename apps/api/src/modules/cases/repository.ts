@@ -297,7 +297,13 @@ const TASK_VIEW_COLS = `ct.id, ct.case_id, cs.case_number, ct.verification_unit_
          (ct.status IN ('PENDING','ASSIGNED','IN_PROGRESS')
             AND ct.tat_hours IS NOT NULL AND ct.assigned_at IS NOT NULL
             AND now() > ct.assigned_at + (ct.tat_hours * interval '1 hour')) AS overdue,
-         ct.version, ct.created_at, ct.updated_at`;
+         ct.version, ct.created_at, ct.updated_at,
+         -- ADR-0085: derived export state (the verifier's relay), ops-visible on the case page.
+         -- At most one first-export row exists (partial unique) — plain subqueries, no fan-out.
+         (SELECT e.created_at FROM task_export_events e
+           WHERE e.task_id = ct.id AND NOT e.is_reexport) AS exported_at,
+         (SELECT eu.name FROM task_export_events e JOIN users eu ON eu.id = e.exported_by
+           WHERE e.task_id = ct.id AND NOT e.is_reexport) AS exported_by_name`;
 
 const TASK_VIEW_FROM = `FROM case_tasks ct
   JOIN cases cs ON cs.id = ct.case_id
@@ -538,7 +544,7 @@ export const caseRepository = {
    *  ones. Same rule as cpvUnitRepository.availableUnits — keep them in sync. */
   async availableUnits(clientId: number, productId: number): Promise<AvailableUnit[]> {
     return query<AvailableUnit>(
-      `SELECT vu.id AS verification_unit_id, vu.code, vu.name
+      `SELECT vu.id AS verification_unit_id, vu.code, vu.name, vu.worker_role
        FROM verification_units vu
        WHERE vu.is_active AND vu.effective_from <= now()
          AND (

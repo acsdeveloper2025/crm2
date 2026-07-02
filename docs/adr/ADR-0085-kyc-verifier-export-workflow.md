@@ -1,6 +1,6 @@
 # ADR-0085 — KYC-verifier export workflow: event-tracked, export-only queue
 
-**Status:** PROPOSED — awaiting owner sign-off · **Date:** 2026-07-02 · **Migration:** `0110`
+**Status:** Accepted · Owner-approved (2026-07-02) · **Date:** 2026-07-02 · **Migration:** `0110`
 (`task_export_events` + 3 additive `case_tasks` document columns + RBAC seed). **Extends:** ADR-0025 (read-only desk verifier), ADR-0073 (unit-grant
 eligibility), ADR-0084 (code-owned export pattern). **Supersedes nothing** — purely additive.
 **Design spec:** [docs/specs/2026-07-02-kyc-verifier-export-design.md](../specs/2026-07-02-kyc-verifier-export-design.md) ·

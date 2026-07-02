@@ -23,7 +23,20 @@ export const kycTasksController = {
       const q = req.query as Record<string, unknown>;
       const ex = resolveExport(q);
       const a = actor(req);
-      const { rows, columns } = await svc.exportData(q, ex, a);
+      const { rows, columns, exportNo } = await svc.exportData(q, ex, a);
+      // Filename = IST date-time + the export number (the batch's first event id) — quotable when the
+      // verifier relays the file externally: kyc-tasks-20260702-1213-exp12.xlsx (owner 2026-07-02).
+      const ist = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).formatToParts(new Date());
+      const part = (t: string): string => ist.find((p) => p.type === t)?.value ?? '';
+      const stamp = `${part('year')}${part('month')}${part('day')}-${part('hour')}${part('minute')}`;
       // cols: [] — the service already picked + expanded the columns (per-label detail columns are
       // NOT grid column ids, so writeExport's own selection must not re-filter them away).
       await writeExport(res, {
@@ -31,6 +44,7 @@ export const kycTasksController = {
         columns,
         ex: { ...ex, cols: [] },
         filenameBase: 'kyc-tasks',
+        filename: `kyc-tasks-${stamp}-exp${exportNo}`,
         resource: 'kyc-tasks',
         actorId: a.userId,
       });

@@ -36,8 +36,11 @@ const BRAND = 'CRM2';
 /** Frozen CRM2 navigation (web). Operations land later; all Administration screens are built. */
 const OPERATIONS: { label: string; to?: string; perm?: string }[] = [
   { label: 'Dashboard', to: '/dashboard', perm: 'page.dashboard' },
-  { label: 'Pipeline', to: '/pipeline', perm: 'case.view' },
-  { label: 'Cases', to: '/cases', perm: 'case.view' },
+  // ADR-0085: the ops LIST pages are page.operations-gated (case data itself stays case.view) — the
+  // KYC verifier's nav is Dashboard + KYC Verification only; case DETAIL still opens from his queue.
+  { label: 'Pipeline', to: '/pipeline', perm: 'page.operations' },
+  { label: 'Cases', to: '/cases', perm: 'page.operations' },
+  { label: 'KYC Verification', to: '/kyc-queue', perm: 'kyc_tasks.view' },
   { label: 'Dedupe Check', to: '/dedupe', perm: 'dedupe.view' },
   { label: 'Billing & Commission', to: '/billing', perm: 'billing.view' },
   { label: 'Commission Summary', to: '/billing/commission-summary', perm: 'billing.commission_summary.view' },

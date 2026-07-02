@@ -661,6 +661,26 @@ function TasksSection({
                         {TASK_ORIGIN_LABELS[t.taskOrigin]}
                       </span>
                     )}
+                    {/* ADR-0085: the unified KYC document fields, one line per detail (never one blob). */}
+                    {(t.documentNumber || t.documentHolderName || t.documentDetails) && (
+                      <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                        {(t.documentNumber || t.documentHolderName) && (
+                          <div>
+                            {t.documentNumber && (
+                              <span className="font-mono text-foreground">{t.documentNumber}</span>
+                            )}
+                            {t.documentNumber && t.documentHolderName && ' · '}
+                            {t.documentHolderName}
+                          </div>
+                        )}
+                        {t.documentDetails &&
+                          Object.entries(t.documentDetails).map(([l, v]) => (
+                            <div key={l}>
+                              {l}: <span className="text-foreground">{v}</span>
+                            </div>
+                          ))}
+                      </div>
+                    )}
                   </td>
                   <td className="px-3 py-2" data-label="Status">
                     {t.status.replace(/_/g, ' ')}
@@ -681,6 +701,15 @@ function TasksSection({
                     )}
                     {t.status === 'REVOKED' && t.remark && (
                       <span className="text-muted-foreground"> — {t.remark}</span>
+                    )}
+                    {/* ADR-0085: the verifier's relay state — ops sees when/who exported the task. */}
+                    {t.exportedAt && (
+                      <span
+                        className="ml-2 whitespace-nowrap rounded bg-st-approved-bg px-1.5 py-0.5 text-xs font-medium text-st-approved"
+                        title={`Exported${t.exportedByName ? ` by ${t.exportedByName}` : ''}`}
+                      >
+                        Exported {formatDateTime(t.exportedAt)}
+                      </span>
                     )}
                   </td>
                   <td className="px-3 py-2" data-label="Assignee">

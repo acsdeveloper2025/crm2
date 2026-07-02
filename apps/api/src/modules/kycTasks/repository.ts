@@ -69,7 +69,7 @@ export const kycTasksRepository = {
 
     const selectList = o.columns.map((c) => `${c.sql} AS "${c.key}"`).join(', ');
     const items = await query<KycTaskRow>(
-      `SELECT ct.id AS "id", ${selectList} ${KYC_QUEUE_FROM} ${clause}
+      `SELECT ct.id AS "id", cs.id AS "caseId", ${selectList} ${KYC_QUEUE_FROM} ${clause}
        ORDER BY ${o.sortColumn} ${o.sortOrder} NULLS LAST, ct.id ${o.sortOrder}
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, o.limit, o.offset],
@@ -101,19 +101,23 @@ export const kycTasksRepository = {
     idFilter?: string[];
     format: string;
     actorId: string;
-  }): Promise<string[]> {
+  }): Promise<{ taskIds: string[]; exportNo: number | null }> {
     const params: unknown[] = [];
     const clause = whereClause({ state: 'TO_EXPORT', ...o }, params);
     params.push(o.actorId, o.format);
-    const rows = await query<{ taskId: string }>(
+    const rows = await query<{ id: number; taskId: string }>(
       `INSERT INTO task_export_events (task_id, case_id, exported_by, format)
        SELECT ct.id, ct.case_id, $${params.length - 1}, $${params.length}
        ${KYC_QUEUE_FROM} ${clause}
        ON CONFLICT (task_id) WHERE NOT is_reexport DO NOTHING
-       RETURNING task_id`,
+       RETURNING id, task_id`,
       params,
     );
-    return rows.map((r) => r.taskId);
+    // exportNo = the batch's first event id — the quotable "export #N" in the filename.
+    return {
+      taskIds: rows.map((r) => r.taskId),
+      exportNo: rows.length ? Math.min(...rows.map((r) => Number(r.id))) : null,
+    };
   },
 
   /**
@@ -127,16 +131,16 @@ export const kycTasksRepository = {
     format: string;
     actorId: string;
     reason: string;
-  }): Promise<string[]> {
+  }): Promise<{ taskIds: string[]; exportNo: number | null }> {
     return withTransaction(async (q) => {
       const params: unknown[] = [];
       const clause = whereClause({ state: 'EXPORTED', filters: [], scope: o.scope, idFilter: o.ids }, params);
       params.push(o.actorId, o.format, o.reason);
-      const rows = await q<{ taskId: string }>(
+      const rows = await q<{ id: number; taskId: string }>(
         `INSERT INTO task_export_events (task_id, case_id, exported_by, format, is_reexport, reexport_reason)
          SELECT ct.id, ct.case_id, $${params.length - 2}, $${params.length - 1}, true, $${params.length}
          ${KYC_QUEUE_FROM} ${clause}
-         RETURNING task_id`,
+         RETURNING id, task_id`,
         params,
       );
       if (rows.length !== o.ids.length)
@@ -144,7 +148,10 @@ export const kycTasksRepository = {
           'NOT_RE_EXPORTABLE',
           `${rows.length} of ${o.ids.length} selected tasks are re-exportable (already-exported tasks in your scope only)`,
         );
-      return rows.map((r) => r.taskId);
+      return {
+        taskIds: rows.map((r) => r.taskId),
+        exportNo: rows.length ? Math.min(...rows.map((r) => Number(r.id))) : null,
+      };
     });
   },
 };
