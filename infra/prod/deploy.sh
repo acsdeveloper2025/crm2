@@ -24,6 +24,18 @@ IMAGE_REGISTRY="${IMAGE_REGISTRY:-ghcr.io/acsdeveloper2025}"
 HEALTH_URL="https://crm.allcheckservices.com/api/v2/health"
 EDGE_URL="https://crm.allcheckservices.com/_edge_health"
 
+# AWS flavor: the marker file (touched once when the EC2 box was provisioned)
+# switches to the ALB-fronted compose — no db/minio containers, edge on :80,
+# TLS at the ALB. Health gates hit localhost: the ALB fronts the public URL,
+# and pre-cutover the domain still points at the old box.
+AWS_BOX=0
+if [ -f /opt/crm2/.aws-box ]; then
+  AWS_BOX=1
+  COMPOSE_FILE="$REPO_DIR/infra/prod/docker-compose.aws.yml"
+  HEALTH_URL="http://localhost/api/v2/health"
+  EDGE_URL="http://localhost/_edge_health"
+fi
+
 log(){ printf '\033[34m▸\033[0m %s\n' "$*"; }
 ok(){  printf '  \033[32m✓\033[0m %s\n' "$*"; }
 die(){ printf '  \033[31m✗\033[0m %s\n' "$*" >&2; exit 1; }
@@ -35,7 +47,8 @@ log "deploy.sh — IMAGE_TAG=$IMAGE_TAG REGISTRY=$IMAGE_REGISTRY"
 # ---- Preconditions ---------------------------------------------------------
 [ -f "$COMPOSE_FILE" ] || die "compose file missing: $COMPOSE_FILE"
 [ -f "$ENV_FILE" ]     || die "env file missing: $ENV_FILE"
-[ -f "/etc/letsencrypt/live/crm.allcheckservices.com/fullchain.pem" ] || die "TLS cert missing"
+# TLS cert lives on the box only in the single-box flavor; on AWS the ALB owns it.
+[ "$AWS_BOX" = "1" ] || [ -f "/etc/letsencrypt/live/crm.allcheckservices.com/fullchain.pem" ] || die "TLS cert missing"
 ok "preconditions OK"
 
 cd "$REPO_DIR"
