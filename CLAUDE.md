@@ -1,6 +1,6 @@
 # CLAUDE.md — CRM2 (read this first, every session)
 
-**This repo = CRM2** (ACS verification CRM, v2). Local `/Users/mayurkulkarni/Downloads/crm2` · git `acsdeveloper2025/crm2` · **live on `https://crm.allcheckservices.com`** (push→`main` auto-deploys: gate → GHCR → blue-green + rollback). Node 24 · pnpm monorepo (`apps/` + `packages/`). v1 (`CRM-APP-MONOREPO-PROD`) is a **separate, untouched repo** with zero code dependency.
+**This repo = CRM2** (ACS verification CRM, v2). Local `/Users/mayurkulkarni/Downloads/crm2` · git `acsdeveloper2025/crm2` · **live on `https://crm.allcheckservices.com`, hosted on AWS `ap-south-1`** (EC2+ALB/ACM+RDS pg18+S3, ADR-0087). **Two-branch deploys:** push→`main` auto-deploys **STAGING** (old box, `staging.crm.allcheckservices.com`); push→`prod` auto-deploys **PRODUCTION** (AWS) — promote by fast-forwarding `prod` to `main` (gate → GHCR → blue-green + rollback on both). Node 24 · pnpm monorepo (`apps/` + `packages/`). v1 (`CRM-APP-MONOREPO-PROD`) is a **separate, untouched repo** with zero code dependency.
 
 > Architecture, data model, design, stack, engineering standards, and API versioning are **FROZEN — build only.** Change a frozen decision only via a superseding ADR + CTO + domain-owner sign-off (`docs/governance/LONG_TERM_PROTECTION.md`). No audits or redesigns unless asked.
 
