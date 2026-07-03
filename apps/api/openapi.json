@@ -5387,6 +5387,25 @@
         ]
       }
     },
+    "/api/v2/verification-tasks/{id}/attachments/{attachmentId}": {
+      "get": {
+        "tags": [
+          "verification-tasks"
+        ],
+        "operationId": "get_api_v2_verification_tasks_id_attachments_attachmentId",
+        "summary": "GET /api/v2/verification-tasks/{id}/attachments/{attachmentId}",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v2/verification-tasks/{id}/complete": {
       "post": {
         "tags": [
