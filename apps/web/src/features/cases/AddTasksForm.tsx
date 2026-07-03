@@ -702,10 +702,10 @@ function TaskRowEditor({
           <div className="rounded-md border border-border bg-surface-muted px-3 py-2 text-xs sm:col-span-2 lg:col-span-4">
             <span className="font-medium text-foreground">Rate types at this location:</span>{' '}
             <span className="text-muted-foreground">Client</span>{' '}
-            <span className="font-mono uppercase">{ratePreview.clientRateType ?? '—'}</span>
+            <span className="font-mono">{ratePreview.clientRateType ?? '—'}</span>
             <span className="mx-2 text-muted-foreground">·</span>
             <span className="text-muted-foreground">Field</span>{' '}
-            <span className="font-mono uppercase">
+            <span className="font-mono">
               {ratePreview.fieldRateTypes.length ? ratePreview.fieldRateTypes.join(' / ') : '—'}
             </span>
             {ratePreview.clientRateType === null && (

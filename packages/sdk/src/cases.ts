@@ -536,7 +536,10 @@ const MAX_REMARK = 2000;
  *  (the read-only verifier cannot call it). OCC `version` travels OUTSIDE the schema (requireVersion). */
 export const CompleteTaskSchema = z.object({
   result: z.enum(KYC_RESULTS),
-  remark: z.string().trim().min(1).max(MAX_REMARK),
+  // ADR-0058 OD-1 (2026-07-03): store the office remark UPPERCASE — matches what web + mobile
+  // clients already type; only normalizes a raw direct-API write. Mobile field evidence goes via
+  // verification-tasks FormSubmissionSchema (jsonb, verbatim per ADR-0054) — untouched.
+  remark: z.string().trim().min(1).max(MAX_REMARK).transform(toUpper),
 });
 export type CompleteTaskInput = z.infer<typeof CompleteTaskSchema>;
 export type CompleteTaskRequest = CompleteTaskInput & { version: number };
@@ -550,7 +553,7 @@ export type CompleteTaskRequest = CompleteTaskInput & { version: number };
  */
 export const RecordTaskResultSchema = z.object({
   result: z.enum(KYC_RESULTS),
-  remark: z.string().trim().max(MAX_REMARK).optional(),
+  remark: z.string().trim().max(MAX_REMARK).transform(toUpper).optional(),
 });
 export type RecordTaskResultInput = z.infer<typeof RecordTaskResultSchema>;
 export type RecordTaskResultRequest = RecordTaskResultInput & { version: number };
@@ -562,7 +565,7 @@ export type RecordTaskResultRequest = RecordTaskResultInput & { version: number 
  */
 export const CaseFinalizeSchema = z.object({
   result: z.enum(KYC_RESULTS),
-  remark: z.string().trim().min(1).max(MAX_REMARK),
+  remark: z.string().trim().min(1).max(MAX_REMARK).transform(toUpper),
 });
 export type CaseFinalizeInput = z.infer<typeof CaseFinalizeSchema>;
 export type CaseFinalizeRequest = CaseFinalizeInput & { version: number };
@@ -588,7 +591,7 @@ export interface CaseVerdictEvent {
  * DB transition the device uses on its own assigned task — scope-bound here, no OCC version.
  */
 export const RevokeTaskSchema = z.object({
-  reason: z.string().trim().min(1).max(MAX_REMARK),
+  reason: z.string().trim().min(1).max(MAX_REMARK).transform(toUpper),
 });
 export type RevokeTaskInput = z.infer<typeof RevokeTaskSchema>;
 
@@ -601,7 +604,7 @@ export type RevokeTaskInput = z.infer<typeof RevokeTaskSchema>;
  * via the normal assign flow).
  */
 export const ReworkTaskSchema = z.object({
-  reason: z.string().trim().max(MAX_REMARK).optional(),
+  reason: z.string().trim().max(MAX_REMARK).transform(toUpper).optional(),
 });
 export type ReworkTaskInput = z.infer<typeof ReworkTaskSchema>;
 
@@ -618,7 +621,7 @@ export const ReassignTaskSchema = z.object({
   // ADR-0056: normally server-derived from the assignee's commission; an explicit value is honored.
   fieldRateType: z.enum(FIELD_RATE_TYPES).optional(),
   billCount: z.number().int().min(0).max(MAX_BILL_COUNT),
-  reason: z.string().trim().max(MAX_REMARK).optional(),
+  reason: z.string().trim().max(MAX_REMARK).transform(toUpper).optional(),
 });
 export type ReassignTaskInput = z.infer<typeof ReassignTaskSchema>;
 

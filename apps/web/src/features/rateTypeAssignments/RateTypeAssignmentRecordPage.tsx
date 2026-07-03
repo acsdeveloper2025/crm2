@@ -282,7 +282,7 @@ function ReadOnlyRow({
   return (
     <div className="flex items-baseline justify-between gap-3">
       <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
-      <dd className={`text-right text-foreground${mono ? ' font-mono text-xs uppercase' : ''}`}>
+      <dd className={`text-right text-foreground${mono ? ' font-mono text-xs' : ''}`}>
         {value ?? <span className="text-muted-foreground">{universal ? 'Universal' : '—'}</span>}
       </dd>
     </div>

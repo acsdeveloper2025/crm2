@@ -55,6 +55,12 @@ const CASE_SENSITIVE_NAME_TOKENS = [
   'otp',
   'pin',
   'mfa',
+  // Phone numbers are digits (uppercasing is a no-op), but excluding the name
+  // tokens keeps a future text-typed phone field from being force-cased — closes
+  // the predicate phone blind-spot (ADR-0058 OD-4, uppercase audit 2026-07-03).
+  'phone',
+  'mobile',
+  'tel',
   'filename',
   'filepath',
   'path',

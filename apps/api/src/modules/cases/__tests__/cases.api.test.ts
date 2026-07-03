@@ -1058,7 +1058,7 @@ describe.skipIf(!RUN)('cases API', () => {
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('COMPLETED');
     expect(res.body.verificationOutcome).toBe('POSITIVE');
-    expect(res.body.remark).toBe('Verified against the issuer');
+    expect(res.body.remark).toBe('VERIFIED AGAINST THE ISSUER'); // ADR-0058 OD-1: remark stored UPPERCASE
     expect(res.body.completedByName).toBe('BACKEND BOB'); // completed_by resolves to the user name
     expect(res.body.completedAt).toBeTruthy();
     expect(res.body.version).toBe(3); // OCC bumped
@@ -1389,7 +1389,7 @@ describe.skipIf(!RUN)('cases API', () => {
       expect(fin.status).toBe(200);
       expect(fin.body.status).toBe('COMPLETED');
       expect(fin.body.verificationOutcome).toBe('NEGATIVE'); // the case verdict
-      expect(fin.body.resultRemark).toBe('final call from the desk');
+      expect(fin.body.resultRemark).toBe('FINAL CALL FROM THE DESK'); // ADR-0058 OD-1 uppercase
       expect(fin.body.completedByName).toBe('FINAL FRED');
       expect(fin.body.completedAt).toBeTruthy();
       expect(fin.body.tasks[0].verificationOutcome).toBe('POSITIVE'); // per-task result preserved
@@ -1525,7 +1525,7 @@ describe.skipIf(!RUN)('cases API', () => {
       expect(res.status).toBe(200);
       expect(res.body.status).toBe('COMPLETED');
       expect(res.body.verificationOutcome).toBe('REFER');
-      expect(res.body.remark).toBe('docs partial');
+      expect(res.body.remark).toBe('DOCS PARTIAL'); // ADR-0058 OD-1 uppercase
       expect(res.body.completedByName).toBe('RES BE');
       // a not-yet-COMPLETED task → 409 (use complete, not result)
       const fresh = await seedCaseWithTask('RES2');
@@ -1766,7 +1766,7 @@ describe.skipIf(!RUN)('cases API', () => {
       expect(hist.status).toBe(200);
       expect(hist.body).toHaveLength(2);
       expect(hist.body[0].result).toBe('NEGATIVE'); // newest first
-      expect(hist.body[0].remark).toBe('changed after revisit');
+      expect(hist.body[0].remark).toBe('CHANGED AFTER REVISIT'); // ADR-0058 OD-1 uppercase
       expect(hist.body[0].actorName).toBe('FINAL VH1'); // the office user who finalized resolves
       expect(hist.body[0].at).toBeTruthy();
       expect(hist.body[1].result).toBe('POSITIVE'); // the original verdict, preserved in history
@@ -1823,7 +1823,7 @@ describe.skipIf(!RUN)('cases API', () => {
       const ok = await request(app).post(url).set(SA).send({ reason: 'gate closed' });
       expect(ok.status).toBe(200);
       expect(ok.body.status).toBe('REVOKED');
-      expect(ok.body.remark).toBe('gate closed');
+      expect(ok.body.remark).toBe('GATE CLOSED'); // ADR-0058 OD-1 uppercase (revoke reason → remark)
       // idempotent re-revoke → 200 (already REVOKED)
       expect((await request(app).post(url).set(SA).send({ reason: 'again' })).status).toBe(200);
 

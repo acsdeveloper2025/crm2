@@ -31,7 +31,7 @@ describe.skipIf(!RUN)('tat-policies API (ADR-0044)', () => {
       .send({ tatHours: 24, label: '24 hours' });
     expect(created.status).toBe(201);
     expect(created.body.tatHours).toBe(24);
-    expect(created.body.label).toBe('24 hours');
+    expect(created.body.label).toBe('24 HOURS'); // ADR-0058: label stored UPPERCASE (typed '24 hours')
     expect(created.body.isActive).toBe(true);
     expect(created.body.version).toBe(1);
 
@@ -59,7 +59,7 @@ describe.skipIf(!RUN)('tat-policies API (ADR-0044)', () => {
     const opts = await request(app).get('/api/v2/tat-policies/options').set(MGR);
     expect(opts.status).toBe(200);
     expect(opts.body.map((o: { tatHours: number }) => o.tatHours)).toEqual([4, 24]); // active, ascending
-    expect(opts.body[0]).toMatchObject({ tatHours: 4, label: '4 hours' });
+    expect(opts.body[0]).toMatchObject({ tatHours: 4, label: '4 HOURS' }); // ADR-0058 uppercase
     expect(typeof opts.body[0].id).toBe('number');
 
     // a field agent (no page.masterdata) cannot read the options
@@ -92,14 +92,14 @@ describe.skipIf(!RUN)('tat-policies API (ADR-0044)', () => {
       .set(SA)
       .send({ label: 'eight hours', version: 1 });
     expect(revised.status).toBe(200);
-    expect(revised.body.label).toBe('eight hours');
+    expect(revised.body.label).toBe('EIGHT HOURS'); // ADR-0058 uppercase (typed 'eight hours')
     expect(revised.body.id).not.toBe(id); // a NEW dated row
     expect(revised.body.version).toBe(1);
 
     // current list shows only the new row; history shows both
     const current = await request(app).get('/api/v2/tat-policies').set(SA);
     expect(current.body.items).toHaveLength(1);
-    expect(current.body.items[0].label).toBe('eight hours');
+    expect(current.body.items[0].label).toBe('EIGHT HOURS');
     const withHistory = await request(app).get('/api/v2/tat-policies?history=true').set(SA);
     expect(withHistory.body.items.length).toBe(2);
 

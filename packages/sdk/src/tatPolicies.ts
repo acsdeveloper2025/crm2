@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { toUpper } from './text.js';
+
 /**
  * @crm2/sdk — the TAT Policy contract (ADR-0044). One row = a configurable turnaround-time band
  * (4/6/8/12/24/48h) used for target-TAT assignment AND completed-in-band classification. Effective-
@@ -32,14 +34,14 @@ export interface TatPolicyOption {
 
 export const CreateTatPolicySchema = z.object({
   tatHours: z.number().int().positive(),
-  label: z.string().min(1).max(40),
+  label: z.string().trim().min(1).max(40).transform(toUpper),
   /** when the band takes effect; defaults to now server-side. */
   effectiveFrom: z.string().optional(),
 });
 
 /** Revise = a new effective-dated version of an existing TAT policy (old row is end-dated). */
 export const ReviseTatPolicySchema = z.object({
-  label: z.string().min(1).max(40),
+  label: z.string().trim().min(1).max(40).transform(toUpper),
   effectiveFrom: z.string().optional(),
 });
 

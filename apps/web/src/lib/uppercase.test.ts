@@ -70,6 +70,31 @@ describe('shouldUppercaseInput', () => {
     expect(shouldUppercaseInput('email', 'email', true)).toBe(true);
     expect(shouldUppercaseInput('text', 'name', false)).toBe(false);
   });
+
+  // ADR-0058 uppercase audit 2026-07-03 (OD-4): phone/mobile/tel are excluded so a
+  // future text-typed phone field is never force-cased (digits make it a no-op, but
+  // this closes the predicate blind-spot the audit found).
+  it('preserves case for phone-number field names', () => {
+    for (const name of ['phone', 'mobile', 'tel', 'phoneNumber', 'mobileNumber', 'altMobile']) {
+      expect(shouldUppercaseInput('text', name)).toBe(false);
+    }
+  });
+
+  // Indian identifier codes are uppercase BY SPEC — the predicate must UPPERCASE them
+  // (they are display codes, not case-sensitive data). Locks in the keep-upper contract.
+  it('uppercases Indian identifier codes (keep-upper by spec)', () => {
+    for (const name of ['pan', 'panNumber', 'ifsc', 'ifscCode', 'vehicleNo', 'refNo', 'gstin']) {
+      expect(shouldUppercaseInput('text', name)).toBe(true);
+    }
+  });
+
+  // Email/url segment names stay verbatim even without a case-sensitive input type —
+  // the server + additive fields rely on this (e.g. contactEmail, websiteUrl).
+  it('preserves case for email/url segment names', () => {
+    for (const name of ['contactEmail', 'emailId', 'recipientEmail', 'websiteUrl', 'callbackUrl']) {
+      expect(shouldUppercaseInput('text', name)).toBe(false);
+    }
+  });
 });
 
 describe('toUpperCaseSafe', () => {

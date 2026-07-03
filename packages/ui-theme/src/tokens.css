@@ -246,7 +246,7 @@
   input[type='file'],
   input[type='color'],
   input[type='range'],
-  [contenteditable='true'],
+  [contenteditable]:not([contenteditable='false']),
   code,
   pre,
   kbd,
