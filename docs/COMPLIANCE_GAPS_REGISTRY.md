@@ -1867,7 +1867,7 @@ Per-page console-error/failed-network audit (29 routes × SUPER_ADMIN + KYC_VERI
 
 ## Section UPPERCASE-2026-07-03 — UPPERCASE/capital-letter consistency audit (ADR-0058, SoT `docs/audit/uppercase-consistency-2026-07-03/UPPERCASE_AUDIT.md`)
 
-Exhaustive both-direction audit of ADR-0058 across every FE field × form/grid/record-page input × import column × export column × the display CSS (6 parallel reader agents + adversarial re-check + real API round-trips incl. a real CSV import). **Verdict: mechanism very well implemented — 0 live Direction-B violations, no CRITICAL/HIGH. Evidence:** direct create `acme test bank ltd`→`ACME TEST BANK LTD`; user email `MixedCase@Example.COM`→verbatim + name→UPPER same request; CSV import `zeta imported bank`→`ZETA IMPORTED BANK`.
+Exhaustive both-direction audit of ADR-0058 across every FE field × form/grid/record-page input × import column × export column × the display CSS (6 parallel reader agents + adversarial re-check + real API round-trips incl. a real CSV import). **Verdict: mechanism very well implemented — 0 live Direction-B violations, no CRITICAL/HIGH. ✅ **SHIPPED + LIVE 2026-07-03** (origin/main `e7e4e1c`; deploy `28639683915` SUCCESS, health 200) — UA-1/OD-1/OD-4/UB-2/UB-3 + tests; `pnpm verify` green (api 1056). Deferred: OD-2/OD-3/UA-3/UA-4. Evidence:** direct create `acme test bank ltd`→`ACME TEST BANK LTD`; user email `MixedCase@Example.COM`→verbatim + name→UPPER same request; CSV import `zeta imported bank`→`ZETA IMPORTED BANK`.
 
 | Finding | Direction | Disposition |
 |---|---|---|
