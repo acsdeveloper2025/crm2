@@ -59,10 +59,14 @@ log "deploy.sh — IMAGE_TAG=$IMAGE_TAG REGISTRY=$IMAGE_REGISTRY"
 [ "$AWS_BOX" = "1" ] || [ -f "/etc/letsencrypt/live/$CERT_DOMAIN/fullchain.pem" ] || die "TLS cert missing: $CERT_DOMAIN"
 ok "preconditions OK"
 
+# REPO_REF: the branch being deployed (main→staging, prod→AWS; ADR-0087). The
+# workflow also pre-syncs the repo BEFORE invoking this script so deploy.sh
+# itself is already current — this re-sync is a harmless no-op safety net.
+REPO_REF="${REPO_REF:-main}"
 cd "$REPO_DIR"
-log "sync repo"
+log "sync repo @ $REPO_REF"
 git fetch --quiet origin
-git reset --hard origin/main
+git reset --hard "origin/$REPO_REF"
 ok "repo at $(git rev-parse --short HEAD)"
 
 # Compose reads $ENV_FILE via --env-file for ${POSTGRES_*}/${S3_*}/${DATABASE_URL}

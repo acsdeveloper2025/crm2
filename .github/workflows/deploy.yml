@@ -131,14 +131,22 @@ jobs:
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE_TAG: ${{ env.IMAGE_TAG }}
+          REPO_REF: ${{ github.ref_name }}
         run: |
           set -e
           ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$DEPLOY_USER@$HOST" bash -s <<EOF
             set -e
             trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            # Sync the repo to the deployed ref BEFORE invoking deploy.sh, so the
+            # script that runs is always the deployed version (no one-deploy lag,
+            # no mid-run self-update).
+            cd /opt/crm2/app
+            git fetch --quiet origin
+            git reset --hard "origin/$REPO_REF"
             export IMAGE_TAG="$IMAGE_TAG"
             export IMAGE_REGISTRY="ghcr.io/$OWNER"
+            export REPO_REF="$REPO_REF"
             bash /opt/crm2/app/infra/prod/deploy.sh
           EOF
       - name: Smoke external HTTPS
