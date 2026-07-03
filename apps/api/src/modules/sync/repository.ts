@@ -70,6 +70,7 @@ const SYNC_SELECT = `
          reviser.name AS revised_by_name, loc.pincode AS address_pincode,
          (SELECT count(*)::int FROM case_attachments ca
             WHERE ca.case_id = cs.id AND ca.deleted_at IS NULL
+              AND ca.kind = 'OFFICE_REF'
               AND (ca.task_id IS NULL OR ca.task_id = ct.id)) AS attachment_count`;
 
 const SYNC_FROM = `

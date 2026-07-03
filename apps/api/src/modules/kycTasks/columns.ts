@@ -138,7 +138,7 @@ export const KYC_QUEUE_COLUMNS: KycQueueColumn[] = [
     key: 'attachmentCount',
     label: 'Attachments',
     dataType: 'NUMBER',
-    sql: '(SELECT count(*)::int FROM case_attachments ca WHERE ca.task_id = ct.id AND ca.deleted_at IS NULL)',
+    sql: "(SELECT count(*)::int FROM case_attachments ca WHERE ca.task_id = ct.id AND ca.deleted_at IS NULL AND ca.kind IS DISTINCT FROM 'FIELD_PHOTO')",
     defaultVisible: true,
   },
   { key: 'createdAt', label: 'Created', dataType: 'DATE', sql: 'ct.created_at', sortable: true },

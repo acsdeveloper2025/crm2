@@ -645,6 +645,95 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
       expect(res.status).toBe(200);
       expect(res.body).toBeNull();
     });
+
+    // Attachments (OFFICE_REF) and the agent's own verification photos (FIELD_PHOTO) are separate
+    // concepts — the device Attachments list must never mix them (CASE-000024 leak, 2026-07-03).
+    it('excludes FIELD_PHOTO rows from the device attachments list (OFFICE_REF only)', async () => {
+      const { caseId, taskId, agent } = await seedAssignedTask('AKX');
+      await db!.pool.query(
+        `INSERT INTO case_attachments
+           (case_id, task_id, kind, photo_type, original_name, mime_type, file_size, storage_key, sha256, uploaded_by)
+         VALUES ($1, NULL, 'OFFICE_REF',  NULL,           'policy.pdf', 'application/pdf', 2048, 'attachments/akx/p.pdf', repeat('a',64), $2),
+                ($1, $3,   'OFFICE_REF',  NULL,           'doc.pdf',    'application/pdf', 1024, 'attachments/akx/t.pdf', repeat('b',64), $2),
+                ($1, $3,   'FIELD_PHOTO', 'verification', 'photo1.jpg', 'image/jpeg',      3000, 'field-photos/akx/1.jpg', repeat('c',64), $2),
+                ($1, $3,   'FIELD_PHOTO', 'selfie',       'selfie.jpg', 'image/jpeg',      2000, 'field-photos/akx/2.jpg', repeat('d',64), $2)`,
+        [caseId, agent, taskId],
+      );
+
+      const res = await request(app)
+        .get(`/api/v2/verification-tasks/${taskId}/attachments`)
+        .set(hdr('FIELD_AGENT', agent));
+      expect(res.status).toBe(200);
+      const names = (res.body as { originalName: string }[]).map((a) => a.originalName).sort();
+      expect(names).toEqual(['doc.pdf', 'policy.pdf']); // the photos must be absent
+    });
+
+    // The device downloads the doc bytes through this authenticated route (its presigned-URL fetch
+    // sends a Bearer header, which S3/MinIO rejects — "multiple authentication types").
+    it('serves OFFICE_REF doc bytes to the owner; 404 for photos, other tasks, non-owners', async () => {
+      const { caseId, taskId, agent } = await seedAssignedTask('AKC');
+      const bytes = Buffer.from('%PDF-1.4 device-doc');
+      await refStorage.put('attachments/akc/doc.pdf', bytes, 'application/pdf');
+      const ins = await db!.pool.query<{ id: string }>(
+        `INSERT INTO case_attachments
+           (case_id, task_id, kind, photo_type, original_name, mime_type, file_size, storage_key, sha256, uploaded_by)
+         VALUES ($1, $2,   'OFFICE_REF',  NULL,           'doc.pdf',    'application/pdf', 19,   'attachments/akc/doc.pdf', repeat('a',64), $3),
+                ($1, NULL, 'OFFICE_REF',  NULL,           'case.pdf',   'application/pdf', 19,   'attachments/akc/doc.pdf', repeat('b',64), $3),
+                ($1, $2,   'FIELD_PHOTO', 'verification', 'photo1.jpg', 'image/jpeg',      3000, 'field-photos/akc/1.jpg',  repeat('c',64), $3)
+         RETURNING id`,
+        [caseId, taskId, agent],
+      );
+      const [docId, caseDocId, photoId] = ins.rows.map((r) => r.id);
+      const h = hdr('FIELD_AGENT', agent);
+
+      const ok = await request(app).get(`/api/v2/verification-tasks/${taskId}/attachments/${docId}`).set(h);
+      expect(ok.status).toBe(200);
+      expect(ok.headers['content-type']).toContain('application/pdf');
+      expect(ok.headers['content-disposition']).toContain('doc.pdf');
+      expect(Buffer.compare(ok.body as Buffer, bytes)).toBe(0);
+
+      // case-level (task_id NULL) docs are part of the device list → fetchable too
+      const okCase = await request(app)
+        .get(`/api/v2/verification-tasks/${taskId}/attachments/${caseDocId}`)
+        .set(h);
+      expect(okCase.status).toBe(200);
+
+      // a FIELD_PHOTO id is NOT servable here (photos are not attachments)
+      expect(
+        (await request(app).get(`/api/v2/verification-tasks/${taskId}/attachments/${photoId}`).set(h)).status,
+      ).toBe(404);
+
+      // a doc pinned to a DIFFERENT task of the same case is outside this task's list → 404
+      const other = await seedAssignedTask('AKD');
+      const foreign = await db!.pool.query<{ id: string }>(
+        `INSERT INTO case_attachments
+           (case_id, task_id, original_name, mime_type, file_size, storage_key, sha256, uploaded_by)
+         VALUES ($1, $2, 'foreign.pdf', 'application/pdf', 19, 'attachments/akc/doc.pdf', repeat('e',64), $3)
+         RETURNING id`,
+        [other.caseId, other.taskId, agent],
+      );
+      expect(
+        (
+          await request(app)
+            .get(`/api/v2/verification-tasks/${taskId}/attachments/${foreign.rows[0]!.id}`)
+            .set(h)
+        ).status,
+      ).toBe(404);
+
+      // a non-assignee agent → 404 (ownership, IDOR-safe)
+      const stranger = await createUser({
+        username: `fa_akc_${Date.now()}`,
+        name: 'Other AKC',
+        role: 'FIELD_AGENT',
+      });
+      expect(
+        (
+          await request(app)
+            .get(`/api/v2/verification-tasks/${taskId}/attachments/${docId}`)
+            .set(hdr('FIELD_AGENT', stranger))
+        ).status,
+      ).toBe(404);
+    });
   });
 
   // ── device→office lifecycle notifications (ADR-0027) ──

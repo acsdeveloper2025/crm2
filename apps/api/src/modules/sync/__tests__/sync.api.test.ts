@@ -277,6 +277,15 @@ describe.skipIf(!RUN)('sync API (mobile down-sync)', () => {
     await ins(null, false); // case-level → counts
     await ins(t.taskId, false); // this task → counts
     await ins(t.taskId, true); // soft-deleted → excluded
+    // the agent's own FIELD_PHOTO rows must NOT count — the badge labels the office-docs
+    // Attachments list (CASE-000024 leak: badge said 7 = 1 doc + 6 photos)
+    await db!.pool.query(
+      `INSERT INTO case_attachments
+         (case_id, task_id, kind, photo_type, original_name, mime_type, file_size, storage_key, sha256, uploaded_by)
+       VALUES ($1, $2, 'FIELD_PHOTO', 'verification', 'p.jpg', 'image/jpeg', 1, 'kp', 'h', $3),
+              ($1, $2, 'FIELD_PHOTO', 'selfie',       's.jpg', 'image/jpeg', 1, 'ks', 'h', $3)`,
+      [t.caseId, t.taskId, fa],
+    );
     const res = await request(app).get('/api/v2/sync/download').set(hdr('FIELD_AGENT', fa));
     expect(res.body.tasks[0].attachmentCount).toBe(2);
   });

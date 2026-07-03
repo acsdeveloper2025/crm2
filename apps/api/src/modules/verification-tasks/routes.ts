@@ -45,3 +45,10 @@ verificationTaskRoutes.post('/:id/revoke', authorize(PERMISSIONS.TASK_EXECUTE), 
 verificationTaskRoutes.put('/:id/priority', authorize(PERMISSIONS.TASK_EXECUTE), c.setPriority);
 // List the office reference docs for an owned task (mobile parity) — read; same task.execute gate.
 verificationTaskRoutes.get('/:id/attachments', authorize(PERMISSIONS.TASK_EXECUTE), c.listAttachments);
+// One reference doc's bytes — the device's authenticated download (its presigned fetch sends a
+// Bearer header, which S3/MinIO rejects as mixed auth; the app's fallback already targets this route).
+verificationTaskRoutes.get(
+  '/:id/attachments/:attachmentId',
+  authorize(PERMISSIONS.TASK_EXECUTE),
+  c.attachmentContent,
+);

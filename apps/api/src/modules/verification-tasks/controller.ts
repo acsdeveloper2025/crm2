@@ -63,6 +63,27 @@ export const verificationTaskController = {
     }
   },
 
+  /** GET /:id/attachments/:attachmentId — ONE office reference doc's bytes (the device's
+   *  authenticated download path; its presigned-URL fetch is rejected by S3/MinIO mixed-auth). */
+  async attachmentContent(req: Request, res: Response, next: NextFunction) {
+    try {
+      const attachmentId = req.params['attachmentId'];
+      if (typeof attachmentId !== 'string' || !UUID_RE.test(attachmentId))
+        throw AppError.badRequest('BAD_REQUEST', { param: 'attachmentId' });
+      const { bytes, filename, mimeType } = await svc.attachmentContent(
+        parseId(req),
+        attachmentId,
+        actor(req),
+      );
+      res.setHeader('content-type', mimeType);
+      res.setHeader('content-disposition', `attachment; filename="${filename}"`);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.send(bytes);
+    } catch (e) {
+      next(e);
+    }
+  },
+
   /** Device FIELD-PHOTO upload (ADR-0034): multer has parsed `files[]` into req.files and the text
    *  fields into req.body; the idempotency key rides the header (or `operationId` field). 200 on a new
    *  upload AND on a replay (the locked contract), never 201. */

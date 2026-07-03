@@ -176,6 +176,23 @@ export const verificationTaskService = {
     );
   },
 
+  /** Serve ONE office reference doc's bytes for an owned task (404 unless the doc is in the task's
+   *  list above — OFFICE_REF, case-level or this task, IDOR-safe). The device cannot fetch the
+   *  presigned `url`: it sends its Bearer header on every download, and S3/MinIO rejects a presigned
+   *  request that also carries an Authorization header ("multiple authentication types"). Its download
+   *  fallback already targets exactly this route, so the installed app works without a release. */
+  async attachmentContent(
+    taskId: string,
+    attachmentId: string,
+    actor: Actor,
+  ): Promise<{ bytes: Buffer; filename: string; mimeType: string }> {
+    await ownedCaseId(taskId, actor); // 404 unless the task is assigned to the actor
+    const row = await repo.officeRefAttachmentForDeviceTask(taskId, actor.userId, attachmentId);
+    if (!row) throw AppError.notFound('ATTACHMENT_NOT_FOUND');
+    const bytes = await getStorage().get(row.storageKey);
+    return { bytes, filename: row.originalName, mimeType: row.mimeType };
+  },
+
   /** Submit a verification form (evidence) AND complete the task — ADR-0032 submit==complete. The
    *  device's "Submit Verification" flow posts ONLY the form (it never calls /complete), exactly as v1
    *  where the form POST itself completed the case, so the completion MUST happen here. The body is

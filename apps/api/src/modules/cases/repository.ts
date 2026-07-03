@@ -1766,7 +1766,9 @@ export const caseRepository = {
 
   /** Reference attachments the field device shows for an OWNED task (mobile parity): the case-level
    *  docs (task_id NULL) + this task's docs, scoped by ownership (ct.assigned_to = device user). The
-   *  caller has already established ownership; the assigned_to filter is belt-and-braces. */
+   *  caller has already established ownership; the assigned_to filter is belt-and-braces.
+   *  OFFICE_REF only — the agent's own FIELD_PHOTO rows must never appear in the Attachments list
+   *  (attachment ⟂ photo invariant; CASE-000024 leak, 2026-07-03). */
   async attachmentsForDeviceTask(
     taskId: string,
     userId: string,
@@ -1792,10 +1794,30 @@ export const caseRepository = {
        FROM case_attachments ca
        JOIN case_tasks ct ON ct.case_id = ca.case_id
        WHERE ct.id = $1 AND ct.assigned_to = $2 AND ca.deleted_at IS NULL
+         AND ca.kind = 'OFFICE_REF'
          AND (ca.task_id IS NULL OR ca.task_id = ct.id)
        ORDER BY ca.created_at DESC`,
       [taskId, userId],
     );
+  },
+
+  /** ONE office reference doc from the device list above (same visibility: owned task, OFFICE_REF,
+   *  case-level or this task) — for the device's authenticated content download. Null → 404, IDOR-safe. */
+  async officeRefAttachmentForDeviceTask(
+    taskId: string,
+    userId: string,
+    attachmentId: string,
+  ): Promise<{ storageKey: string; originalName: string; mimeType: string } | null> {
+    const rows = await query<{ storageKey: string; originalName: string; mimeType: string }>(
+      `SELECT ca.storage_key, ca.original_name, ca.mime_type
+       FROM case_attachments ca
+       JOIN case_tasks ct ON ct.case_id = ca.case_id
+       WHERE ca.id = $3 AND ct.id = $1 AND ct.assigned_to = $2 AND ca.deleted_at IS NULL
+         AND ca.kind = 'OFFICE_REF'
+         AND (ca.task_id IS NULL OR ca.task_id = ct.id)`,
+      [taskId, userId, attachmentId],
+    );
+    return rows[0] ?? null;
   },
 
   /** A single attachment the actor can reach (case-level, or a task they can see) — for serve/delete.
