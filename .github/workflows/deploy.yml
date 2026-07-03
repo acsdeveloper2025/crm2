@@ -1,9 +1,13 @@
 # =============================================================================
-# CRM2 push→deploy pipeline (green/red). On push to main:
+# CRM2 push→deploy pipeline (green/red), two-branch model (ADR-0087):
+#   push to main → STAGING  (old box, staging.crm.allcheckservices.com)
+#   push to prod → PRODUCTION (AWS EC2 behind ALB, crm.allcheckservices.com)
+# Promote by fast-forwarding prod to main after staging verification.
 #   1. gate         — install + typecheck + lint + build. RED here blocks deploy.
 #   2. build-images — build & push crm2-api + crm2-web to GHCR (tagged by SHA).
-#   3. deploy       — SSH to the box, run infra/prod/deploy.sh (blue-green with
-#                     auto-rollback), then smoke the external HTTPS endpoint.
+#   3. deploy       — SSH to the branch's box, run infra/prod/deploy.sh
+#                     (blue-green with auto-rollback; box flavor via marker
+#                     file), then smoke that box's external HTTPS endpoint.
 # Image namespace follows ${{ github.repository_owner }} (auto-tracks an org rename).
 # All deploy secrets are GitHub Actions secrets — never in the repo.
 # =============================================================================
@@ -11,7 +15,7 @@ name: deploy
 
 on:
   push:
-    branches: [main]
+    branches: [main, prod]
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
@@ -23,7 +27,7 @@ on:
         default: ''
 
 concurrency:
-  group: crm2-deploy
+  group: crm2-deploy-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -120,9 +124,9 @@ jobs:
           chmod 600 ~/.ssh/known_hosts
       - name: Deploy (blue-green + rollback)
         env:
-          HOST: ${{ secrets.PRODUCTION_HOST }}
-          PORT: ${{ secrets.PRODUCTION_SSH_PORT }}
-          DEPLOY_USER: ${{ secrets.PRODUCTION_USER }}
+          HOST: ${{ github.ref == 'refs/heads/prod' && secrets.PRODUCTION_HOST || secrets.STAGING_HOST }}
+          PORT: ${{ github.ref == 'refs/heads/prod' && secrets.PRODUCTION_SSH_PORT || secrets.STAGING_SSH_PORT }}
+          DEPLOY_USER: ${{ github.ref == 'refs/heads/prod' && secrets.PRODUCTION_USER || secrets.STAGING_USER }}
           OWNER: ${{ github.repository_owner }}
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -138,9 +142,11 @@ jobs:
             bash /opt/crm2/app/infra/prod/deploy.sh
           EOF
       - name: Smoke external HTTPS
+        env:
+          SMOKE_HOST: ${{ github.ref == 'refs/heads/prod' && 'crm.allcheckservices.com' || 'staging.crm.allcheckservices.com' }}
         run: |
           for i in 1 2 3 4 5 6; do
-            if curl -fsS --max-time 10 https://crm.allcheckservices.com/_edge_health; then
+            if curl -fsS --max-time 10 "https://$SMOKE_HOST/_edge_health"; then
               echo "smoke OK"; exit 0
             fi
             sleep 5

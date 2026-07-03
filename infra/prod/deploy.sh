@@ -24,16 +24,24 @@ IMAGE_REGISTRY="${IMAGE_REGISTRY:-ghcr.io/acsdeveloper2025}"
 HEALTH_URL="https://crm.allcheckservices.com/api/v2/health"
 EDGE_URL="https://crm.allcheckservices.com/_edge_health"
 
-# AWS flavor: the marker file (touched once when the EC2 box was provisioned)
-# switches to the ALB-fronted compose — no db/minio containers, edge on :80,
-# TLS at the ALB. Health gates hit localhost: the ALB fronts the public URL,
-# and pre-cutover the domain still points at the old box.
+# Box flavors (ADR-0087). Marker files, touched once at provisioning, pick the
+# flavor; without one the script behaves exactly as before:
+#   /opt/crm2/.aws-box     — AWS prod EC2 behind the ALB: AWS compose (no
+#                            db/minio, edge :80, TLS at ALB), localhost health.
+#   /opt/crm2/.staging-box — the pre-AWS box as staging: same compose, but
+#                            staging hostname/cert/nginx conf.
 AWS_BOX=0
+CERT_DOMAIN="crm.allcheckservices.com"
 if [ -f /opt/crm2/.aws-box ]; then
   AWS_BOX=1
   COMPOSE_FILE="$REPO_DIR/infra/prod/docker-compose.aws.yml"
   HEALTH_URL="http://localhost/api/v2/health"
   EDGE_URL="http://localhost/_edge_health"
+elif [ -f /opt/crm2/.staging-box ]; then
+  export NGINX_CONF="./nginx.staging.conf"
+  CERT_DOMAIN="staging.crm.allcheckservices.com"
+  HEALTH_URL="https://$CERT_DOMAIN/api/v2/health"
+  EDGE_URL="https://$CERT_DOMAIN/_edge_health"
 fi
 
 log(){ printf '\033[34m▸\033[0m %s\n' "$*"; }
@@ -47,8 +55,8 @@ log "deploy.sh — IMAGE_TAG=$IMAGE_TAG REGISTRY=$IMAGE_REGISTRY"
 # ---- Preconditions ---------------------------------------------------------
 [ -f "$COMPOSE_FILE" ] || die "compose file missing: $COMPOSE_FILE"
 [ -f "$ENV_FILE" ]     || die "env file missing: $ENV_FILE"
-# TLS cert lives on the box only in the single-box flavor; on AWS the ALB owns it.
-[ "$AWS_BOX" = "1" ] || [ -f "/etc/letsencrypt/live/crm.allcheckservices.com/fullchain.pem" ] || die "TLS cert missing"
+# TLS cert lives on the box only in the single-box flavors; on AWS the ALB owns it.
+[ "$AWS_BOX" = "1" ] || [ -f "/etc/letsencrypt/live/$CERT_DOMAIN/fullchain.pem" ] || die "TLS cert missing: $CERT_DOMAIN"
 ok "preconditions OK"
 
 cd "$REPO_DIR"

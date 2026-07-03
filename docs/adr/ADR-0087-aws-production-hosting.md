@@ -42,9 +42,11 @@ managed services:
   One workflow and one script serve both boxes; the old box's behavior is
   byte-identical without the marker.
 - **The old box becomes staging** at `staging.crm.allcheckservices.com`
-  (own certbot cert + `.env`), deployed manually — push-to-`main` deploys to
-  AWS production only (GitHub secrets `PRODUCTION_HOST`/`KNOWN_HOSTS_PIN`/
-  `DEPLOY_USER` repointed at cutover).
+  (own certbot cert, `nginx.staging.conf` via `NGINX_CONF`, `.staging-box`
+  marker, `.env` presign domain updated). **Two-branch deploys:** push to
+  `main` → staging box; push to `prod` → AWS production. Promote by
+  fast-forwarding `prod` to `main` after staging verification (owner decision
+  2026-07-03; supersedes the single-branch deploy line of ADR-era `main`).
 
 Mobile (`crm-mobile-native`) is unaffected: same domain, same `/api/v2`
 contract; presigned URLs simply point at S3.
