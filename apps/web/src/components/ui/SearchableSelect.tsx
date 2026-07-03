@@ -63,6 +63,12 @@ export function SearchableSelect({
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setHighlight((h) => Math.max(h - 1, 0));
+    } else if (e.key === 'Home' && open) {
+      e.preventDefault();
+      setHighlight(0);
+    } else if (e.key === 'End' && open) {
+      e.preventDefault();
+      setHighlight(filtered.length - 1);
     } else if (e.key === 'Enter') {
       if (open && hl >= 0 && filtered[hl]) {
         e.preventDefault();

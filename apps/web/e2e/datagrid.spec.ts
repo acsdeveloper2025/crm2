@@ -194,6 +194,27 @@ test('DataGrid: Columns menu moves focus in, then Escape closes it and returns f
   await expect(trigger).toBeFocused();
 });
 
+// APG menu roving (KN-10): the DataGrid role="menu" popovers must be Arrow-navigable (Down/Up move
+// focus, Home/End jump), not only Tab-cycled. Verified on the Columns menu (checkbox items).
+test('DataGrid: the Columns menu supports Arrow / Home / End roving', async ({ page }) => {
+  await page.goto('/admin/clients');
+  const trigger = page.getByRole('button', { name: 'Columns' });
+  await trigger.click();
+  const menu = page.getByRole('menu', { name: 'Toggle columns' });
+  const boxes = menu.getByRole('checkbox');
+  // focus moved in to the first item on open
+  await expect(boxes.first()).toBeFocused();
+  // ArrowDown → next; End → last; Home → first
+  await page.keyboard.press('ArrowDown');
+  await expect(boxes.nth(1)).toBeFocused();
+  await page.keyboard.press('End');
+  await expect(boxes.last()).toBeFocused();
+  await page.keyboard.press('Home');
+  await expect(boxes.first()).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(trigger).toBeFocused();
+});
+
 // Keyboard operability of the grid itself (Wave K / K1 — DATAGRID_STANDARD §19, axe gate 29):
 // a sortable header must be focusable and toggle sort via Enter/Space (keeping aria-sort), and an
 // onRowClick row must be focusable and open via Enter — not mouse-only.

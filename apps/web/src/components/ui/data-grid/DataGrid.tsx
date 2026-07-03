@@ -355,7 +355,9 @@ export function DataGrid<T>({
   const visibleColumns = useMemo(() => columns.filter((c) => !hiddenIds.has(c.id)), [columns, hiddenIds]);
   const hideableColumns = useMemo(() => columns.filter((c) => c.hideable !== false), [columns]);
   const [menuOpen, setMenuOpen] = useState(false);
-  const columnsMenuRef = useFocusTrap<HTMLDivElement>(menuOpen, () => setMenuOpen(false));
+  const columnsMenuRef = useFocusTrap<HTMLDivElement>(menuOpen, () => setMenuOpen(false), {
+    arrowKeys: true,
+  });
   const toggleColumn = (id: string) => {
     const next = new Set(hiddenIds);
     if (next.has(id)) next.delete(id);
@@ -404,7 +406,9 @@ export function DataGrid<T>({
   const [exporting, setExporting] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const qc = useQueryClient();
-  const exportMenuRef = useFocusTrap<HTMLDivElement>(exportMenuOpen, () => setExportMenuOpen(false));
+  const exportMenuRef = useFocusTrap<HTMLDivElement>(exportMenuOpen, () => setExportMenuOpen(false), {
+    arrowKeys: true,
+  });
   const runExport = async (format: ExportFormat, mode: ExportMode, ids?: string[]) => {
     if (!exportFn) return;
     setExportError(null);
@@ -497,10 +501,28 @@ export function DataGrid<T>({
   const [createError, setCreateError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const cancelCell = () => {
+  // KN-2: after an inline edit commits/cancels, return focus to the cell (WCAG 2.4.3) instead of
+  // dropping it to <body>. Track each editable cell's <td> node; refocus the just-edited one once the
+  // editor unmounts (the effect fires after the display cell re-renders in its place).
+  const cellNodes = useRef<Map<string, HTMLTableCellElement | null>>(new Map());
+  const cellDomKey = (id: string, field: string) => `${id}::${field}`;
+  const [refocusCell, setRefocusCell] = useState<string | null>(null);
+  useEffect(() => {
+    if (refocusCell && !editCell) {
+      cellNodes.current.get(refocusCell)?.focus();
+      setRefocusCell(null);
+    }
+  }, [refocusCell, editCell]);
+
+  // Clear edit state WITHOUT refocusing (used when create-mode/programmatic flow takes focus instead).
+  const clearCell = () => {
     setEditCell(null);
     setEditValue('');
     setCellError(null);
+  };
+  const cancelCell = () => {
+    if (editCell) setRefocusCell(cellDomKey(editCell.id, editCell.field));
+    clearCell();
   };
   const startCellEdit = (row: T, c: DataGridColumn<T>) => {
     if (saving || creating) return;
@@ -549,7 +571,7 @@ export function DataGrid<T>({
     setSaving(false);
   };
   const startCreate = () => {
-    cancelCell();
+    clearCell();
     setCreating(true);
     setDraft(
       Object.fromEntries(columns.filter((c) => c.editable || c.createOnly).map((c) => [cellKey(c), ''])),
@@ -1108,11 +1130,11 @@ export function DataGrid<T>({
                       className={`border-t border-border transition-colors ${
                         expanded ? 'bg-accent hover:bg-accent' : 'hover:bg-row-hover'
                       } ${rowClickable ? 'cursor-pointer' : ''} ${
-                        onRowClick
+                        rowClickable
                           ? 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring'
                           : ''
                       }`}
-                      tabIndex={onRowClick ? 0 : undefined}
+                      tabIndex={rowClickable ? 0 : undefined}
                       onClick={
                         onRowClick
                           ? () => onRowClick(row.original)
@@ -1121,11 +1143,14 @@ export function DataGrid<T>({
                             : undefined
                       }
                       onKeyDown={
-                        onRowClick
+                        rowClickable
                           ? (e) => {
-                              if (e.key === 'Enter' || e.key === ' ') {
+                              // Act only when the ROW itself is focused (KN-4) — never a key bubbled up
+                              // from an inner control (chevron / checkbox / editable cell owns its keys).
+                              if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) {
                                 e.preventDefault();
-                                onRowClick(row.original);
+                                if (onRowClick) onRowClick(row.original);
+                                else toggleExpand(row.id);
                               }
                             }
                           : undefined
@@ -1168,18 +1193,45 @@ export function DataGrid<T>({
                           !creating &&
                           !!col?.editable &&
                           (inlineEdit.canEdit?.(row.original) ?? true);
+                        // Track every editable cell's <td> so focus can return to it after edit (KN-2).
+                        const cellEditable = !!inlineEdit && !!col?.editable;
                         return (
                           <td
                             key={cell.id}
+                            ref={
+                              cellEditable
+                                ? (el) => {
+                                    cellNodes.current.set(cellDomKey(row.id, field), el);
+                                  }
+                                : undefined
+                            }
                             data-label={col?.label ?? col?.header ?? cell.column.id}
                             className={`px-3 py-2 ${col?.align === 'right' ? 'text-right' : ''} ${
-                              clickToEdit ? 'cursor-text' : ''
+                              clickToEdit
+                                ? 'cursor-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring'
+                                : ''
                             }`}
+                            tabIndex={clickToEdit ? 0 : undefined}
+                            // Keep the cell's value as its accessible name (not a role/aria-label
+                            // override, which would hide the value from AT); `title` is the edit hint.
+                            title={clickToEdit ? 'Press Enter to edit' : undefined}
                             onClick={
                               clickToEdit && col
                                 ? (e) => {
                                     e.stopPropagation();
                                     startCellEdit(row.original, col);
+                                  }
+                                : undefined
+                            }
+                            onKeyDown={
+                              clickToEdit && col
+                                ? (e) => {
+                                    // Enter / F2 (the grid convention) open the inline editor by keyboard.
+                                    if (e.key === 'Enter' || e.key === 'F2') {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      startCellEdit(row.original, col);
+                                    }
                                   }
                                 : undefined
                             }
@@ -1295,7 +1347,7 @@ function ColumnFilterSelect({
   onCommit: (next: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const menuRef = useFocusTrap<HTMLDivElement>(open, () => setOpen(false));
+  const menuRef = useFocusTrap<HTMLDivElement>(open, () => setOpen(false), { arrowKeys: true });
   const selected = new Set(value ? value.split(',') : []);
   const toggle = (v: string) => {
     const next = new Set(selected);

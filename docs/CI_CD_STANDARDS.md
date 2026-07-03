@@ -42,7 +42,7 @@ Local equivalent: `pnpm verify` (typecheck → lint → format → no-suppressio
 | 26 | dead-code report | knip | `knip.json` |
 | 27 | feature boundary (no cross-feature internals) | dependency-cruiser `no-cross-feature-internals` | `.dependency-cruiser.cjs` |
 | 28 | controller → service → repository | dependency-cruiser + eslint `no-restricted-imports` | `.dependency-cruiser.cjs`, `eslint.config.js` |
-| 29 | accessibility automation | axe in Playwright (`e2e/a11y.spec.ts`) — gates CRITICAL, reports SERIOUS (E-5 ratchet) | CI `e2e` job |
+| 29 | accessibility automation | axe in Playwright (`e2e/a11y.spec.ts`) — gates SERIOUS + CRITICAL WCAG 2.0/2.1 A+AA (E-5 ratchet) | CI `e2e` job |
 | 30 | UTC everywhere; TIMESTAMPTZ | migrations use `timestamptz`; backend UTC | migrations + review |
 | 31 | structured domain errors | `AppError` + `ErrorCode`; no bare `throw new Error` in domain | `platform/errors.ts` + review |
 | 32 | soft delete (`deleted_at`/`deleted_by`) | schema + review | migrations |
@@ -89,7 +89,7 @@ pages + mobile card transform on the 8 list pages) + `e2e/login.spec.ts`; gate 5
 `reuseExistingServer:!CI`). **CI ACTIVATED 2026-06-06** (commit `f91a414`): dedicated **`e2e` job** in `ci.yml`
 (`needs: build`) — postgres:17 → apply migrations (seeds dev admin) → install browser → `test:e2e` (gates 49-50
 + gate 29 axe) → upload html report. NOT wired into `pnpm verify`/turbo `test` (vitest-only). gate 29 gates
-CRITICAL a11y, reports SERIOUS (E-5 ratchet = color-contrast on frozen tokens). 59 passed / 0 critical locally.
+SERIOUS + CRITICAL a11y (`GATED_IMPACTS`; E-5 ratchet = color-contrast on frozen tokens). 59 passed / 0 gated locally.
 
 ## Concurrency & editing enforcement (FROZEN 2026-06-05) — SoT `docs/CONCURRENCY_AND_EDITING_STANDARD.md`
 | # | Rule | Mechanism | Where |

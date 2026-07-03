@@ -174,11 +174,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </a>
       {/* Idle / absolute-session auto-logout (ADR-0045) — self-disables for exempt roles. */}
       <IdleLogoutManager />
-      {/* Backdrop — only below lg (overlay mode), only while open */}
+      {/* Backdrop — only below lg (overlay mode), only while open. aria-hidden + tabIndex=-1 (like the
+          DataGrid menu backdrops) so a mouse-close never moves focus onto it and orphans it (KN-6);
+          keyboard users close via Escape (the drawer focus-trap) or a nav link. */}
       {open && (
         <button
           type="button"
-          aria-label="Close menu"
+          aria-hidden="true"
+          tabIndex={-1}
           className="fixed inset-0 z-30 bg-foreground/40 lg:hidden"
           onClick={() => setOpen(false)}
         />

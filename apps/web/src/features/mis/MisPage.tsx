@@ -198,6 +198,7 @@ function TabularView({
       toolbar={
         <Popover
           label="Columns"
+          panelLabel="Columns"
           trigger={<span>Columns</span>}
           align="start"
           panelClassName="w-[min(720px,85vw)]"

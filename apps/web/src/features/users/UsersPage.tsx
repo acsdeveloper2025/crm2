@@ -51,6 +51,9 @@ export function UsersPage() {
   // The user whose password the admin is resetting (3-way dialog: email / view / set a password).
   const [resetting, setResetting] = useState<UserView | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
+  // KN-3: focus-trap the export-failed alert (mirror RolesPage's toggle-error dialog) so focus moves
+  // into it, Escape closes, and focus restores to the trigger — not left behind the modal.
+  const exportErrorRef = useFocusTrap<HTMLDivElement>(!!exportError, () => setExportError(null));
 
   const toggle = useMutation({
     mutationFn: (u: UserView) =>
@@ -248,8 +251,16 @@ export function UsersPage() {
 
       {exportError && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40">
-          <div className="w-full max-w-sm rounded-lg border border-border bg-card p-6 text-card-foreground shadow-lg">
-            <h2 className="mb-2 text-lg font-semibold">Export failed</h2>
+          <div
+            ref={exportErrorRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="users-export-error-title"
+            className="w-full max-w-sm rounded-lg border border-border bg-card p-6 text-card-foreground shadow-lg"
+          >
+            <h2 id="users-export-error-title" className="mb-2 text-lg font-semibold">
+              Export failed
+            </h2>
             <p className="mb-4 text-sm text-muted-foreground">{exportError}</p>
             <div className="flex justify-end">
               <Button onClick={() => setExportError(null)}>OK</Button>

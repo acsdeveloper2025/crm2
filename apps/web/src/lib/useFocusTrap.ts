@@ -16,6 +16,11 @@ import { useEffect, useRef } from 'react';
  *
  * Attach the returned ref to the overlay container. `onEscape` is read through a ref,
  * so changing the handler each render never re-runs the effect (no focus re-grab).
+ *
+ * `opts.arrowKeys` adds WAI-ARIA APG menu roving (KN-10): ArrowDown/Up move focus to the
+ * next/previous focusable and Home/End jump to first/last (Tab-cycling is kept). Skipped while a
+ * text-entry field is focused so cursor keys still move the caret — safe on menus that carry an
+ * input (e.g. the Saved-Views name field).
  */
 const FOCUSABLE_SELECTOR = [
   'a[href]',
@@ -26,15 +31,32 @@ const FOCUSABLE_SELECTOR = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(',');
 
+/** Arrow/Home/End must not be hijacked while a caret-bearing field is focused (they move the caret). */
+function isTextEntry(el: Element | null): boolean {
+  if (!el) return false;
+  const tag = el.tagName;
+  if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  if ((el as HTMLElement).isContentEditable) return true;
+  if (tag === 'INPUT') {
+    const t = (el as HTMLInputElement).type;
+    return t !== 'checkbox' && t !== 'radio' && t !== 'button' && t !== 'submit';
+  }
+  return false;
+}
+
 export function useFocusTrap<T extends HTMLElement>(
   active: boolean,
   onEscape: () => void,
+  opts?: { arrowKeys?: boolean },
 ): React.RefObject<T | null> {
   // React 19's `useRef<T>(null)` yields `RefObject<T | null>`; the ref attribute
   // accepts that, so the return type is widened to match (was `RefObject<T>`).
   const containerRef = useRef<T>(null);
   const onEscapeRef = useRef(onEscape);
   onEscapeRef.current = onEscape;
+  // `opts` is a fresh object each render, so read `arrowKeys` through a ref — never an effect dep.
+  const arrowKeysRef = useRef(opts?.arrowKeys ?? false);
+  arrowKeysRef.current = opts?.arrowKeys ?? false;
 
   useEffect(() => {
     if (!active) return;
@@ -60,6 +82,31 @@ export function useFocusTrap<T extends HTMLElement>(
       if (e.key === 'Escape') {
         e.stopPropagation();
         onEscapeRef.current();
+        return;
+      }
+      // APG menu roving (opt-in): Arrow/Home/End move focus among the trapped focusables.
+      if (
+        arrowKeysRef.current &&
+        (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End') &&
+        !isTextEntry(document.activeElement)
+      ) {
+        const els = focusables();
+        if (els.length === 0) return;
+        e.preventDefault();
+        const idx = els.indexOf(document.activeElement as HTMLElement);
+        const next =
+          e.key === 'Home'
+            ? 0
+            : e.key === 'End'
+              ? els.length - 1
+              : e.key === 'ArrowDown'
+                ? idx < 0
+                  ? 0
+                  : (idx + 1) % els.length
+                : idx <= 0
+                  ? els.length - 1
+                  : idx - 1;
+        els[next]?.focus();
         return;
       }
       if (e.key !== 'Tab') return;

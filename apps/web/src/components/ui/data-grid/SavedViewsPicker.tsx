@@ -20,7 +20,7 @@ export function SavedViewsPicker({ resourceKey }: { resourceKey: string }) {
   const [open, setOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const menuRef = useFocusTrap<HTMLDivElement>(open, () => setOpen(false));
+  const menuRef = useFocusTrap<HTMLDivElement>(open, () => setOpen(false), { arrowKeys: true });
 
   const viewsKey = ['saved-views', resourceKey];
   const viewsQuery = useQuery({

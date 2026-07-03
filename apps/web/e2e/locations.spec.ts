@@ -34,3 +34,28 @@ test('Locations: editing is inline per-cell, not a modal', async ({ page }) => {
   await expect(areaCell.getByRole('textbox')).toHaveCount(0);
   await expect(areaCell).toHaveText(seeded);
 });
+
+// Inline-edit KEYBOARD access (KN-1/KN-2, WCAG 2.1.1 + 2.4.3): the editable cell was previously
+// mouse-only (tabIndex=-1, no key handler). It must now be a keyboard-reachable button — Enter opens
+// the editor, and Escape returns focus to the CELL (not lost to <body>).
+test('Locations: an editable cell opens on Enter and returns focus to the cell on Escape', async ({
+  page,
+}) => {
+  await page.goto('/admin/locations');
+  const areaCell = page.locator('td[data-label="Area"]').first();
+  await expect(areaCell).toBeVisible();
+  // KN-1: keyboard-reachable, not a mouse-only cell (was tabIndex=-1).
+  await expect(areaCell).toHaveAttribute('tabindex', '0');
+  await areaCell.focus();
+  await expect(areaCell).toBeFocused();
+  const seeded = await areaCell.textContent();
+  // Enter opens the inline editor and moves focus into it.
+  await page.keyboard.press('Enter');
+  const editor = areaCell.getByRole('textbox');
+  await expect(editor).toBeFocused();
+  // Escape cancels and returns focus to the cell (KN-2) — the display value is unchanged.
+  await page.keyboard.press('Escape');
+  await expect(areaCell.getByRole('textbox')).toHaveCount(0);
+  await expect(areaCell).toBeFocused();
+  await expect(areaCell).toHaveText((seeded ?? '').trim());
+});
