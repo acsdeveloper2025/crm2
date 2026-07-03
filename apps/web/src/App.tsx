@@ -329,7 +329,7 @@ export function App() {
         <Route path="/cases/new" element={<CaseCreatePage />} />
         <Route path="/cases/:id" element={<CaseDetailPage />} />
         <Route path="/billing" element={<BillingPage />} />
-        <Route path="/billing/commission-summary" element={<CommissionSummaryPage />} />
+        <Route path="/commission-summary" element={<CommissionSummaryPage />} />
         <Route path="*" element={<div className="text-muted-foreground">Not built yet.</div>} />
       </Routes>
     </Layout>

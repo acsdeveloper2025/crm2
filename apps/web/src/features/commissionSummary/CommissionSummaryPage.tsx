@@ -176,7 +176,7 @@ export function CommissionSummaryPage() {
     activeGenerate.mutate();
   };
 
-  if (!has('billing.commission_summary.view'))
+  if (!has('commission_summary.view'))
     return <div className="text-destructive">You don&apos;t have access to Commission Summary.</div>;
 
   const rows = result?.items ?? [];

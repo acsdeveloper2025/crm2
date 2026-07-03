@@ -155,7 +155,7 @@ describe.skipIf(!RUN)('billing API (ADR-0036 slice 5b)', () => {
     );
   });
 
-  it('rolls up a completed task into per-case bill + commission totals', async () => {
+  it('rolls up a completed task into per-case bill totals (billing surface bill-only, ADR-0086); commission on the Commission surface', async () => {
     const ctx = await seedCpvUnit('ROLL');
     const fa = await createUser({ username: 'bil_fa', name: 'BILL FA', role: 'FIELD_AGENT' });
     const loc = seeded<{ id: number }>(
@@ -190,30 +190,62 @@ describe.skipIf(!RUN)('billing API (ADR-0036 slice 5b)', () => {
     );
     const c = await seedCompletedTask(ctx, fa, 'ROLL APP', loc);
 
-    const list = await request(app).get('/api/v2/billing/cases').set(SA);
+    // ADR-0086: the billing surface is a FLAT list — one row per COMPLETED billable task, bill-only.
+    const list = await request(app).get('/api/v2/billing/lines').set(SA);
     expect(list.status).toBe(200);
     expect(list.body.items).toHaveLength(1);
     const row = list.body.items[0];
-    expect(row.caseNumber).toBe(c.caseNumber);
-    expect(row.completedTaskCount).toBe(1);
-    expect(row.billTotal).toBe(100);
-    expect(row.commissionTotal).toBe(30);
-    expect(typeof row.billTotal).toBe('number');
-    expect(row.lastCompletedAt).toBeTruthy();
-
-    const lines = await request(app).get(`/api/v2/billing/cases/${c.caseId}/tasks`).set(SA);
-    expect(lines.status).toBe(200);
-    expect(lines.body).toHaveLength(1);
-    expect(lines.body[0]).toMatchObject({
+    expect(row).toMatchObject({
+      caseNumber: c.caseNumber,
       taskNumber: `${c.caseNumber}-1`,
-      billingClass: 'ORIGINAL',
+      caseId: c.caseId,
       clientRateType: 'LOCAL',
+      billCount: 1,
+      billAmount: 100,
+      billTotal: 100,
+    });
+    expect(row.pincode).toBe('400061');
+    expect(row.area).toBe('ROLLAREA');
+    expect(row.completedAt).toBeTruthy();
+    // commission is gone from the billing surface (row + total).
+    expect(row).not.toHaveProperty('commissionAmount');
+    expect(row).not.toHaveProperty('commissionTotal');
+    // ADR-0086 review — the JOINed detail columns map correctly:
+    expect(row.unitName).toBeTruthy(); // vu.name
+    expect(row.assigneeName).toBe('BILL FA'); // au.name
+    expect(row).toHaveProperty('tatBand'); // COMPLETED_BAND derivation (band value covered in billing.commission.test)
+
+    // filter-aware bill total (grid footer): ₹100 across 1 line, and it follows the filters.
+    const summary = await request(app).get('/api/v2/billing/lines/summary').set(SA);
+    expect(summary.status).toBe(200);
+    expect(summary.body).toMatchObject({ billTotal: 100, lineCount: 1 });
+    expect(
+      (await request(app).get('/api/v2/billing/lines?f_rateType=LOCAL').set(SA)).body.items,
+    ).toHaveLength(1);
+    expect((await request(app).get('/api/v2/billing/lines?f_rateType=OGL').set(SA)).body.items).toHaveLength(
+      0,
+    );
+    expect(
+      (await request(app).get('/api/v2/billing/lines/summary?f_rateType=OGL').set(SA)).body,
+    ).toMatchObject({ billTotal: 0, lineCount: 0 });
+
+    // TAT-band filter: pin a deterministic band (30 min → the 4h band), then filter by it.
+    await query(`UPDATE case_tasks SET completed_elapsed_minutes = 30 WHERE case_id = $1`, [c.caseId]);
+    expect((await request(app).get('/api/v2/billing/lines?f_tatBand=4').set(SA)).body.items).toHaveLength(1);
+    expect((await request(app).get('/api/v2/billing/lines?f_tatBand=6').set(SA)).body.items).toHaveLength(0);
+
+    // The SAME commission (₹30) still resolves on the SEPARATE Commission surface (ADR-0081/0086).
+    const detail = await request(app).get('/api/v2/billing/commission-detail').set(SA);
+    expect(detail.status).toBe(200);
+    expect(detail.body.items).toHaveLength(1);
+    expect(detail.body.items[0]).toMatchObject({
+      taskNumber: `${c.caseNumber}-1`,
       billAmount: 100,
       commissionAmount: 30,
     });
   });
 
-  it('eligibility = ANY completed task; commission is null when the assignee has no rate (bill still resolves)', async () => {
+  it('eligibility = ANY completed task; billing surface is bill-only; commission-detail shows null commission when the assignee has no rate (bill still resolves)', async () => {
     const ctx = await seedCpvUnit('ANY');
     const fa = await createUser({ username: 'bil_fa2', name: 'BILL FA2', role: 'FIELD_AGENT' });
     seeded(
@@ -226,13 +258,16 @@ describe.skipIf(!RUN)('billing API (ADR-0036 slice 5b)', () => {
       }),
     );
     // NO commission rate for this agent
-    const c = await seedCompletedTask(ctx, fa, 'ANY APP');
-    const lines = await request(app).get(`/api/v2/billing/cases/${c.caseId}/tasks`).set(SA);
-    expect(lines.body[0].billAmount).toBe(100);
-    expect(lines.body[0].commissionAmount).toBeNull(); // unset, not a failure
-    const list = await request(app).get('/api/v2/billing/cases').set(SA);
-    expect(list.body.items[0].commissionTotal).toBe(0); // SUM coalesces null → 0
+    await seedCompletedTask(ctx, fa, 'ANY APP');
+    const list = await request(app).get('/api/v2/billing/lines').set(SA);
+    expect(list.body.items).toHaveLength(1);
+    expect(list.body.items[0].billAmount).toBe(100);
     expect(list.body.items[0].billTotal).toBe(100);
+    expect(list.body.items[0]).not.toHaveProperty('commissionAmount'); // ADR-0086: bill-only surface
+    // commission is null (no rate) on the Commission surface — bill still resolves there too.
+    const detail = await request(app).get('/api/v2/billing/commission-detail').set(SA);
+    expect(detail.body.items[0].billAmount).toBe(100);
+    expect(detail.body.items[0].commissionAmount).toBeNull(); // unset, not a failure
   });
 
   it('excludes a case with no COMPLETED tasks (only completed tasks bill)', async () => {
@@ -259,38 +294,34 @@ describe.skipIf(!RUN)('billing API (ADR-0036 slice 5b)', () => {
         .set(SA)
         .send({ tasks: [{ verificationUnitId: ctx.unitId, applicantId, address: 'a', trigger: 'x' }] }),
     );
-    const list = await request(app).get('/api/v2/billing/cases').set(SA);
+    const list = await request(app).get('/api/v2/billing/lines').set(SA);
     expect(list.body.items).toHaveLength(0);
   });
 
-  it('billing.view gates the read: BACKEND_USER allowed, TEAM_LEADER + FIELD_AGENT denied; lines 404 out-of-scope', async () => {
+  it('billing.view gates the flat lines list + export: BACKEND_USER allowed, TEAM_LEADER + FIELD_AGENT denied', async () => {
     const ctx = await seedCpvUnit('PERM');
     const fa = await createUser({ username: 'bil_perm', name: 'BP', role: 'FIELD_AGENT' });
-    const c = await seedCompletedTask(ctx, fa, 'PERM APP');
-    expect((await request(app).get('/api/v2/billing/cases').set(BE)).status).toBe(200);
-    expect((await request(app).get('/api/v2/billing/cases').set(TL)).status).toBe(403);
-    expect((await request(app).get('/api/v2/billing/cases').set(hdr('FIELD_AGENT', fa))).status).toBe(403);
-    // a billing.view holder still can't see a case outside scope / absent → 404 (IDOR-safe)
-    const absent = '00000000-0000-0000-0000-0000000000ff';
-    expect((await request(app).get(`/api/v2/billing/cases/${absent}/tasks`).set(BE)).status).toBe(404);
-    // a non-uuid id → 400, not 500
-    expect((await request(app).get('/api/v2/billing/cases/not-a-uuid/tasks').set(SA)).status).toBe(400);
-    // sanity: SA sees the real case lines
-    expect((await request(app).get(`/api/v2/billing/cases/${c.caseId}/tasks`).set(SA)).status).toBe(200);
+    await seedCompletedTask(ctx, fa, 'PERM APP');
+    expect((await request(app).get('/api/v2/billing/lines').set(BE)).status).toBe(200);
+    expect((await request(app).get('/api/v2/billing/lines').set(TL)).status).toBe(403);
+    expect((await request(app).get('/api/v2/billing/lines').set(hdr('FIELD_AGENT', fa))).status).toBe(403);
+    // the filter-aware summary shares the same billing.view gate.
+    expect((await request(app).get('/api/v2/billing/lines/summary').set(BE)).status).toBe(200);
+    expect((await request(app).get('/api/v2/billing/lines/summary').set(TL)).status).toBe(403);
 
-    // export carries the SAME bill+commission amounts → must share the list's audience (billing.view),
+    // export carries the SAME sensitive bill amounts → must share the list's audience (billing.view),
     // NOT just data.export. TEAM_LEADER holds data.export but NOT billing.view → must be 403 on export
-    // too (else a TL blocked from /cases could exfiltrate the amounts via export).
-    expect((await request(app).get('/api/v2/billing/cases/export?format=csv&mode=all').set(BE)).status).toBe(
+    // too (else a TL blocked from /lines could exfiltrate the amounts via export).
+    expect((await request(app).get('/api/v2/billing/lines/export?format=csv&mode=all').set(BE)).status).toBe(
       200,
     );
-    expect((await request(app).get('/api/v2/billing/cases/export?format=csv&mode=all').set(TL)).status).toBe(
+    expect((await request(app).get('/api/v2/billing/lines/export?format=csv&mode=all').set(TL)).status).toBe(
       403,
     );
   });
 
-  it('ADR-0081: Commission Summary is gated by its DEDICATED billing.commission_summary.view (list + export)', async () => {
-    // BACKEND_USER holds billing.commission_summary.view (mig 0107 + ROLE_PERMISSIONS) → 200.
+  it('ADR-0081/0086: Commission Summary is gated by its DEDICATED commission_summary.view (list + export)', async () => {
+    // BACKEND_USER holds commission_summary.view (mig 0107 + the 0112 rename + ROLE_PERMISSIONS) → 200.
     expect((await request(app).get('/api/v2/billing/commission-summary?period=month').set(BE)).status).toBe(
       200,
     );

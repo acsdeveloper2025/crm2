@@ -1,9 +1,5 @@
 import type {
-  BillingCaseRow,
-  BillingTaskLine,
-  BillingBreakdown,
-  BillingLocationGroup,
-  BillingBandGroup,
+  BillingLineRow,
   CommissionSummaryRow,
   CommissionDetailRow,
   CommissionPeriod,
@@ -30,15 +26,20 @@ function caseScopePredicate(params: unknown[], scope: Scope): string {
   );
 }
 
-// Per-case list: aggregate the resolved per-task amounts over COMPLETED tasks.
-// RATE_LATERAL/COMMISSION_LATERAL are shared with the Pipeline read-model — see platform/billing/laterals.ts. `billing.view` is the
-// gate; the scope predicate is defence-in-depth (operators are office-wide today, but stays scope-safe).
-const CASES_FROM = `FROM case_tasks ct
+// Flat billing-lines list (ADR-0086 redesign): one row per COMPLETED billable task, all detail columns +
+// the resolved CLIENT bill. ADR-0086 made the billing surface bill-only — COMMISSION_LATERAL is NOT joined
+// here (it stays on SUMMARY_FROM/DETAIL_FROM). RATE_LATERAL is shared with the Pipeline read-model — see
+// platform/billing/laterals.ts. `l` = the task's resolved location (task area > pincode > case area >
+// pincode). `billing.view` is the gate; the scope predicate is defence-in-depth (operators are office-wide
+// today, but stays scope-safe).
+const LINES_FROM = `FROM case_tasks ct
   JOIN cases cs ON cs.id = ct.case_id
   JOIN clients cl ON cl.id = cs.client_id
   JOIN products p ON p.id = cs.product_id
-  ${RATE_LATERAL}
-  ${COMMISSION_LATERAL}`;
+  JOIN verification_units vu ON vu.id = ct.verification_unit_id
+  LEFT JOIN users au ON au.id = ct.assigned_to
+  LEFT JOIN locations l ON l.id = COALESCE(ct.area_id, ct.pincode_id, cs.area_id, cs.pincode_id)
+  ${RATE_LATERAL}`;
 
 /**
  * Completed-in TAT band derivation (ADR-0046 §4.2) — the smallest active `tat_policies` band that
@@ -55,13 +56,14 @@ export const COMPLETED_BAND = `COALESCE(
        ORDER BY tp.tat_hours ASC LIMIT 1),
     CASE WHEN ct.completed_elapsed_minutes IS NULL THEN NULL ELSE -1 END)`;
 
-export interface BillingCaseListOptions {
+export interface BillingLineListOptions {
   scope: Scope;
   clientId?: number;
   completedFrom?: string;
   completedTo?: string;
   search?: string;
   columnFilters?: AppliedFilter[];
+  /** export `selected` mode — task ids (ct.id). */
   ids?: string[];
   sortColumn: string;
   sortOrder: SortOrder;
@@ -69,21 +71,20 @@ export interface BillingCaseListOptions {
   offset: number;
 }
 
-/** The filter options shared by `listCases` and `breakdown` (everything but sort/pagination). */
-type BillingFilterOptions = Pick<
-  BillingCaseListOptions,
+/** Filter-only subset of the line options (no sort/pagination) — shared by the list and the aggregate summary. */
+export type BillingLineFilterOptions = Pick<
+  BillingLineListOptions,
   'scope' | 'clientId' | 'completedFrom' | 'completedTo' | 'search' | 'columnFilters' | 'ids'
 >;
 
 /**
- * Build the COMPLETED-task WHERE clause shared by `listCases` and `breakdown` (DRY: one place owns the
- * filter logic). Pushes bind values onto `params` (caller's array, mutated) and returns the full
- * `WHERE …` string. FROM contract: `case_tasks ct` / `cases cs` / `clients cl` / `products p`.
+ * Build the WHERE for the flat billing-lines list. COMPLETED-only (a billing line = a billed task); pushes
+ * bind values onto `params` (mutated) and returns the full `WHERE …`. FROM contract: `case_tasks ct` /
+ * `cases cs` / `clients cl` / `products p` / `verification_units vu` / `users au` / `locations l`. Search +
+ * column filters cover the detail columns, so the flat grid replaces the old breakdown panels (ADR-0086).
  */
-function buildBillingWhere(o: BillingFilterOptions, params: unknown[]): string {
-  // ADR-0047: field commission is frozen at SUBMIT, client bill at COMPLETE. Include SUBMITTED rows so
-  // the field commission surfaces; the bill-side aggregates below are FILTERed back to COMPLETED.
-  const where = [`ct.status IN ('SUBMITTED', 'COMPLETED')`];
+function buildLinesWhere(o: BillingLineFilterOptions, params: unknown[]): string {
+  const where = [`ct.status = 'COMPLETED'`];
   const add = (clause: string, val: unknown) => {
     params.push(val);
     where.push(clause.replace('$?', `$${params.length}`));
@@ -94,12 +95,14 @@ function buildBillingWhere(o: BillingFilterOptions, params: unknown[]): string {
   if (o.search) {
     params.push(likeContains(o.search));
     const n = params.length;
-    where.push(`(cs.case_number ILIKE $${n} OR cl.name ILIKE $${n} OR p.name ILIKE $${n})`);
+    where.push(
+      `(cs.case_number ILIKE $${n} OR cl.name ILIKE $${n} OR p.name ILIKE $${n} OR vu.name ILIKE $${n} OR au.name ILIKE $${n} OR l.pincode ILIKE $${n} OR l.area ILIKE $${n})`,
+    );
   }
   where.push(...filterClauses(o.columnFilters ?? [], params));
   if (o.ids && o.ids.length) {
     params.push(o.ids);
-    where.push(`cs.id = ANY($${params.length})`);
+    where.push(`ct.id = ANY($${params.length})`);
   }
   const scopePred = caseScopePredicate(params, o.scope);
   if (scopePred) where.push(scopePred);
@@ -237,103 +240,45 @@ function buildCommissionDetailWhere(o: CommissionDetailOptions, params: unknown[
 }
 
 export const billingRepository = {
-  async listCases(o: BillingCaseListOptions): Promise<{ items: BillingCaseRow[]; totalCount: number }> {
+  async listLines(o: BillingLineListOptions): Promise<{ items: BillingLineRow[]; totalCount: number }> {
     const params: unknown[] = [];
-    const clause = buildBillingWhere(o, params);
+    const clause = buildLinesWhere(o, params);
 
     const [countRow] = await query<{ count: number }>(
-      `SELECT count(DISTINCT cs.id)::int AS count ${CASES_FROM} ${clause}`,
+      `SELECT count(*)::int AS count ${LINES_FROM} ${clause}`,
       params,
     );
     const totalCount = countRow?.count ?? 0;
     // sortColumn whitelisted in the service (PageSpec.sortMap) → safe to interpolate.
-    const items = await query<BillingCaseRow>(
-      `SELECT cs.id AS case_id, cs.case_number, cl.name AS client_name, p.name AS product_name,
-              cs.status,
-              count(*) FILTER (WHERE ct.status = 'COMPLETED')::int AS completed_task_count,
-              COALESCE(SUM(ct.bill_count) FILTER (WHERE ct.status = 'COMPLETED'), 0)::int AS billable_units,
-              COALESCE(SUM(rt.bill_amount * ct.bill_count) FILTER (WHERE ct.status = 'COMPLETED'), 0)::float8 AS bill_total,
-              COALESCE(SUM(COALESCE(ct.commission_amount, com.commission_amount) * ct.bill_count), 0)::float8 AS commission_total,
-              max(ct.completed_at) AS last_completed_at
-       ${CASES_FROM} ${clause}
-       GROUP BY cs.id, cs.case_number, cl.name, p.name, cs.status
-       ORDER BY ${o.sortColumn} ${o.sortOrder}, cs.id ${o.sortOrder}
+    const items = await query<BillingLineRow>(
+      `SELECT ct.id AS task_id, ct.task_number, cs.id AS case_id, cs.case_number,
+              cl.name AS client_name, p.name AS product_name, vu.name AS unit_name,
+              au.name AS assignee_name, rt.client_rate_type,
+              ${COMPLETED_BAND} AS tat_band,
+              l.pincode, l.area,
+              ct.bill_count, rt.bill_amount,
+              (rt.bill_amount * ct.bill_count)::float8 AS bill_total,
+              ct.completed_at
+       ${LINES_FROM} ${clause}
+       ORDER BY ${o.sortColumn} ${o.sortOrder}, ct.id ${o.sortOrder}
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, o.limit, o.offset],
     );
     return { items, totalCount };
   },
 
-  /** Is the case visible to this scope? (scope-guard for the per-case lines read). */
-  async caseVisible(caseId: string, scope: Scope): Promise<boolean> {
-    const params: unknown[] = [caseId];
-    const scopePred = caseScopePredicate(params, scope);
-    const clause = scopePred ? `AND (${scopePred})` : '';
-    const rows = await query<{ one: number }>(
-      `SELECT 1 AS one FROM cases cs WHERE cs.id = $1 ${clause} LIMIT 1`,
+  /** Filter-aware aggregate for the flat billing grid footer (ADR-0086): the ₹ bill total + line count over
+   *  ALL matching lines (not just the page). Reuses `buildLinesWhere` so it honours the exact same filters. */
+  async linesSummary(o: BillingLineFilterOptions): Promise<{ billTotal: number; lineCount: number }> {
+    const params: unknown[] = [];
+    const clause = buildLinesWhere(o, params);
+    const [row] = await query<{ billTotal: number; lineCount: number }>(
+      `SELECT COALESCE(SUM(rt.bill_amount * ct.bill_count), 0)::float8 AS bill_total,
+              count(*)::int AS line_count
+       ${LINES_FROM} ${clause}`,
       params,
     );
-    return rows.length > 0;
-  },
-
-  /** The COMPLETED-task billing lines for one case (accordion detail). Caller guards visibility. */
-  async caseTasks(caseId: string): Promise<BillingTaskLine[]> {
-    return query<BillingTaskLine>(
-      `SELECT ct.id AS task_id, ct.task_number, vu.name AS unit_name, au.name AS assignee_name,
-              ct.task_origin AS billing_class, ct.visit_type, rt.client_rate_type,
-              CASE WHEN ct.status = 'COMPLETED' THEN rt.bill_amount END AS bill_amount,
-              COALESCE(ct.commission_amount, com.commission_amount) AS commission_amount,
-              ct.bill_count, ${COMPLETED_BAND} AS tat_band,
-              ct.completed_at
-       FROM case_tasks ct
-       JOIN cases cs ON cs.id = ct.case_id
-       JOIN verification_units vu ON vu.id = ct.verification_unit_id
-       LEFT JOIN users au ON au.id = ct.assigned_to
-       ${RATE_LATERAL}
-       ${COMMISSION_LATERAL}
-       WHERE ct.status IN ('SUBMITTED', 'COMPLETED') AND cs.id = $1
-       ORDER BY ct.task_number`,
-      [caseId],
-    );
-  },
-
-  /**
-   * Completed-task bill/commission totals over the SAME filter as `listCases`, grouped two ways:
-   * by the task's resolved location (pincode/area) and by the completed-in TAT band (ADR-0046 §4.3).
-   * One round-trip per grouping; both share `buildBillingWhere`. Gated `billing.view` (page-level).
-   */
-  async breakdown(o: BillingFilterOptions): Promise<BillingBreakdown> {
-    const locParams: unknown[] = [];
-    const locClause = buildBillingWhere(o, locParams);
-    const byLocation = await query<BillingLocationGroup>(
-      `SELECT COALESCE(ct.area_id, ct.pincode_id, cs.area_id, cs.pincode_id) AS location_id,
-              l.pincode, l.area,
-              count(*)::int                                                AS completed_task_count,
-              COALESCE(SUM(ct.bill_count) FILTER (WHERE ct.status = 'COMPLETED'), 0)::int AS billable_units,
-              COALESCE(SUM(rt.bill_amount * ct.bill_count) FILTER (WHERE ct.status = 'COMPLETED'), 0)::float8 AS bill_total,
-              COALESCE(SUM(COALESCE(ct.commission_amount, com.commission_amount) * ct.bill_count), 0)::float8 AS commission_total
-       ${CASES_FROM}
-       LEFT JOIN locations l ON l.id = COALESCE(ct.area_id, ct.pincode_id, cs.area_id, cs.pincode_id)
-       ${locClause}
-       GROUP BY 1, l.pincode, l.area
-       ORDER BY commission_total DESC`,
-      locParams,
-    );
-
-    const bandParams: unknown[] = [];
-    const bandClause = buildBillingWhere(o, bandParams);
-    const byBand = await query<BillingBandGroup>(
-      `SELECT ${COMPLETED_BAND} AS band,
-              count(*)::int                                                AS completed_task_count,
-              COALESCE(SUM(ct.bill_count) FILTER (WHERE ct.status = 'COMPLETED'), 0)::int AS billable_units,
-              COALESCE(SUM(rt.bill_amount * ct.bill_count) FILTER (WHERE ct.status = 'COMPLETED'), 0)::float8 AS bill_total,
-              COALESCE(SUM(COALESCE(ct.commission_amount, com.commission_amount) * ct.bill_count), 0)::float8 AS commission_total
-       ${CASES_FROM} ${bandClause}
-       GROUP BY 1 ORDER BY 1`,
-      bandParams,
-    );
-
-    return { byLocation, byBand };
+    return { billTotal: row?.billTotal ?? 0, lineCount: row?.lineCount ?? 0 };
   },
 
   /**

@@ -69,14 +69,17 @@ export const PERMISSIONS = {
   ROLE_MANAGE: 'role.manage',
   // billing
   BILLING_GENERATE: 'billing.generate',
-  // billing & commission view (ADR-0036, slice 5b) — the per-case Billing & Commission read-model
-  // (bill + agent-commission amounts per completed task). Billing operators (office/finance), NOT
-  // the broad masterdata viewers. The commission-rate CONFIG list stays masterdata.manage (SA-only).
+  // Billing (ADR-0036, slice 5b; Billing⟂Commission separated by ADR-0086) — the per-case Billing
+  // read-model (client bill amounts per completed task). Billing operators (office/finance), NOT the
+  // broad masterdata viewers. ALSO the platform-wide MONEY-GATE: Pipeline + MIS include bill AND
+  // commission ₹ columns only for billing.view holders — the ADR-0086 split deliberately leaves this
+  // gate on billing.view (untouched). The commission-rate CONFIG list stays masterdata.manage (SA-only).
   BILLING_VIEW: 'billing.view',
-  // Dedicated per-role toggle for the periodic Commission Summary page + export (ADR-0081). Grantable
-  // INDEPENDENTLY of billing.view (the per-case Billing page) so a payroll/finance role can hold one
-  // without the other. Defaults to the same roles as billing.view (no access regression).
-  BILLING_COMMISSION_SUMMARY_VIEW: 'billing.commission_summary.view',
+  // Dedicated toggle for the periodic Commission Summary page + export (ADR-0081; promoted to its own
+  // top-level /commission-summary page by ADR-0086). Grantable INDEPENDENTLY of billing.view. ADR-0086
+  // renamed it OUT of the `billing.` namespace (was billing.commission_summary.view) — mig 0112 grant-
+  // carries every holder to the new code, so no role loses access.
+  COMMISSION_SUMMARY_VIEW: 'commission_summary.view',
   // platform capabilities — DataGrid export (IMPORT_EXPORT_STANDARD §1; default-deny, granted to web roles)
   DATA_EXPORT: 'data.export',
   // reporting — MIS (ADR-0084): the rebuilt MIS page + report-type catalog + rows (mis.view) and its
@@ -119,7 +122,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     PERMISSIONS.DASHBOARD_VIEW,
     PERMISSIONS.BILLING_GENERATE,
     PERMISSIONS.BILLING_VIEW,
-    PERMISSIONS.BILLING_COMMISSION_SUMMARY_VIEW,
+    PERMISSIONS.COMMISSION_SUMMARY_VIEW,
     PERMISSIONS.DATA_EXPORT,
     PERMISSIONS.MIS_VIEW,
     PERMISSIONS.MIS_EXPORT,
@@ -154,7 +157,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     PERMISSIONS.TASK_REWORK,
     PERMISSIONS.DASHBOARD_VIEW,
     PERMISSIONS.BILLING_VIEW,
-    PERMISSIONS.BILLING_COMMISSION_SUMMARY_VIEW,
+    PERMISSIONS.COMMISSION_SUMMARY_VIEW,
     PERMISSIONS.DATA_EXPORT,
     PERMISSIONS.MIS_VIEW,
     PERMISSIONS.MIS_EXPORT,
@@ -193,8 +196,8 @@ export const PERMISSION_META: Record<Permission, { label: string; group: string 
   'access_scope.assign': { label: 'Access Scope — Assign (territory + portfolio)', group: 'Administration' },
   'role.manage': { label: 'Roles — Manage (permission sets)', group: 'Administration' },
   'billing.generate': { label: 'Billing — Generate', group: 'Billing' },
-  'billing.view': { label: 'Billing & Commission — View', group: 'Billing' },
-  'billing.commission_summary.view': { label: 'Commission Summary — View', group: 'Billing' },
+  'billing.view': { label: 'Billing — View', group: 'Billing' },
+  'commission_summary.view': { label: 'Commission Summary — View', group: 'Commission' },
   'data.export': { label: 'Data Export', group: 'Platform' },
   'mis.view': { label: 'MIS — View', group: 'Reports' },
   'mis.export': { label: 'MIS — Export', group: 'Reports' },

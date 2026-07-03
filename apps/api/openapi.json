@@ -316,82 +316,6 @@
         ]
       }
     },
-    "/api/v2/billing/breakdown": {
-      "get": {
-        "tags": [
-          "billing"
-        ],
-        "operationId": "get_api_v2_billing_breakdown",
-        "summary": "GET /api/v2/billing/breakdown",
-        "responses": {
-          "default": {
-            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      }
-    },
-    "/api/v2/billing/cases": {
-      "get": {
-        "tags": [
-          "billing"
-        ],
-        "operationId": "get_api_v2_billing_cases",
-        "summary": "GET /api/v2/billing/cases",
-        "responses": {
-          "default": {
-            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      }
-    },
-    "/api/v2/billing/cases/{id}/tasks": {
-      "get": {
-        "tags": [
-          "billing"
-        ],
-        "operationId": "get_api_v2_billing_cases_id_tasks",
-        "summary": "GET /api/v2/billing/cases/{id}/tasks",
-        "responses": {
-          "default": {
-            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      }
-    },
-    "/api/v2/billing/cases/export": {
-      "get": {
-        "tags": [
-          "billing"
-        ],
-        "operationId": "get_api_v2_billing_cases_export",
-        "summary": "GET /api/v2/billing/cases/export",
-        "responses": {
-          "default": {
-            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      }
-    },
     "/api/v2/billing/commission-detail": {
       "get": {
         "tags": [
@@ -456,6 +380,63 @@
         ],
         "operationId": "get_api_v2_billing_commission_summary_export",
         "summary": "GET /api/v2/billing/commission-summary/export",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/billing/lines": {
+      "get": {
+        "tags": [
+          "billing"
+        ],
+        "operationId": "get_api_v2_billing_lines",
+        "summary": "GET /api/v2/billing/lines",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/billing/lines/export": {
+      "get": {
+        "tags": [
+          "billing"
+        ],
+        "operationId": "get_api_v2_billing_lines_export",
+        "summary": "GET /api/v2/billing/lines/export",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/billing/lines/summary": {
+      "get": {
+        "tags": [
+          "billing"
+        ],
+        "operationId": "get_api_v2_billing_lines_summary",
+        "summary": "GET /api/v2/billing/lines/summary",
         "responses": {
           "default": {
             "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."

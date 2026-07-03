@@ -42,8 +42,8 @@ const OPERATIONS: { label: string; to?: string; perm?: string }[] = [
   { label: 'Cases', to: '/cases', perm: 'page.operations' },
   { label: 'KYC Verification', to: '/kyc-queue', perm: 'kyc_tasks.view' },
   { label: 'Dedupe Check', to: '/dedupe', perm: 'dedupe.view' },
-  { label: 'Billing & Commission', to: '/billing', perm: 'billing.view' },
-  { label: 'Commission Summary', to: '/billing/commission-summary', perm: 'billing.commission_summary.view' },
+  { label: 'Billing', to: '/billing', perm: 'billing.view' },
+  { label: 'Commission Summary', to: '/commission-summary', perm: 'commission_summary.view' },
   { label: 'MIS', to: '/mis', perm: 'mis.view' },
   { label: 'Field Monitoring', to: '/field-monitoring', perm: 'page.field_monitoring' },
 ];

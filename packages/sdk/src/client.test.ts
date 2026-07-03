@@ -189,9 +189,7 @@ describe('createSdk — transport', () => {
       s.tatPolicies.revise(1, { label: '4 hrs', version: 1 }),
       s.tatPolicies.activate(1, 1),
       s.tatPolicies.deactivate(1, 1),
-      s.billing.cases({ filters: { clientId: 1 } }),
-      s.billing.caseTasks('00000000-0000-0000-0000-0000000000aa'),
-      s.billing.breakdown(),
+      s.billing.lines({ filters: { clientId: 1 } }),
       s.rateTypes.list(),
       s.locations.list(),
       s.locations.pincodes('400'),
@@ -348,7 +346,7 @@ describe('createSdk — transport', () => {
       s.savedViews.remove('00000000-0000-0000-0000-0000000000aa'),
       s.savedViews.setDefault('00000000-0000-0000-0000-0000000000aa', true),
     ]);
-    expect(calls.length).toBe(148); // ADR-0084: +mis.{reportTypes,rows,summary}; ADR-0083 removed reportLayouts.{list,get,byConfig,create,update,activate,deactivate} + dataEntry.{get,save,getPickup,savePickup}
+    expect(calls.length).toBe(146); // ADR-0086 removed billing.{caseTasks,breakdown} (cases→lines, −2); ADR-0084 +mis.{reportTypes,rows,summary}; ADR-0083 removed reportLayouts + dataEntry
     expect(calls.some((c) => c.url === 'http://x/api/v2/commission-rates')).toBe(true);
     expect(calls.some((c) => c.url === 'http://x/api/v2/tat-policies')).toBe(true);
     expect(
@@ -358,7 +356,7 @@ describe('createSdk — transport', () => {
           'http://x/api/v2/cases/00000000-0000-0000-0000-000000000001/tasks/00000000-0000-0000-0000-000000000002/field-report',
       ),
     ).toBe(true);
-    expect(calls.some((c) => c.url.startsWith('http://x/api/v2/billing/cases'))).toBe(true);
+    expect(calls.some((c) => c.url.startsWith('http://x/api/v2/billing/lines'))).toBe(true);
     expect(calls.some((c) => c.url === 'http://x/api/v2/saved-views?resourceKey=cases')).toBe(true);
     expect(
       calls.some(
@@ -369,11 +367,17 @@ describe('createSdk — transport', () => {
     ).toBe(true);
   });
 
-  it('billing.breakdown builds a versioned URL with query params', async () => {
-    const { impl, calls } = fakeFetch(200, { byLocation: [], byBand: [] });
+  it('billing.lines builds a paginated GET URL', async () => {
+    const { impl, calls } = fakeFetch(200, {
+      items: [],
+      totalCount: 0,
+      page: 1,
+      pageSize: 25,
+      totalPages: 0,
+    });
     const sdk = createSdk({ baseUrl: 'http://x', fetchImpl: impl });
-    await sdk.billing.breakdown({ clientId: 5, completedFrom: '2026-01-01' });
-    expect(calls[0]?.url).toBe('http://x/api/v2/billing/breakdown?clientId=5&completedFrom=2026-01-01');
+    await sdk.billing.lines({ filters: { clientId: 5 } });
+    expect(calls[0]?.url.startsWith('http://x/api/v2/billing/lines')).toBe(true);
     expect(calls[0]?.init.method).toBe('GET');
   });
 
@@ -585,17 +589,16 @@ describe('createSdk — transport', () => {
     await s.auth.me();
     await s.notifications.unreadCount();
     await s.notifications.list();
-    await s.billing.cases();
-    await s.billing.caseTasks('c1');
+    await s.billing.lines();
     await s.sync.download();
-    expect(calls).toHaveLength(6);
+    expect(calls).toHaveLength(5);
     expect(calls.every((c) => c.init.method === 'GET')).toBe(true);
     // exact-path (no query) endpoints:
     expect(calls.map((c) => c.url)).toEqual(
       expect.arrayContaining([
         'http://x/api/v2/auth/me',
         'http://x/api/v2/notifications/unread-count',
-        'http://x/api/v2/billing/cases/c1/tasks',
+        'http://x/api/v2/billing/lines',
       ]),
     );
   });

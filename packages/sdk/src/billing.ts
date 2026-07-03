@@ -1,99 +1,52 @@
 /**
- * @crm2/sdk — the Billing & Commission read-model (ADR-0036, slice 5b). A per-case view of money:
- * every COMPLETED task in a case is a billable line carrying a CLIENT bill amount (resolved from the
- * `rates` engine) and an AGENT commission amount (resolved from `commission_rates`). Read-only —
- * amounts are DERIVED at read time; no billed-state is persisted (the invoice/payout engine is a
- * later slice). Gated `billing.view` (billing operators). Eligibility = ANY completed task.
+ * @crm2/sdk — the Billing read-model (ADR-0036, slice 5b; Billing⟂Commission separated + redesigned as a
+ * flat per-line list by ADR-0086). ONE flat list: a row per COMPLETED billable TASK, carrying every detail
+ * column plus the resolved CLIENT bill (from the `rates` engine). Read-only — amounts are DERIVED at read
+ * time; no billed-state is persisted (export-only). Gated `billing.view` (billing operators). The user
+ * filters / sorts / searches the grid (Salesforce/Twenty list-view style) — there are no pre-aggregated
+ * breakdown panels. Per-executive COMMISSION lives in the separate Commission read-model below
+ * (CommissionSummaryRow / CommissionDetailRow — /commission-summary, `commission_summary.view`).
  */
 
-/** One case row in the billing list — aggregate over its COMPLETED tasks. */
-export interface BillingCaseRow {
+/** One COMPLETED billable task = one billing line (the flat list row). Every detail is on the row. */
+export interface BillingLineRow {
+  taskId: string;
+  taskNumber: string;
+  /** Owning case — the row's click-through target. */
   caseId: string;
   caseNumber: string;
   clientName: string;
   productName: string;
-  status: string;
-  completedTaskCount: number;
-  /** Σ ct.bill_count over the case's completed tasks (unit-weighted count; G-2). */
-  billableUnits: number;
-  /** Σ client bill amount over the case's completed tasks (rates engine). */
-  billTotal: number;
-  /** Σ agent commission over the case's completed tasks (commission_rates; unconfigured ⇒ 0). */
-  commissionTotal: number;
-  lastCompletedAt: string | null;
-}
-
-/** One completed-task billing line within a case (the accordion detail). */
-export interface BillingTaskLine {
-  taskId: string;
-  taskNumber: string;
   unitName: string;
   assigneeName: string | null;
-  /** task_origin — ORIGINAL | REVISIT (both bill; label only). */
-  billingClass: string;
-  visitType: string | null;
   /** CLIENT rate type (LOCAL/OGL) of the resolved billing rate (Rate Management). */
   clientRateType: string | null;
-  /** client bill amount; null when the CPV has no active rate. */
-  billAmount: number | null;
-  /** agent commission; null when the assignee has no matching commission_rate. */
-  commissionAmount: number | null;
-  /** bill-count multiplier for this task line (G-2); line total = amount × billCount. */
-  billCount: number;
   /** completed-in TAT band (tat_hours), -1 = out of every band, null = no elapsed (ADR-0046 §4.2). */
   tatBand: number | null;
+  /** Resolved task location (task area > pincode > case area > pincode). */
+  pincode: string | null;
+  area: string | null;
+  /** bill-count multiplier for this line (Units; G-2). */
+  billCount: number;
+  /** per-unit CLIENT bill amount; null when the CPV has no active rate. */
+  billAmount: number | null;
+  /** line total = billAmount × billCount; null when no active rate. */
+  billTotal: number | null;
   completedAt: string | null;
 }
 
-/**
- * Billing breakdown (ADR-0046) — completed-task bill/commission totals over the same filter as the
- * case list, grouped two ways: by the task's resolved location (pincode/area) and by the completed-in
- * TAT band. Read-only, derived; gated `billing.view`.
- */
-
-/** One pincode/area group — the task's resolved location (task area > pincode > case area > pincode). */
-export interface BillingLocationGroup {
-  /** Resolved location id; null when the task carries no location (unmapped). */
-  locationId: number | null;
-  pincode: string | null;
-  area: string | null;
-  completedTaskCount: number;
-  /** Σ ct.bill_count over the group (unit-weighted count). */
-  billableUnits: number;
-  /** Σ client bill amount × bill_count over the group. */
+/** Filter-aware aggregate for the flat Billing grid footer (ADR-0086) — the ₹ bill total + line count over
+ *  ALL lines matching the current filter (client / date / search / column filters), not just the page. */
+export interface BillingLinesSummary {
   billTotal: number;
-  /** Σ agent commission × bill_count over the group. */
-  commissionTotal: number;
-}
-
-/** One completed-in TAT band group. band = tat_hours | -1 (out of band) | null (no elapsed minutes). */
-export interface BillingBandGroup {
-  band: number | null;
-  completedTaskCount: number;
-  billableUnits: number;
-  billTotal: number;
-  commissionTotal: number;
-}
-
-/** Both groupings, returned by `GET /billing/breakdown` in one round-trip. */
-export interface BillingBreakdown {
-  byLocation: BillingLocationGroup[];
-  byBand: BillingBandGroup[];
-}
-
-/** Filter contract for `GET /billing/breakdown` — same fields the case list accepts (all optional). */
-export interface BillingBreakdownQuery {
-  clientId?: number;
-  completedFrom?: string;
-  completedTo?: string;
-  search?: string;
+  lineCount: number;
 }
 
 /**
  * Commission Summary (ADR-0081) — periodic, per-field-user agent-commission rollup for export/payout.
  * Answers "how much did each field agent earn this week/fortnight/month/quarter" — the gap the
  * per-case Billing list could not (it has no field-user grain or period bucketing). Read-only, derived;
- * gated `billing.view`. Every amount is the SAME `COALESCE(snapshot, live)` commission the Billing page
+ * gated `commission_summary.view`. Every amount is the SAME `COALESCE(snapshot, live)` commission the Billing page
  * shows, summed × bill_count. The period bucket + the date range both anchor on the **earned-at** instant
  * `COALESCE(submitted_at, completed_at)` (ADR-0047: field commission freezes at SUBMIT), NOT `completed_at`.
  */

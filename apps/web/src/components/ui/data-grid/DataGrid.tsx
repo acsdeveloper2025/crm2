@@ -123,6 +123,9 @@ export interface DataGridProps<T> {
   defaultSortOrder?: SortOrder;
   /** optional row-click handler (e.g. navigate to a detail page); makes rows look clickable. */
   onRowClick?: (row: T) => void;
+  /** Opt-in footer aggregate (ADR-0086) — rendered in the pager row, given the grid's live query (search +
+   *  sort + merged filters) so it can show a filter-aware total, e.g. Billing's ₹ bill-total line. */
+  footerSummary?: (query: PageQuery) => ReactNode;
   /**
    * Date-range filters (a From/To pair per entry). Each sends `f_<id>_from` / `f_<id>_to`; the
    * endpoint's PageSpec.filterMap must whitelist `<id>` as a `kind:'date'` column. URL-synced and
@@ -296,6 +299,7 @@ export function DataGrid<T>({
   defaultSort,
   defaultSortOrder = 'asc',
   onRowClick,
+  footerSummary,
   dateFilters,
   exportFn,
   loadingLabel,
@@ -1273,10 +1277,13 @@ export function DataGrid<T>({
 
       {/* Pager */}
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-        <span className="text-muted-foreground">
-          {totalCount === 0
-            ? 'No rows'
-            : `${totalCount} row${totalCount === 1 ? '' : 's'} · Page ${page} of ${Math.max(1, totalPages)}`}
+        <span className="flex flex-wrap items-center gap-x-2 text-muted-foreground">
+          <span>
+            {totalCount === 0
+              ? 'No rows'
+              : `${totalCount} row${totalCount === 1 ? '' : 's'} · Page ${page} of ${Math.max(1, totalPages)}`}
+          </span>
+          {footerSummary ? footerSummary(queryInput) : null}
         </span>
         <div className="flex items-center gap-2">
           <Button

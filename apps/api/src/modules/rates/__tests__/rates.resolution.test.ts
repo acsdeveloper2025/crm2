@@ -16,7 +16,7 @@ import { billingRepository } from '../../billing/repository.js';
  * RATE_LATERAL must wildcard-match product + unit (`col IS NULL OR col = task.col`) and pick the
  * MOST-SPECIFIC active rate, with dimension specificity (product, then unit) outranking location
  * specificity — exactly like commission_rates (ADR-0050). A SPECIFIC rate must NEVER be overridden by a
- * Universal one. Asserted through the billing read-model's `caseTasks` (its `billAmount` + `clientRateType`
+ * Universal one. Asserted through the billing read-model's `listLines` (its `billAmount` + `clientRateType`
  * are the RATE_LATERAL outputs). Resolution is exercised on a COMPLETED task — set directly (no
  * assign/submit dance needed: the bill lateral keys only on the case's client/product + the task's
  * unit/location/status).
@@ -140,8 +140,14 @@ async function completedTaskCase(
 async function billLine(
   caseId: string,
 ): Promise<{ billAmount: number | null; clientRateType: string | null }> {
-  const lines = await billingRepository.caseTasks(caseId);
-  const l = lines[0]!;
+  const { items } = await billingRepository.listLines({
+    scope: {},
+    sortColumn: 'ct.completed_at',
+    sortOrder: 'desc',
+    limit: 50,
+    offset: 0,
+  });
+  const l = items.find((line) => line.caseId === caseId)!;
   return { billAmount: l.billAmount, clientRateType: l.clientRateType };
 }
 

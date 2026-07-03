@@ -1,7 +1,6 @@
 import type {
-  BillingCaseRow,
-  BillingTaskLine,
-  BillingBreakdown,
+  BillingLineRow,
+  BillingLinesSummary,
   CommissionSummaryRow,
   CommissionDetailRow,
   CommissionPeriod,
@@ -10,11 +9,11 @@ import type {
 } from '@crm2/sdk';
 import {
   billingRepository as repo,
+  COMPLETED_BAND,
   type CommissionSummaryOptions,
   type CommissionDetailOptions,
 } from './repository.js';
 import type { Scope } from '../../platform/scope/index.js';
-import { AppError } from '../../platform/errors.js';
 import { resolveScope, type Actor } from '../../platform/scope/index.js';
 import { resolvePage, resolveFilters, buildPage, type PageSpec } from '../../platform/pagination.js';
 import {
@@ -24,25 +23,39 @@ import {
   type ResolvedExport,
 } from '../../platform/export/index.js';
 
-/** Sortable/filterable columns. Aggregate aliases (bill_total, …) are valid ORDER BY targets in PG;
- *  filters land in the pre-aggregation WHERE (ct.completed_at / cl.name), so they're safe. */
-const BILLING_PAGE_SPEC: PageSpec = {
+/** The standard ACS SLA TAT bands (the `tat_policies` seed: 4/6/8/12/24/48h) + `-1` = out-of-band, as the
+ *  TAT-band filter's allowed values. The picker is a convenience over the derived band; filtering matches the
+ *  numeric band exactly. If admins add non-standard bands, extend this list. */
+const TAT_BAND_FILTER_VALUES = ['4', '6', '8', '12', '24', '48', '-1'];
+
+/** Flat billing-lines grid columns (ADR-0086). Sort targets are real columns or the `tat_band`/`bill_total`
+ *  SELECT aliases (valid ORDER BY targets in PG). Filters land in the WHERE on real columns (rt/l are in the
+ *  FROM); `tatBand` filters on the derived-band expression. `location` is display-only (search covers pincode/area). */
+const BILLING_LINES_SPEC: PageSpec = {
   sortMap: {
     caseNumber: 'cs.case_number',
     client: 'cl.name',
     product: 'p.name',
-    status: 'cs.status',
-    completedTaskCount: 'completed_task_count',
+    unit: 'vu.name',
+    assignee: 'au.name',
+    rateType: 'rt.client_rate_type',
+    tatBand: 'tat_band',
+    billCount: 'ct.bill_count',
     billTotal: 'bill_total',
-    commissionTotal: 'commission_total',
-    lastCompletedAt: 'last_completed_at',
+    completedAt: 'ct.completed_at',
   },
   filterMap: {
     client: { column: 'cl.name', kind: 'text' },
+    product: { column: 'p.name', kind: 'text' },
+    unit: { column: 'vu.name', kind: 'text' },
+    rateType: { column: 'rt.client_rate_type', kind: 'text' },
+    tatBand: { column: `(${COMPLETED_BAND})::text`, kind: 'enum', values: TAT_BAND_FILTER_VALUES },
+    pincode: { column: 'l.pincode', kind: 'text' },
+    area: { column: 'l.area', kind: 'text' },
     caseNumber: { column: 'cs.case_number', kind: 'text' },
     completedAt: { column: 'ct.completed_at', kind: 'date' },
   },
-  defaultSort: 'lastCompletedAt',
+  defaultSort: 'completedAt',
   defaultOrder: 'desc',
 };
 
@@ -115,15 +128,21 @@ const COMMISSION_DETAIL_EXPORT_COLUMNS: ExportColumn<CommissionDetailRow>[] = [
   { id: 'status', header: 'Status', value: (r) => r.status },
 ];
 
-const BILLING_EXPORT_COLUMNS: ExportColumn<BillingCaseRow>[] = [
+const bandLabel = (b: number | null): string => (b == null ? '' : b === -1 ? 'Out of band' : `≤${b}h`);
+
+const BILLING_LINES_EXPORT_COLUMNS: ExportColumn<BillingLineRow>[] = [
   { id: 'caseNumber', header: 'Case', value: (r) => r.caseNumber },
   { id: 'client', header: 'Client', value: (r) => r.clientName },
   { id: 'product', header: 'Product', value: (r) => r.productName },
-  { id: 'status', header: 'Status', value: (r) => r.status.replace(/_/g, ' ') },
-  { id: 'completedTaskCount', header: 'Completed Tasks', value: (r) => r.completedTaskCount },
-  { id: 'billTotal', header: 'Bill Total', value: (r) => r.billTotal },
-  { id: 'commissionTotal', header: 'Commission Total', value: (r) => r.commissionTotal },
-  { id: 'lastCompletedAt', header: 'Last Completed', value: (r) => r.lastCompletedAt },
+  { id: 'unit', header: 'Verification Unit', value: (r) => r.unitName },
+  { id: 'assignee', header: 'Assignee', value: (r) => r.assigneeName ?? '' },
+  { id: 'rateType', header: 'Rate Type', value: (r) => r.clientRateType ?? '' },
+  { id: 'tatBand', header: 'TAT Band', value: (r) => bandLabel(r.tatBand) },
+  { id: 'pincode', header: 'Pincode', value: (r) => r.pincode ?? '' },
+  { id: 'area', header: 'Area', value: (r) => r.area ?? '' },
+  { id: 'billCount', header: 'Units', value: (r) => r.billCount },
+  { id: 'billTotal', header: 'Bill', value: (r) => r.billTotal },
+  { id: 'completedAt', header: 'Completed', value: (r) => r.completedAt },
 ];
 
 /** Resolve the commission-summary repo options from the raw query + scope + resolved pagination. */
@@ -177,18 +196,20 @@ function buildDetailOpts(
 }
 
 /**
- * Billing & Commission service (ADR-0036) — the per-case money read-model. Read-only: bill amount
- * from the rates engine, commission from commission_rates, both DERIVED at read time. No billed-state.
+ * Billing + Commission service (ADR-0036; separated + redesigned by ADR-0086) — two read-models behind one
+ * module: the flat BILLING lines read-model (one row per COMPLETED billable task, `billing.view`) and the
+ * periodic COMMISSION read-model (agent commission summary/detail, `commission_summary.view`). Read-only,
+ * DERIVED at read time; no billed-state persisted.
  */
 export const billingService = {
-  async listCases(rawQuery: Record<string, unknown>, actor: Actor): Promise<Paginated<BillingCaseRow>> {
-    const r = resolvePage(rawQuery, BILLING_PAGE_SPEC);
+  async listLines(rawQuery: Record<string, unknown>, actor: Actor): Promise<Paginated<BillingLineRow>> {
+    const r = resolvePage(rawQuery, BILLING_LINES_SPEC);
     const scope = await resolveScope(actor);
     const clientId = toPosInt(rawQuery['clientId']);
     const completedFrom = asStr(rawQuery['completedFrom']);
     const completedTo = asStr(rawQuery['completedTo']);
-    const columnFilters = resolveFilters(rawQuery, BILLING_PAGE_SPEC);
-    const { items, totalCount } = await repo.listCases({
+    const columnFilters = resolveFilters(rawQuery, BILLING_LINES_SPEC);
+    const { items, totalCount } = await repo.listLines({
       scope,
       ...(clientId !== undefined ? { clientId } : {}),
       ...(completedFrom !== undefined ? { completedFrom } : {}),
@@ -210,16 +231,16 @@ export const billingService = {
   },
 
   async exportData(rawQuery: Record<string, unknown>, ex: ResolvedExport, actor: Actor) {
-    const r = resolvePage(rawQuery, BILLING_PAGE_SPEC);
+    const r = resolvePage(rawQuery, BILLING_LINES_SPEC);
     const scope = await resolveScope(actor);
     const clientId = toPosInt(rawQuery['clientId']);
     const completedFrom = asStr(rawQuery['completedFrom']);
     const completedTo = asStr(rawQuery['completedTo']);
-    const columnFilters = resolveFilters(rawQuery, BILLING_PAGE_SPEC);
+    const columnFilters = resolveFilters(rawQuery, BILLING_LINES_SPEC);
     const selectedIds = ex.mode === 'selected' ? ex.ids.filter((s) => typeof s === 'string') : undefined;
     if (ex.mode === 'selected' && (!selectedIds || selectedIds.length === 0))
-      return { rows: [], columns: BILLING_EXPORT_COLUMNS };
-    const { items, totalCount } = await repo.listCases({
+      return { rows: [], columns: BILLING_LINES_EXPORT_COLUMNS };
+    const { items, totalCount } = await repo.listLines({
       scope,
       ...(clientId !== undefined ? { clientId } : {}),
       ...(completedFrom !== undefined ? { completedFrom } : {}),
@@ -233,28 +254,19 @@ export const billingService = {
       offset: ex.mode === 'current' ? r.offset : 0,
     });
     if (ex.mode === 'all') assertExportable(totalCount);
-    return { rows: items, columns: BILLING_EXPORT_COLUMNS };
+    return { rows: items, columns: BILLING_LINES_EXPORT_COLUMNS };
   },
 
-  /** Per-case completed-task billing lines (accordion detail). Out-of-scope/absent case → 404. */
-  async caseTasks(caseId: string, actor: Actor): Promise<BillingTaskLine[]> {
-    const scope = await resolveScope(actor);
-    if (!(await repo.caseVisible(caseId, scope))) throw AppError.notFound('CASE_NOT_FOUND');
-    return repo.caseTasks(caseId);
-  },
-
-  /**
-   * Completed-task totals grouped by pincode/area + completed-in band (ADR-0046 §4.3), over the SAME
-   * filter contract as `listCases` (clientId, completedFrom/To, search, column filters). Read-only.
-   */
-  async breakdown(rawQuery: Record<string, unknown>, actor: Actor): Promise<BillingBreakdown> {
-    const r = resolvePage(rawQuery, BILLING_PAGE_SPEC);
+  /** Filter-aware ₹ bill total + line count over ALL matching lines (the flat grid's footer, ADR-0086). Same
+   *  filter contract as `listLines` (clientId, completedFrom/To, search, column filters). */
+  async linesSummary(rawQuery: Record<string, unknown>, actor: Actor): Promise<BillingLinesSummary> {
+    const r = resolvePage(rawQuery, BILLING_LINES_SPEC);
     const scope = await resolveScope(actor);
     const clientId = toPosInt(rawQuery['clientId']);
     const completedFrom = asStr(rawQuery['completedFrom']);
     const completedTo = asStr(rawQuery['completedTo']);
-    const columnFilters = resolveFilters(rawQuery, BILLING_PAGE_SPEC);
-    return repo.breakdown({
+    const columnFilters = resolveFilters(rawQuery, BILLING_LINES_SPEC);
+    return repo.linesSummary({
       scope,
       ...(clientId !== undefined ? { clientId } : {}),
       ...(completedFrom !== undefined ? { completedFrom } : {}),
@@ -266,7 +278,7 @@ export const billingService = {
 
   /**
    * Periodic per-field-user commission rollup (ADR-0081) — week/fortnight/month/quarter buckets, optionally
-   * split by client+product. Read-only; gated `billing.view`. Anchored on earned-at (ADR-0047 freeze).
+   * split by client+product. Read-only; gated `commission_summary.view` (ADR-0086). Anchored on earned-at (ADR-0047 freeze).
    */
   async commissionSummary(
     rawQuery: Record<string, unknown>,
@@ -311,7 +323,7 @@ export const billingService = {
 
   /**
    * Per-task commission/billing DETAIL (ADR-0081, v1 line-export parity) — one row per commissioned task with
-   * both rate types + the real client bill rate + commission. Read-only; gated `billing.commission_summary.view`.
+   * both rate types + the real client bill rate + commission. Read-only; gated `commission_summary.view` (ADR-0086).
    */
   async commissionDetail(
     rawQuery: Record<string, unknown>,

@@ -9,7 +9,8 @@ import {
 } from '@crm2/test-utils';
 import { createApp } from '../../../http/app.js';
 import { setPool, query } from '../../../platform/db.js';
-import { billingRepository, type BillingCaseListOptions } from '../repository.js';
+import { billingRepository, type BillingLineListOptions } from '../repository.js';
+import type { BillingLineRow } from '@crm2/sdk';
 import { commissionRateRepository } from '../../commissionRates/repository.js';
 
 /**
@@ -269,13 +270,24 @@ async function driveToSubmitted(
 
 describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
   // SUPER_ADMIN ALL scope = empty scope object (no hierarchy/restrict filter).
-  const baseOpts: BillingCaseListOptions = {
+  const baseOpts: BillingLineListOptions = {
     scope: {},
-    sortColumn: 'last_completed_at',
+    sortColumn: 'ct.completed_at',
     sortOrder: 'desc',
     limit: 50,
     offset: 0,
   };
+
+  // Commission Summary (ADR-0081) opts helper — per-agent monthly rollup unless overridden. Declared
+  // here (above its first use) so both the §E resolution tests and the ADR-0081 tests below share it.
+  const sumOpts = (o: Partial<Parameters<typeof billingRepository.commissionSummary>[0]>) => ({
+    scope: {},
+    period: 'month' as const,
+    groupBy: 'agent' as const,
+    limit: 50,
+    offset: 0,
+    ...o,
+  });
 
   let caseId: string;
   let t1Number: string;
@@ -401,20 +413,24 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
   });
 
   it('§E: commission resolves the exact-match tariff line per task (ADR-0050)', async () => {
-    const lines = await billingRepository.caseTasks(caseId);
-    const t1 = lines.find((l) => l.taskNumber === t1Number)!;
-    const t2 = lines.find((l) => l.taskNumber === t2Number)!;
+    // ADR-0086: commission is read from the Commission surface (commissionDetail), not the billing lines.
+    const { items: detail } = await billingRepository.commissionDetail({ scope: {}, limit: 50, offset: 0 });
+    const t1 = detail.find((l) => l.taskNumber === t1Number)!;
+    const t2 = detail.find((l) => l.taskNumber === t2Number)!;
     expect(t1.commissionAmount).toBe(50); // CR-L1 (LOCAL @ L1)
     expect(t2.commissionAmount).toBe(90); // CR-L2 (OGL @ L2) — different exact-match line, same executive
     // sanity: the client bill is the per-location rate (unchanged RATE_LATERAL — independent of distance band)
     expect(t1.billAmount).toBe(350);
     expect(t2.billAmount).toBe(500);
 
-    const { items } = await billingRepository.listCases(baseOpts);
-    const c = items.find((i) => i.caseId === caseId)!;
-    expect(c.commissionTotal).toBe(140); // 50 + 90
-    expect(c.billTotal).toBe(850); // 350 + 500
-    expect(c.completedTaskCount).toBe(2);
+    // billing surface (bill-only) is now a flat per-task line list; roll up the client bill for the case
+    const { items } = await billingRepository.listLines(baseOpts);
+    const caseLines = items.filter((l: BillingLineRow) => l.caseId === caseId);
+    expect(caseLines.reduce((s: number, l: BillingLineRow) => s + (l.billTotal ?? 0), 0)).toBe(850); // 350 + 500
+    expect(caseLines.length).toBe(2);
+    // per-agent commission rollup = 140 (50 + 90) on the Commission surface
+    const { items: summary } = await billingRepository.commissionSummary(sumOpts({}));
+    expect(summary.find((r) => r.agentName === 'EE FA')!.commissionTotal).toBe(140);
   });
 
   it('§E (ADR-0050): LOCAL and OGL price differently for the SAME exec+client+product+unit+location+band', async () => {
@@ -473,14 +489,16 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
     await driveToCompleted(created.id, localTaskId, fa, loc, 'LOCAL'); // → CR LOCAL ₹50
     await driveToCompleted(created.id, oglTaskId, fa, loc, 'OGL'); // → CR OGL ₹90
 
-    const lines = await billingRepository.caseTasks(created.id);
-    expect(lines.find((l) => l.taskId === localTaskId)!.commissionAmount).toBe(50); // LOCAL
-    expect(lines.find((l) => l.taskId === oglTaskId)!.commissionAmount).toBe(90); // OGL — same context, different band
+    const { items: detail } = await billingRepository.commissionDetail({ scope: {}, limit: 50, offset: 0 });
+    expect(detail.find((l) => l.taskId === localTaskId)!.commissionAmount).toBe(50); // LOCAL
+    expect(detail.find((l) => l.taskId === oglTaskId)!.commissionAmount).toBe(90); // OGL — same context, different band
 
-    const { items } = await billingRepository.listCases(baseOpts);
-    const c = items.find((i) => i.caseId === created.id)!;
-    expect(c.commissionTotal).toBe(140); // 50 (LOCAL) + 90 (OGL)
-    expect(c.billTotal).toBe(400); // 200 + 200 — client bill is location-only, identical for both
+    const { items } = await billingRepository.listLines(baseOpts);
+    const caseLines = items.filter((l: BillingLineRow) => l.caseId === created.id);
+    expect(caseLines.reduce((s: number, l: BillingLineRow) => s + (l.billTotal ?? 0), 0)).toBe(400); // 200 + 200 — client bill is location-only, identical for both
+    // commission (₹50 LOCAL + ₹90 OGL = ₹140) for LO FA on the Commission surface
+    const { items: summary } = await billingRepository.commissionSummary(sumOpts({}));
+    expect(summary.find((r) => r.agentName === 'LO FA')!.commissionTotal).toBe(140);
   });
 
   it('§4 office (ADR-0050): a flat OFFICE commission resolves for a desk task — auto-stamped field_rate_type=OFFICE, location-less', async () => {
@@ -554,8 +572,8 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
       ).status,
     ).toBe(200);
 
-    const lines = await billingRepository.caseTasks(created.id);
-    const line = lines.find((l) => l.taskId === taskId)!;
+    const { items: detail } = await billingRepository.commissionDetail({ scope: {}, limit: 50, offset: 0 });
+    const line = detail.find((l) => l.taskId === taskId)!;
     expect(line.commissionAmount).toBe(20); // flat OFFICE row (location-less commission branch)
     expect(line.billAmount).toBe(300); // location-less client rate
   });
@@ -568,8 +586,8 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
     // The task's anchor is its earlier completed_at (now - 1 day); the revise end-dates the old row
     // at now() and the new ₹999 row starts at now() — neither covers the completion instant, so the
     // old ₹90 row is still the effective one as-of completion.
-    const lines = await billingRepository.caseTasks(caseId);
-    expect(lines.find((l) => l.taskNumber === t2Number)!.commissionAmount).toBe(90);
+    const { items: detail } = await billingRepository.commissionDetail({ scope: {}, limit: 50, offset: 0 });
+    expect(detail.find((l) => l.taskNumber === t2Number)!.commissionAmount).toBe(90);
     // …AND the new effective-dated row preserves the location dimension (Task 6 — revise carries dims).
     expect(next.locationId).toBe(l2Id);
     const current = await commissionRateRepository.findById(next.id);
@@ -585,27 +603,32 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
     expect(t2!.commissionAmount).toBe(90); // stamped @ completion (T2 @ L2 → CR-L2)
     // Remove ALL commission rates → the live lateral now resolves NULL, but the stored snapshot holds.
     await query(`DELETE FROM commission_rates`);
-    const lines = await billingRepository.caseTasks(caseId);
-    expect(lines.find((l) => l.taskNumber === t1Number)!.commissionAmount).toBe(50); // snapshot, not live
-    expect(lines.find((l) => l.taskNumber === t2Number)!.commissionAmount).toBe(90);
-    const { items } = await billingRepository.listCases(baseOpts);
-    expect(items.find((i) => i.caseId === caseId)!.commissionTotal).toBe(140);
+    const { items: detail } = await billingRepository.commissionDetail({ scope: {}, limit: 50, offset: 0 });
+    expect(detail.find((l) => l.taskNumber === t1Number)!.commissionAmount).toBe(50); // snapshot, not live
+    expect(detail.find((l) => l.taskNumber === t2Number)!.commissionAmount).toBe(90);
+    const { items: summary } = await billingRepository.commissionSummary(sumOpts({}));
+    expect(summary.find((r) => r.agentName === 'EE FA')!.commissionTotal).toBe(140); // snapshot survives
   });
 
-  it('breakdown groups by location and by completed-in band', async () => {
-    const bd = await billingRepository.breakdown(baseOpts);
-    const l1 = bd.byLocation.find((r) => r.area === 'L1AREA');
-    const l2 = bd.byLocation.find((r) => r.area === 'L2AREA');
-    expect(l1?.commissionTotal).toBe(50); // T1 @ L1
-    expect(l2?.commissionTotal).toBe(90); // T2 @ L2
-    expect(l1?.billTotal).toBe(350);
-    expect(l2?.billTotal).toBe(500);
-    expect(l1?.completedTaskCount).toBe(1);
-    expect(l2?.billableUnits).toBe(1);
-    // Both tasks completed in 60 minutes → the same completed-in band; at least one band group.
-    expect(bd.byBand.length).toBeGreaterThanOrEqual(1);
-    const bandCommission = bd.byBand.reduce((s, b) => s + b.commissionTotal, 0);
-    expect(bandCommission).toBe(140); // 50 + 90 across all bands
+  it('CLIENT BILL per location reads off the flat billing lines (ADR-0086: breakdown removed, bill-only)', async () => {
+    // ADR-0086 removed the billing breakdown panels; the same per-location bill numbers now come from the
+    // flat per-task lines (grouped in code). TAT-band grouping was removed with the breakdown.
+    const { items: lines } = await billingRepository.listLines(baseOpts);
+    const billFor = (area: string) =>
+      lines
+        .filter((l: BillingLineRow) => l.area === area)
+        .reduce((s: number, l: BillingLineRow) => s + (l.billTotal ?? 0), 0);
+    expect(billFor('L1AREA')).toBe(350);
+    expect(billFor('L2AREA')).toBe(500);
+    expect(lines.filter((l: BillingLineRow) => l.area === 'L1AREA').length).toBe(1);
+    expect(
+      lines
+        .filter((l: BillingLineRow) => l.area === 'L2AREA')
+        .reduce((s: number, l: BillingLineRow) => s + l.billCount, 0),
+    ).toBe(1);
+    // total client bill across all lines
+    expect(lines.reduce((s: number, l: BillingLineRow) => s + (l.billTotal ?? 0), 0)).toBe(850); // 350 + 500
+    // (Commission is no longer grouped by location/band — that lived on the removed billing breakdown, ADR-0086.)
   });
 
   it('G-8 (ADR-0048): an unmatched-location task bills the location-less default, not a different-location override', async () => {
@@ -621,25 +644,17 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
        VALUES ($1, $2, $3, NULL, (SELECT id FROM rate_types WHERE code = 'LOCAL'), 100, now() - interval '2 days')`,
       [ctxShared.clientId, ctxShared.productId, ctxShared.unitId],
     );
-    const lines = await billingRepository.caseTasks(caseId);
+    const { items: lines } = await billingRepository.listLines(baseOpts);
     // The FALSE>NULL bug ranks the non-matching L2 override (₹500) above the NULL default → would bill 500.
     // The ADR-0048 CASE rank picks the location-less default instead.
-    expect(lines.find((l) => l.taskNumber === t1Number)!.billAmount).toBe(100);
+    expect(lines.find((l: BillingLineRow) => l.taskNumber === t1Number)!.billAmount).toBe(100);
     // T2 (@ L2) still matches its own L2 rate.
-    expect(lines.find((l) => l.taskNumber === t2Number)!.billAmount).toBe(500);
+    expect(lines.find((l: BillingLineRow) => l.taskNumber === t2Number)!.billAmount).toBe(500);
   });
 
-  // --- Commission Summary (ADR-0081) — periodic per-field-user rollup ---
+  // --- Commission Summary (ADR-0081) — periodic per-field-user rollup (sumOpts declared above) ---
   // The §E seed = one agent (fa) with two COMPLETED tasks earned THIS month (submitted_at = now):
-  // T1 → ₹50, T2 → ₹90. These exercise the new billingRepository.commissionSummary read-model.
-  const sumOpts = (o: Partial<Parameters<typeof billingRepository.commissionSummary>[0]>) => ({
-    scope: {},
-    period: 'month' as const,
-    groupBy: 'agent' as const,
-    limit: 50,
-    offset: 0,
-    ...o,
-  });
+  // T1 → ₹50, T2 → ₹90. These exercise the billingRepository.commissionSummary read-model.
 
   it('ADR-0081: per-agent monthly rollup sums the frozen commission for the period', async () => {
     const { items, totalCount } = await billingRepository.commissionSummary(sumOpts({}));
@@ -755,12 +770,14 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
   // is kept as the LAST `it()` so the earlier §E bill_count=1 assertions (850/140) are unaffected.
   it('bill_count multiplies bill+commission and reports billable_units', async () => {
     await query(`UPDATE case_tasks SET bill_count = 3 WHERE task_number = $1`, [t2Number]);
-    const { items } = await billingRepository.listCases(baseOpts);
-    const c = items.find((i) => i.caseId === caseId)!;
-    expect(c.billTotal).toBe(350 + 500 * 3); // 1850
-    expect(c.commissionTotal).toBe(50 + 90 * 3); // 320
-    expect(c.billableUnits).toBe(4); // 1 + 3
-    expect(c.completedTaskCount).toBe(2); // task count unchanged
+    const { items } = await billingRepository.listLines(baseOpts);
+    const caseLines = items.filter((l: BillingLineRow) => l.caseId === caseId);
+    expect(caseLines.reduce((s: number, l: BillingLineRow) => s + (l.billTotal ?? 0), 0)).toBe(350 + 500 * 3); // 1850
+    expect(caseLines.reduce((s: number, l: BillingLineRow) => s + l.billCount, 0)).toBe(4); // 1 + 3
+    expect(caseLines.length).toBe(2); // task count unchanged
+    // commission also multiplies by bill_count on the Commission surface: 50*1 + 90*3 = 320
+    const { items: summary } = await billingRepository.commissionSummary(sumOpts({}));
+    expect(summary.find((r) => r.agentName === 'EE FA')!.commissionTotal).toBe(50 + 90 * 3); // 320
   });
 
   it('ADR-0047: a SUBMITTED task shows field commission but NO client bill; a COMPLETED sibling bills', async () => {
@@ -806,18 +823,23 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
     await driveToSubmitted(created.id, subTaskId, fa, loc); // → SUBMITTED (commission ₹50, no bill)
     await driveToCompleted(created.id, compTaskId, fa, loc); // → COMPLETED (commission ₹50 + bill ₹350)
 
-    const lines = await billingRepository.caseTasks(created.id);
-    const subLine = lines.find((l) => l.taskId === subTaskId)!;
-    const compLine = lines.find((l) => l.taskId === compTaskId)!;
-    expect(subLine.commissionAmount).toBe(50); // field commission frozen at submit
-    expect(subLine.billAmount).toBeNull(); // NOT billed until the office completes
-    expect(compLine.commissionAmount).toBe(50);
-    expect(compLine.billAmount).toBe(350);
+    // bill (billing surface): the flat lines list is COMPLETED-only, so the SUBMITTED task is ABSENT;
+    // the COMPLETED sibling appears and bills.
+    const { items: lines } = await billingRepository.listLines(baseOpts);
+    expect(lines.find((l: BillingLineRow) => l.taskId === subTaskId)).toBeUndefined(); // NOT billed until the office completes
+    expect(lines.find((l: BillingLineRow) => l.taskId === compTaskId)!.billAmount).toBe(350);
 
-    const { items } = await billingRepository.listCases(baseOpts);
-    const c = items.find((x) => x.caseId === created.id)!;
-    expect(c.commissionTotal).toBe(100); // 50 (submitted) + 50 (completed) — both field-commissioned
-    expect(c.billTotal).toBe(350); // only the COMPLETED task bills the client
-    expect(c.completedTaskCount).toBe(1); // client billing count = COMPLETED only
+    // commission (Commission surface): field commission frozen at submit for BOTH tasks
+    const { items: detail } = await billingRepository.commissionDetail({ scope: {}, limit: 50, offset: 0 });
+    expect(detail.find((l) => l.taskId === subTaskId)!.commissionAmount).toBe(50); // frozen at submit
+    expect(detail.find((l) => l.taskId === compTaskId)!.commissionAmount).toBe(50);
+
+    const { items } = await billingRepository.listLines(baseOpts);
+    const caseLines = items.filter((l: BillingLineRow) => l.caseId === created.id);
+    expect(caseLines.reduce((s: number, l: BillingLineRow) => s + (l.billTotal ?? 0), 0)).toBe(350); // only the COMPLETED task bills the client
+    expect(caseLines.length).toBe(1); // client billing count = COMPLETED only
+    // both tasks are field-commissioned (50 + 50 = 100) for SB FA on the Commission surface
+    const { items: summary } = await billingRepository.commissionSummary(sumOpts({}));
+    expect(summary.find((r) => r.agentName === 'SB FA')!.commissionTotal).toBe(100);
   });
 });
