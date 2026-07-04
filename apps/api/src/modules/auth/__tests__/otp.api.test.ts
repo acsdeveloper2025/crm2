@@ -183,6 +183,23 @@ describe.skipIf(!RUN)('OTP login verification (ADR-0088)', () => {
     expect((await login('otp5', { deviceId: DEVICE, otpCode: first })).status).toBe(200);
   });
 
+  it('trust is a FIXED per-role window: 25h after the last OTP an office device re-challenges (activity does not extend it)', async () => {
+    const ch = captureChannels();
+    await makeUser({ username: 'otp10', role: 'MANAGER', email: EMAIL, phone: PHONE });
+    await login('otp10', { deviceId: DEVICE });
+    expect((await login('otp10', { deviceId: DEVICE, otpCode: ch.lastCode()! })).status).toBe(200);
+    // inside the window: no challenge
+    expect((await login('otp10', { deviceId: DEVICE })).status).toBe(200);
+    // 25h past the last OTP — the intervening login must NOT have slid the window
+    await db!.pool.query(`UPDATE auth_trusted_devices SET trusted_at = now() - interval '25 hours'`);
+    const again = await login('otp10', { deviceId: DEVICE });
+    expect(again.status).toBe(401);
+    expect(again.body.error).toBe('OTP_REQUIRED');
+    // re-verifying resets the clock
+    expect((await login('otp10', { deviceId: DEVICE, otpCode: ch.lastCode()! })).status).toBe(200);
+    expect((await login('otp10', { deviceId: DEVICE })).status).toBe(200);
+  });
+
   it('a TOTP-enrolled user is challenged for mfaCode, never OTP (no SMS spent)', async () => {
     const ch = captureChannels();
     const id = await makeUser({ username: 'otp6', role: 'MANAGER', email: EMAIL, phone: PHONE });
@@ -229,12 +246,14 @@ describe.skipIf(!RUN)('OTP login verification (ADR-0088)', () => {
     expect(ch.smses).toHaveLength(0);
   });
 
-  it('migration 0113 seeds the office roles ON and FIELD_AGENT OFF', async () => {
-    const rows = await db!.pool.query(`SELECT code, otp_login_required FROM roles ORDER BY code`);
-    const map = Object.fromEntries(rows.rows.map((r) => [r.code, r.otp_login_required]));
-    expect(map['MANAGER']).toBe(true);
-    expect(map['SUPER_ADMIN']).toBe(true);
-    expect(map['FIELD_AGENT']).toBe(false);
+  it('migrations 0113/0114 seed the office roles ON @24h and FIELD_AGENT OFF @720h', async () => {
+    const rows = await db!.pool.query(
+      `SELECT code, otp_login_required, otp_trust_hours FROM roles ORDER BY code`,
+    );
+    const map = Object.fromEntries(rows.rows.map((r) => [r.code, r]));
+    expect(map['MANAGER']).toMatchObject({ otp_login_required: true, otp_trust_hours: 24 });
+    expect(map['SUPER_ADMIN']).toMatchObject({ otp_login_required: true, otp_trust_hours: 24 });
+    expect(map['FIELD_AGENT']).toMatchObject({ otp_login_required: false, otp_trust_hours: 720 });
   });
 });
 

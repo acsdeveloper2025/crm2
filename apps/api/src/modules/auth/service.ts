@@ -109,7 +109,8 @@ const OTP_TTL_MS = OTP_TTL_MIN * MS_PER_MIN;
 const OTP_MAX_ATTEMPTS = 5; // wrong codes per challenge; each also feeds the account lockout
 const OTP_MAX_SENDS = 3; // deliveries per challenge (first send + 2 resends)
 const OTP_RESEND_COOLDOWN_MS = 60_000;
-const TRUSTED_DEVICE_WINDOW_DAYS = 180; // sliding — touched on every trusted login
+// trusted-device window: per-role `roles.otp_trust_hours` (FIXED — expires N hours after the last
+// OTP regardless of activity; office 24h, FIELD_AGENT 720h/30d). Passed into the gate from attrs.
 const OTP_CODE_DIGITS = 6;
 const OTP_CODE_SPACE = 1_000_000; // 10^OTP_CODE_DIGITS — randomInt's exclusive upper bound
 const PHONE_MASK_TAIL = 4;
@@ -181,9 +182,10 @@ async function otpLoginGate(
   creds: { id: string; email: string | null; phone: string | null },
   v: { otpCode?: string | undefined; deviceId?: string | undefined },
   ip: string | null,
+  trustHours: number,
 ): Promise<void> {
   const deviceId = v.deviceId ?? null;
-  if (deviceId && (await repo.touchTrustedDevice(creds.id, deviceId, TRUSTED_DEVICE_WINDOW_DAYS))) return;
+  if (deviceId && (await repo.touchTrustedDevice(creds.id, deviceId, trustHours))) return;
 
   const challenge = await repo.activeOtpChallenge(creds.id, deviceId, OTP_MAX_ATTEMPTS);
 
@@ -346,7 +348,7 @@ export const authService = {
     // New-device OTP gate (ADR-0088): a role-flagged account on an untrusted device must prove a
     // delivered code in this same request (`otpCode`). TOTP enrolment supersedes — the mfaCode
     // branch above already challenged a stronger second factor at zero SMS cost.
-    if (attrs?.otpLoginRequired && !creds.mfaEnrolled) await otpLoginGate(creds, v, ip);
+    if (attrs?.otpLoginRequired && !creds.mfaEnrolled) await otpLoginGate(creds, v, ip, attrs.otpTrustHours);
     await repo.resetLoginState(creds.id); // success clears the failed-attempt counter
     const absoluteExpiresAt =
       attrs?.maxSessionMinutes != null ? new Date(Date.now() + attrs.maxSessionMinutes * MS_PER_MIN) : null;

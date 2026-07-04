@@ -24,6 +24,8 @@ const CATALOG = new Set<string>(Object.values(PERMISSIONS));
 
 /** Reporting-chain walk cap (mirrors the scope subtree guard; role chains are far shorter). */
 const REPORTING_CHAIN_CAP = 16;
+/** Default fixed trusted-device window for new roles (ADR-0088) — one OTP per device per day. */
+const DEFAULT_OTP_TRUST_HOURS = 24;
 
 const ROLE_PAGE_SPEC: PageSpec = {
   sortMap: {
@@ -193,6 +195,7 @@ export const roleService = {
         idleLogoutMinutes: v.idleLogoutMinutes ?? null,
         maxSessionMinutes: v.maxSessionMinutes ?? null,
         otpLoginRequired: v.otpLoginRequired ?? false,
+        otpTrustHours: v.otpTrustHours ?? DEFAULT_OTP_TRUST_HOURS,
         permissions,
         dimensions,
       },
@@ -218,6 +221,7 @@ export const roleService = {
         idleLogoutMinutes: v.idleLogoutMinutes,
         maxSessionMinutes: v.maxSessionMinutes,
         otpLoginRequired: v.otpLoginRequired,
+        otpTrustHours: v.otpTrustHours,
         dimensions,
       },
       v.version,

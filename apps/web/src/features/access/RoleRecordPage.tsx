@@ -111,6 +111,8 @@ function RoleForm({ initial }: { initial: RoleView | null }) {
   // New-device login OTP (ADR-0088); new roles default ON (FIELD_AGENT is seeded OFF until the
   // OTP-capable mobile app releases — flipping this toggle is that release gate).
   const [otpLogin, setOtpLogin] = useState(initial ? initial.otpLoginRequired : true);
+  // Fixed trusted-device window (hours): office 24, FIELD_AGENT 720 (30d).
+  const [otpTrust, setOtpTrust] = useState(initial ? String(initial.otpTrustHours) : '24');
   const [permissions, setPermissions] = useState<Set<string>>(new Set(initial?.permissions ?? []));
   const [wiring, setWiring] = useState<Map<string, RoleDimensionWiring['mode']>>(
     new Map((initial?.dimensions ?? []).map((d) => [d.dimension, d.mode])),
@@ -143,6 +145,7 @@ function RoleForm({ initial }: { initial: RoleView | null }) {
         idleLogoutMinutes: idleLogout.trim() === '' ? null : Number(idleLogout),
         maxSessionMinutes: maxSession.trim() === '' ? null : Number(maxSession),
         otpLoginRequired: otpLogin,
+        ...(otpTrust.trim() === '' ? {} : { otpTrustHours: Number(otpTrust) }),
         dimensions,
       };
       if (!isEdit) {
@@ -353,6 +356,29 @@ function RoleForm({ initial }: { initial: RoleView | null }) {
             </span>
           </span>
         </label>
+
+        {otpLogin && (
+          <label className="block max-w-xs">
+            <span className="mb-1 block text-xs font-medium text-foreground">
+              Device trust window (hours)
+            </span>
+            <input
+              className="input"
+              type="number"
+              min={1}
+              max={8760}
+              value={otpTrust}
+              onChange={(e) => setOtpTrust(e.target.value)}
+            />
+            <span className="mt-1 block text-xs text-muted-foreground">
+              A device re-asks for a code this many hours after its last one, regardless of activity. Office
+              roles 24 (daily); field agents 720 (30 days).
+            </span>
+            {fieldErrors['otpTrustHours'] && (
+              <span className="mt-1 block text-xs text-destructive">{fieldErrors['otpTrustHours']}</span>
+            )}
+          </label>
+        )}
 
         <div className="rounded-md border border-border p-3">
           <p className="mb-2 text-sm font-medium text-foreground">Assignable scope dimensions</p>

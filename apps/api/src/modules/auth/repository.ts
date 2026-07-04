@@ -355,26 +355,28 @@ export const authRepository = {
     await query(`UPDATE auth_otp_challenges SET consumed_at = now() WHERE id = $1`, [id]);
   },
 
-  /** Check-and-touch in one statement: true (and the trust window slides) only when the device is
-   *  inside its sliding trust window; a stale row stays put (re-trusted by the next OTP success). */
-  async touchTrustedDevice(userId: string, deviceId: string, windowDays: number): Promise<boolean> {
+  /** Check-and-touch in one statement: true only while the device is inside its FIXED trust
+   *  window — `trusted_at` (the last OTP success) + the role's window; activity never extends it
+   *  (owner 2026-07-04: "input OTP every 24 hours"). `last_seen_at` is audit-only. A stale row
+   *  stays put (re-trusted, clock reset, by the next OTP success). */
+  async touchTrustedDevice(userId: string, deviceId: string, windowHours: number): Promise<boolean> {
     const rows = await query<{ userId: string }>(
       `UPDATE auth_trusted_devices SET last_seen_at = now()
         WHERE user_id = $1 AND device_id = $2
-          AND last_seen_at > now() - ($3 || ' days')::interval
+          AND trusted_at > now() - ($3 || ' hours')::interval
         RETURNING user_id`,
-      [userId, deviceId, String(windowDays)],
+      [userId, deviceId, String(windowHours)],
     );
     return rows.length > 0;
   },
 
-  /** Trust (or re-trust) a device after a successful OTP verification. */
+  /** Trust (or re-trust) a device after a successful OTP verification — resets the fixed window. */
   async trustDevice(userId: string, deviceId: string): Promise<void> {
     await query(
       `INSERT INTO auth_trusted_devices (user_id, device_id)
        VALUES ($1, $2)
        ON CONFLICT (user_id, device_id)
-         DO UPDATE SET last_seen_at = now(), trusted_at = auth_trusted_devices.trusted_at`,
+         DO UPDATE SET trusted_at = now(), last_seen_at = now()`,
       [userId, deviceId],
     );
   },

@@ -47,6 +47,9 @@ export interface RoleView {
   /** New-device login OTP enforcement (ADR-0088). FIELD_AGENT stays false until the OTP-capable
    *  mobile app releases (ADR-0054) — flipping it here is the release gate, no deploy needed. */
   otpLoginRequired: boolean;
+  /** FIXED trusted-device window in hours (ADR-0088): a device re-OTPs this long after its last
+   *  code, regardless of activity. Office roles 24; FIELD_AGENT 720 (30 days). */
+  otpTrustHours: number;
   version: number;
   createdAt: string;
   updatedAt: string;
@@ -79,6 +82,8 @@ const passwordExpiryDays = z.number().int().min(1).max(3650).nullable();
 const idleLogoutMinutes = z.number().int().min(1).max(1440).nullable();
 /** Absolute session lifetime: 5–10080 min (7 days), or null = no cap (ADR-0045). */
 const maxSessionMinutes = z.number().int().min(5).max(10080).nullable();
+/** Trusted-device window: 1 hour – 1 year (ADR-0088). */
+const otpTrustHours = z.number().int().min(1).max(8760);
 
 export const CreateRoleSchema = z.object({
   code: ROLE_CODE,
@@ -97,6 +102,8 @@ export const CreateRoleSchema = z.object({
   maxSessionMinutes: maxSessionMinutes.optional(),
   /** new-device login OTP (ADR-0088); omitted ⇒ false (off). */
   otpLoginRequired: z.boolean().optional(),
+  /** trusted-device window in hours; omitted ⇒ 24. */
+  otpTrustHours: otpTrustHours.optional(),
 });
 export type CreateRoleInput = z.input<typeof CreateRoleSchema>;
 
@@ -115,6 +122,8 @@ export const UpdateRoleSchema = z.object({
   maxSessionMinutes: maxSessionMinutes.optional(),
   /** new-device login OTP (ADR-0088); omit to leave unchanged. */
   otpLoginRequired: z.boolean().optional(),
+  /** trusted-device window in hours; omit to leave unchanged. */
+  otpTrustHours: otpTrustHours.optional(),
   version: z.number().int().nonnegative(),
 });
 export type UpdateRoleInput = z.infer<typeof UpdateRoleSchema>;

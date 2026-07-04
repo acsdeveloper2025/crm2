@@ -21,6 +21,9 @@ export interface RoleAttributes {
   /** new-device login OTP enforcement (ADR-0088). FIELD_AGENT stays false until the OTP-capable
    *  mobile app releases (ADR-0054) — flipping it is a role-admin edit, not a deploy. */
   otpLoginRequired: boolean;
+  /** FIXED trusted-device window in hours (ADR-0088): trust expires this long after the last OTP
+   *  on the device, regardless of activity. Office roles 24h; FIELD_AGENT 720h (30 days). */
+  otpTrustHours: number;
 }
 
 /** `null` when the role code is unknown or inactive — callers treat that as zero permissions. */
@@ -32,12 +35,14 @@ export async function loadRoleAttributes(roleCode: string): Promise<RoleAttribut
     idleLogoutMinutes: number | null;
     maxSessionMinutes: number | null;
     otpLoginRequired: boolean;
+    otpTrustHours: number;
   }>(
     `SELECT grants_all AS "grantsAll", hierarchy_mode AS "hierarchyMode",
             password_expiry_days AS "passwordExpiryDays",
             idle_logout_minutes AS "idleLogoutMinutes",
             max_session_minutes AS "maxSessionMinutes",
-            otp_login_required AS "otpLoginRequired"
+            otp_login_required AS "otpLoginRequired",
+            otp_trust_hours AS "otpTrustHours"
      FROM roles WHERE code = $1 AND is_active`,
     [roleCode],
   );
@@ -49,6 +54,7 @@ export async function loadRoleAttributes(roleCode: string): Promise<RoleAttribut
     idleLogoutMinutes: role.idleLogoutMinutes,
     maxSessionMinutes: role.maxSessionMinutes,
     otpLoginRequired: role.otpLoginRequired,
+    otpTrustHours: role.otpTrustHours,
   };
   if (role.grantsAll) return { grantsAll: true, permissions: [], ...base };
   const rows = await query<{ code: string }>(

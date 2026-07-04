@@ -19,6 +19,12 @@ SMS spend minimal. Owner decisions (2026-07-04, recorded verbatim):
    domain verification + SMTP creds are a deploy step).
 4. **Cost caps:** **no global or per-user daily caps for now**; keep per-code security limits and a
    visible daily-send metric.
+5. **Trust window (owner, later on 2026-07-04):** a **FIXED per-role window** — trust expires N
+   hours after the device's last OTP **regardless of activity** ("input OTP every 24 hours"), so a
+   borrowed/temp device self-expires within a day. Office roles **24 h** (one code per device per
+   day); **FIELD_AGENT 720 h (30 days)** so the mobile app, once its OTP screen ships, costs ~1 SMS
+   per agent per month. Supersedes the original 180-day sliding window (mig 0114,
+   `roles.otp_trust_hours`, editable in role admin).
 
 Existing machinery this must reuse, not duplicate: the `mustChangePassword`/`mustEnrollMfa`/
 `mustAcceptPolicies` server-driven gate pattern; the `mfaCode`-in-login challenge shape
@@ -89,8 +95,11 @@ TOTP-enrolled** (an authenticator is a stronger second factor — those users ke
   `sent_sms bool`, `consumed_at`, `created_ip`, `created_at`. One active challenge per
   (user, device); expired/consumed rows pruned opportunistically.
 - **`auth_trusted_devices`** — `user_id` FK, `device_id`, `trusted_at`, `last_seen_at`,
-  `UNIQUE(user_id, device_id)`. Trust = row exists **and** `last_seen_at > now() − 180 days`
-  (sliding; touched on each trusted login). Revocation = delete the row (admin UI deferred).
+  `UNIQUE(user_id, device_id)`. Trust = row exists **and** `trusted_at > now() − role.otp_trust_hours`
+  — a **fixed** window from the last OTP; logins never extend it (`last_seen_at` is audit-only), and
+  a successful re-verify resets `trusted_at` (owner decision 5; mig 0114 adds
+  `roles.otp_trust_hours`, default 24, FIELD_AGENT 720). Revocation = delete the row (admin UI
+  deferred).
 - **`roles.otp_login_required boolean NOT NULL DEFAULT false`** — seeded `true` for SUPER_ADMIN,
   MANAGER, TEAM_LEADER, BACKEND_USER, KYC_VERIFIER; `false` for FIELD_AGENT (see §2). Surfaced via
   `getRoleAttributes` + the existing OCC role-admin editor, like `idle_logout_minutes`.
