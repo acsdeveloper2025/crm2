@@ -1,7 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { CreateUserSchema, UpdateUserSchema, USER_ROLES } from './users.js';
 
-const base = { username: 'jane_doe', name: 'Jane Doe', role: 'FIELD_AGENT' as const };
+// email is REQUIRED at create since email OTP went live (ADR-0088/0089).
+const base = {
+  username: 'jane_doe',
+  name: 'Jane Doe',
+  email: 'jane@crm2.local',
+  role: 'FIELD_AGENT' as const,
+};
 
 describe('User contract', () => {
   it('accepts a valid user', () => {
@@ -19,10 +25,15 @@ describe('User contract', () => {
     const updated = UpdateUserSchema.safeParse({ name: 'New Name', role: 'MANAGER' });
     expect(updated.success && updated.data.name).toBe('NEW NAME');
   });
-  it('accepts an optional email and manager uuid', () => {
+  it('requires email at create and rejects clearing it on update (OTP deliverability)', () => {
+    const { email: _dropped, ...noEmail } = base;
+    expect(CreateUserSchema.safeParse(noEmail).success).toBe(false);
+    expect(UpdateUserSchema.safeParse({ name: 'X', role: 'MANAGER', email: null }).success).toBe(false);
+    expect(UpdateUserSchema.safeParse({ name: 'X', role: 'MANAGER' }).success).toBe(true); // omit = unchanged
+  });
+  it('accepts a manager uuid', () => {
     const parsed = CreateUserSchema.safeParse({
       ...base,
-      email: 'jane@crm2.local',
       reportsTo: '11111111-1111-1111-1111-111111111111',
     });
     expect(parsed.success).toBe(true);

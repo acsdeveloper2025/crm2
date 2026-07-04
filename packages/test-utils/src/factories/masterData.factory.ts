@@ -40,8 +40,15 @@ export interface UserInput {
   password?: string;
 }
 
-/** Valid create-input for a user (unique username per call), defaulting to FIELD_AGENT. */
+/** Valid create-input for a user (unique username per call), defaulting to FIELD_AGENT.
+ *  email is required at create (ADR-0088/0089) and unique (mig 0115) — derived from the username. */
 export function userFactory(overrides: Partial<UserInput> = {}): UserInput {
   userSeq += 1;
-  return { username: `user_${userSeq}`, name: `User ${userSeq}`, role: 'FIELD_AGENT', ...overrides };
+  return {
+    username: `user_${userSeq}`,
+    name: `User ${userSeq}`,
+    email: `user_${userSeq}@test.crm2.local`,
+    role: 'FIELD_AGENT',
+    ...overrides,
+  };
 }

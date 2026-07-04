@@ -316,7 +316,7 @@ async function withResolvedPermissions<T extends { role: string }>(
 export const authService = {
   async login(input: unknown, ip: string | null): Promise<LoginResponse> {
     const v = LoginSchema.parse(input);
-    const creds = await repo.credentialsByUsername(v.username);
+    const creds = await repo.credentialsByIdentifier(v.username);
     if (!creds || !creds.usable || !creds.passwordHash) {
       // Spend the same scrypt cost as a real login so latency can't reveal whether the username
       // exists (ADR-0076 — closes the enumeration timing oracle). Always fails.

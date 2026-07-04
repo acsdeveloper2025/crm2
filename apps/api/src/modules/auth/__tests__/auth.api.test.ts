@@ -64,6 +64,17 @@ describe.skipIf(!RUN)('auth API', () => {
     expect(res.body.tokens.expiresIn).toBeGreaterThan(0);
   });
 
+  it('logs in with the EMAIL as the identifier (same field, case-insensitive — ADR-0088 follow-up)', async () => {
+    await makeUser({ username: 'bymail', role: 'MANAGER', email: 'ByMail@crm2.test' });
+    const res = await login('bymail@crm2.test'); // lower-cased spelling of the stored email
+    expect(res.status).toBe(200);
+    expect(res.body.user.username).toBe('bymail');
+    // a wrong password by email is still just INVALID_CREDENTIALS
+    expect((await login('bymail@crm2.test', 'Wrong-pass1!')).status).toBe(401);
+    // an unknown email burns the same dummy-hash timing and 401s
+    expect((await login('ghost@crm2.test')).status).toBe(401);
+  });
+
   it('migration 0075 seeds idle + session-cap policy (DESK set, FIELD_AGENT exempt)', async () => {
     const desk = await db!.pool.query(
       `SELECT idle_logout_minutes, max_session_minutes FROM roles WHERE code = 'MANAGER'`,

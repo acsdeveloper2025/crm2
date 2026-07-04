@@ -124,7 +124,7 @@ describe.skipIf(!RUN)('users API', () => {
     const res = await request(app)
       .post('/api/v2/users')
       .set(SA)
-      .send({ username: 'AB', name: 'X', role: 'FIELD_AGENT' });
+      .send({ email: 'AB@test.crm2.local', username: 'AB', name: 'X', role: 'FIELD_AGENT' });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('VALIDATION');
   });
@@ -134,13 +134,13 @@ describe.skipIf(!RUN)('users API', () => {
     const malformed = await request(app)
       .post('/api/v2/users')
       .set(SA)
-      .send({ username: 'role_x', name: 'X', role: 'admin' });
+      .send({ email: 'role_x@test.crm2.local', username: 'role_x', name: 'X', role: 'admin' });
     expect(malformed.status).toBe(400);
     expect(malformed.body.error).toBe('VALIDATION');
     const unknown = await request(app)
       .post('/api/v2/users')
       .set(SA)
-      .send({ username: 'role_x', name: 'X', role: 'GHOST_ROLE' });
+      .send({ email: 'role_x@test.crm2.local', username: 'role_x', name: 'X', role: 'GHOST_ROLE' });
     expect(unknown.status).toBe(400);
     expect(unknown.body.error).toBe('INVALID_REFERENCE');
   });
@@ -683,7 +683,7 @@ describe.skipIf(!RUN)('users API', () => {
         'confirm',
         await mkXlsx([
           ['jdoe', 'John Doe', 'jdoe@crm2.local', 'FIELD_AGENT'],
-          ['mjones', 'Mary Jones', '', 'KYC_VERIFIER'],
+          ['mjones', 'Mary Jones', 'mjones@crm2.local', 'KYC_VERIFIER'],
         ]),
       );
       expect(res.status).toBe(200);
@@ -733,8 +733,8 @@ describe.skipIf(!RUN)('users API', () => {
       const ExcelJS = (await import('exceljs')).default;
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet('Sheet1');
-      ws.addRow(['Username', 'Name', 'Role', 'Department', 'Designation']);
-      ws.addRow(['drowe', 'Dana Rowe', 'FIELD_AGENT', 'field ops', 'Field Executive']); // case-insensitive
+      ws.addRow(['Username', 'Name', 'Email', 'Role', 'Department', 'Designation']);
+      ws.addRow(['drowe', 'Dana Rowe', 'drowe@crm2.local', 'FIELD_AGENT', 'field ops', 'Field Executive']); // case-insensitive
       const res = await upload('confirm', Buffer.from(await wb.xlsx.writeBuffer()));
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({ totalRows: 1, successRows: 1, failedRows: 0 });
@@ -747,8 +747,8 @@ describe.skipIf(!RUN)('users API', () => {
       // an unknown designation → per-row error against the Designation column (no silent null)
       const wb2 = new ExcelJS.Workbook();
       const ws2 = wb2.addWorksheet('S');
-      ws2.addRow(['Username', 'Name', 'Role', 'Designation']);
-      ws2.addRow(['dnope', 'D N', 'FIELD_AGENT', 'No Such Title']);
+      ws2.addRow(['Username', 'Name', 'Email', 'Role', 'Designation']);
+      ws2.addRow(['dnope', 'D N', 'dnope@crm2.local', 'FIELD_AGENT', 'No Such Title']);
       const bad = await upload('preview', Buffer.from(await wb2.xlsx.writeBuffer()));
       expect(bad.body.errorRows).toBe(1);
       expect(bad.body.errors[0]).toMatchObject({ column: 'Designation' });
@@ -817,7 +817,7 @@ describe.skipIf(!RUN)('users API', () => {
       expect(created.status).toBe(201);
       const login = await request(app)
         .post('/api/v2/auth/login')
-        .send({ username: 'pw_user', password: 'Str0ng!pass' });
+        .send({ email: 'pw_user@test.crm2.local', username: 'pw_user', password: 'Str0ng!pass' });
       expect(login.status).toBe(200);
       expect(typeof login.body.tokens.accessToken).toBe('string');
     });
@@ -964,7 +964,9 @@ describe.skipIf(!RUN)('users API', () => {
       expect(sent[0]!.text).toMatch(/one-time password/i);
 
       // email mode with no address falls back to returning the plaintext (never strands the account).
+      // email is API-required now (ADR-0088/0089) — a mail-less user is a legacy row; simulate via SQL.
       const noEmail = await newUser({ username: 'mail_no', role: 'FIELD_AGENT' });
+      await db!.pool.query(`UPDATE users SET email = NULL WHERE id = $1`, [noEmail.id]);
       const r2 = await request(app)
         .post(`/api/v2/users/${noEmail.id}/generate-temp-password`)
         .set(SA)
@@ -1085,15 +1087,20 @@ describe.skipIf(!RUN)('users API', () => {
       expect(res.body.error).toBe('VALIDATION');
     });
 
-    it('PATCH /me/profile can clear email + phone (both nullable)', async () => {
+    it('PATCH /me/profile can clear phone but NOT email (OTP deliverability, ADR-0088/0089)', async () => {
       const me = await newUser({ username: 'me_clear', role: 'FIELD_AGENT', email: 'has@crm2.test' });
+      const cleared = await request(app)
+        .patch('/api/v2/users/me/profile')
+        .set(asSelf(me.id))
+        .send({ phone: null });
+      expect(cleared.status).toBe(200);
+      expect(cleared.body.phone).toBeNull();
+      expect(cleared.body.email).toBe('has@crm2.test'); // untouched when omitted
       const res = await request(app)
         .patch('/api/v2/users/me/profile')
         .set(asSelf(me.id))
-        .send({ email: null, phone: null });
-      expect(res.status).toBe(200);
-      expect(res.body.email).toBeNull();
-      expect(res.body.phone).toBeNull();
+        .send({ email: null });
+      expect(res.status).toBe(400); // clearing your own email would disable your OTP gate
     });
 
     it('self photo upload + read needs no USER_MANAGE (a FIELD_AGENT manages their own avatar)', async () => {

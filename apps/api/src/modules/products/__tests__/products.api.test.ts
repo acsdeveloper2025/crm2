@@ -176,7 +176,12 @@ describe.skipIf(!RUN)('products API', () => {
         await request(app)
           .post('/api/v2/users')
           .set(SA)
-          .send({ username, name: username.toUpperCase(), role: 'BACKEND_USER' })
+          .send({
+            email: `${username}@test.crm2.local`,
+            username,
+            name: username.toUpperCase(),
+            role: 'BACKEND_USER',
+          })
       ).body.id as string;
     const mk = async (code: string): Promise<number> =>
       (await request(app).post('/api/v2/products').set(SA).send(productFactory({ code }))).body.id as number;

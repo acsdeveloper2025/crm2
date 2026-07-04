@@ -199,7 +199,7 @@ describe('createSdk — transport', () => {
       s.locations.activate(1, 1),
       s.locations.deactivate(1, 1),
       s.users.list({ search: 'jane', filters: { role: 'FIELD_AGENT', active: true } }),
-      s.users.create({ username: 'jane_doe', name: 'Jane', role: 'FIELD_AGENT' }),
+      s.users.create({ username: 'jane_doe', name: 'Jane', email: 'jane@x.com', role: 'FIELD_AGENT' }),
       s.users.update('00000000-0000-0000-0000-000000000001', { name: 'Jane', role: 'MANAGER', version: 1 }),
       s.users.activate('00000000-0000-0000-0000-000000000001', 1),
       s.users.deactivate('00000000-0000-0000-0000-000000000001', 1),

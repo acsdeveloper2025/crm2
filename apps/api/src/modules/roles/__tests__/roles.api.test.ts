@@ -329,10 +329,12 @@ describe.skipIf(!RUN)('roles API (ADR-0022 slice 2 — editable role→permissio
     expect(role.status).toBe(201);
 
     // 2. admin creates a USER with the custom role (open role catalog)
-    const user = await request(app)
-      .post('/api/v2/users')
-      .set(SA)
-      .send({ username: 'zone_auditor_1', name: 'ZONE AUDITOR ONE', role: 'ZONE_AUDITOR' });
+    const user = await request(app).post('/api/v2/users').set(SA).send({
+      email: 'zone_auditor_1@test.crm2.local',
+      username: 'zone_auditor_1',
+      name: 'ZONE AUDITOR ONE',
+      role: 'ZONE_AUDITOR',
+    });
     expect(user.status).toBe(201);
     const uid = user.body.id as string;
 

@@ -100,7 +100,9 @@ export const StrongPasswordSchema = z
 export const CreateUserSchema = z.object({
   username,
   name,
-  email: email.optional(),
+  // Required since email OTP went live (ADR-0088/0089): a user with no email and no deliverable
+  // SMS channel silently BYPASSES the OTP gate (deferred-activation warn-and-allow).
+  email,
   // Profile fields: required by the FE create form; nullable at the API so the FK-free import + seed
   // admin keep working. employee_id is NOT here — it is minted server-side.
   phone: phone.optional(),
@@ -119,7 +121,8 @@ export const UpdateUserSchema = z.object({
   // login rename, uniqueness-checked. No dependents gate needed.
   username: username.optional(),
   name,
-  email: email.nullable().optional(),
+  // omit = unchanged; NOT clearable (null rejected) — clearing email would disable that user's OTP.
+  email: email.optional(),
   phone: phone.nullable().optional(),
   departmentId: fkId.nullable().optional(),
   designationId: fkId.nullable().optional(),
@@ -130,10 +133,10 @@ export const UpdateUserSchema = z.object({
 });
 
 /** Self-service contact update (v1 parity: PATCH /users/me/profile). A user edits only their OWN
- *  email + phone — both nullable so a value can be cleared. No role/manager/status here: those stay
- *  admin-only on PUT /users/:id. */
+ *  email + phone. phone stays clearable; email is NOT (clearing your own email would disable your
+ *  OTP gate — ADR-0088/0089). No role/manager/status here: those stay admin-only on PUT /users/:id. */
 export const UpdateSelfProfileSchema = z.object({
-  email: email.nullable().optional(),
+  email: email.optional(),
   phone: phone.nullable().optional(),
 });
 

@@ -14,8 +14,13 @@ const COLS = `id, username, name, email, employee_id, phone, department_id, desi
   role, reports_to, is_active, mfa_required, effective_from, version, created_by, updated_by, created_at, updated_at`;
 
 const mapWriteError = (e: unknown): never => {
-  if (pgCode(e) === UNIQUE_VIOLATION)
+  if (pgCode(e) === UNIQUE_VIOLATION) {
+    // users_email_lower_uq (mig 0115) backs email login — a duplicate email must say so.
+    const constraint = (e as { constraint?: string }).constraint;
+    if (constraint === 'users_email_lower_uq')
+      throw AppError.conflict('EMAIL_TAKEN', 'a user with this email already exists');
     throw AppError.conflict('USER_EXISTS', 'a user with this username already exists');
+  }
   if (pgCode(e) === FK_VIOLATION) throw AppError.badRequest('INVALID_REFERENCE');
   if (pgCode(e) === CHECK_VIOLATION) throw AppError.badRequest('INVALID_MANAGER');
   throw e;

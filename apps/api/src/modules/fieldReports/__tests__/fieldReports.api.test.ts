@@ -94,7 +94,10 @@ async function seedCaseWithTask(ctx: {
 }
 
 async function createUser(username: string, role: string): Promise<string> {
-  const res = await request(app).post('/api/v2/users').set(SA).send({ username, name: username, role });
+  const res = await request(app)
+    .post('/api/v2/users')
+    .set(SA)
+    .send({ username, name: username, email: `${username}@test.crm2.local`, role });
   expect(res.status).toBe(201);
   return res.body.id as string;
 }

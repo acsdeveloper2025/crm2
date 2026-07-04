@@ -9,9 +9,9 @@ import type { PendingPolicy } from './policies.js';
  */
 export const LoginSchema = z.object({
   // INPUT_VALIDATION-03 (docs/audit/04-input-validation.md): max() bounds matching the canonical
-  // username (50, users.ts)/StrongPasswordSchema (200) fields — login checks against a stored hash, so
-  // no format/strength regex here, just the same length ceiling those already impose at creation time.
-  username: z.string().trim().min(1).max(50),
+  // fields — login checks against a stored hash, so no format/strength regex here. The field accepts
+  // a username OR an email as the identifier (ADR-0088 follow-up), so the ceiling is email's 255.
+  username: z.string().trim().min(1).max(255),
   password: z.string().min(1).max(200),
   /** TOTP or recovery code — required (in this same request) when the account has MFA enrolled. */
   mfaCode: z.string().trim().min(1).max(20).optional(),

@@ -7,7 +7,7 @@ import { Logo } from '../../components/Logo.js';
 import { AppFooter } from '../../components/AppFooter.js';
 
 const ERROR_LABELS: Record<string, string> = {
-  INVALID_CREDENTIALS: 'Incorrect username or password.',
+  INVALID_CREDENTIALS: 'Incorrect username/email or password.',
   UNAUTHENTICATED: 'Session expired. Please sign in again.',
   ACCOUNT_LOCKED: 'Too many failed attempts. Try again in 15 minutes.',
 };
@@ -207,7 +207,7 @@ export function LoginPage() {
           )}
 
           <label className="mb-3 block">
-            <span className="mb-1 block text-xs font-medium text-foreground">Username</span>
+            <span className="mb-1 block text-xs font-medium text-foreground">Username or Email</span>
             <Input
               className="input"
               uppercase={false}

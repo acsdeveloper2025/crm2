@@ -66,7 +66,7 @@ async function createKycUser(username: string): Promise<string> {
   const res = await request(app)
     .post('/api/v2/users')
     .set(SA)
-    .send({ username, name: username, role: 'KYC_VERIFIER' });
+    .send({ email: `${username}@test.crm2.local`, username, name: username, role: 'KYC_VERIFIER' });
   expect(res.status).toBe(201);
   return res.body.id as string;
 }
@@ -208,10 +208,12 @@ describe.skipIf(!RUN)('KYC-unit assignment eligibility (ADR-0073)', () => {
   it('granting a non-KYC user → 400 NOT_KYC_VERIFIER; an unknown unit → 400 INVALID_REFERENCE', async () => {
     const ctx = await seedKycCpv('NEG');
     const backend = (
-      await request(app)
-        .post('/api/v2/users')
-        .set(SA)
-        .send({ username: 'backend_neg', name: 'BACKEND', role: 'BACKEND_USER' })
+      await request(app).post('/api/v2/users').set(SA).send({
+        email: 'backend_neg@test.crm2.local',
+        username: 'backend_neg',
+        name: 'BACKEND',
+        role: 'BACKEND_USER',
+      })
     ).body.id as string;
     const wrongRole = await request(app)
       .put(`/api/v2/users/${backend}/kyc-units`)

@@ -328,10 +328,12 @@ function UserForm({ initial }: { initial: UserView | null }) {
               )}
             </label>
             <label className="block">
-              <span className="mb-1 block text-xs font-medium text-foreground">Email (optional)</span>
+              <span className="mb-1 block text-xs font-medium text-foreground">Email</span>
               <Input
                 className="input"
                 uppercase={false}
+                type="email"
+                required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />

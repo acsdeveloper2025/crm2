@@ -15,10 +15,12 @@ const TS_OUTSIDE = '2026-06-11T01:00:00.000Z';
 const TS_INSIDE = '2026-06-11T10:00:00.000Z';
 
 async function createAgent(): Promise<string> {
-  const res = await request(app)
-    .post('/api/v2/users')
-    .set(SA)
-    .send({ username: 'loc_agent', name: 'Loc Agent', role: 'FIELD_AGENT' });
+  const res = await request(app).post('/api/v2/users').set(SA).send({
+    email: 'loc_agent@test.crm2.local',
+    username: 'loc_agent',
+    name: 'Loc Agent',
+    role: 'FIELD_AGENT',
+  });
   expect(res.status).toBe(201);
   return res.body.id as string;
 }

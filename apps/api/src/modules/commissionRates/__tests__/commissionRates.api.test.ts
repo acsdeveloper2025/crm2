@@ -23,7 +23,12 @@ const newUser = async (username: string): Promise<string> => {
   const res = await request(app)
     .post('/api/v2/users')
     .set(SA)
-    .send({ username, name: username.toUpperCase(), role: 'FIELD_AGENT' });
+    .send({
+      email: `${username}@test.crm2.local`,
+      username,
+      name: username.toUpperCase(),
+      role: 'FIELD_AGENT',
+    });
   expect(res.status).toBe(201);
   return res.body.id as string;
 };

@@ -60,7 +60,10 @@ async function seedCpvUnit(tag: string): Promise<{ clientId: number; productId: 
 }
 
 async function createUser(o: { username: string; name: string; role: string }): Promise<string> {
-  const res = await request(app).post('/api/v2/users').set(SA).send(o);
+  const res = await request(app)
+    .post('/api/v2/users')
+    .set(SA)
+    .send({ email: `${o.username}@test.crm2.local`, ...o });
   expect(res.status).toBe(201);
   return res.body.id as string;
 }

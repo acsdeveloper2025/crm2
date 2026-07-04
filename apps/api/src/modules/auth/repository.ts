@@ -63,15 +63,20 @@ interface RefreshRow {
 }
 
 export const authRepository = {
-  async credentialsByUsername(username: string): Promise<Credentials | null> {
+  /** Login identifier = username OR email (ADR-0088 follow-up): a value containing '@' is looked
+   *  up by email (case-insensitive; unambiguous via the users_email_lower_uq partial unique index,
+   *  mig 0115), anything else by username. One shape, so mobile's existing username login is
+   *  untouched and either spelling costs the same scrypt timing on a miss. */
+  async credentialsByIdentifier(identifier: string): Promise<Credentials | null> {
+    const byEmail = identifier.includes('@');
     const rows = await query<Credentials>(
       `SELECT u.id, u.role, (u.is_active AND u.effective_from <= now()) AS usable, u.password_hash,
               u.password_must_change, u.password_set_at, u.failed_login_count, u.locked_until, u.mfa_required,
               (m.user_id IS NOT NULL AND m.enrolled_at IS NOT NULL) AS mfa_enrolled,
               u.email, u.phone
        FROM users u LEFT JOIN user_mfa_secrets m ON m.user_id = u.id
-       WHERE u.username = $1`,
-      [username],
+       WHERE ${byEmail ? 'lower(u.email) = lower($1)' : 'u.username = $1'}`,
+      [identifier],
     );
     return rows[0] ?? null;
   },

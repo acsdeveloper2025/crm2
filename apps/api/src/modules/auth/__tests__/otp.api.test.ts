@@ -220,7 +220,10 @@ describe.skipIf(!RUN)('OTP login verification (ADR-0088)', () => {
 
   it('gate is inert (warn-and-allow) when the user has no deliverable contact', async () => {
     captureChannels(); // providers configured…
-    await makeUser({ username: 'otp7', role: 'MANAGER' }); // …but no email, no phone
+    await makeUser({ username: 'otp7', role: 'MANAGER' });
+    // email is required at the API since ADR-0088/0089 — a contact-less user is now a LEGACY row
+    // (created before the requirement), so simulate it below the API.
+    await db!.pool.query(`UPDATE users SET email = NULL, phone = NULL WHERE username = 'otp7'`);
     const res = await login('otp7', { deviceId: DEVICE });
     expect(res.status).toBe(200);
   });
