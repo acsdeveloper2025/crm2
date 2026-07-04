@@ -1,4 +1,4 @@
-import { randomUUID, randomBytes } from 'node:crypto';
+import { randomUUID, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { loadEnv } from '@crm2/config';
 import {
   ChangePasswordSchema,
@@ -21,6 +21,8 @@ import { generateTotpSecret, verifyTotp, otpauthUri, base32Encode } from '../../
 import { encryptSecret, decryptSecret } from '../../platform/encryption.js';
 import { AppError } from '../../platform/errors.js';
 import { HTTP_STATUS } from '../../platform/http.js';
+import { getMailer, mailConfigured } from '../../platform/mail/index.js';
+import { getSmsSender, smsConfigured, normalizeIndianMobile } from '../../platform/sms.js';
 import { getRealtime } from '../../platform/realtime/index.js';
 import { revokeUserAccessTokens } from '../../platform/tokenRevocation/index.js';
 import { logger } from '@crm2/logger';
@@ -99,6 +101,140 @@ async function verifyMfaCode(userId: string, code: string): Promise<boolean> {
     }
   }
   return false;
+}
+
+// ── OTP login verification (ADR-0088): new-device second factor, both channels, same code ──
+const OTP_TTL_MIN = 5;
+const OTP_TTL_MS = OTP_TTL_MIN * MS_PER_MIN;
+const OTP_MAX_ATTEMPTS = 5; // wrong codes per challenge; each also feeds the account lockout
+const OTP_MAX_SENDS = 3; // deliveries per challenge (first send + 2 resends)
+const OTP_RESEND_COOLDOWN_MS = 60_000;
+const TRUSTED_DEVICE_WINDOW_DAYS = 180; // sliding — touched on every trusted login
+const OTP_CODE_DIGITS = 6;
+const OTP_CODE_SPACE = 1_000_000; // 10^OTP_CODE_DIGITS — randomInt's exclusive upper bound
+const PHONE_MASK_TAIL = 4;
+
+const maskEmail = (email: string): string => {
+  const [local = '', domain = ''] = email.split('@');
+  return `${local.slice(0, 1)}***@${domain}`;
+};
+const maskPhone = (phone: string): string => `******${phone.replace(/\D/g, '').slice(-PHONE_MASK_TAIL)}`;
+
+interface OtpSentTo {
+  email: string | null;
+  sms: string | null;
+}
+/** Masked view of the channels a code actually went out on (the FE shows these on the OTP step). */
+const sentToView = (
+  creds: { email: string | null; phone: string | null },
+  sentEmail: boolean,
+  sentSms: boolean,
+): OtpSentTo => ({
+  email: sentEmail && creds.email ? maskEmail(creds.email) : null,
+  sms: sentSms && creds.phone ? maskPhone(creds.phone) : null,
+});
+/** Only reachable AFTER a correct password (like MFA_REQUIRED) — leaks nothing login doesn't. */
+const otpRequired = (sentTo: OtpSentTo) =>
+  new AppError(HTTP_STATUS.UNAUTHENTICATED, 'OTP_REQUIRED', 'a sign-in code is required', { sentTo });
+
+/** Constant-time 6-digit comparison (length mismatch is an immediate, non-secret fail). */
+const otpMatches = (expected: string, given: string): boolean => {
+  const a = Buffer.from(expected);
+  const b = Buffer.from(given);
+  return a.length === b.length && timingSafeEqual(a, b);
+};
+
+/** Deliver `code` on every deliverable channel at once (owner decision: both). A leg is deliverable
+ *  when its provider is configured AND the user has that contact; each send is best-effort. */
+async function deliverOtp(
+  creds: { email: string | null; phone: string | null },
+  code: string,
+): Promise<{ sentEmail: boolean; sentSms: boolean; deliverable: boolean }> {
+  const emailLeg = mailConfigured() && !!creds.email;
+  const phone10 = creds.phone ? normalizeIndianMobile(creds.phone) : null;
+  const smsLeg = smsConfigured() && phone10 !== null;
+  if (!emailLeg && !smsLeg) return { sentEmail: false, sentSms: false, deliverable: false };
+  const [sentEmail, sentSms] = await Promise.all([
+    emailLeg
+      ? getMailer().send({
+          to: creds.email as string,
+          subject: `${code} is your CRM2 sign-in code`,
+          text:
+            `${code} is your CRM2 sign-in code for a new device. It expires in 5 minutes.\n\n` +
+            `If you did not try to sign in, contact your administrator immediately.`,
+        })
+      : Promise.resolve(false),
+    smsLeg ? getSmsSender().sendOtp(phone10 as string, code) : Promise.resolve(false),
+  ]);
+  return { sentEmail, sentSms, deliverable: true };
+}
+
+/**
+ * The new-device OTP gate (ADR-0088). Runs only for role-flagged accounts without TOTP enrolment.
+ * Returns normally when the login may proceed: device inside its trust window, gate inert (no
+ * deliverable channel — deferred activation, warn-and-allow), or a valid `otpCode` consumed (which
+ * also trusts the device). Otherwise throws 401 OTP_REQUIRED (challenge created/re-sent per the
+ * cooldown + send-cap rules — the same code is re-delivered, never a fresh SMS while one is live)
+ * or 423 ACCOUNT_LOCKED (wrong codes feed the account lockout, mirroring mfaCode).
+ */
+async function otpLoginGate(
+  creds: { id: string; email: string | null; phone: string | null },
+  v: { otpCode?: string | undefined; deviceId?: string | undefined },
+  ip: string | null,
+): Promise<void> {
+  const deviceId = v.deviceId ?? null;
+  if (deviceId && (await repo.touchTrustedDevice(creds.id, deviceId, TRUSTED_DEVICE_WINDOW_DAYS))) return;
+
+  const challenge = await repo.activeOtpChallenge(creds.id, deviceId, OTP_MAX_ATTEMPTS);
+
+  if (v.otpCode) {
+    if (challenge) {
+      if (otpMatches(decryptSecret(challenge.codeEncrypted), v.otpCode)) {
+        await repo.consumeOtpChallenge(challenge.id);
+        if (deviceId) await repo.trustDevice(creds.id, deviceId);
+        return;
+      }
+      await repo.recordOtpAttempt(challenge.id);
+    }
+    // A wrong (or expired-challenge) code is a real failed attempt — same counter/cooldown as a
+    // wrong password or mfaCode (AUTHENTICATION-01), so a code can't be ground within its 5 tries.
+    const after = await repo.recordFailedLogin(creds.id, MAX_FAILED_LOGINS, LOCKOUT_COOLDOWN_S);
+    if (isLocked(after.lockedUntil)) throw accountLocked();
+    throw otpRequired(sentToView(creds, challenge?.sentEmail ?? false, challenge?.sentSms ?? false));
+  }
+
+  if (challenge) {
+    // Re-login without a code while a challenge is live = the resend path: re-deliver the SAME code
+    // once the cooldown passes, up to the send cap; inside the cooldown/cap nothing is sent.
+    const cooldownOver = Date.now() - new Date(challenge.lastSentAt).getTime() >= OTP_RESEND_COOLDOWN_MS;
+    if (cooldownOver && challenge.sendCount < OTP_MAX_SENDS) {
+      const sent = await deliverOtp(creds, decryptSecret(challenge.codeEncrypted));
+      await repo.recordOtpResend(challenge.id, sent.sentEmail, sent.sentSms);
+      throw otpRequired(
+        sentToView(creds, challenge.sentEmail || sent.sentEmail, challenge.sentSms || sent.sentSms),
+      );
+    }
+    throw otpRequired(sentToView(creds, challenge.sentEmail, challenge.sentSms));
+  }
+
+  const code = String(randomInt(0, OTP_CODE_SPACE)).padStart(OTP_CODE_DIGITS, '0');
+  const sent = await deliverOtp(creds, code);
+  if (!sent.deliverable) {
+    // Deferred activation (ADR-0088 §3): no configured channel reaches any contact this user has —
+    // warn-and-allow rather than brick logins on an unprovisioned box or a contact-less account.
+    logger.warn('otp gate inert — no deliverable channel', { userId: creds.id });
+    return;
+  }
+  await repo.insertOtpChallenge({
+    userId: creds.id,
+    deviceId,
+    codeEncrypted: encryptSecret(code),
+    expiresAt: new Date(Date.now() + OTP_TTL_MS),
+    sentEmail: sent.sentEmail,
+    sentSms: sent.sentSms,
+    ip,
+  });
+  throw otpRequired(sentToView(creds, sent.sentEmail, sent.sentSms));
 }
 
 /** 10 one-time recovery codes (base32, dash-grouped) — returned ONCE, stored only as hashes. */
@@ -204,10 +340,14 @@ export const authService = {
         throw isLocked(after.lockedUntil) ? accountLocked() : mfaRequired();
       }
     }
-    await repo.resetLoginState(creds.id); // success clears the failed-attempt counter
-    // Per-role policy (ADR-0022/0045): rotation expiry + the absolute session cap. Resolved once,
-    // before issuing tokens, so the new refresh token can carry its hard deadline (null = no cap).
+    // Per-role policy (ADR-0022/0045/0088): OTP enforcement + rotation expiry + the absolute session
+    // cap. Resolved once, before the OTP gate and token issue.
     const attrs = await getRoleAttributes(creds.role);
+    // New-device OTP gate (ADR-0088): a role-flagged account on an untrusted device must prove a
+    // delivered code in this same request (`otpCode`). TOTP enrolment supersedes — the mfaCode
+    // branch above already challenged a stronger second factor at zero SMS cost.
+    if (attrs?.otpLoginRequired && !creds.mfaEnrolled) await otpLoginGate(creds, v, ip);
+    await repo.resetLoginState(creds.id); // success clears the failed-attempt counter
     const absoluteExpiresAt =
       attrs?.maxSessionMinutes != null ? new Date(Date.now() + attrs.maxSessionMinutes * MS_PER_MIN) : null;
     const tokens = await issueTokens(

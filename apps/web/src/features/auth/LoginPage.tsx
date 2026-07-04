@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../lib/AuthContext.js';
+import { ApiError } from '../../lib/sdk.js';
 import { Button } from '../../components/ui/Button.js';
 import { Input } from '../../components/ui/Input.js';
 import { Logo } from '../../components/Logo.js';
@@ -8,7 +9,19 @@ import { AppFooter } from '../../components/AppFooter.js';
 const ERROR_LABELS: Record<string, string> = {
   INVALID_CREDENTIALS: 'Incorrect username or password.',
   UNAUTHENTICATED: 'Session expired. Please sign in again.',
+  ACCOUNT_LOCKED: 'Too many failed attempts. Try again in 15 minutes.',
 };
+
+/** Masked destinations off a 401 OTP_REQUIRED (ADR-0088), e.g. "r***@acs.com and ******7890". */
+function otpSentToLabel(err: unknown): string | null {
+  if (!(err instanceof ApiError)) return null;
+  const sentTo = (err.body as { details?: { sentTo?: { email?: string | null; sms?: string | null } } })
+    ?.details?.sentTo;
+  const parts = [sentTo?.email, sentTo?.sms].filter((x): x is string => !!x);
+  return parts.length > 0 ? parts.join(' and ') : null;
+}
+
+const OTP_RESEND_COOLDOWN_S = 60; // mirrors the server cooldown (ADR-0088)
 
 // Owner: swap in a real helpdesk email/phone if you have one (see login footer).
 const SUPPORT_HINT = 'Trouble signing in? Contact your administrator.';
@@ -84,6 +97,10 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [mfaCode, setMfaCode] = useState('');
   const [mfaNeeded, setMfaNeeded] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [otpNeeded, setOtpNeeded] = useState(false);
+  const [otpSentTo, setOtpSentTo] = useState<string | null>(null);
+  const [resendWait, setResendWait] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showPw, setShowPw] = useState(false);
@@ -91,20 +108,54 @@ export function LoginPage() {
   const typed = useTypewriter(HEADLINE);
   const typedDone = typed.length === HEADLINE.length;
 
+  // resend-cooldown ticker (the button re-enables when it hits 0)
+  useEffect(() => {
+    if (resendWait <= 0) return;
+    const id = setTimeout(() => setResendWait((s) => s - 1), 1000);
+    return () => clearTimeout(id);
+  }, [resendWait]);
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setBusy(true);
     try {
-      await login(username.trim(), password, mfaCode.trim() || undefined);
+      await login(username.trim(), password, mfaCode.trim() || undefined, otpCode.trim() || undefined);
     } catch (err) {
       const code = err instanceof Error ? err.message : 'UNKNOWN';
       if (code === 'MFA_REQUIRED') {
         // account has MFA — reveal the code field and (if it was already shown) flag a bad code
         setError(mfaNeeded ? 'Invalid authentication code. Try again.' : null);
         setMfaNeeded(true);
+      } else if (code === 'OTP_REQUIRED') {
+        // new device (ADR-0088) — a code went out to the user's registered contact(s)
+        const hadCode = otpNeeded && otpCode.trim().length > 0;
+        setError(hadCode ? 'Invalid or expired code. Try again.' : null);
+        if (hadCode) setOtpCode('');
+        if (!otpNeeded) setResendWait(OTP_RESEND_COOLDOWN_S);
+        setOtpNeeded(true);
+        setOtpSentTo((prev) => otpSentToLabel(err) ?? prev);
       } else {
         setError(ERROR_LABELS[code] ?? 'Sign-in failed. Please try again.');
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Re-login without a code → the server re-delivers the SAME still-valid code (ADR-0088). */
+  const resendOtp = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      await login(username.trim(), password); // succeeds outright if the gate has since cleared
+    } catch (err) {
+      const code = err instanceof Error ? err.message : 'UNKNOWN';
+      if (code === 'OTP_REQUIRED') {
+        setOtpSentTo((prev) => otpSentToLabel(err) ?? prev);
+        setResendWait(OTP_RESEND_COOLDOWN_S);
+      } else {
+        setError(ERROR_LABELS[code] ?? 'Could not resend the code. Please try again.');
       }
     } finally {
       setBusy(false);
@@ -223,6 +274,37 @@ export function LoginPage() {
             </label>
           )}
 
+          {otpNeeded && (
+            <div className="mb-3">
+              <label htmlFor="login-otp" className="mb-1 block text-xs font-medium text-foreground">
+                Sign-in code
+              </label>
+              <Input
+                id="login-otp"
+                className="input"
+                uppercase={false}
+                value={otpCode}
+                autoFocus
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="6-digit code"
+                onChange={(e) => setOtpCode(e.target.value)}
+              />
+              <span role="status" className="mt-1 block text-xs text-muted-foreground">
+                New device detected.{' '}
+                {otpSentTo ? `We sent a code to ${otpSentTo}.` : 'We sent a code to your registered contact.'}
+              </span>
+              <button
+                type="button"
+                onClick={resendOtp}
+                disabled={busy || resendWait > 0}
+                className="mt-1 text-xs font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {resendWait > 0 ? `Resend code (${resendWait}s)` : 'Resend code'}
+              </button>
+            </div>
+          )}
+
           {error && (
             <p role="alert" className="mb-3 text-sm text-destructive">
               {error}
@@ -233,9 +315,9 @@ export function LoginPage() {
             className="w-full"
             type="submit"
             loading={busy}
-            disabled={!username || !password || (mfaNeeded && !mfaCode)}
+            disabled={!username || !password || (mfaNeeded && !mfaCode) || (otpNeeded && !otpCode)}
           >
-            {mfaNeeded ? 'Verify & Sign In' : 'Sign In'}
+            {mfaNeeded || otpNeeded ? 'Verify & Sign In' : 'Sign In'}
           </Button>
         </form>
         <footer className="mt-4 w-full max-w-sm">

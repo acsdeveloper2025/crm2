@@ -28,6 +28,9 @@ interface Credentials {
   mfaRequired: boolean;
   /** has a CONFIRMED TOTP enrolment (a row with enrolled_at set). */
   mfaEnrolled: boolean;
+  /** OTP delivery targets (ADR-0088) — both channels get the same code. */
+  email: string | null;
+  phone: string | null;
 }
 /** A TOTP enrolment row (secret already DECRYPTED by the service for verification). */
 export interface MfaRow {
@@ -36,6 +39,18 @@ export interface MfaRow {
   recoveryCodeUsed: boolean[];
   enrolledAt: string | null;
 }
+/** A live login-OTP challenge (ADR-0088); code is AES-GCM encrypted (decrypt to verify/resend). */
+export interface OtpChallengeRow {
+  id: string;
+  codeEncrypted: string;
+  expiresAt: string;
+  attempts: number;
+  sendCount: number;
+  lastSentAt: string;
+  sentEmail: boolean;
+  sentSms: boolean;
+}
+
 interface RefreshRow {
   userId: string;
   expiresAt: string;
@@ -52,7 +67,8 @@ export const authRepository = {
     const rows = await query<Credentials>(
       `SELECT u.id, u.role, (u.is_active AND u.effective_from <= now()) AS usable, u.password_hash,
               u.password_must_change, u.password_set_at, u.failed_login_count, u.locked_until, u.mfa_required,
-              (m.user_id IS NOT NULL AND m.enrolled_at IS NOT NULL) AS mfa_enrolled
+              (m.user_id IS NOT NULL AND m.enrolled_at IS NOT NULL) AS mfa_enrolled,
+              u.email, u.phone
        FROM users u LEFT JOIN user_mfa_secrets m ON m.user_id = u.id
        WHERE u.username = $1`,
       [username],
@@ -269,6 +285,98 @@ export const authRepository = {
       [userId],
     );
     return [...new Set(rows.map((r) => r.deviceId).filter((d): d is string => d !== null))];
+  },
+
+  // ── OTP login verification (ADR-0088) ──
+  /** The latest live challenge for (user, device): unconsumed, unexpired, attempts left.
+   *  `device_id IS NOT DISTINCT FROM` — a NULL deviceId (raw API caller) matches its own bucket. */
+  async activeOtpChallenge(
+    userId: string,
+    deviceId: string | null,
+    maxAttempts: number,
+  ): Promise<OtpChallengeRow | null> {
+    const rows = await query<OtpChallengeRow>(
+      `SELECT id, code_encrypted, expires_at, attempts, send_count, last_sent_at, sent_email, sent_sms
+         FROM auth_otp_challenges
+        WHERE user_id = $1 AND purpose = 'LOGIN' AND device_id IS NOT DISTINCT FROM $2
+          AND consumed_at IS NULL AND expires_at > now() AND attempts < $3
+        ORDER BY created_at DESC LIMIT 1`,
+      [userId, deviceId, String(maxAttempts)],
+    );
+    return rows[0] ?? null;
+  },
+
+  /** Create a challenge; opportunistically prunes long-dead rows (same lightweight approach as
+   *  auth_refresh_tokens — no scheduled job). */
+  async insertOtpChallenge(input: {
+    userId: string;
+    deviceId: string | null;
+    codeEncrypted: string;
+    expiresAt: Date;
+    sentEmail: boolean;
+    sentSms: boolean;
+    ip: string | null;
+  }): Promise<void> {
+    await query(`DELETE FROM auth_otp_challenges WHERE expires_at < now() - interval '24 hours'`);
+    await query(
+      `INSERT INTO auth_otp_challenges
+         (user_id, device_id, code_encrypted, expires_at, sent_email, sent_sms, created_ip)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        input.userId,
+        input.deviceId,
+        input.codeEncrypted,
+        input.expiresAt,
+        input.sentEmail,
+        input.sentSms,
+        input.ip,
+      ],
+    );
+  },
+
+  /** A resend of the SAME code: bump the counter, stamp the clock, widen the delivered-channel flags. */
+  async recordOtpResend(id: string, sentEmail: boolean, sentSms: boolean): Promise<void> {
+    await query(
+      `UPDATE auth_otp_challenges
+          SET send_count = send_count + 1, last_sent_at = now(),
+              sent_email = sent_email OR $2, sent_sms = sent_sms OR $3
+        WHERE id = $1`,
+      [id, sentEmail, sentSms],
+    );
+  },
+
+  /** A wrong code burns one of the challenge's attempts (5 → the row stops matching activeOtpChallenge). */
+  async recordOtpAttempt(id: string): Promise<void> {
+    await query(`UPDATE auth_otp_challenges SET attempts = attempts + 1 WHERE id = $1`, [id]);
+  },
+
+  /** Single-use: a verified challenge can never verify again. */
+  async consumeOtpChallenge(id: string): Promise<void> {
+    await query(`UPDATE auth_otp_challenges SET consumed_at = now() WHERE id = $1`, [id]);
+  },
+
+  /** Check-and-touch in one statement: true (and the trust window slides) only when the device is
+   *  inside its sliding trust window; a stale row stays put (re-trusted by the next OTP success). */
+  async touchTrustedDevice(userId: string, deviceId: string, windowDays: number): Promise<boolean> {
+    const rows = await query<{ userId: string }>(
+      `UPDATE auth_trusted_devices SET last_seen_at = now()
+        WHERE user_id = $1 AND device_id = $2
+          AND last_seen_at > now() - ($3 || ' days')::interval
+        RETURNING user_id`,
+      [userId, deviceId, String(windowDays)],
+    );
+    return rows.length > 0;
+  },
+
+  /** Trust (or re-trust) a device after a successful OTP verification. */
+  async trustDevice(userId: string, deviceId: string): Promise<void> {
+    await query(
+      `INSERT INTO auth_trusted_devices (user_id, device_id)
+       VALUES ($1, $2)
+       ON CONFLICT (user_id, device_id)
+         DO UPDATE SET last_seen_at = now(), trusted_at = auth_trusted_devices.trusted_at`,
+      [userId, deviceId],
+    );
   },
 
   // ── Policy acceptance gate (ADR-0043) ──

@@ -47,7 +47,7 @@ function resolveLevel(explicit?: LogLevel): LogLevel {
  * `logger.info('x', { authorization, password, token, ... })` never leaks a credential to the log
  * sink. Matches the KEY (not the message text); over-masking a benignly-named field is acceptable.
  */
-const SENSITIVE_KEY = /pass(word)?|secret|token|authorization|cookie|jwt|api[-_]?key|mfa|credential/i;
+const SENSITIVE_KEY = /pass(word)?|secret|token|authorization|cookie|jwt|api[-_]?key|mfa|credential|otp/i;
 const REDACTED = '[REDACTED]';
 // LOGGING-01 (docs/audit/14-logging.md): the old version only checked top-level keys, so
 // `logger.warn('x', { user: { password } })` or `{ items: [{ token }] }` passed the secret through

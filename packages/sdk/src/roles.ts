@@ -44,6 +44,9 @@ export interface RoleView {
   idleLogoutMinutes: number | null;
   /** Absolute session lifetime in minutes (ADR-0045); null = no cap. */
   maxSessionMinutes: number | null;
+  /** New-device login OTP enforcement (ADR-0088). FIELD_AGENT stays false until the OTP-capable
+   *  mobile app releases (ADR-0054) — flipping it here is the release gate, no deploy needed. */
+  otpLoginRequired: boolean;
   version: number;
   createdAt: string;
   updatedAt: string;
@@ -92,6 +95,8 @@ export const CreateRoleSchema = z.object({
   idleLogoutMinutes: idleLogoutMinutes.optional(),
   /** absolute session lifetime; omitted ⇒ null (no cap). */
   maxSessionMinutes: maxSessionMinutes.optional(),
+  /** new-device login OTP (ADR-0088); omitted ⇒ false (off). */
+  otpLoginRequired: z.boolean().optional(),
 });
 export type CreateRoleInput = z.input<typeof CreateRoleSchema>;
 
@@ -108,6 +113,8 @@ export const UpdateRoleSchema = z.object({
   idleLogoutMinutes: idleLogoutMinutes.optional(),
   /** absolute session lifetime; omit to leave unchanged, null to clear (no cap). */
   maxSessionMinutes: maxSessionMinutes.optional(),
+  /** new-device login OTP (ADR-0088); omit to leave unchanged. */
+  otpLoginRequired: z.boolean().optional(),
   version: z.number().int().nonnegative(),
 });
 export type UpdateRoleInput = z.infer<typeof UpdateRoleSchema>;

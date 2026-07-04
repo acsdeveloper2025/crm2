@@ -15,6 +15,11 @@ export const LoginSchema = z.object({
   password: z.string().min(1).max(200),
   /** TOTP or recovery code — required (in this same request) when the account has MFA enrolled. */
   mfaCode: z.string().trim().min(1).max(20).optional(),
+  /** New-device login OTP (ADR-0088). A 401 `OTP_REQUIRED` means a code was sent (details.sentTo
+   *  masks the destinations) — re-login including `otpCode`. Re-login WITHOUT it re-sends the same
+   *  code (60s cooldown, ≤3 sends). Only challenged when the role enforces OTP, the device is not
+   *  trusted, and the account has no TOTP enrolment (authenticator users use `mfaCode` instead). */
+  otpCode: z.string().trim().min(1).max(10).optional(),
   deviceId: z.string().max(128).optional(),
   // Accept a string OR the field app's device-info object (RN sends an object: brand/model/os/…);
   // stringified for storage (device_info is a text label). Mobile compat — additive (ADR-0011).

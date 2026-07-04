@@ -66,6 +66,7 @@ describe('@crm2/logger', () => {
       password: 'hunter2',
       refreshToken: 'rt_xyz',
       apiKey: 'k',
+      otpCode: '123456', // ADR-0088: login OTPs are secrets too
       userId: 'u1',
       caseId: 7,
     });
@@ -74,6 +75,7 @@ describe('@crm2/logger', () => {
       password: '[REDACTED]',
       refreshToken: '[REDACTED]',
       apiKey: '[REDACTED]',
+      otpCode: '[REDACTED]',
       userId: 'u1', // not sensitive → kept
       caseId: 7,
     });

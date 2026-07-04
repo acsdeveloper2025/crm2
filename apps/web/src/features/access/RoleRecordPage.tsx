@@ -108,6 +108,9 @@ function RoleForm({ initial }: { initial: RoleView | null }) {
   const [maxSession, setMaxSession] = useState(
     initial ? (initial.maxSessionMinutes != null ? String(initial.maxSessionMinutes) : '') : '720',
   );
+  // New-device login OTP (ADR-0088); new roles default ON (FIELD_AGENT is seeded OFF until the
+  // OTP-capable mobile app releases — flipping this toggle is that release gate).
+  const [otpLogin, setOtpLogin] = useState(initial ? initial.otpLoginRequired : true);
   const [permissions, setPermissions] = useState<Set<string>>(new Set(initial?.permissions ?? []));
   const [wiring, setWiring] = useState<Map<string, RoleDimensionWiring['mode']>>(
     new Map((initial?.dimensions ?? []).map((d) => [d.dimension, d.mode])),
@@ -139,6 +142,7 @@ function RoleForm({ initial }: { initial: RoleView | null }) {
         passwordExpiryDays: pwExpiry.trim() === '' ? null : Number(pwExpiry),
         idleLogoutMinutes: idleLogout.trim() === '' ? null : Number(idleLogout),
         maxSessionMinutes: maxSession.trim() === '' ? null : Number(maxSession),
+        otpLoginRequired: otpLogin,
         dimensions,
       };
       if (!isEdit) {
@@ -330,6 +334,24 @@ function RoleForm({ initial }: { initial: RoleView | null }) {
           {fieldErrors['maxSessionMinutes'] && (
             <span className="mt-1 block text-xs text-destructive">{fieldErrors['maxSessionMinutes']}</span>
           )}
+        </label>
+
+        <label className="flex max-w-xs items-start gap-2">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 accent-primary"
+            checked={otpLogin}
+            onChange={(e) => setOtpLogin(e.target.checked)}
+          />
+          <span>
+            <span className="block text-xs font-medium text-foreground">
+              Require a sign-in code on new devices
+            </span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              Email + SMS OTP on unrecognized devices (ADR-0088). Keep OFF for field agents until the
+              OTP-capable mobile app is released. Authenticator (TOTP) users are never asked.
+            </span>
+          </span>
         </label>
 
         <div className="rounded-md border border-border p-3">

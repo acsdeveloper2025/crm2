@@ -19,7 +19,7 @@ interface AuthState {
   pendingPolicies: PendingPolicy[];
   /** reason shown on the login screen after an idle/absolute timeout (null when none) (ADR-0045). */
   logoutReason: string | null;
-  login: (username: string, password: string, mfaCode?: string) => Promise<void>;
+  login: (username: string, password: string, mfaCode?: string, otpCode?: string) => Promise<void>;
   logout: () => Promise<void>;
   /** idle/absolute timeout: revoke THIS browser session only (not logout-everywhere), then drop. */
   idleLogout: (reason: string) => Promise<void>;
@@ -53,11 +53,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
-  const login = async (username: string, password: string, mfaCode?: string): Promise<void> => {
+  const login = async (
+    username: string,
+    password: string,
+    mfaCode?: string,
+    otpCode?: string,
+  ): Promise<void> => {
     const res = await api<LoginResponse>('POST', '/api/v2/auth/login', {
       username,
       password,
       ...(mfaCode ? { mfaCode } : {}),
+      ...(otpCode ? { otpCode } : {}),
       deviceId: tokenStore.deviceId(),
     });
     tokenStore.set(res.tokens.accessToken, res.tokens.jti);

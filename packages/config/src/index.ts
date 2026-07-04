@@ -48,6 +48,11 @@ const EnvSchema = z
       .optional()
       .transform((v) => v === 'true'),
     MAIL_FROM: z.string().default('CRM2 <no-reply@crm2.local>'),
+    // OTP SMS via Fast2SMS (ADR-0088). Inert unless BOTH are set: with either missing the SMS sender
+    // is a disabled provider that logs-and-skips (the email leg / gate inertness handle delivery).
+    // The OTP template id comes from the Fast2SMS panel (DLT approval lives there, not in code).
+    FAST2SMS_API_KEY: z.string().optional(),
+    FAST2SMS_OTP_TEMPLATE_ID: z.string().optional(),
     // Reverse geocoding (ADR-0026) — server-side Google Geocoding key for coord→address on the Field
     // Monitoring console. Inert unless set: with no key the geocoder degrades to null (the UI shows
     // raw coords + a Maps link, never an error). Restrict the key to the Geocoding API + the server IP.

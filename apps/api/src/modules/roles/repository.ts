@@ -8,7 +8,7 @@ import { filterClauses, likeContains } from '../../platform/pagination.js';
 
 const COLS = `code, name, description, grants_all, hierarchy_mode, reports_to_role,
   is_system, is_active, password_expiry_days, idle_logout_minutes, max_session_minutes,
-  version, created_at, updated_at`;
+  otp_login_required, version, created_at, updated_at`;
 
 type RoleRow = Omit<RoleView, 'permissions' | 'dimensions'>;
 
@@ -33,6 +33,7 @@ export interface CreateRoleRow {
   passwordExpiryDays: number | null;
   idleLogoutMinutes: number | null;
   maxSessionMinutes: number | null;
+  otpLoginRequired: boolean;
   permissions: string[];
   dimensions: RoleDimensionWiring[];
 }
@@ -48,6 +49,8 @@ export interface UpdateRoleRow {
   idleLogoutMinutes: number | null | undefined;
   /** undefined ⇒ leave unchanged; null ⇒ no cap; number ⇒ absolute session minutes (ADR-0045). */
   maxSessionMinutes: number | null | undefined;
+  /** undefined ⇒ leave unchanged; boolean ⇒ new-device login OTP on/off (ADR-0088). */
+  otpLoginRequired: boolean | undefined;
   dimensions: RoleDimensionWiring[] | undefined;
 }
 
@@ -182,8 +185,9 @@ export const roleRepository = {
     await withTransaction(async (q) => {
       const rows = await q<{ code: string }>(
         `INSERT INTO roles (code, name, description, hierarchy_mode, reports_to_role,
-                password_expiry_days, idle_logout_minutes, max_session_minutes, created_by, updated_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
+                password_expiry_days, idle_logout_minutes, max_session_minutes, otp_login_required,
+                created_by, updated_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
          ON CONFLICT (code) DO NOTHING RETURNING code`,
         [
           input.code,
@@ -194,6 +198,7 @@ export const roleRepository = {
           input.passwordExpiryDays,
           input.idleLogoutMinutes,
           input.maxSessionMinutes,
+          input.otpLoginRequired,
           actorId,
         ],
       );
@@ -239,7 +244,7 @@ export const roleRepository = {
       const rows = await q<{ version: number }>(
         `UPDATE roles SET name = $2, description = COALESCE($3, description),
                 hierarchy_mode = $4, reports_to_role = $5, password_expiry_days = $8,
-                idle_logout_minutes = $9, max_session_minutes = $10,
+                idle_logout_minutes = $9, max_session_minutes = $10, otp_login_required = $11,
                 version = version + 1, updated_by = $6, updated_at = now()
          WHERE code = $1 AND version = $7 RETURNING version`,
         [
@@ -253,6 +258,7 @@ export const roleRepository = {
           input.passwordExpiryDays === undefined ? before.passwordExpiryDays : input.passwordExpiryDays,
           input.idleLogoutMinutes === undefined ? before.idleLogoutMinutes : input.idleLogoutMinutes,
           input.maxSessionMinutes === undefined ? before.maxSessionMinutes : input.maxSessionMinutes,
+          input.otpLoginRequired === undefined ? before.otpLoginRequired : input.otpLoginRequired,
         ],
       );
       const row = rows[0];

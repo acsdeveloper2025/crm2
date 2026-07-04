@@ -404,7 +404,9 @@ describe.skipIf(!RUN)('clients API', () => {
 
   it('date-range filter narrows the list to a created-between window (export honors it)', async () => {
     await request(app).post('/api/v2/clients').set(SA).send({ code: 'TODAY', name: 'Today Bank' });
-    const today = new Date().toISOString().slice(0, 10);
+    // LOCAL date, not toISOString() (UTC): pg casts the bound in its session tz, so between
+    // 00:00–05:30 IST the UTC date is still "yesterday" and the window would exclude the row.
+    const today = new Intl.DateTimeFormat('en-CA').format(new Date());
     const past = '2020-01-01';
     // a window that includes today returns the row...
     const inWindow = await request(app)

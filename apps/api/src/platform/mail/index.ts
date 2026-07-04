@@ -27,13 +27,14 @@ const disabledMailer: Mailer = {
   },
 };
 
-/** True when an SMTP relay is provisioned for this deployment. */
-export function mailConfigured(env: Env = loadEnv()): boolean {
-  return !!env.SMTP_HOST;
-}
-
 let override: Mailer | null = null;
 let cached: Mailer | null = null;
+
+/** True when an SMTP relay is provisioned for this deployment (an injected test mailer counts —
+ *  a caller asking "can I email?" must get yes when setMailer() has supplied one). */
+export function mailConfigured(env: Env = loadEnv()): boolean {
+  return override !== null || !!env.SMTP_HOST;
+}
 
 /** For tests: inject a fake mailer (mirrors setPool). Pass null to restore the real factory. */
 export function setMailer(m: Mailer | null): void {
