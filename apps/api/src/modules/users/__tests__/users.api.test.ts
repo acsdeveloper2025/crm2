@@ -253,6 +253,20 @@ describe.skipIf(!RUN)('users API', () => {
     expect((await request(app).get('/api/v2/users/options').set(BE)).status).toBe(403);
   });
 
+  it('list surfaces lockedUntil (the LOCKED chip) and admin unlock clears it', async () => {
+    const u = await newUser({ username: 'locked_user', role: 'BACKEND_USER' });
+    await db!.pool.query(
+      `UPDATE users SET failed_login_count = 5, locked_until = now() + interval '15 minutes' WHERE id = $1`,
+      [u.id],
+    );
+    const locked = await request(app).get('/api/v2/users?search=locked_user').set(SA);
+    expect(locked.body.items[0].lockedUntil).not.toBeNull();
+    const unlocked = await request(app).post(`/api/v2/users/${u.id}/unlock`).set(SA);
+    expect(unlocked.status).toBe(200);
+    const after = await request(app).get('/api/v2/users?search=locked_user').set(SA);
+    expect(after.body.items[0].lockedUntil).toBeNull();
+  });
+
   // ── GET /:id (admin record-page loader) ──
   describe('GET /:id', () => {
     it('returns the joined view for a created user (200)', async () => {

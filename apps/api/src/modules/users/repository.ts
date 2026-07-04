@@ -98,7 +98,7 @@ export const userRepository = {
     // sortColumn is whitelisted in the service (PageSpec.sortMap) → safe to interpolate.
     const items = await query<UserView>(
       `SELECT u.id, u.username, u.name, u.email, u.employee_id, u.phone, u.department_id, u.designation_id,
-              u.role, u.reports_to, u.is_active, u.mfa_required, u.effective_from, u.version,
+              u.role, u.reports_to, u.is_active, u.mfa_required, u.effective_from, u.locked_until, u.version,
               u.created_by, u.updated_by, u.created_at, u.updated_at,
               m.name AS reports_to_name, dp.name AS department_name, dg.name AS designation_name
        FROM users u
@@ -123,7 +123,7 @@ export const userRepository = {
   async profileView(id: string): Promise<UserView | null> {
     const rows = await query<UserView>(
       `SELECT u.id, u.username, u.name, u.email, u.employee_id, u.phone, u.department_id, u.designation_id,
-              u.role, u.reports_to, u.is_active, u.mfa_required, u.effective_from, u.version,
+              u.role, u.reports_to, u.is_active, u.mfa_required, u.effective_from, u.locked_until, u.version,
               u.created_by, u.updated_by, u.created_at, u.updated_at,
               m.name AS reports_to_name, dp.name AS department_name, dg.name AS designation_name
        FROM users u

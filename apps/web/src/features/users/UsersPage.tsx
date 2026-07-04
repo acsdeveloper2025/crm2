@@ -32,6 +32,10 @@ const isStale = (e: unknown): e is ApiError =>
 const BASE = '/api/v2/users';
 const QK = 'users';
 
+/** Locked = a lockout timestamp still in the future (5 failed sign-ins → 15 min, ADR-0014). */
+const isLockedNow = (u: UserView): boolean =>
+  u.lockedUntil !== null && new Date(u.lockedUntil).getTime() > Date.now();
+
 /** Open role catalog (ADR-0022): every role select/filter/label comes from the /roles feeds. */
 function useRoleOptions(): RoleOption[] {
   return (
@@ -138,7 +142,19 @@ export function UsersPage() {
         id: 'status',
         header: 'Status',
         sortable: true,
-        cell: (u) => <StatusChip isActive={u.isActive} effectiveFrom={u.effectiveFrom} />,
+        cell: (u) => (
+          <span className="inline-flex items-center gap-1.5">
+            <StatusChip isActive={u.isActive} effectiveFrom={u.effectiveFrom} />
+            {isLockedNow(u) && (
+              <span
+                className="rounded bg-st-rejected-bg px-2 py-0.5 text-xs font-medium text-st-rejected"
+                title={`Locked until ${formatDateTime(u.lockedUntil as string)} (5 failed sign-ins)`}
+              >
+                LOCKED
+              </span>
+            )}
+          </span>
+        ),
       },
       {
         id: 'actions',
@@ -152,9 +168,11 @@ export function UsersPage() {
             <Button variant="secondary" size="sm" onClick={() => setResetting(u)}>
               Reset Pwd
             </Button>
-            <Button variant="secondary" size="sm" onClick={() => unlock.mutate(u)}>
-              Unlock
-            </Button>
+            {isLockedNow(u) && (
+              <Button variant="secondary" size="sm" onClick={() => unlock.mutate(u)}>
+                Unlock
+              </Button>
+            )}
             <Button
               variant={u.isActive ? 'destructive' : 'secondary'}
               size="sm"

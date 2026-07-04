@@ -52,6 +52,9 @@ export interface UserView extends User {
   reportsToName: string | null;
   departmentName: string | null;
   designationName: string | null;
+  /** When the login lockout lifts (5 wrong attempts → 15 min, ADR-0014); null/past = not locked.
+   *  Surfaced so User Management can show a LOCKED chip + a targeted Unlock action. */
+  lockedUntil: string | null;
 }
 
 /**
