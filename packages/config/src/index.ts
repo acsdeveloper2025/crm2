@@ -37,7 +37,14 @@ const EnvSchema = z
     S3_ENDPOINT: z.string().optional(),
     /** presigned-URL lifetime (seconds) for reading a stored object (e.g. a profile photo). */
     S3_SIGNED_URL_TTL_S: z.coerce.number().int().positive().default(900),
-    // Transactional email (ADR-0021) — one-time-password / reset mail. Inert unless SMTP_HOST is set.
+    // Transactional email (ADR-0021) — one-time-password / reset mail. Inert unless SMTP_HOST is
+    // set (smtp transport) or MAIL_TRANSPORT=ses (ADR-0089: SES API over HTTPS/443, for hosts
+    // whose datacenter blocks outbound SMTP ports entirely, as the staging box's does).
+    MAIL_TRANSPORT: z.enum(['smtp', 'ses']).default('smtp'),
+    /** SES API region (ADR-0089); keys optional — absent = SDK default chain (EC2 instance role). */
+    SES_REGION: z.string().default('ap-south-1'),
+    SES_ACCESS_KEY_ID: z.string().optional(),
+    SES_SECRET_ACCESS_KEY: z.string().optional(),
     SMTP_HOST: z.string().optional(),
     SMTP_PORT: z.coerce.number().int().positive().default(587),
     SMTP_USER: z.string().optional(),

@@ -1,7 +1,19 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import type { Env } from '@crm2/config';
 import { getStorage, setStorage, storageConfigured, type StorageProvider } from '../storage/index.js';
 import { getMailer, setMailer, mailConfigured } from '../mail/index.js';
+
+// ADR-0089: the ses transport is exercised against a mocked SDK — the seam's lazy
+// dynamic import resolves to this mock, so no network and no real credentials.
+const sesSend = vi.fn();
+vi.mock('@aws-sdk/client-sesv2', () => ({
+  SESv2Client: class {
+    send = sesSend;
+  },
+  SendEmailCommand: class {
+    constructor(public readonly input: unknown) {}
+  },
+}));
 import { detectImage, MAX_IMAGE_BYTES } from '../image.js';
 import { AppError } from '../errors.js';
 import { HTTP_STATUS } from '../http.js';
@@ -50,9 +62,37 @@ describe('object storage (ADR-0021)', () => {
 describe('transactional email (ADR-0021)', () => {
   afterEach(() => setMailer(null));
 
-  it('is configured only when SMTP_HOST is set', () => {
+  it('is configured only when SMTP_HOST is set (smtp) or the ses transport is selected', () => {
     expect(mailConfigured(env({}))).toBe(false);
     expect(mailConfigured(env({ SMTP_HOST: 'smtp.example.com' }))).toBe(true);
+    // ADR-0089: MAIL_TRANSPORT=ses is an explicit deploy decision — configured without SMTP_HOST.
+    expect(mailConfigured(env({ MAIL_TRANSPORT: 'ses' }))).toBe(true);
+  });
+
+  it('ses transport maps the message onto SendEmail and returns true (ADR-0089)', async () => {
+    sesSend.mockReset().mockResolvedValueOnce({});
+    const m = getMailer(
+      env({ MAIL_TRANSPORT: 'ses', SES_REGION: 'ap-south-1', MAIL_FROM: 'CRM2 <no-reply@x.com>' }),
+    );
+    expect(await m.send({ to: 'a@b.com', subject: 'OTP', text: '123456', html: '<b>123456</b>' })).toBe(true);
+    const cmd = sesSend.mock.calls[0]?.[0] as { input: Record<string, unknown> };
+    expect(cmd.input).toMatchObject({
+      FromEmailAddress: 'CRM2 <no-reply@x.com>',
+      Destination: { ToAddresses: ['a@b.com'] },
+      Content: {
+        Simple: {
+          Subject: { Data: 'OTP' },
+          Body: { Text: { Data: '123456' }, Html: { Data: '<b>123456</b>' } },
+        },
+      },
+    });
+  });
+
+  it('ses transport is best-effort — an SDK failure returns false, never throws (ADR-0089)', async () => {
+    sesSend.mockReset().mockRejectedValueOnce(new Error('throttled'));
+    setMailer(null); // drop the cached mailer from the previous test
+    const m = getMailer(env({ MAIL_TRANSPORT: 'ses' }));
+    await expect(m.send({ to: 'a@b.com', subject: 's', text: 't' })).resolves.toBe(false);
   });
 
   it('the disabled mailer logs-and-skips (returns false, never throws)', async () => {
