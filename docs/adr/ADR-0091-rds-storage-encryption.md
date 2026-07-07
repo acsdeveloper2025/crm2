@@ -57,10 +57,10 @@ Executed 2026-07-07 in a zero-traffic window (owner-authorized). Endpoint change
 - Endpoint DNS changed → a one-line `DATABASE_URL` host edit was required (documented; the box env,
   not a GitHub secret — deploys read the box `.env.prod`).
 - Brief api downtime during the cutover (write-freeze). Done in a zero-traffic window, so no user impact.
-- The old unencrypted instance is retained (stopped) as a rollback copy — a residual unencrypted copy
-  of the data exists until it is deleted. **RDS auto-starts a stopped instance after 7 days**, so it
-  must be deleted (or re-stopped) before then. The unencrypted `crm2-prod-preenc-*` intermediate
-  snapshot is likewise retained during the rollback window.
+- ~~The old unencrypted instance is retained (stopped) as a rollback copy.~~ **Closed same day
+  (owner decision, pre-production):** the old instance, its automated snapshots, and the unencrypted
+  `crm2-prod-preenc-*` intermediate snapshot were deleted on 2026-07-07. The encrypted
+  `crm2-prod-enc-*` snapshot is kept as the cutover anchor; rollback would now be a restore from it.
 
 ## Alternatives Considered
 
