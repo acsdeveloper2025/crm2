@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CreateRateSchema,
@@ -31,6 +31,19 @@ const isStale = (e: unknown): e is ApiError =>
 // client). The select carries this sentinel; the payload sends null (= Universal) for it.
 const UNIVERSAL = 'UNIVERSAL';
 const toDim = (v: string): number | null => (v === UNIVERSAL ? null : Number(v));
+
+// UX-4: friendly copy for this page's known 409 code — a local map on purpose (one code per page,
+// a shared error-copy module is YAGNI). Unknown codes fall through to the raw code, unchanged.
+export const friendlyError = (code: string): string | null =>
+  code === 'RATE_EXISTS'
+    ? 'An active rate for this combination already overlaps this period — revise or end-date it first.'
+    : null;
+
+// UX-3: the Rate Type picker's two gated states — distinct copy per state, and the empty-assignments
+// one links straight to the form that fixes it.
+export const PICK_COMBO_FIRST = 'Pick client, product & unit first';
+export const NO_RATE_TYPES_FOR_COMBO = 'No rate types assigned for this combination';
+export const ASSIGN_RATE_TYPES_PATH = '/admin/rate-type-assignments/new';
 
 /**
  * Rate create/revise as a full record-page route (ADR-0051 Wave-4 D4 — no modal).
@@ -194,7 +207,14 @@ function RateForm({ initial }: { initial: RateView | null }) {
       if (isStale(e)) {
         const current = (e.body as { current?: { updatedAt?: string; version?: number } } | null)?.current;
         setConflict(current ?? {});
-      } else setError(e instanceof ApiError ? e.code : e instanceof Error ? e.message : 'Save failed');
+      } else
+        setError(
+          e instanceof ApiError
+            ? (friendlyError(e.code) ?? e.code)
+            : e instanceof Error
+              ? e.message
+              : 'Save failed',
+        );
     },
   });
 
@@ -329,13 +349,16 @@ function RateForm({ initial }: { initial: RateView | null }) {
                   onChange={setRateType}
                   options={clientRateTypeOpts}
                   disabled={!comboReady}
-                  placeholder={comboReady ? 'Search…' : 'Pick client, product & unit first'}
+                  placeholder={comboReady ? 'Search…' : PICK_COMBO_FIRST}
                   width="w-full"
                 />
                 {noRateTypesForCombo && (
                   <span className="mt-1 block text-xs text-muted-foreground">
-                    No rate types assigned for this combination — assign them in Admin → Rate Type
-                    Assignments.
+                    {NO_RATE_TYPES_FOR_COMBO} —{' '}
+                    <Link to={ASSIGN_RATE_TYPES_PATH} className="text-primary hover:underline">
+                      assign one
+                    </Link>
+                    .
                   </span>
                 )}
                 {fieldErrors['clientRateType'] && (

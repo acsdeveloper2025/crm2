@@ -27,6 +27,13 @@ const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
   e instanceof ApiError && e.status === HTTP_CONFLICT && e.code === 'STALE_UPDATE';
 
+// UX-4: friendly copy for this page's known 409 code — a local map on purpose (one code per page,
+// a shared error-copy module is YAGNI). Unknown codes fall through to the raw code, unchanged.
+export const friendlyError = (code: string): string | null =>
+  code === 'COMMISSION_RATE_EXISTS'
+    ? 'An active rate for this combination already overlaps this period — revise or end-date it first.'
+    : null;
+
 /**
  * Commission-rate create/revise as a full record-page route (ADR-0051 Wave-4 D4 — no modal).
  * `/admin/commission-rates/new` creates (the full dimension cascade); `/admin/commission-rates/:id`
@@ -182,7 +189,14 @@ function CommissionRateForm({ initial }: { initial: CommissionRateView | null })
       if (isStale(e)) {
         const current = (e.body as { current?: { updatedAt?: string; version?: number } } | null)?.current;
         setConflict(current ?? {});
-      } else setError(e instanceof ApiError ? e.code : e instanceof Error ? e.message : 'Save failed');
+      } else
+        setError(
+          e instanceof ApiError
+            ? (friendlyError(e.code) ?? e.code)
+            : e instanceof Error
+              ? e.message
+              : 'Save failed',
+        );
     },
   });
 

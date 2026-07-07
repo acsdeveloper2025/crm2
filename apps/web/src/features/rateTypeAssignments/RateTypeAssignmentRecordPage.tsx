@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CreateRateTypeAssignmentSchema,
@@ -17,6 +17,11 @@ import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
 
 const BASE = '/api/v2/rate-type-assignments';
 const QK = 'rate-type-assignments';
+
+// UX-3: when a concrete client + product has no CPV mapping, /cpv-units/available returns [] — warn
+// (with a link to the CPV admin that fixes it) but leave the unit picker's behavior unchanged.
+export const NO_CPV_MAPPING = 'This client + product has no CPV mapping yet';
+export const CPV_ADMIN_PATH = '/admin/cpv';
 
 /**
  * Rate-type-assignment create / detail as a full record-page route (mirrors CommissionRateRecordPage).
@@ -127,6 +132,7 @@ function AssignmentForm() {
     queryKey: ['rate-types', 'options'],
     queryFn: () => api<RateTypeOption[]>('GET', '/api/v2/rate-types/options?active=true'),
   });
+  const noCpvMapping = unitCpvScoped && units.isSuccess && units.data.length === 0;
 
   const mut = useMutation({
     mutationFn: () =>
@@ -197,6 +203,15 @@ function AssignmentForm() {
               </option>
             ))}
           </select>
+          {noCpvMapping && (
+            <span className="mt-1 block text-xs text-muted-foreground">
+              {NO_CPV_MAPPING} —{' '}
+              <Link to={CPV_ADMIN_PATH} className="text-primary hover:underline">
+                map it in CPV
+              </Link>
+              .
+            </span>
+          )}
           {fieldErrors['verificationUnitId'] && (
             <span className="mt-1 block text-xs text-destructive">{fieldErrors['verificationUnitId']}</span>
           )}
