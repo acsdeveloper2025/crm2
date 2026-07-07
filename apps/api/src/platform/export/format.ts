@@ -1,3 +1,4 @@
+import { Writable } from 'node:stream';
 import type { ExportFormat } from '@crm2/sdk';
 
 /**
@@ -65,7 +66,14 @@ export function toCsv<T>(rows: T[], columns: ExportColumn<T>[]): string {
   return [head, ...body].join('\r\n');
 }
 
-/** Build an XLSX workbook (one sheet) via exceljs — guaranteed-valid Office Open XML. */
+/**
+ * Build an XLSX workbook (one sheet) via exceljs's STREAMING writer — guaranteed-valid Office Open
+ * XML with BOUNDED memory. The in-memory `Workbook` holds every row's cell objects at once, which
+ * OOM-hangs the 157k-row catalog export (EXPORT_JOB_MAX_ROWS=200k) at "Building export" — CSV, a
+ * plain string join, survived while XLSX did not. `WorkbookWriter` flushes each committed row to the
+ * zip stream instead; `useSharedStrings:false` so a 200k-row sheet never accumulates an unbounded
+ * shared-strings table. Output is collected into a Buffer (the caller streams/stores bytes).
+ */
 export async function toXlsx<T>(
   rows: T[],
   columns: ExportColumn<T>[],
@@ -73,11 +81,23 @@ export async function toXlsx<T>(
 ): Promise<Buffer> {
   // Lazy import: exceljs is heavy; only load it when an XLSX export actually runs.
   const ExcelJS = (await import('exceljs')).default;
-  const wb = new ExcelJS.Workbook();
+  const chunks: Buffer[] = [];
+  const sink = new Writable({
+    write(chunk: Buffer, _encoding, callback) {
+      chunks.push(Buffer.from(chunk));
+      callback();
+    },
+  });
+  const wb = new ExcelJS.stream.xlsx.WorkbookWriter({
+    stream: sink,
+    useStyles: true,
+    useSharedStrings: false,
+  });
   // Excel caps sheet names at 31 chars and forbids \ / ? * [ ] :
   const ws = wb.addWorksheet(sheetName.replace(/[\\/?*[\]:]/g, ' ').slice(0, 31) || 'Export');
-  ws.addRow(columns.map((c) => c.header));
-  ws.getRow(1).font = { bold: true };
+  const header = ws.addRow(columns.map((c) => c.header));
+  header.font = { bold: true };
+  header.commit();
   for (const r of rows) {
     ws.addRow(
       columns.map((c) => {
@@ -87,9 +107,11 @@ export async function toXlsx<T>(
         // neutralizeFormula guards string cells; numbers/booleans pass through as native types.
         return neutralizeFormula(typeof v === 'number' || typeof v === 'boolean' ? v : String(v));
       }),
-    );
+    ).commit();
   }
-  return Buffer.from(await wb.xlsx.writeBuffer());
+  await ws.commit();
+  await wb.commit();
+  return Buffer.concat(chunks);
 }
 
 export const EXPORT_MIME: Record<ExportFormat, string> = {

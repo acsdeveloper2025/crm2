@@ -80,3 +80,17 @@ describe('toXlsx — formula injection (CWE-1236)', () => {
     expect(safeRow.getCell(1).value).toBe('ok');
   });
 });
+
+describe('toXlsx — volume (regression: the 157k-catalog export OOM-hung the in-memory Workbook)', () => {
+  it('streams every row at volume — round-trips the exact count via the streaming writer', async () => {
+    const N = 2000;
+    const bigRows: Row[] = Array.from({ length: N }, (_, i) => ({ label: `A${i}`, value: i }));
+    const buf = await toXlsx(bigRows, columns);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buf as unknown as Parameters<typeof wb.xlsx.load>[0]);
+    const ws = wb.getWorksheet(1)!;
+    expect(ws.rowCount).toBe(N + 1); // header + N data rows — a dropped `.commit()` would lose rows
+    expect(ws.getRow(2).getCell(1).value).toBe('A0');
+    expect(ws.getRow(N + 1).getCell(2).value).toBe(N - 1);
+  });
+});
