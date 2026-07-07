@@ -6,6 +6,7 @@ import {
   ASSIGN_RATE_TYPES_PATH,
   hasDownstreamValues,
   MODE_LOCKED_HELPER,
+  CLEAR_FIELDS_LABEL,
 } from './RateRecordPage.js';
 
 /**
@@ -77,5 +78,12 @@ describe('hasDownstreamValues (Field/Office toggle guard)', () => {
 
   it('pins the helper-text copy', () => {
     expect(MODE_LOCKED_HELPER).toBe('Clear unit/location fields to switch mode');
+  });
+
+  // SearchableSelect has no clear affordance once a value commits, so the helper alone would be a
+  // dead-end instruction — the Clear-fields action (rendered iff modeLocked, right after the helper)
+  // is the recovery path. Same predicate gates both, so visibility can't drift apart.
+  it('pins the Clear-fields action label', () => {
+    expect(CLEAR_FIELDS_LABEL).toBe('Clear fields');
   });
 });

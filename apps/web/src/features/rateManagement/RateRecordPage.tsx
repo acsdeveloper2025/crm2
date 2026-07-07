@@ -55,6 +55,9 @@ export const hasDownstreamValues = (s: {
   clientRateType: string;
 }): boolean => !!s.unitId || !!s.pincode || !!s.locationId || !!s.clientRateType;
 export const MODE_LOCKED_HELPER = 'Clear unit/location fields to switch mode';
+// SearchableSelect has no clear affordance once a value commits, so the helper needs an inline
+// action that actually performs the clearing — otherwise the locked toggle is a dead-end.
+export const CLEAR_FIELDS_LABEL = 'Clear fields';
 
 /**
  * Rate create/revise as a full record-page route (ADR-0051 Wave-4 D4 — no modal).
@@ -129,12 +132,16 @@ function RateForm({ initial }: { initial: RateView | null }) {
   // rates are flat (no geography, no rate type); FIELD rates are location-based (LOCAL/OGL).
   const isOffice = mode === 'OFFICE';
   const modeLocked = hasDownstreamValues({ unitId, pincode, locationId, clientRateType });
-  const onModeChange = (m: string) => {
-    setMode(m);
+  // One clearing path for both the mode switch and the helper's Clear-fields action.
+  const clearDownstream = () => {
     setUnitId('');
     setPincode('');
     setLocationId('');
     setRateType('');
+  };
+  const onModeChange = (m: string) => {
+    setMode(m);
+    clearDownstream();
   };
 
   // Create-only option sources (skipped entirely in revise — every dimension is fixed there).
@@ -321,7 +328,12 @@ function RateForm({ initial }: { initial: RateView | null }) {
                 <option value="OFFICE">Office</option>
               </select>
               {modeLocked && (
-                <span className="mt-1 block text-xs text-muted-foreground">{MODE_LOCKED_HELPER}</span>
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  {MODE_LOCKED_HELPER} —{' '}
+                  <button type="button" className="text-primary hover:underline" onClick={clearDownstream}>
+                    {CLEAR_FIELDS_LABEL}
+                  </button>
+                </span>
               )}
             </Field>
             <Field label="Verification Unit">
