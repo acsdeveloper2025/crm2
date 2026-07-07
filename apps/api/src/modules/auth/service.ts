@@ -23,6 +23,7 @@ import { AppError } from '../../platform/errors.js';
 import { HTTP_STATUS } from '../../platform/http.js';
 import { getMailer, mailConfigured } from '../../platform/mail/index.js';
 import { getSmsSender, smsConfigured, normalizeIndianMobile } from '../../platform/sms.js';
+import { getWhatsappSender, whatsappConfigured } from '../../platform/whatsapp.js';
 import { getRealtime } from '../../platform/realtime/index.js';
 import { revokeUserAccessTokens } from '../../platform/tokenRevocation/index.js';
 import { logger } from '@crm2/logger';
@@ -124,15 +125,18 @@ const maskPhone = (phone: string): string => `******${phone.replace(/\D/g, '').s
 interface OtpSentTo {
   email: string | null;
   sms: string | null;
+  whatsapp: string | null;
 }
 /** Masked view of the channels a code actually went out on (the FE shows these on the OTP step). */
 const sentToView = (
   creds: { email: string | null; phone: string | null },
   sentEmail: boolean,
   sentSms: boolean,
+  sentWhatsapp: boolean,
 ): OtpSentTo => ({
   email: sentEmail && creds.email ? maskEmail(creds.email) : null,
   sms: sentSms && creds.phone ? maskPhone(creds.phone) : null,
+  whatsapp: sentWhatsapp && creds.phone ? maskPhone(creds.phone) : null,
 });
 /** Only reachable AFTER a correct password (like MFA_REQUIRED) — leaks nothing login doesn't. */
 const otpRequired = (sentTo: OtpSentTo) =>
@@ -150,12 +154,15 @@ const otpMatches = (expected: string, given: string): boolean => {
 async function deliverOtp(
   creds: { email: string | null; phone: string | null },
   code: string,
-): Promise<{ sentEmail: boolean; sentSms: boolean; deliverable: boolean }> {
+): Promise<{ sentEmail: boolean; sentSms: boolean; sentWhatsapp: boolean; deliverable: boolean }> {
   const emailLeg = mailConfigured() && !!creds.email;
   const phone10 = creds.phone ? normalizeIndianMobile(creds.phone) : null;
   const smsLeg = smsConfigured() && phone10 !== null;
-  if (!emailLeg && !smsLeg) return { sentEmail: false, sentSms: false, deliverable: false };
-  const [sentEmail, sentSms] = await Promise.all([
+  const waLeg = whatsappConfigured() && phone10 !== null;
+  if (!emailLeg && !smsLeg && !waLeg) {
+    return { sentEmail: false, sentSms: false, sentWhatsapp: false, deliverable: false };
+  }
+  const [sentEmail, sentSms, sentWhatsapp] = await Promise.all([
     emailLeg
       ? getMailer().send({
           to: creds.email as string,
@@ -166,8 +173,9 @@ async function deliverOtp(
         })
       : Promise.resolve(false),
     smsLeg ? getSmsSender().sendOtp(phone10 as string, code) : Promise.resolve(false),
+    waLeg ? getWhatsappSender().sendOtp(phone10 as string, code) : Promise.resolve(false),
   ]);
-  return { sentEmail, sentSms, deliverable: true };
+  return { sentEmail, sentSms, sentWhatsapp, deliverable: true };
 }
 
 /**
@@ -202,7 +210,14 @@ async function otpLoginGate(
     // wrong password or mfaCode (AUTHENTICATION-01), so a code can't be ground within its 5 tries.
     const after = await repo.recordFailedLogin(creds.id, MAX_FAILED_LOGINS, LOCKOUT_COOLDOWN_S);
     if (isLocked(after.lockedUntil)) throw accountLocked();
-    throw otpRequired(sentToView(creds, challenge?.sentEmail ?? false, challenge?.sentSms ?? false));
+    throw otpRequired(
+      sentToView(
+        creds,
+        challenge?.sentEmail ?? false,
+        challenge?.sentSms ?? false,
+        challenge?.sentWhatsapp ?? false,
+      ),
+    );
   }
 
   if (challenge) {
@@ -211,12 +226,17 @@ async function otpLoginGate(
     const cooldownOver = Date.now() - new Date(challenge.lastSentAt).getTime() >= OTP_RESEND_COOLDOWN_MS;
     if (cooldownOver && challenge.sendCount < OTP_MAX_SENDS) {
       const sent = await deliverOtp(creds, decryptSecret(challenge.codeEncrypted));
-      await repo.recordOtpResend(challenge.id, sent.sentEmail, sent.sentSms);
+      await repo.recordOtpResend(challenge.id, sent.sentEmail, sent.sentSms, sent.sentWhatsapp);
       throw otpRequired(
-        sentToView(creds, challenge.sentEmail || sent.sentEmail, challenge.sentSms || sent.sentSms),
+        sentToView(
+          creds,
+          challenge.sentEmail || sent.sentEmail,
+          challenge.sentSms || sent.sentSms,
+          challenge.sentWhatsapp || sent.sentWhatsapp,
+        ),
       );
     }
-    throw otpRequired(sentToView(creds, challenge.sentEmail, challenge.sentSms));
+    throw otpRequired(sentToView(creds, challenge.sentEmail, challenge.sentSms, challenge.sentWhatsapp));
   }
 
   const code = String(randomInt(0, OTP_CODE_SPACE)).padStart(OTP_CODE_DIGITS, '0');
@@ -234,9 +254,10 @@ async function otpLoginGate(
     expiresAt: new Date(Date.now() + OTP_TTL_MS),
     sentEmail: sent.sentEmail,
     sentSms: sent.sentSms,
+    sentWhatsapp: sent.sentWhatsapp,
     ip,
   });
-  throw otpRequired(sentToView(creds, sent.sentEmail, sent.sentSms));
+  throw otpRequired(sentToView(creds, sent.sentEmail, sent.sentSms, sent.sentWhatsapp));
 }
 
 /** 10 one-time recovery codes (base32, dash-grouped) — returned ONCE, stored only as hashes. */

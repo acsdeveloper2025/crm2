@@ -5,6 +5,7 @@ import { createApp } from '../../../http/app.js';
 import { setPool } from '../../../platform/db.js';
 import { setMailer } from '../../../platform/mail/index.js';
 import { setSmsSender, normalizeIndianMobile } from '../../../platform/sms.js';
+import { setWhatsappSender } from '../../../platform/whatsapp.js';
 import { encryptSecret } from '../../../platform/encryption.js';
 import { generateTotpSecret, totp } from '../../../platform/totp.js';
 
@@ -21,6 +22,7 @@ const DEVICE = 'web-device-aaaa';
 function captureChannels() {
   const emails: Array<{ to: string; text: string; subject: string }> = [];
   const smses: Array<{ phone: string; code: string }> = [];
+  const whatsapps: Array<{ phone: string; code: string }> = [];
   setMailer({
     send: (m) => {
       emails.push({ to: m.to, text: m.text, subject: m.subject });
@@ -33,8 +35,14 @@ function captureChannels() {
       return Promise.resolve(true);
     },
   });
+  setWhatsappSender({
+    sendOtp: (phone, code) => {
+      whatsapps.push({ phone, code });
+      return Promise.resolve(true);
+    },
+  });
   const lastCode = () => smses.at(-1)?.code ?? null;
-  return { emails, smses, lastCode };
+  return { emails, smses, whatsapps, lastCode };
 }
 
 interface LoginExtras {
@@ -86,22 +94,32 @@ describe.skipIf(!RUN)('OTP login verification (ADR-0088)', () => {
   afterEach(() => {
     setMailer(null);
     setSmsSender(null);
+    setWhatsappSender(null);
   });
 
-  it('challenges a flagged role on an unknown device: 401 OTP_REQUIRED, same code on both channels, masked sentTo', async () => {
+  it('challenges a flagged role on an unknown device: 401 OTP_REQUIRED, same code on all channels, masked sentTo', async () => {
     const ch = captureChannels();
     const id = await makeUser({ username: 'otp1', role: 'MANAGER', email: EMAIL, phone: PHONE });
     const res = await login('otp1', { deviceId: DEVICE });
     expect(res.status).toBe(401);
     expect(res.body.error).toBe('OTP_REQUIRED');
-    // both channels, one code
+    // all three channels, one code (ADR-0090: email + SMS + WhatsApp fire together)
     expect(ch.smses).toHaveLength(1);
     expect(ch.smses[0]!.phone).toBe('9876543210');
+    expect(ch.whatsapps).toHaveLength(1);
+    expect(ch.whatsapps[0]!.code).toBe(ch.lastCode()!);
     expect(ch.emails).toHaveLength(1);
     expect(ch.emails[0]!.to).toBe(EMAIL);
     expect(ch.emails[0]!.text).toContain(ch.lastCode()!);
     // masked destinations — never the raw contact
-    expect(res.body.details.sentTo).toEqual({ email: 'o***@crm2.test', sms: '******3210' });
+    expect(res.body.details.sentTo).toEqual({
+      email: 'o***@crm2.test',
+      sms: '******3210',
+      whatsapp: '******3210',
+    });
+    // the WhatsApp delivery flag persisted on the challenge row
+    const wa = await db!.pool.query(`SELECT sent_whatsapp FROM auth_otp_challenges WHERE user_id = $1`, [id]);
+    expect(wa.rows[0].sent_whatsapp).toBe(true);
     // stored encrypted, never plaintext
     const row = await db!.pool.query(`SELECT code_encrypted FROM auth_otp_challenges WHERE user_id = $1`, [
       id,

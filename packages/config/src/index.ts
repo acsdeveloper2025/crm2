@@ -60,6 +60,14 @@ const EnvSchema = z
     // The OTP template id comes from the Fast2SMS panel (DLT approval lives there, not in code).
     FAST2SMS_API_KEY: z.string().optional(),
     FAST2SMS_OTP_TEMPLATE_ID: z.string().optional(),
+    // OTP WhatsApp via AWS End User Messaging Social (ADR-0090). Inert unless BOTH the origination
+    // phone-number id AND the approved Meta template name are set; then it's a 3rd parallel OTP leg.
+    // Credentials resolve via the SDK default chain (prod EC2 instance role) or SES_*/AWS static keys
+    // on staging. Region is shared with SES (SES_REGION — same AWS messaging region, ap-south-1).
+    WHATSAPP_PHONE_NUMBER_ID: z.string().optional(),
+    WHATSAPP_TEMPLATE_NAME: z.string().optional(),
+    WHATSAPP_TEMPLATE_LANG: z.string().default('en_US'),
+    WHATSAPP_META_API_VERSION: z.string().default('v20.0'),
     // Reverse geocoding (ADR-0026) — server-side Google Geocoding key for coord→address on the Field
     // Monitoring console. Inert unless set: with no key the geocoder degrades to null (the UI shows
     // raw coords + a Maps link, never an error). Restrict the key to the Geocoding API + the server IP.

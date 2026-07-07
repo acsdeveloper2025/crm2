@@ -15,9 +15,13 @@ const ERROR_LABELS: Record<string, string> = {
 /** Masked destinations off a 401 OTP_REQUIRED (ADR-0088), e.g. "r***@acs.com and ******7890". */
 function otpSentToLabel(err: unknown): string | null {
   if (!(err instanceof ApiError)) return null;
-  const sentTo = (err.body as { details?: { sentTo?: { email?: string | null; sms?: string | null } } })
-    ?.details?.sentTo;
-  const parts = [sentTo?.email, sentTo?.sms].filter((x): x is string => !!x);
+  const sentTo = (
+    err.body as {
+      details?: { sentTo?: { email?: string | null; sms?: string | null; whatsapp?: string | null } };
+    }
+  )?.details?.sentTo;
+  // De-dupe: SMS and WhatsApp mask to the same number — show the phone once even when both fired.
+  const parts = [...new Set([sentTo?.email, sentTo?.sms, sentTo?.whatsapp].filter((x): x is string => !!x))];
   return parts.length > 0 ? parts.join(' and ') : null;
 }
 

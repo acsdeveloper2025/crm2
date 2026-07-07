@@ -49,6 +49,7 @@ export interface OtpChallengeRow {
   lastSentAt: string;
   sentEmail: boolean;
   sentSms: boolean;
+  sentWhatsapp: boolean;
 }
 
 interface RefreshRow {
@@ -301,7 +302,8 @@ export const authRepository = {
     maxAttempts: number,
   ): Promise<OtpChallengeRow | null> {
     const rows = await query<OtpChallengeRow>(
-      `SELECT id, code_encrypted, expires_at, attempts, send_count, last_sent_at, sent_email, sent_sms
+      `SELECT id, code_encrypted, expires_at, attempts, send_count, last_sent_at,
+              sent_email, sent_sms, sent_whatsapp
          FROM auth_otp_challenges
         WHERE user_id = $1 AND purpose = 'LOGIN' AND device_id IS NOT DISTINCT FROM $2
           AND consumed_at IS NULL AND expires_at > now() AND attempts < $3
@@ -320,13 +322,14 @@ export const authRepository = {
     expiresAt: Date;
     sentEmail: boolean;
     sentSms: boolean;
+    sentWhatsapp: boolean;
     ip: string | null;
   }): Promise<void> {
     await query(`DELETE FROM auth_otp_challenges WHERE expires_at < now() - interval '24 hours'`);
     await query(
       `INSERT INTO auth_otp_challenges
-         (user_id, device_id, code_encrypted, expires_at, sent_email, sent_sms, created_ip)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+         (user_id, device_id, code_encrypted, expires_at, sent_email, sent_sms, sent_whatsapp, created_ip)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [
         input.userId,
         input.deviceId,
@@ -334,19 +337,26 @@ export const authRepository = {
         input.expiresAt,
         input.sentEmail,
         input.sentSms,
+        input.sentWhatsapp,
         input.ip,
       ],
     );
   },
 
   /** A resend of the SAME code: bump the counter, stamp the clock, widen the delivered-channel flags. */
-  async recordOtpResend(id: string, sentEmail: boolean, sentSms: boolean): Promise<void> {
+  async recordOtpResend(
+    id: string,
+    sentEmail: boolean,
+    sentSms: boolean,
+    sentWhatsapp: boolean,
+  ): Promise<void> {
     await query(
       `UPDATE auth_otp_challenges
           SET send_count = send_count + 1, last_sent_at = now(),
-              sent_email = sent_email OR $2, sent_sms = sent_sms OR $3
+              sent_email = sent_email OR $2, sent_sms = sent_sms OR $3,
+              sent_whatsapp = sent_whatsapp OR $4
         WHERE id = $1`,
-      [id, sentEmail, sentSms],
+      [id, sentEmail, sentSms, sentWhatsapp],
     );
   },
 
