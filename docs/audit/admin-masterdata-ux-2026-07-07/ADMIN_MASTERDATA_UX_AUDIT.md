@@ -106,7 +106,7 @@ gone since 0013 (verified above); everything else in its constraint map held up.
 | Clients | ✓ | ✓ | lossless | n/a |
 | Products | ✓ | ✓ | lossless | n/a |
 | Client-Products (links) | ✓ (client/product codes) | ✓ (+unit_count) | lossless | n/a |
-| CPV units | ✓ (3 codes; blank unit = Universal) | ✓ | lossless | ✓ kept (post ADR-0074 fix) |
+| CPV units | ✓ (3 codes; **Universal NOT expressible** — `unitCode` is required in the ImportSpec, `cpv/import.ts:98,106`; UI-only) | ✓ | lossless for specific units | ✓ kept in export; unimportable |
 | Rate Types | ✗ | ✗ | — | n/a |
 | Rate Type Assignments | ✓ (blank product/unit = Universal) | ✓ ("Universal" literal) | lossless | ✓ |
 | Rates | ✓ (codes + pincode+area) | ✓ | lossless (currency incl.) | ✓ (blank = Universal) |
@@ -179,6 +179,7 @@ Severity = admin-experience impact. Disposition column = **PENDING owner review*
 ---
 
 ## 7 — Cross-checks performed during synthesis
+- **Correction (2026-07-08, from the Batch-3 spec adversarial review):** the original "blank unit = Universal" claim for CPV-unit *import* was wrong — the ImportSpec requires `unitCode` (`cpv/import.ts:98,106`), so a Universal (NULL-unit) CPV row **cannot be imported today**, only created in the UI. Matrix row fixed above; this strengthens UX-2/UX-6.
 - 0012 eligibility trigger: **dropped in 0013** (both trigger + `rate_type_eligibility` table) — DB-agent claim corrected.
 - Import formats: **XLSX-only** (`platform/import`), CSV is export-side only — FE-agent claim corrected.
 - Universal rows in exports: **retained** (LEFT JOINs) — stale memory claim (2026-06-26 deferral) corrected; since fixed.
