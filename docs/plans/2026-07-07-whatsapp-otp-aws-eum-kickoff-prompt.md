@@ -2,9 +2,18 @@
 
 > Paste into a fresh session in `/Users/mayurkulkarni/Downloads/crm2`. You are the session that did
 > the AWS migration (ADR-0087) and hold the AWS + Meta credentials. The email OTP leg is DONE + LIVE;
-> India DLT blocked the SMS leg — this session **adds WhatsApp as the second delivery channel and
-> activates it.** Owner decision (2026-07-07): **email + WhatsApp for ALL ~400 users (office + field),
-> both channels on every OTP — NOT field-gated.**
+> India DLT blocked the SMS leg — WhatsApp is the second delivery channel. Owner decision (2026-07-07):
+> **email + WhatsApp for ALL ~400 users (office + field), both channels on every OTP — NOT field-gated.**
+>
+> ⚠️ **UPDATE 2026-07-07 — Jobs B, C, D are ALREADY SHIPPED (commit after `22e5786`), verify GREEN, INERT:**
+> `platform/whatsapp.ts` seam (AWS `@aws-sdk/client-socialmessaging`, mirrors sms.ts + SES transport),
+> config env (`WHATSAPP_PHONE_NUMBER_ID`/`WHATSAPP_TEMPLATE_NAME`/`_TEMPLATE_LANG`/`_META_API_VERSION`,
+> region reuses `SES_REGION`), `deliverOtp` 3rd parallel leg, `sent_whatsapp` (mig **0116**), `sentTo.whatsapp`
+> (web LoginPage shows it, de-duped vs SMS), ADR-0090, tests (all-3-channels fire + persisted flag).
+> **This session's remaining work = Job A (AWS+Meta provisioning), Job E (mobile label), Job F (staging→prod
+> env activation).** Do NOT rebuild the seam — provision, set env vars, verify. If the live
+> `SendWhatsAppMessage` payload/response differs from the seam's assumption (template component layout,
+> `out.messageId`), fix `platform/whatsapp.ts` via the normal main→staging→promote cycle.
 
 ---
 
