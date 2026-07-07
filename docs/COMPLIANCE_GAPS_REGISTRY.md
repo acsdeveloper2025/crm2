@@ -1603,6 +1603,9 @@ Commits: `955ca91` (Wave 1/High), `987f01f` (Wave 2/Medium), `db87685` (Wave 3/L
   otherwise) breaks one or both. Needs a real searchable-encryption design decision (deterministic
   encryption / blind indexing / accept losing substring search) + a superseding ADR before touching
   it, not a mechanical patch. Tracked here as the concrete next step when prioritized.
+  **NB (2026-07-07):** RDS **storage/volume** encryption at rest is now ON (ADR-0091, §AWS-HARDENING-2026-07-07)
+  — that is a *different, complementary* control at the disk layer and does **not** close this
+  field-level (column plaintext + index) finding, which remains DEFERRED.
 
 **🟢 FIXED — Low (22/33):**
 AUTHENTICATION-03 (secret entropy floor beyond the literal dev-default check) · AUTHORIZATION-04
@@ -1949,3 +1952,19 @@ Owner-reported on CASE-000024: (1) field verification photos appeared under the 
 | Legacy `pg`-driver RDS gotcha (`sslmode=require` treated as verify-full) | ✅ **FIXED** — `DATABASE_URL` carries `sslrootcert=/run/secrets/rds-ca.pem`; the RDS CA bundle is mounted into both db-touching containers (`docker-compose.aws.yml`), giving CA-verified TLS to RDS (stronger than the old plaintext-in-compose-network posture). |
 
 **Status: ✅ SHIPPED + LIVE 2026-07-04** — prod deploy run `28680980243` + staging run `28681075451` both SUCCESS; `https://crm.allcheckservices.com` serves from AWS (ACM cert, 301 HTTP→HTTPS), `https://staging.crm.allcheckservices.com` from the old box. Data cut over under freeze with exact per-table `count(*)` parity. SoT: [ADR-0087](adr/ADR-0087-aws-production-hosting.md).
+
+---
+
+## Section AWS-HARDENING-2026-07-07 — RDS at-rest encryption + S3 image lifecycle (ADR-0091; AWS-side, no app code)
+
+Two independent AWS-side fixes surfaced in the 2026-07-07 cost/capacity review at real ~25k-cases/mo
+volume. No application code, no schema/migration. Fix 1 needed a brief write-freeze (done in a
+zero-traffic, owner-authorized window); Fix 2 is additive config, zero downtime.
+
+| Item | Disposition |
+|---|---|
+| **RDS at-rest storage encryption OFF** (`crm2-prod` launched `StorageEncrypted=false` under ADR-0087; the deferred watch-item) | ✅ **FIXED (ADR-0091)** — snapshot → `copy-db-snapshot --kms-key-id alias/aws/rds` (free AWS-managed key) → restore as new **`crm2-prod-enc`** (mirrors db.t4g.medium / param group `crm2-pg18` / db SG `sg-031b15b6166bed497` / `default` subnet / gp3 20 GB / private / single-AZ / port 5432; retention 7 + deletion-protection + copy-tags set post-restore) → cutover under an api write-freeze. Verified before flip: exact per-table `count(*)` parity (51 tables / 157,546 rows), `SHOW timezone`=Asia/Kolkata, TLS in use; after flip: `StorageEncrypted=true`, migrate no-op, api healthy, external ALB `/api/v2/health` 200 + DB-path login probe 401. `DATABASE_URL` host `crm2-prod`→`crm2-prod-enc` in the box `.env.prod` (CA/query unchanged). Old `crm2-prod` **stopped** as rollback anchor (⚠️ RDS auto-starts a stopped instance after 7d → delete/re-stop before ~2026-07-14); intermediate unencrypted `crm2-prod-preenc-<stamp>` snapshot retained for the window; 2 RDS CloudWatch alarms repointed to `crm2-prod-enc`. |
+| **DATABASE-04** (field-level `case_applicants.name/mobile/pan` plaintext + index) — does this close it? | 🟡 **STILL DEFERRED** — storage/volume encryption is a *different layer* than field-level column encryption; it neither closes nor conflicts with DATABASE-04, which still needs its own searchable-encryption ADR. Cross-noted on the DATABASE-04 entry. |
+| **S3 image storage compounding** (`crm2-prod-824826126880`, no lifecycle rules; ~310 GB/mo new at 25k cases/mo in Standard) | ✅ **FIXED (config, no ADR)** — lifecycle → **S3 Intelligent-Tiering** on `field-photos/`, `case-reports/`, `attachments/` (owner chose Option A over Glacier-IR: no retrieval fees, millisecond/presigned access always, auto-tiers by real access; only a small monitoring fee). `users/` avatars left in Standard by design. Added abort-incomplete-multipart-uploads-after-7d (whole bucket). Public-access-block confirmed ON; SSE-S3 (AES256) default already on. Verified: `get-bucket-lifecycle-configuration` shows 4 rules; presigned GET on a live object returns 206 (access unbroken). |
+
+**Status: ✅ SHIPPED + LIVE 2026-07-07** — prod RDS encrypted at rest (`crm2-prod-enc`, KMS `aws/rds`), prod S3 on Intelligent-Tiering. AWS-side only; no deploy, no app change. SoT: [ADR-0091](adr/ADR-0091-rds-storage-encryption.md). **Owner follow-up:** delete/re-stop the old `crm2-prod` instance + `crm2-prod-preenc-<stamp>` snapshot after a few days' confidence (before the 7-day RDS auto-start).
