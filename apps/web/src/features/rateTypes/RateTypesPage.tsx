@@ -1,10 +1,18 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { pageQueryToParams, type PageQuery, type Paginated, type RateType } from '@crm2/sdk';
-import { api, ApiError } from '../../lib/sdk.js';
+import {
+  exportQueryToParams,
+  pageQueryToParams,
+  type ExportRequest,
+  type PageQuery,
+  type Paginated,
+  type RateType,
+} from '@crm2/sdk';
+import { api, apiExport, ApiError } from '../../lib/sdk.js';
 import { formatDateTime } from '../../lib/format.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
+import { ImportButton } from '../../components/import/ImportModal.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
 import { Button } from '../../components/ui/Button.js';
 
@@ -176,6 +184,7 @@ export function RateTypesPage() {
             the immutable identity; click a cell to edit, use “+ Add row” to create.
           </p>
         </div>
+        <ImportButton config={{ basePath: BASE, queryKey: QK, entityLabel: 'rate type' }} />
       </div>
 
       <DataGrid<RateType>
@@ -188,6 +197,7 @@ export function RateTypesPage() {
         fetchPage={(query: PageQuery) =>
           api<Paginated<RateType>>('GET', `${BASE}?${pageQueryToParams(query).toString()}`)
         }
+        exportFn={(req: ExportRequest) => apiExport(`${BASE}/export?${exportQueryToParams(req).toString()}`)}
         inlineEdit={{ version: (r) => r.version, onSave: save, onCreate: create }}
         toolbar={
           <select

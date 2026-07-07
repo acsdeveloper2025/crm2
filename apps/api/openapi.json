@@ -3916,6 +3916,63 @@
         ]
       }
     },
+    "/api/v2/rate-types/export": {
+      "get": {
+        "tags": [
+          "rate-types"
+        ],
+        "operationId": "get_api_v2_rate_types_export",
+        "summary": "GET /api/v2/rate-types/export",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/rate-types/import": {
+      "post": {
+        "tags": [
+          "rate-types"
+        ],
+        "operationId": "post_api_v2_rate_types_import",
+        "summary": "POST /api/v2/rate-types/import",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/rate-types/import-template": {
+      "get": {
+        "tags": [
+          "rate-types"
+        ],
+        "operationId": "get_api_v2_rate_types_import_template",
+        "summary": "GET /api/v2/rate-types/import-template",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v2/rate-types/options": {
       "get": {
         "tags": [
