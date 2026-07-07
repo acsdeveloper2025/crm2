@@ -1968,3 +1968,20 @@ zero-traffic, owner-authorized window); Fix 2 is additive config, zero downtime.
 | **S3 image storage compounding** (`crm2-prod-824826126880`, no lifecycle rules; ~310 GB/mo new at 25k cases/mo in Standard) | ✅ **FIXED (config, no ADR)** — lifecycle → **S3 Intelligent-Tiering** on `field-photos/`, `case-reports/`, `attachments/` (owner chose Option A over Glacier-IR: no retrieval fees, millisecond/presigned access always, auto-tiers by real access; only a small monitoring fee). `users/` avatars left in Standard by design. Added abort-incomplete-multipart-uploads-after-7d (whole bucket). Public-access-block confirmed ON; SSE-S3 (AES256) default already on. Verified: `get-bucket-lifecycle-configuration` shows 4 rules; presigned GET on a live object returns 206 (access unbroken). |
 
 **Status: ✅ SHIPPED + LIVE 2026-07-07** — prod RDS encrypted at rest (`crm2-prod-enc`, KMS `aws/rds`), prod S3 on Intelligent-Tiering. AWS-side only; no deploy, no app change. SoT: [ADR-0091](adr/ADR-0091-rds-storage-encryption.md). Owner follow-up CLOSED same day — old instance + ALL unencrypted snapshots deleted (pre-production call), incl. `crm2-pre-cleanup-20260704`; **zero unencrypted RDS artifacts remain** (only `crm2-prod-enc` + its encrypted snapshots).
+
+---
+
+## Section ADMIN-MASTERDATA-UX-2026-07-07 — Admin master-data configuration UX audit (AUDIT-ONLY)
+
+Owner-requested full FE+BE+DB+ADR review of the admin config chain (clients → products → CPV →
+rate types → rate-type assignments → rates → commission rates, incl. XLSX/CSV import-export).
+SoT: [docs/audit/admin-masterdata-ux-2026-07-07/ADMIN_MASTERDATA_UX_AUDIT.md](audit/admin-masterdata-ux-2026-07-07/ADMIN_MASTERDATA_UX_AUDIT.md).
+
+**15 findings (UX-1…UX-15), 0 security-critical — dispositions PENDING owner review.** Headlines:
+onboarding one minimal client ≈ 27 page visits / 35 submissions with the dependency order invisible
+(UX-1); six separate imports for one client's bulk setup (UX-2); misleading picker-gating messages +
+generic 409 overlap errors (UX-3/4); Rate Types is the only master-data page without import/export
+(UX-5); rate-type availability + CPV linkage are UX-gated only — the 0012 DB eligibility trigger was
+dropped in mig 0013 and nothing server-side replaced it (UX-8, decision item). Recommended sequencing
+in the report: quick-win message/parity batch (no ADR) → bulk-entry batch → strategic Client-Setup
+hub + single onboarding-workbook import (needs ADR). No code changed in this audit.
