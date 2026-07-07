@@ -1,5 +1,10 @@
 # Kickoff prompt — WhatsApp OTP leg via AWS End User Messaging Social (ADR-0090)
 
+> **STATUS: SHIPPED + LIVE on staging+prod 2026-07-07 (`1f712a9`).** WABA verified, template `crm2_login_otp`
+> APPROVED, env set on both boxes, real login proven (email+WhatsApp). Jobs A/B/C/D/F DONE. **Only Job E
+> remains — the mobile app 'WhatsApp' label on the OTP screen (optional, non-blocking).** This doc is kept
+> for that follow-up + as the full runbook/recipe.
+
 > Paste into a fresh session in `/Users/mayurkulkarni/Downloads/crm2`. You are the session that did
 > the AWS migration (ADR-0087) and hold the AWS + Meta credentials. The email OTP leg is DONE + LIVE;
 > India DLT blocked the SMS leg — WhatsApp is the second delivery channel. Owner decision (2026-07-07):
@@ -14,6 +19,19 @@
 > env activation).** Do NOT rebuild the seam — provision, set env vars, verify. If the live
 > `SendWhatsAppMessage` payload/response differs from the seam's assumption (template component layout,
 > `out.messageId`), fix `platform/whatsapp.ts` via the normal main→staging→promote cycle.
+
+> ⚠️ **UPDATE 2026-07-07 (later) — Job A provisioning DONE except the Meta review wait:**
+> WABA `waba-f1c3f0c379cf4fd49087234078e6373f` (Meta id 4493887807557828) **Active**; phone
+> `+91 99678 48508` **registered COMPLETE**; `WHATSAPP_PHONE_NUMBER_ID=phone-number-id-db30a6a6865442bb9cec46907584dc9d`;
+> 2-step PIN 260519; IAM send perm on `crm2-ses-smtp` ✅. **Meta Business Verification = IN REVIEW
+> (submitted 2026-07-07, ~2 working days).** Template creation returned `AccessDeniedByMetaException`
+> until verified. **When the verification-complete email arrives, remaining = ~10 min:**
+> 1. Create template: `aws socialmessaging create-whatsapp-message-template --id waba-f1c3f0c379cf4fd49087234078e6373f --template-definition fileb://<auth.json>` where auth.json =
+>    `{name:crm2_login_otp, language:en_US, category:AUTHENTICATION, components:[{type:BODY,add_security_recommendation:true},{type:FOOTER,code_expiration_minutes:5},{type:BUTTONS,buttons:[{type:OTP,otp_type:COPY_CODE}]}]}` — wait for templateStatus APPROVED (`list-whatsapp-message-templates`).
+> 2. Staging `/opt/crm2/secrets/.env.prod`: add `WHATSAPP_PHONE_NUMBER_ID=phone-number-id-db30a6a6865442bb9cec46907584dc9d` + `WHATSAPP_TEMPLATE_NAME=crm2_login_otp` (SES_REGION already set; SES_* keys reused for auth) → recreate api container.
+> 3. Real test: set a phone on a staging user → login from a fresh browser → WhatsApp OTP arrives on the owner's phone. If the send payload's button `sub_type` is wrong for a COPY_CODE auth template, fix `platform/whatsapp.ts` (main→staging→promote).
+> 4. Prod: same 2 env vars on the prod EC2 `.env` (instance role / SES keys), recreate api. Push the built code (still local `1f712a9`) via the normal flow when activating.
+> All code (seam/mig 0116/ADR-0090/tests) already committed local, verify GREEN — DO NOT rebuild.
 
 ---
 
