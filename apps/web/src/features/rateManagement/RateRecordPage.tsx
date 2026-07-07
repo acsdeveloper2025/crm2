@@ -45,6 +45,17 @@ export const PICK_COMBO_FIRST = 'Pick client, product & unit first';
 export const NO_RATE_TYPES_FOR_COMBO = 'No rate types assigned for this combination';
 export const ASSIGN_RATE_TYPES_PATH = '/admin/rate-type-assignments/new';
 
+// UX-9: onModeChange (below) silently clears unit/pincode/area/rate type on every Field↔Office
+// switch. Rather than a confirm dialog, the toggle disables itself once any of those four is set —
+// keyboard-safe, no modal to dismiss/mis-click.
+export const hasDownstreamValues = (s: {
+  unitId: string;
+  pincode: string;
+  locationId: string;
+  clientRateType: string;
+}): boolean => !!s.unitId || !!s.pincode || !!s.locationId || !!s.clientRateType;
+export const MODE_LOCKED_HELPER = 'Clear unit/location fields to switch mode';
+
 /**
  * Rate create/revise as a full record-page route (ADR-0051 Wave-4 D4 — no modal).
  * `/admin/rates/new` creates (the full client→product→unit→pincode→area cascade);
@@ -117,6 +128,7 @@ function RateForm({ initial }: { initial: RateView | null }) {
   // ADR-0070: the rate's field/office is the operator's choice, not the unit's classification. OFFICE
   // rates are flat (no geography, no rate type); FIELD rates are location-based (LOCAL/OGL).
   const isOffice = mode === 'OFFICE';
+  const modeLocked = hasDownstreamValues({ unitId, pincode, locationId, clientRateType });
   const onModeChange = (m: string) => {
     setMode(m);
     setUnitId('');
@@ -299,10 +311,18 @@ function RateForm({ initial }: { initial: RateView | null }) {
             </Field>
             <Field label="Field / Office">
               {/* a fixed 2-option choice → a native select (freely switchable), not a search-first dropdown */}
-              <select className="input" value={mode} onChange={(e) => onModeChange(e.target.value)}>
+              <select
+                className="input"
+                value={mode}
+                onChange={(e) => onModeChange(e.target.value)}
+                disabled={modeLocked}
+              >
                 <option value="FIELD">Field</option>
                 <option value="OFFICE">Office</option>
               </select>
+              {modeLocked && (
+                <span className="mt-1 block text-xs text-muted-foreground">{MODE_LOCKED_HELPER}</span>
+              )}
             </Field>
             <Field label="Verification Unit">
               <SearchableSelect value={unitId} onChange={setUnitId} options={unitOpts} width="w-full" />

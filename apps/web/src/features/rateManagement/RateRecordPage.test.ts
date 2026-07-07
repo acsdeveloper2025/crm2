@@ -4,6 +4,8 @@ import {
   PICK_COMBO_FIRST,
   NO_RATE_TYPES_FOR_COMBO,
   ASSIGN_RATE_TYPES_PATH,
+  hasDownstreamValues,
+  MODE_LOCKED_HELPER,
 } from './RateRecordPage.js';
 
 /**
@@ -42,5 +44,38 @@ describe('rate-type gating copy', () => {
 
   it('links straight to the new-assignment form', () => {
     expect(ASSIGN_RATE_TYPES_PATH).toBe('/admin/rate-type-assignments/new');
+  });
+});
+
+/**
+ * UX-9: switching Field/Office silently resets unit/pincode/area/rate type (onModeChange clears all
+ * four). Rather than a confirm dialog, the toggle disables itself once any downstream field is set —
+ * keyboard-safe, no modal to dismiss. hasDownstreamValues is the exact predicate the JSX disables on.
+ */
+describe('hasDownstreamValues (Field/Office toggle guard)', () => {
+  const empty = { unitId: '', pincode: '', locationId: '', clientRateType: '' };
+
+  it('is false when every downstream field is empty', () => {
+    expect(hasDownstreamValues(empty)).toBe(false);
+  });
+
+  it('is true when unit is set', () => {
+    expect(hasDownstreamValues({ ...empty, unitId: '3' })).toBe(true);
+  });
+
+  it('is true when pincode is set', () => {
+    expect(hasDownstreamValues({ ...empty, pincode: '400001' })).toBe(true);
+  });
+
+  it('is true when area (locationId) is set', () => {
+    expect(hasDownstreamValues({ ...empty, locationId: '9' })).toBe(true);
+  });
+
+  it('is true when rate type is set', () => {
+    expect(hasDownstreamValues({ ...empty, clientRateType: 'LOCAL' })).toBe(true);
+  });
+
+  it('pins the helper-text copy', () => {
+    expect(MODE_LOCKED_HELPER).toBe('Clear unit/location fields to switch mode');
   });
 });
