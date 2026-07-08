@@ -1,9 +1,11 @@
 /**
  * Import file parsing + template building (IMPORT_EXPORT_STANDARD §5/§8, B-14). The mirror of the
  * export `format.ts`: a domain declares an `ImportColumn[]` manifest (file header → domain field +
- * how to coerce the cell) and the platform turns an uploaded XLSX into typed row objects, or builds
+ * how to coerce the cell) and the platform turns an uploaded file into typed row objects, or builds
  * the downloadable XLSX template. Pure (bytes → rows / rows → bytes); the engine (`index.ts`) runs
- * validation + processing. XLSX only for now (the template is XLSX); CSV import is a later follow-up.
+ * validation + processing. Accepts both XLSX and CSV uploads (the template is always XLSX): the
+ * format is sniffed by content, not file extension — an XLSX is a zip and starts with the `PK` magic
+ * bytes (`parseImportFile`), otherwise the buffer is read as CSV text (UTF-8 BOM stripped, RFC-4180).
  */
 
 export interface ImportColumn {
