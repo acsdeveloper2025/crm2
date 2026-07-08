@@ -74,6 +74,21 @@ export const CreateCpvUnitSchema = z.object({
 export const UpdateClientProductSchema = z.object({ effectiveFrom: isoDate });
 export const UpdateCpvUnitSchema = z.object({ effectiveFrom: isoDate });
 
+const MAX_BATCH = 500;
+
+/** Bulk-enable concrete units for one client-product (UX-6) — Universal (null unit) stays single-create
+ *  only, so `verificationUnitIds` takes ids, never null. */
+export const BulkCreateCpvUnitsSchema = z.object({
+  clientProductId: positiveInt,
+  verificationUnitIds: z.array(positiveInt).min(1).max(MAX_BATCH),
+});
+export type BulkCreateCpvUnitsInput = z.infer<typeof BulkCreateCpvUnitsSchema>;
+
+export type BulkCpvUnitRowStatus = 'CREATED' | 'REACTIVATED' | 'ERROR';
+export interface BulkCpvUnitResult {
+  results: { verificationUnitId: number; status: BulkCpvUnitRowStatus; error?: string }[];
+}
+
 export type CreateClientProductInput = z.infer<typeof CreateClientProductSchema>;
 export type CreateCpvUnitInput = z.infer<typeof CreateCpvUnitSchema>;
 export type UpdateClientProductInput = z.infer<typeof UpdateClientProductSchema>;

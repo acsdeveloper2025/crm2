@@ -44,6 +44,8 @@ cpvUnitRoutes.post(
   cpv.import,
 );
 cpvUnitRoutes.post('/', authorize(PERMISSIONS.MASTERDATA_MANAGE), cpv.create);
+// UX-6: bulk-enable (static path, before `/:id`).
+cpvUnitRoutes.post('/bulk', authorize(PERMISSIONS.MASTERDATA_MANAGE), cpv.bulkCreate);
 cpvUnitRoutes.put('/:id', authorize(PERMISSIONS.MASTERDATA_MANAGE), cpv.update);
 cpvUnitRoutes.post('/:id/activate', authorize(PERMISSIONS.MASTERDATA_MANAGE), cpv.activate);
 cpvUnitRoutes.post('/:id/deactivate', authorize(PERMISSIONS.MASTERDATA_MANAGE), cpv.deactivate);

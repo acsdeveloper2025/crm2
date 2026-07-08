@@ -158,6 +158,15 @@ export const cpvUnitController = {
     }
   },
 
+  /** UX-6: bulk-enable concrete units for one client-product — per-row CREATED/REACTIVATED/ERROR. */
+  async bulkCreate(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json(await cpvSvc.bulkCreate(req.body, userId(req)));
+    } catch (e) {
+      next(e);
+    }
+  },
+
   async importTemplate(_req: Request, res: Response, next: NextFunction) {
     try {
       writeTemplate(res, await cpvSvc.importTemplate(), 'cpv-units');

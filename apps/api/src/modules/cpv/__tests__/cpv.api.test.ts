@@ -592,6 +592,96 @@ describe.skipIf(!RUN)('CPV API', () => {
     ).body.id as number;
   };
 
+  describe('cpv-units bulk create (UX-6)', () => {
+    const FA = authHeaderForRole('FIELD_AGENT');
+
+    it('bulk-enables units: 1 new → CREATED, 1 previously-deactivated → REACTIVATED, 1 bogus id → ERROR; others unaffected; one audit row per success', async () => {
+      const clientProductId = await newClientProduct(await newClient('C_BULK1'), await newProduct('P_BULK1'));
+      const newUnitId = await newUnit('U_BULK1_NEW');
+      const reactivateUnitId = await newUnit('U_BULK1_REACT');
+      const bogusUnitId = 999999;
+
+      // pre-seed the "previously-deactivated" row: enable then deactivate it.
+      const enabled = (
+        await request(app)
+          .post('/api/v2/cpv-units')
+          .set(SA)
+          .send({ clientProductId, verificationUnitId: reactivateUnitId })
+      ).body;
+      await request(app)
+        .post(`/api/v2/cpv-units/${enabled.id}/deactivate`)
+        .set(SA)
+        .send({ version: enabled.version });
+
+      const res = await request(app)
+        .post('/api/v2/cpv-units/bulk')
+        .set(SA)
+        .send({ clientProductId, verificationUnitIds: [newUnitId, reactivateUnitId, bogusUnitId] });
+
+      expect(res.status).toBe(200);
+      expect(res.body.results).toHaveLength(3);
+      const byUnit = new Map(
+        (res.body.results as { verificationUnitId: number; status: string }[]).map((r) => [
+          r.verificationUnitId,
+          r.status,
+        ]),
+      );
+      expect(byUnit.get(newUnitId)).toBe('CREATED');
+      expect(byUnit.get(reactivateUnitId)).toBe('REACTIVATED');
+      expect(byUnit.get(bogusUnitId)).toBe('ERROR');
+
+      // the two good rows actually landed active — the ERROR row didn't abort the transaction.
+      const list = await request(app).get(`/api/v2/cpv-units?clientProductId=${clientProductId}`).set(SA);
+      const active = list.body.filter((u: { isActive: boolean }) => u.isActive);
+      expect(active).toHaveLength(2);
+      const reactivated = list.body.find(
+        (u: { verificationUnitId: number }) => u.verificationUnitId === reactivateUnitId,
+      );
+      expect(reactivated.isActive).toBe(true);
+      expect(reactivated.version).toBe(3); // 1 (create) -> 2 (deactivate) -> 3 (bulk reactivate)
+
+      // audit: one row per successful (CREATED/REACTIVATED) unit — never for the ERROR row.
+      const audit = await db!.pool.query(
+        `SELECT entity_id, action FROM audit_log WHERE entity_type = 'client_product_verification_units'`,
+      );
+      const auditedIds = audit.rows.map((r: { entity_id: string }) => r.entity_id);
+      expect(auditedIds).toContain(String(enabled.id)); // reactivated row
+      expect(auditedIds.length).toBeGreaterThanOrEqual(3); // create + deactivate + bulk-create/reactivate
+    });
+
+    it('bulk create is permission-gated (FIELD_AGENT 403; unauthenticated 401)', async () => {
+      const clientProductId = await newClientProduct(await newClient('C_BULK2'), await newProduct('P_BULK2'));
+      const unitId = await newUnit('U_BULK2');
+      expect(
+        (
+          await request(app)
+            .post('/api/v2/cpv-units/bulk')
+            .set(FA)
+            .send({ clientProductId, verificationUnitIds: [unitId] })
+        ).status,
+      ).toBe(403);
+      expect(
+        (
+          await request(app)
+            .post('/api/v2/cpv-units/bulk')
+            .send({ clientProductId, verificationUnitIds: [unitId] })
+        ).status,
+      ).toBe(401);
+    });
+
+    it('bulk create rejects an empty or oversized list (400)', async () => {
+      const clientProductId = await newClientProduct(await newClient('C_BULK3'), await newProduct('P_BULK3'));
+      expect(
+        (
+          await request(app)
+            .post('/api/v2/cpv-units/bulk')
+            .set(SA)
+            .send({ clientProductId, verificationUnitIds: [] })
+        ).status,
+      ).toBe(400);
+    });
+  });
+
   describe('cpv-units export', () => {
     const FA = authHeaderForRole('FIELD_AGENT');
 

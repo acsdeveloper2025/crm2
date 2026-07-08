@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   exportQueryToParams,
   pageQueryToParams,
+  type BulkCpvUnitResult,
   type ExportRequest,
   type Option,
   type ClientProductView,
@@ -23,6 +24,23 @@ import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
 const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
   e instanceof ApiError && e.status === HTTP_CONFLICT && e.code === 'STALE_UPDATE';
+
+/** UX-6: the sub-table's client-side page size — enabled-unit lists are small (max = catalog size),
+ *  so no server paging is warranted; this just keeps a long list scrollable. */
+export const UNIT_PAGE_SIZE = 20;
+
+/** Slice `items` to page `page` (1-based) at `pageSize`; page is clamped into range so a stale page
+ *  number (after a delete drops the last page) never renders an empty table. */
+export function paginate<T>(
+  items: T[],
+  page: number,
+  pageSize: number,
+): { pageItems: T[]; totalPages: number } {
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  const clamped = Math.min(Math.max(1, page), totalPages);
+  const start = (clamped - 1) * pageSize;
+  return { pageItems: items.slice(start, start + pageSize), totalPages };
+}
 
 /**
  * Reschedule the effective-from of a CPV link / unit (the only mutable field — keys are
@@ -380,9 +398,11 @@ export function CpvPage() {
 /** Inline verification-unit manager for one client-product (expanded row). */
 function UnitManager({ link }: { link: ClientProductView }) {
   const qc = useQueryClient();
-  const [unitId, setUnitId] = useState('');
+  const [checked, setChecked] = useState<Set<number>>(new Set());
   const [effectiveFrom, setEffectiveFrom] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [bulkMessage, setBulkMessage] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
   const [unitConflict, setUnitConflict] = useState<ClientProductVerificationUnitView | null>(null);
   const [reschedUnit, setReschedUnit] = useState<ClientProductVerificationUnitView | null>(null);
 
@@ -396,18 +416,49 @@ function UnitManager({ link }: { link: ClientProductView }) {
       api<ClientProductVerificationUnitView[]>('GET', `/api/v2/cpv-units?clientProductId=${link.id}`),
   });
 
-  const addUnit = useMutation({
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['cpv-units', link.id] });
+    qc.invalidateQueries({ queryKey: ['client-products'] });
+  };
+
+  /** Universal (all units) stays a single-create — it maps `verificationUnitId: null`, which the
+   *  bulk endpoint deliberately rejects (ADR-0074; bulk takes concrete unit ids only). */
+  const addUniversal = useMutation({
     mutationFn: () =>
       api('POST', '/api/v2/cpv-units', {
         clientProductId: link.id,
-        verificationUnitId: unitId === 'UNIVERSAL' ? null : Number(unitId), // null ⇒ Universal (ADR-0074)
+        verificationUnitId: null,
         effectiveFrom: toIsoDate(effectiveFrom),
       }),
     onSuccess: () => {
-      setUnitId('');
       setEffectiveFrom('');
-      qc.invalidateQueries({ queryKey: ['cpv-units', link.id] });
-      qc.invalidateQueries({ queryKey: ['client-products'] });
+      invalidate();
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  /** Checkbox multi-select → one bulk POST (UX-6). Per-row CREATED/REACTIVATED/ERROR; an ERROR row
+   *  never rolls back the others, so the message always reflects exactly what landed. The bulk
+   *  contract has no effectiveFrom (always "now" — the Effective From picker only feeds the
+   *  Universal single-create below); a bulk-scheduled effective-from is a possible later add. */
+  const bulkAdd = useMutation({
+    mutationFn: () =>
+      api<BulkCpvUnitResult>('POST', '/api/v2/cpv-units/bulk', {
+        clientProductId: link.id,
+        verificationUnitIds: [...checked],
+      }),
+    onSuccess: (res) => {
+      const created = res.results.filter((r) => r.status === 'CREATED').length;
+      const reactivated = res.results.filter((r) => r.status === 'REACTIVATED').length;
+      const errored = res.results.filter((r) => r.status === 'ERROR').length;
+      const parts = [];
+      if (created) parts.push(`${created} enabled`);
+      if (reactivated) parts.push(`${reactivated} re-enabled`);
+      if (errored) parts.push(`${errored} failed`);
+      setBulkMessage(parts.join(' · '));
+      setChecked(new Set());
+      setEffectiveFrom('');
+      invalidate();
     },
     onError: (e: Error) => setError(e.message),
   });
@@ -417,10 +468,7 @@ function UnitManager({ link }: { link: ClientProductView }) {
       api('POST', `/api/v2/cpv-units/${u.id}/${u.isActive ? 'deactivate' : 'activate'}`, {
         version: u.version, // OCC: (de)activation is version-guarded (ADR-0019)
       }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['cpv-units', link.id] });
-      qc.invalidateQueries({ queryKey: ['client-products'] });
-    },
+    onSuccess: invalidate,
     onError: (e: unknown, u: ClientProductVerificationUnitView) => {
       if (isStale(e)) setUnitConflict(u);
     },
@@ -431,8 +479,7 @@ function UnitManager({ link }: { link: ClientProductView }) {
       api('PUT', `/api/v2/cpv-units/${v.u.id}`, { effectiveFrom: v.effectiveFrom, version: v.u.version }),
     onSuccess: () => {
       setReschedUnit(null);
-      qc.invalidateQueries({ queryKey: ['cpv-units', link.id] });
-      qc.invalidateQueries({ queryKey: ['client-products'] });
+      invalidate();
     },
     onError: (e: unknown, v: { u: ClientProductVerificationUnitView; effectiveFrom: string }) => {
       setReschedUnit(null);
@@ -440,29 +487,52 @@ function UnitManager({ link }: { link: ClientProductView }) {
     },
   });
 
+  // Only units with a currently-ACTIVE row are excluded from the picker — a deactivated one is still
+  // offered, since the bulk endpoint's ON CONFLICT DO UPDATE re-activates it (REACTIVATED status).
+  const activelyMapped = new Set(
+    enabled.data
+      ?.filter((u) => u.isActive)
+      .map((u) => u.verificationUnitId)
+      .filter((id) => id !== null),
+  );
+  const pickableUnits = units.data?.filter((u) => !activelyMapped.has(u.id)) ?? [];
+
+  const { pageItems, totalPages } = paginate(enabled.data ?? [], page, UNIT_PAGE_SIZE);
+
   return (
     <div className="rounded-md border border-border bg-card">
-      <div className="flex flex-wrap items-end gap-2 border-b border-border p-3">
-        <label className="block">
-          <span className="mb-1 block text-xs font-medium text-foreground">Verification unit</span>
-          <select
-            className="input min-w-[14rem]"
-            aria-label="Verification unit"
-            value={unitId}
-            onChange={(e) => setUnitId(e.target.value)}
-          >
-            <option value="">Select unit…</option>
-            {/* ADR-0074: map one unit OR Universal (all units) for this client+product. */}
-            <option value="UNIVERSAL">Universal (all units)</option>
-            {units.data?.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.code} — {u.name}
-              </option>
+      <div className="flex flex-wrap items-start gap-4 border-b border-border p-3">
+        <div className="block">
+          <span className="mb-1 block text-xs font-medium text-foreground">
+            Verification units ({checked.size} selected)
+          </span>
+          <div className="max-h-40 w-64 overflow-y-auto rounded border border-border p-2">
+            {pickableUnits.length === 0 && (
+              <p className="text-xs text-muted-foreground">All units are already enabled.</p>
+            )}
+            {pickableUnits.map((u) => (
+              <label key={u.id} className="flex items-center gap-2 py-0.5 text-xs">
+                <input
+                  type="checkbox"
+                  checked={checked.has(u.id)}
+                  onChange={(e) => {
+                    const next = new Set(checked);
+                    if (e.target.checked) next.add(u.id);
+                    else next.delete(u.id);
+                    setChecked(next);
+                  }}
+                />
+                <span>
+                  {u.code} — {u.name}
+                </span>
+              </label>
             ))}
-          </select>
-        </label>
+          </div>
+        </div>
         <label className="block">
-          <span className="mb-1 block text-xs font-medium text-foreground">Effective From</span>
+          <span className="mb-1 block text-xs font-medium text-foreground">
+            Effective From <span className="font-normal text-muted-foreground">(Universal only)</span>
+          </span>
           <input
             type="date"
             className="input w-40"
@@ -470,17 +540,37 @@ function UnitManager({ link }: { link: ClientProductView }) {
             onChange={(e) => setEffectiveFrom(e.target.value)}
           />
         </label>
-        <Button
-          loading={addUnit.isPending}
-          disabled={!unitId}
-          onClick={() => {
-            setError(null);
-            addUnit.mutate();
-          }}
-        >
-          Enable unit
-        </Button>
+        <div className="flex items-end gap-2">
+          <Button
+            loading={bulkAdd.isPending}
+            disabled={checked.size === 0}
+            onClick={() => {
+              setError(null);
+              setBulkMessage(null);
+              bulkAdd.mutate();
+            }}
+          >
+            Enable selected ({checked.size})
+          </Button>
+          {/* ADR-0074: Universal (all units) stays a single-create — the bulk endpoint only takes
+              concrete unit ids. */}
+          <Button
+            variant="secondary"
+            loading={addUniversal.isPending}
+            onClick={() => {
+              setError(null);
+              addUniversal.mutate();
+            }}
+          >
+            Enable Universal (all units)
+          </Button>
+        </div>
         {error && <p className="w-full text-sm text-destructive">{error}</p>}
+        {bulkMessage && (
+          <p className="w-full text-sm text-muted-foreground" role="status">
+            {bulkMessage}
+          </p>
+        )}
       </div>
       <table className="rtable w-full text-sm">
         <thead className="bg-surface-muted text-left text-xs uppercase tracking-wide text-muted-foreground">
@@ -525,7 +615,7 @@ function UnitManager({ link }: { link: ClientProductView }) {
               </td>
             </tr>
           )}
-          {enabled.data?.map((u) => (
+          {pageItems.map((u) => (
             <tr key={u.id} className="border-t border-border transition-colors hover:bg-row-hover">
               <td data-label="Unit" className="px-3 py-2">
                 {u.unitCode === null ? (
@@ -579,6 +669,25 @@ function UnitManager({ link }: { link: ClientProductView }) {
         </tbody>
       </table>
 
+      {totalPages > 1 && (
+        <div className="flex items-center justify-end gap-2 border-t border-border px-3 py-2 text-xs text-muted-foreground">
+          <Button variant="ghost" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+            Previous
+          </Button>
+          <span>
+            Page {Math.min(page, totalPages)} of {totalPages}
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={page >= totalPages}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            Next
+          </Button>
+        </div>
+      )}
+
       {reschedUnit && (
         <RescheduleDialog
           title={`Reschedule ${reschedUnit.unitCode}`}
@@ -594,8 +703,7 @@ function UnitManager({ link }: { link: ClientProductView }) {
           entityLabel="enabled unit"
           current={undefined}
           onReload={() => {
-            qc.invalidateQueries({ queryKey: ['cpv-units', link.id] });
-            qc.invalidateQueries({ queryKey: ['client-products'] });
+            invalidate();
             setUnitConflict(null);
           }}
           onDiscard={() => {

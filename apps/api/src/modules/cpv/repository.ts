@@ -386,6 +386,60 @@ export const cpvUnitRepository = {
   },
 
   /**
+   * Bulk-enable concrete units for one client-product (UX-6), one row per unit, all in a SINGLE
+   * transaction. Unlike the single `create` (which 409s on a duplicate), this path is idempotent per
+   * row: `ON CONFLICT (client_product_id, verification_unit_id) DO UPDATE` re-activates an existing
+   * (possibly deactivated) mapping instead of failing — `xmax = 0` distinguishes a fresh INSERT
+   * (CREATED) from a conflict update (REACTIVATED). A bogus unit id trips the FK check; that row is
+   * wrapped in its own SAVEPOINT so it rolls back to ERROR without aborting the other rows or the
+   * surrounding transaction (Postgres aborts the whole tx on the first unhandled statement error).
+   */
+  async bulkCreate(
+    input: { clientProductId: number; verificationUnitIds: number[] },
+    userId: string,
+  ): Promise<{ verificationUnitId: number; status: 'CREATED' | 'REACTIVATED' | 'ERROR' }[]> {
+    return withTransaction(async (q) => {
+      const out: { verificationUnitId: number; status: 'CREATED' | 'REACTIVATED' | 'ERROR' }[] = [];
+      for (const [i, verificationUnitId] of input.verificationUnitIds.entries()) {
+        const sp = `sp_cpv_bulk_${i}`;
+        await q(`SAVEPOINT ${sp}`);
+        try {
+          const [row] = await q<ClientProductVerificationUnit & { inserted: boolean }>(
+            `INSERT INTO client_product_verification_units (client_product_id, verification_unit_id, effective_from)
+             VALUES ($1, $2, now())
+             ON CONFLICT (client_product_id, verification_unit_id)
+             DO UPDATE SET is_active = true, version = client_product_verification_units.version + 1, updated_at = now()
+             RETURNING ${CPV_COLS}, (xmax = 0) AS inserted`,
+            [input.clientProductId, verificationUnitId],
+          );
+          if (!row) throw AppError.internal('insert returned no row');
+          await appendAudit(
+            {
+              entityType: 'client_product_verification_units',
+              entityId: row.id,
+              action: row.inserted ? 'CREATE' : 'ACTIVATE',
+              actorId: userId,
+              after: row,
+              versionAfter: row.version,
+            },
+            q,
+          );
+          await q(`RELEASE SAVEPOINT ${sp}`);
+          out.push({ verificationUnitId, status: row.inserted ? 'CREATED' : 'REACTIVATED' });
+        } catch (e) {
+          await q(`ROLLBACK TO SAVEPOINT ${sp}`);
+          if (pgCode(e) === FK_VIOLATION) {
+            out.push({ verificationUnitId, status: 'ERROR' });
+          } else {
+            throw e;
+          }
+        }
+      }
+      return out;
+    });
+  },
+
+  /**
    * Reschedule effective-from (the only mutable field; link/unit keys are immutable).
    * OCC-guarded (ADR-0019): applies at `expectedVersion`; 0 rows → 404 or 409 STALE_UPDATE.
    */

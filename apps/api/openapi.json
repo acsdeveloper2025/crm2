@@ -1841,6 +1841,25 @@
         ]
       }
     },
+    "/api/v2/cpv-units/bulk": {
+      "post": {
+        "tags": [
+          "cpv-units"
+        ],
+        "operationId": "post_api_v2_cpv_units_bulk",
+        "summary": "POST /api/v2/cpv-units/bulk",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v2/cpv-units/export": {
       "get": {
         "tags": [

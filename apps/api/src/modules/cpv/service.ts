@@ -1,8 +1,10 @@
 import {
+  BulkCreateCpvUnitsSchema,
   CreateClientProductSchema,
   CreateCpvUnitSchema,
   UpdateClientProductSchema,
   UpdateCpvUnitSchema,
+  type BulkCpvUnitResult,
   type ClientProduct,
   type ClientProductVerificationUnit,
   type ClientProductView,
@@ -268,6 +270,20 @@ export const cpvUnitService = {
   create(input: unknown, userId: string): Promise<ClientProductVerificationUnit> {
     const validated = CreateCpvUnitSchema.parse(input); // throws ZodError → 400
     return cpvRepo.create(validated, userId);
+  },
+
+  /** Bulk-enable concrete units for one client-product (UX-6); Universal (null unit) is single-create
+   *  only, so this never sees a null id. One tx; a bad id lands as an ERROR row (see repo docblock). */
+  async bulkCreate(input: unknown, userId: string): Promise<BulkCpvUnitResult> {
+    const validated = BulkCreateCpvUnitsSchema.parse(input); // throws ZodError → 400
+    const rows = await cpvRepo.bulkCreate(validated, userId);
+    return {
+      results: rows.map((r) =>
+        r.status === 'ERROR'
+          ? { ...r, error: 'INVALID_REFERENCE' }
+          : { verificationUnitId: r.verificationUnitId, status: r.status },
+      ),
+    };
   },
 
   update(id: number, input: unknown, userId: string): Promise<ClientProductVerificationUnit> {
