@@ -50,6 +50,7 @@ const OPERATIONS: { label: string; to?: string; perm?: string }[] = [
 // Each item carries the SAME permission its page's read endpoint enforces (so the nav mirrors the
 // API: a route the user would be 403'd from is not shown). Gated below via `has(perm)`.
 const ADMINISTRATION: { label: string; to: string; perm: string }[] = [
+  { label: 'Client Setup', to: '/admin/client-setup', perm: 'page.masterdata' },
   { label: 'Verification Units', to: '/admin/verification-units', perm: 'page.masterdata' },
   { label: 'Clients', to: '/admin/clients', perm: 'page.masterdata' },
   { label: 'Products', to: '/admin/products', perm: 'page.masterdata' },

@@ -42,6 +42,7 @@ import { BillingPage } from './features/billing/BillingPage.js';
 import { CommissionRatesPage } from './features/commissionRates/CommissionRatesPage.js';
 import { CommissionRateRecordPage } from './features/commissionRates/CommissionRateRecordPage.js';
 import { CommissionSummaryPage } from './features/commissionSummary/CommissionSummaryPage.js';
+import { ClientSetupPage } from './features/clientSetup/ClientSetupPage.js';
 
 /**
  * Page-permission gate for the Administration routes. An unauthorised role that types an `/admin/*`
@@ -107,6 +108,14 @@ export function App() {
           element={
             <RequirePerm perm="page.masterdata">
               <VerificationUnitRecordPage />
+            </RequirePerm>
+          }
+        />
+        <Route
+          path="/admin/client-setup"
+          element={
+            <RequirePerm perm="page.masterdata">
+              <ClientSetupPage />
             </RequirePerm>
           }
         />
