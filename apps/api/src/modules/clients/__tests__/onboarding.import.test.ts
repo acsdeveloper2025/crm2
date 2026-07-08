@@ -8,7 +8,12 @@ import {
   verificationUnitFactory,
   authHeaderForRole,
 } from '@crm2/test-utils';
-import type { OnboardingPreviewResult, OnboardingSheetPreview } from '@crm2/sdk';
+import type {
+  OnboardingConfirmResult,
+  OnboardingPreviewResult,
+  OnboardingSheetConfirm,
+  OnboardingSheetPreview,
+} from '@crm2/sdk';
 import { createApp } from '../../../http/app.js';
 import { setPool } from '../../../platform/db.js';
 import { ONBOARDING_SHEET_NAMES } from '../onboarding.js';
@@ -112,6 +117,19 @@ const byName = (result: OnboardingPreviewResult, name: SheetName): OnboardingShe
   const sheet = result.sheets.find((s) => s.name === name);
   if (!sheet) throw new Error(`sheet ${name} missing from result`);
   return sheet;
+};
+
+const byNameConfirm = (result: OnboardingConfirmResult, name: SheetName): OnboardingSheetConfirm => {
+  const sheet = result.sheets.find((s) => s.name === name);
+  if (!sheet) throw new Error(`sheet ${name} missing from result`);
+  return sheet;
+};
+
+const newLocation = async (pincode: string, area: string): Promise<void> => {
+  await request(app)
+    .post('/api/v2/locations')
+    .set(SA)
+    .send({ pincode, area, city: 'Mumbai', state: 'Maharashtra' });
 };
 
 describe.skipIf(!RUN)('client onboarding workbook import API (ADR-0092 S5)', () => {
@@ -428,5 +446,278 @@ describe.skipIf(!RUN)('client onboarding workbook import API (ADR-0092 S5)', () 
 
     const badMode = await upload(client.id, 'bogus', buf);
     expect(badMode.status).toBe(400);
+  });
+
+  // ── Task 13: confirm (`?mode=confirm`) — ordered rebuild-and-commit, CPV two-phase ──
+
+  it('happy 5-sheet onboarding confirm: every resource exists after, per-sheet successRows correct, exactly 6 import_log rows', async () => {
+    const client = await newClient('ONB2_C1');
+    const unit = await newUnit('ONB2_U1');
+    const rateType = await newRateType('ONB2_RT1');
+    const user = await newUser('onb2_user1');
+    await newLocation('400010', 'Onb2Area');
+
+    const buf = await buildWorkbook({
+      Products: [
+        { code: 'ONB2_P1', name: 'Onboarding Product 1' },
+        { code: 'ONB2_P2', name: 'Onboarding Product 2' },
+      ],
+      CPV: [
+        { clientCode: client.code, productCode: 'ONB2_P1', unitCode: 'UNIVERSAL' },
+        { clientCode: client.code, productCode: 'ONB2_P2', unitCode: unit.code },
+      ],
+      RateTypeAssignments: [
+        { clientCode: client.code, productCode: 'ONB2_P1', unitCode: '', rateTypeCode: rateType },
+        { clientCode: client.code, productCode: 'ONB2_P2', unitCode: unit.code, rateTypeCode: rateType },
+      ],
+      Rates: [
+        {
+          clientCode: client.code,
+          productCode: 'ONB2_P2',
+          unitCode: unit.code,
+          clientRateType: rateType,
+          amount: 100,
+        },
+      ],
+      CommissionRates: [
+        {
+          username: user,
+          fieldRateType: rateType,
+          clientCode: client.code,
+          pincode: '400010',
+          area: 'Onb2Area',
+          amount: 50,
+        },
+      ],
+    });
+
+    const res = await upload(client.id, 'confirm', buf);
+    expect(res.status).toBe(200);
+    const body = res.body as OnboardingConfirmResult;
+
+    expect(byNameConfirm(body, 'Products')).toMatchObject({ totalRows: 2, successRows: 2, failedRows: 0 });
+    expect(byNameConfirm(body, 'CPV')).toMatchObject({ totalRows: 2, successRows: 2, failedRows: 0 });
+    expect(byNameConfirm(body, 'RateTypeAssignments')).toMatchObject({
+      totalRows: 2,
+      successRows: 2,
+      failedRows: 0,
+    });
+    expect(byNameConfirm(body, 'Rates')).toMatchObject({ totalRows: 1, successRows: 1, failedRows: 0 });
+    expect(byNameConfirm(body, 'CommissionRates')).toMatchObject({
+      totalRows: 1,
+      successRows: 1,
+      failedRows: 0,
+    });
+
+    const products = await db!.pool.query(`SELECT code FROM products WHERE code IN ('ONB2_P1','ONB2_P2')`);
+    expect(products.rows).toHaveLength(2);
+
+    const links = await db!.pool.query(
+      `SELECT p.code FROM client_products cp JOIN products p ON p.id = cp.product_id WHERE cp.client_id = $1`,
+      [client.id],
+    );
+    expect(links.rows.map((r: { code: string }) => r.code).sort()).toEqual(['ONB2_P1', 'ONB2_P2']);
+
+    const cpvUnits = await db!.pool.query(
+      `SELECT cpvu.verification_unit_id FROM client_product_verification_units cpvu
+         JOIN client_products cp ON cp.id = cpvu.client_product_id WHERE cp.client_id = $1`,
+      [client.id],
+    );
+    expect(cpvUnits.rows).toHaveLength(2);
+
+    const rta = await db!.pool.query(`SELECT id FROM rate_type_assignments WHERE client_id = $1`, [
+      client.id,
+    ]);
+    expect(rta.rows).toHaveLength(2);
+
+    const rates = await db!.pool.query(`SELECT id FROM rates WHERE client_id = $1`, [client.id]);
+    expect(rates.rows).toHaveLength(1);
+
+    const commission = await db!.pool.query(
+      `SELECT cr.id FROM commission_rates cr JOIN users u ON u.id = cr.user_id WHERE u.username = $1`,
+      [user],
+    );
+    expect(commission.rows).toHaveLength(1);
+
+    const log = await db!.pool.query(`SELECT resource FROM import_log ORDER BY id`);
+    expect(log.rows.map((r: { resource: string }) => r.resource)).toEqual([
+      'products',
+      'client_products',
+      'client_product_verification_units',
+      'rate-type-assignments',
+      'rates',
+      'commission-rates',
+    ]);
+  });
+
+  it('partial failure: 1 bad product row → dependent CPV/RTA/rate rows fail with row errors, sibling rows commit', async () => {
+    const client = await newClient('ONB2_C2');
+    const unit = await newUnit('ONB2_U2');
+    const rateType = await newRateType('ONB2_RT2');
+
+    const buf = await buildWorkbook({
+      Products: [
+        { code: 'ONB2_P2GOOD', name: 'Good product' },
+        { code: 'ONB2_P2BAD', name: '' }, // blank name fails CreateProductSchema — never created
+      ],
+      CPV: [
+        { clientCode: client.code, productCode: 'ONB2_P2GOOD', unitCode: 'UNIVERSAL' },
+        { clientCode: client.code, productCode: 'ONB2_P2BAD', unitCode: 'UNIVERSAL' },
+      ],
+      RateTypeAssignments: [
+        { clientCode: client.code, productCode: 'ONB2_P2GOOD', unitCode: '', rateTypeCode: rateType },
+        { clientCode: client.code, productCode: 'ONB2_P2BAD', unitCode: '', rateTypeCode: rateType },
+      ],
+      Rates: [
+        {
+          clientCode: client.code,
+          productCode: 'ONB2_P2GOOD',
+          unitCode: unit.code,
+          clientRateType: rateType,
+          amount: 100,
+        },
+        { clientCode: client.code, productCode: 'ONB2_P2BAD', unitCode: unit.code, amount: 50 },
+      ],
+    });
+
+    const res = await upload(client.id, 'confirm', buf);
+    expect(res.status).toBe(200);
+    const body = res.body as OnboardingConfirmResult;
+
+    expect(byNameConfirm(body, 'Products')).toMatchObject({ totalRows: 2, successRows: 1, failedRows: 1 });
+    expect(byNameConfirm(body, 'CPV')).toMatchObject({ totalRows: 2, successRows: 1, failedRows: 1 });
+    expect(
+      byNameConfirm(body, 'CPV').errors.some((e) => /unknown product code ONB2_P2BAD/i.test(e.message)),
+    ).toBe(true);
+    expect(byNameConfirm(body, 'RateTypeAssignments')).toMatchObject({
+      totalRows: 2,
+      successRows: 1,
+      failedRows: 1,
+    });
+    expect(byNameConfirm(body, 'Rates')).toMatchObject({ totalRows: 2, successRows: 1, failedRows: 1 });
+
+    const products = await db!.pool.query(`SELECT code FROM products WHERE code LIKE 'ONB2_P2%'`);
+    expect(products.rows).toHaveLength(1);
+    const links = await db!.pool.query(`SELECT id FROM client_products WHERE client_id = $1`, [client.id]);
+    expect(links.rows).toHaveLength(1);
+    const rta = await db!.pool.query(`SELECT id FROM rate_type_assignments WHERE client_id = $1`, [
+      client.id,
+    ]);
+    expect(rta.rows).toHaveLength(1);
+    const rates = await db!.pool.query(`SELECT id FROM rates WHERE client_id = $1`, [client.id]);
+    expect(rates.rows).toHaveLength(1);
+  });
+
+  it('re-run the same workbook: link phase idempotent (no dup links); CPV-unit + rate dups surface as row errors; RTA upsert is a silent no-op (its own conflict semantics — ON CONFLICT DO UPDATE); nothing explodes', async () => {
+    const client = await newClient('ONB2_C3');
+    const product = await newProduct('ONB2_P3');
+    const unit = await newUnit('ONB2_U3');
+    const rateType = await newRateType('ONB2_RT3');
+
+    const buf = await buildWorkbook({
+      CPV: [{ clientCode: client.code, productCode: product.code, unitCode: unit.code }],
+      RateTypeAssignments: [
+        { clientCode: client.code, productCode: product.code, unitCode: unit.code, rateTypeCode: rateType },
+      ],
+      Rates: [
+        {
+          clientCode: client.code,
+          productCode: product.code,
+          unitCode: unit.code,
+          clientRateType: rateType,
+          amount: 100,
+        },
+      ],
+    });
+
+    const first = await upload(client.id, 'confirm', buf);
+    expect(first.status).toBe(200);
+    const firstBody = first.body as OnboardingConfirmResult;
+    expect(byNameConfirm(firstBody, 'CPV')).toMatchObject({ successRows: 1, failedRows: 0 });
+    expect(byNameConfirm(firstBody, 'RateTypeAssignments')).toMatchObject({ successRows: 1, failedRows: 0 });
+    expect(byNameConfirm(firstBody, 'Rates')).toMatchObject({ successRows: 1, failedRows: 0 });
+
+    const second = await upload(client.id, 'confirm', buf);
+    expect(second.status).toBe(200);
+    const secondBody = second.body as OnboardingConfirmResult;
+    // CPV-unit dup -> CPV_UNIT_EXISTS (409), surfaces as a row error (phase 1's link-create is the
+    // ONLY idempotent-success special case; phase 2 is a normal per-row write like any other sheet).
+    expect(byNameConfirm(secondBody, 'CPV')).toMatchObject({ successRows: 0, failedRows: 1 });
+    // RTA's own repository upserts (ON CONFLICT ... DO UPDATE SET is_active = true) — a re-run
+    // reactivates the (already-active) row rather than erroring; this is the module's real,
+    // pre-existing conflict semantics, unchanged by the onboarding guard wrapping.
+    expect(byNameConfirm(secondBody, 'RateTypeAssignments')).toMatchObject({ successRows: 1, failedRows: 0 });
+    // Rates has a no-overlap EXCLUDE constraint (no upsert) -> RATE_EXISTS (409), a row error.
+    expect(byNameConfirm(secondBody, 'Rates')).toMatchObject({ successRows: 0, failedRows: 1 });
+
+    const links = await db!.pool.query(`SELECT id FROM client_products WHERE client_id = $1`, [client.id]);
+    expect(links.rows).toHaveLength(1);
+    const cpvUnits = await db!.pool.query(
+      `SELECT cpvu.id FROM client_product_verification_units cpvu
+         JOIN client_products cp ON cp.id = cpvu.client_product_id WHERE cp.client_id = $1`,
+      [client.id],
+    );
+    expect(cpvUnits.rows).toHaveLength(1);
+    const rta = await db!.pool.query(`SELECT id FROM rate_type_assignments WHERE client_id = $1`, [
+      client.id,
+    ]);
+    expect(rta.rows).toHaveLength(1);
+    const rates = await db!.pool.query(`SELECT id FROM rates WHERE client_id = $1`, [client.id]);
+    expect(rates.rows).toHaveLength(1);
+  });
+
+  it('guard at confirm: a rates row with no rate-type assignment anywhere -> row error, no rate written', async () => {
+    const client = await newClient('ONB2_C4');
+    const product = await newProduct('ONB2_P4');
+    const unit = await newUnit('ONB2_U4');
+    const rateType = await newRateType('ONB2_RT4');
+    // Pre-link via the API (not the CPV sheet) so CPV_LINK_MISSING can't fire — isolates
+    // RATE_TYPE_NOT_ASSIGNED. Deliberately NO rate_type_assignment anywhere for this rate type.
+    await request(app)
+      .post('/api/v2/client-products')
+      .set(SA)
+      .send({ clientId: client.id, productId: product.id });
+
+    const buf = await buildWorkbook({
+      Rates: [
+        {
+          clientCode: client.code,
+          productCode: product.code,
+          unitCode: unit.code,
+          clientRateType: rateType,
+          amount: 100,
+        },
+      ],
+    });
+
+    const res = await upload(client.id, 'confirm', buf);
+    expect(res.status).toBe(200);
+    const rates = byNameConfirm(res.body as OnboardingConfirmResult, 'Rates');
+    expect(rates).toMatchObject({ successRows: 0, failedRows: 1 });
+    expect(rates.errors.some((e) => /RATE_TYPE_NOT_ASSIGNED/.test(e.message))).toBe(true);
+
+    const written = await db!.pool.query(`SELECT id FROM rates WHERE client_id = $1`, [client.id]);
+    expect(written.rows).toHaveLength(0);
+  });
+
+  it('CLIENT_MISMATCH on a CPV row at confirm: row error, no link and no write', async () => {
+    const target = await newClient('ONB2_C5');
+    const other = await newClient('ONB2_C5B');
+    const product = await newProduct('ONB2_P5');
+
+    const buf = await buildWorkbook({
+      CPV: [{ clientCode: other.code, productCode: product.code, unitCode: 'UNIVERSAL' }],
+    });
+
+    const res = await upload(target.id, 'confirm', buf);
+    expect(res.status).toBe(200);
+    const cpv = byNameConfirm(res.body as OnboardingConfirmResult, 'CPV');
+    expect(cpv).toMatchObject({ successRows: 0, failedRows: 1 });
+    expect(cpv.errors.some((e) => /CLIENT_MISMATCH/.test(e.message))).toBe(true);
+
+    const links = await db!.pool.query(`SELECT id FROM client_products`);
+    expect(links.rows).toHaveLength(0);
+    const units = await db!.pool.query(`SELECT id FROM client_product_verification_units`);
+    expect(units.rows).toHaveLength(0);
   });
 });

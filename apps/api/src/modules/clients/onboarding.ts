@@ -1,17 +1,31 @@
-import type { Client, ImportRowError, OnboardingPreviewResult, OnboardingSheetPreview } from '@crm2/sdk';
+import type {
+  Client,
+  ImportRowError,
+  OnboardingConfirmResult,
+  OnboardingPreviewResult,
+  OnboardingSheetConfirm,
+  OnboardingSheetPreview,
+} from '@crm2/sdk';
 import {
   type ImportColumn,
   type ImportSpec,
   assertImportable,
+  runImportConfirm,
   runImportPreview,
 } from '../../platform/import/index.js';
+import { logger } from '@crm2/logger';
 import { countImportRows, parseImportFile } from '../../platform/import/format.js';
+import { importLogRepository } from '../../platform/import/importLog.repository.js';
+import { AppError } from '../../platform/errors.js';
+import { HTTP_STATUS } from '../../platform/http.js';
 import { MASTER_IMPORT_COLUMNS, MASTER_IMPORT_SAMPLE } from '../shared/masterDataImport.js';
 import { clientService } from './service.js';
 import { productService, PRODUCT_IMPORT_SPEC } from '../products/service.js';
+import { productRepository } from '../products/repository.js';
 import { verificationUnitService } from '../verificationUnits/service.js';
 import { rateTypeService } from '../rateTypes/service.js';
 import { clientProductRepository as cpRepo } from '../cpv/repository.js';
+import { clientProductService, cpvUnitService } from '../cpv/service.js';
 import { CPV_IMPORT_COLUMNS, CPV_IMPORT_SAMPLE, buildCpvUnitWorkbookSpec } from '../cpv/import.js';
 import {
   RATE_TYPE_ASSIGNMENT_IMPORT_COLUMNS,
@@ -19,12 +33,15 @@ import {
   buildRateTypeAssignmentSpec,
 } from '../rateTypeAssignments/import.js';
 import { rateTypeAssignmentRepository } from '../rateTypeAssignments/repository.js';
+import { rateTypeAssignmentService } from '../rateTypeAssignments/service.js';
 import { RATE_IMPORT_COLUMNS, RATE_IMPORT_SAMPLE, buildRateSpec } from '../rates/import.js';
+import { rateService } from '../rates/service.js';
 import {
   COMMISSION_RATE_IMPORT_COLUMNS,
   COMMISSION_RATE_IMPORT_SAMPLE,
   buildCommissionRateSpec,
 } from '../commissionRates/import.js';
+import { commissionRateService } from '../commissionRates/service.js';
 
 /**
  * The Client Setup onboarding workbook (ADR-0092 S4): one XLSX bundling the 5 domain templates a new
@@ -551,4 +568,195 @@ export async function onboardingPreview(clientId: number, buffer: Buffer): Promi
   );
 
   return { sheets: [products, cpv, rta, rates, commissionRates] };
+}
+
+// ── Onboarding workbook runner — confirm (ADR-0092 S5) ──
+//
+// Sheets run strictly in `ONBOARDING_SHEET_NAMES` order; each sheet's module spec (and its guard
+// `Ctx`) is rebuilt FRESH — via the SAME `build*Spec()` / `loadContext()` preview already uses —
+// only AFTER the prior sheet has committed, so a later sheet's FK maps see the earlier sheet's real
+// DB writes. There is no cross-sheet projection at confirm (unlike preview): `loadContext`'s
+// `pending*`/`future*` fields start (and stay) empty, so `evaluate*Row`'s `pending` branch can never
+// fire here — only its `error` branch matters, which is exactly the workbook-strict guard this sheet
+// needs (CLIENT_MISMATCH / CPV_LINK_MISSING / RATE_TYPE_NOT_ASSIGNED / UNKNOWN_RATE_TYPE) on top of
+// each module's own native FK resolution (unchanged).
+
+/** Wrap a sheet's `resolve` with the SAME guard function preview uses: the guard runs first (against
+ *  a DB-state-only `Ctx`), and a failing row becomes a `ResolveResult` error — it never reaches the
+ *  module's own `resolve`, so it's never processed/written. A passing row falls through to the
+ *  module's native `resolve` unchanged (the ordinary FK-code-to-id lookup). */
+function withGuard<TFile, TInput>(
+  spec: ImportSpec<TFile, TInput>,
+  guard: (data: TFile, rowNumber: number) => RowOutcome,
+): ImportSpec<TFile, TInput> {
+  return {
+    ...spec,
+    resolve: async (input, rowNumber) => {
+      const outcome = guard(input, rowNumber);
+      if (outcome.status === 'error')
+        return {
+          ok: false,
+          errors: outcome.errors.map((e) => ({ column: e.column, message: e.message })),
+        };
+      if (!spec.resolve) return { ok: true, value: input as unknown as TInput };
+      return spec.resolve(input, rowNumber);
+    },
+  };
+}
+
+/**
+ * The onboarding workbook's confirm pass (ADR-0092 S5, spec §4.3): ordered rebuild-and-commit. Caps
+ * re-asserted exactly like preview (413 per-sheet + total) before any DB work. Every sheet — including
+ * a zero-row one — still runs and still writes its `import_log` audit row; a sheet's row failures
+ * never abort a later sheet (the same partial-import semantics a standalone import already has).
+ */
+export async function onboardingConfirm(
+  clientId: number,
+  buffer: Buffer,
+  meta: { userId: string; fileName?: string | undefined },
+): Promise<OnboardingConfirmResult> {
+  const target = await clientService.get(clientId); // 404 CLIENT_NOT_FOUND
+
+  const counts = await Promise.all(
+    ONBOARDING_SHEET_NAMES.map((name) => countImportRows(buffer, { sheet: name })),
+  );
+  let total = 0;
+  for (const count of counts) {
+    assertImportable(count);
+    total += count;
+  }
+  assertImportable(total);
+
+  const sheets: OnboardingSheetConfirm[] = [];
+
+  // Products — global master data, not client-scoped: no workbook-strict guard applies. Mirrors
+  // PRODUCT_IMPORT_SPEC's own `importConfirm` process (products/service.ts) verbatim.
+  const products = await runImportConfirm(
+    buffer,
+    PRODUCT_IMPORT_SPEC,
+    async (input) => {
+      await productRepository.create(input, meta.userId);
+    },
+    meta,
+    { sheet: 'Products' },
+  );
+  sheets.push({ name: 'Products', ...products });
+
+  // CPV — two phases, two `import_log` rows. Phase 1: create every DISTINCT (target client, product)
+  // link the sheet needs, idempotently — a 409 (already linked) counts as success, mirroring what a
+  // re-run of this same workbook should do. Rows for the wrong client or an unresolvable product are
+  // skipped here (never linked) — they surface as their own row error in phase 2 below, same as any
+  // other guard/native-resolve failure.
+  const cpvColumnsSpec = await buildCpvUnitWorkbookSpec(); // columns/schema only — its resolve (stale
+  // link map) is never invoked here; phase 2 rebuilds the spec fresh, after phase 1 commits.
+  const cpvRawRows = await parseImportFile(buffer, cpvColumnsSpec.columns, { sheet: 'CPV' });
+  const productOptions = await productService.options();
+  const productIdByCode = new Map(productOptions.map((p) => [p.code, p.id]));
+  const linkPairs = new Map<number, { clientId: number; productId: number }>();
+  for (const row of cpvRawRows) {
+    const parsed = cpvColumnsSpec.schema.safeParse(row.data);
+    if (!parsed.success) continue; // schema-invalid — phase 2 reports this row's own error
+    if (parsed.data.clientCode !== target.code) continue; // CLIENT_MISMATCH — not this phase's job
+    const productId = productIdByCode.get(parsed.data.productCode);
+    if (productId === undefined) continue; // unknown product — phase 2 reports this row's own error
+    linkPairs.set(productId, { clientId: target.id, productId });
+  }
+  const linkStarted = Date.now();
+  let linkSuccessRows = 0;
+  for (const pair of linkPairs.values()) {
+    try {
+      await clientProductService.create(pair, meta.userId);
+      linkSuccessRows += 1;
+    } catch (e) {
+      // a 409 (CLIENT_PRODUCT_EXISTS) = already linked = success for onboarding purposes; any other
+      // failure just isn't counted — the loop never aborts (partial-import semantics).
+      if (e instanceof AppError && e.status === HTTP_STATUS.CONFLICT) linkSuccessRows += 1;
+    }
+  }
+  const linkDurationMs = Date.now() - linkStarted;
+  await importLogRepository.record({
+    resource: 'client_products',
+    fileName: meta.fileName,
+    totalRows: linkPairs.size,
+    successRows: linkSuccessRows,
+    failedRows: linkPairs.size - linkSuccessRows,
+    durationMs: linkDurationMs,
+    actorId: meta.userId,
+  });
+  logger.info('data import', {
+    event: 'import',
+    resource: 'client_products',
+    totalRows: linkPairs.size,
+    successRows: linkSuccessRows,
+    failedRows: linkPairs.size - linkSuccessRows,
+    durationMs: linkDurationMs,
+    actorId: meta.userId,
+  });
+
+  // Phase 2: the unit rows, through the module's own spec — rebuilt fresh so its link map sees
+  // phase 1's writes — guarded for CLIENT_MISMATCH (the module's own `resolve` has no target-client
+  // concept; CPV_LINK_MISSING is already native here, since the link map above just caught up).
+  const cpvCtx = await loadContext(target);
+  const cpv = await runImportConfirm(
+    buffer,
+    withGuard(await buildCpvUnitWorkbookSpec(), (data, rowNumber) =>
+      evaluateCpvRow(cpvCtx, data, rowNumber, []),
+    ),
+    async (input) => {
+      await cpvUnitService.create(input, meta.userId);
+    },
+    meta,
+    { sheet: 'CPV' },
+  );
+  sheets.push({ name: 'CPV', ...cpv });
+
+  // RateTypeAssignments — guarded for CLIENT_MISMATCH (the module's own `resolve` has no target-client
+  // concept either).
+  const rtaCtx = await loadContext(target);
+  const rta = await runImportConfirm(
+    buffer,
+    withGuard(await buildRateTypeAssignmentSpec(), (data, rowNumber) =>
+      evaluateRtaRow(rtaCtx, data, rowNumber, []),
+    ),
+    async (input) => {
+      await rateTypeAssignmentService.create(input, meta.userId);
+    },
+    meta,
+    { sheet: 'RateTypeAssignments' },
+  );
+  sheets.push({ name: 'RateTypeAssignments', ...rta });
+
+  // Rates — guarded for CLIENT_MISMATCH / CPV_LINK_MISSING / RATE_TYPE_NOT_ASSIGNED, none of which the
+  // module's own `resolve` checks (a rate can otherwise be written for an unlinked product, or a rate
+  // type never assigned to this client).
+  const ratesCtx = await loadContext(target);
+  const rates = await runImportConfirm(
+    buffer,
+    withGuard(await buildRateSpec(), (data, rowNumber) => evaluateRatesRow(ratesCtx, data, rowNumber, [])),
+    async (input) => {
+      await rateService.create(input, meta.userId);
+    },
+    meta,
+    { sheet: 'Rates' },
+  );
+  sheets.push({ name: 'Rates', ...rates });
+
+  // CommissionRates — guarded for CLIENT_MISMATCH (blank clientCode = universal, never a mismatch) and
+  // UNKNOWN_RATE_TYPE (the module's own `resolve` silently resolves an unknown code to a NULL FK
+  // instead of erroring — this guard is the only thing that catches it).
+  const commissionCtx = await loadContext(target);
+  const commissionRates = await runImportConfirm(
+    buffer,
+    withGuard(await buildCommissionRateSpec(), (data, rowNumber) =>
+      evaluateCommissionRateRow(commissionCtx, data, rowNumber, []),
+    ),
+    async (input) => {
+      await commissionRateService.create(input, meta.userId);
+    },
+    meta,
+    { sheet: 'CommissionRates' },
+  );
+  sheets.push({ name: 'CommissionRates', ...commissionRates });
+
+  return { sheets };
 }
