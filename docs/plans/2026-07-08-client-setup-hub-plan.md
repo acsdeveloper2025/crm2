@@ -235,7 +235,10 @@ modules, `@crm2/sdk` zod, `platform/import` engine (ExcelJS 4.4.0), TanStack Que
 - Consumes: `EmbeddedPageProps` + `withClientFilter` from `features/clientSetup/embed.ts` (Task 3).
 - Produces: all three pages accept `EmbeddedPageProps`; when controlled they (a) add/override
   `clientId` in their grid `filters` via `withClientFilter`, (b) hide their own client picker
-  (Rate Mgmt + Commission toolbars — RTA has none), (c) pass through unchanged when absent.
+  (Rate Mgmt + Commission toolbars — RTA has none), (c) **hide their per-module `ImportButton`s**
+  (Task-3 review finding: a per-module import can create rows for a DIFFERENT client, bypassing the
+  controlled lens; exports stay — they follow the scoped grid query; the hub gets its own workbook
+  import in S5), (d) pass through unchanged when absent.
 
 - [ ] Step 1: `RateTypeAssignmentsPage({ clientId }: EmbeddedPageProps = {})`: grid filters →
   `withClientFilter({ active: active || undefined }, clientId)`. (No picker to hide.)
@@ -303,17 +306,23 @@ modules, `@crm2/sdk` zod, `platform/import` engine (ExcelJS 4.4.0), TanStack Que
 
 **Interfaces:**
 - Consumes: `CpvPage`/`RateTypeAssignmentsPage`/`RateManagementPage`/`CommissionRatesPage` with
-  `EmbeddedPageProps` (Tasks 3–4); `hubReturnTo` (Task 1).
-- Step body per `STEP_DEFS`: 1 → `<CpvPage clientId={clientId} />`; 2 → `<RateTypeAssignmentsPage clientId={clientId} />`
-  + a "＋ New Assignment" affordance note: the embedded page's own button navigates WITHOUT hub params,
-  so the hub renders its OWN `+ New Assignment` link `` `/admin/rate-type-assignments/new?clientId=${clientId}&returnTo=${encodeURIComponent(hubReturnTo(clientId, 2))}` ``
-  above the embed (same pattern steps 3/4: `/admin/rates/new?…step=3`, `/admin/commission-rates/new?…step=4`);
+  `EmbeddedPageProps` (Tasks 3–4); record pages honoring `?returnTo`/`?clientId` (Task 5).
+- Step body per `STEP_DEFS`: 1 → `<CpvPage clientId={clientId} />`; 2 → `<RateTypeAssignmentsPage clientId={clientId} />`;
   3 → `<RateManagementPage clientId={clientId} />`; 4 → `has('masterdata.manage')`
   ? `<CommissionRatesPage clientId={clientId} />` : a **locked card** ("Commission rates are managed
   by a super admin." — neutral, no error styling, no request fired).
+- **Hub-aware "+ New" buttons (Task-4 review decision — replaces the earlier hub-rendered-links idea):**
+  in the 3 list pages, when `controlledClientId` is set, the existing `+ New Assignment` / `+ Add rate`
+  / `+ New Commission Rate` buttons navigate to their `/new` route with
+  `` `?clientId=${controlledClientId}&returnTo=${encodeURIComponent(pathname + search)}` `` (from
+  `useLocation()` — when embedded, the current location IS the hub URL). Uncontrolled: today's bare
+  navigate. One button, no duplicate hub links, no silent hub exit.
 
 - [ ] Step 1: Replace the S1 placeholder cards with the embeds + the per-step hub create-links + the
-  locked card branch.
+  locked card branch. Also (Task-3 review carry-over): CpvPage's standalone "Export Units" button is a
+  hard-coded `mode=all` export that ignores the controlled client — hide it too when
+  `controlledClientId` is set (the DataGrid's own Export menu stays; it follows the scoped query),
+  and fix the now-misleading comment above the import-buttons guard in CpvPage.
 - [ ] Step 2: typecheck + web tests PASS.
 - [ ] Step 3: Commit `feat(web): client-setup hub embeds the four step pages (ADR-0092 S2)`.
 
