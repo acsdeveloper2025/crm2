@@ -192,9 +192,11 @@ describe.skipIf(!RUN)('rate-type assignments CRUD (ADR-0069)', () => {
       const res = await request(app)
         .post('/api/v2/rate-type-assignments/bulk-deactivate')
         .set(SA)
-        .send({ ids: [a.body.id, b.body.id, 999999] });
+        // 999999 sent twice — ids are deduped at the boundary, so ONE NOT_FOUND row, not two.
+        .send({ ids: [a.body.id, b.body.id, 999999, 999999] });
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({ okCount: 2, notFoundCount: 1 });
+      expect(res.body.results).toHaveLength(3);
       const byId = Object.fromEntries(
         (res.body.results as { id: string; status: string }[]).map((r) => [r.id, r.status]),
       );

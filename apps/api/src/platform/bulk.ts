@@ -55,18 +55,20 @@ export function parseBulkItems(body: unknown, idKind: 'int' | 'uuid'): BulkItem[
 /**
  * Validate + parse a bulk request body `{ ids: number[] }` — for a resource with NO version column
  * (no per-row OCC), e.g. rate-type-assignments `/bulk-deactivate` (UX-11). Same 400s as
- * `parseBulkItems` (empty/oversized/malformed), so both bulk shapes fail the same way.
+ * `parseBulkItems` (empty/oversized/malformed), so both bulk shapes fail the same way. Deduped —
+ * a repeated id is one intent, so it yields one per-row result, not an inflated NOT_FOUND.
  */
 export function parseBulkIds(body: unknown): number[] {
   const raw = (body as { ids?: unknown } | null)?.ids;
   if (!Array.isArray(raw) || raw.length === 0) throw AppError.badRequest('BULK_ITEMS_REQUIRED');
   if (raw.length > MAX_BULK_ITEMS)
     throw AppError.badRequest('BULK_TOO_LARGE', { max: MAX_BULK_ITEMS, got: raw.length });
-  return raw.map((r) => {
+  const ids = raw.map((r) => {
     const id = Number(r);
     if (!Number.isInteger(id) || id <= 0) throw AppError.badRequest('BULK_ITEM_INVALID');
     return id;
   });
+  return [...new Set(ids)];
 }
 
 /**
