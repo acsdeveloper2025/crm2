@@ -21,6 +21,7 @@ import { ImportButton } from '../../components/import/ImportModal.js';
 import { Button } from '../../components/ui/Button.js';
 import { SearchableSelect, type Opt } from '../../components/ui/SearchableSelect.js';
 import { useAuth } from '../../lib/AuthContext.js';
+import { withClientFilter, type EmbeddedPageProps } from '../clientSetup/embed.js';
 
 const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
@@ -87,7 +88,7 @@ function ActiveChip({ active }: { active: boolean }) {
  * routes (`/admin/rates/new`, `/admin/rates/:id`; ADR-0051 Wave-4 D4 — no modal). History opens as a
  * read-only dialog from the row actions.
  */
-export function RateManagementPage() {
+export function RateManagementPage({ clientId: controlledClientId }: EmbeddedPageProps = {}) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   // Writes (add / revise / activate-deactivate / bulk / import) require masterdata.manage; viewing
@@ -234,7 +235,12 @@ export function RateManagementPage() {
         </div>
         {canManage && (
           <div className="flex gap-2">
-            <ImportButton config={{ basePath: '/api/v2/rates', queryKey: 'rates', entityLabel: 'rate' }} />
+            {/* Embedded (controlled client, ADR-0092 S2): hide the import — a file import can create
+                rates for ANY client, bypassing the hub's client lens. Export stays — it follows the
+                grid's scoped query. */}
+            {!controlledClientId && (
+              <ImportButton config={{ basePath: '/api/v2/rates', queryKey: 'rates', entityLabel: 'rate' }} />
+            )}
             <Button onClick={() => navigate('/admin/rates/new')}>+ Add rate</Button>
           </div>
         )}
@@ -254,7 +260,10 @@ export function RateManagementPage() {
           : {})}
         defaultSort="client"
         searchPlaceholder="Search client, product, unit, pincode, area, rate type…"
-        filters={{ clientId: clientId || undefined, productId: productId || undefined }}
+        filters={withClientFilter(
+          { clientId: clientId || undefined, productId: productId || undefined },
+          controlledClientId,
+        )}
         fetchPage={(query: PageQuery) =>
           api<Paginated<RateView>>('GET', `/api/v2/rates?${pageQueryToParams(query).toString()}`)
         }
@@ -267,13 +276,15 @@ export function RateManagementPage() {
         }
         toolbar={
           <>
-            <SearchableSelect
-              value={clientId}
-              onChange={setClientId}
-              options={[{ value: '', label: 'All clients' }, ...clientOpts]}
-              placeholder="All clients"
-              width="min-w-[12rem]"
-            />
+            {!controlledClientId && (
+              <SearchableSelect
+                value={clientId}
+                onChange={setClientId}
+                options={[{ value: '', label: 'All clients' }, ...clientOpts]}
+                placeholder="All clients"
+                width="min-w-[12rem]"
+              />
+            )}
             <SearchableSelect
               value={productId}
               onChange={setProductId}

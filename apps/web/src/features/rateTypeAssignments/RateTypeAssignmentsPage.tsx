@@ -18,6 +18,7 @@ import { DataGrid, type DataGridColumn, type BulkSelection } from '../../compone
 import { ImportButton } from '../../components/import/ImportModal.js';
 import { Button } from '../../components/ui/Button.js';
 import { toast } from 'sonner';
+import { withClientFilter, type EmbeddedPageProps } from '../clientSetup/embed.js';
 
 /**
  * Bulk "Deactivate selected" for the RTA grid (UX-11). RTA has no version column (no per-row OCC —
@@ -74,7 +75,7 @@ function RtaBulkDeactivate({ selection }: { selection: BulkSelection<RateTypeAss
 /** Rate Type Assignments (ADR-0067 / ADR-0069) — which rate type a (client × product × unit) combo may
  *  use. Standard CRUD master data (mirrors Commission Rates): page.masterdata to view, masterdata.manage
  *  to write. Product/Unit render "Universal" when null (applies to all). */
-export function RateTypeAssignmentsPage() {
+export function RateTypeAssignmentsPage({ clientId: controlledClientId }: EmbeddedPageProps = {}) {
   const navigate = useNavigate();
   // Mirror the server write guard so viewers don't see write controls.
   const { has } = useAuth();
@@ -179,13 +180,18 @@ export function RateTypeAssignmentsPage() {
         </div>
         {canManage && (
           <div className="flex flex-wrap items-center gap-2">
-            <ImportButton
-              config={{
-                basePath: '/api/v2/rate-type-assignments',
-                queryKey: 'rate-type-assignments',
-                entityLabel: 'rate type assignment',
-              }}
-            />
+            {/* Embedded (controlled client, ADR-0092 S2): hide the import — a file import can create
+                assignments for ANY client, bypassing the hub's client lens. Export stays — it follows
+                the grid's scoped query. */}
+            {!controlledClientId && (
+              <ImportButton
+                config={{
+                  basePath: '/api/v2/rate-type-assignments',
+                  queryKey: 'rate-type-assignments',
+                  entityLabel: 'rate type assignment',
+                }}
+              />
+            )}
             <Button onClick={() => navigate('/admin/rate-type-assignments/new')}>+ New Assignment</Button>
           </div>
         )}
@@ -198,7 +204,7 @@ export function RateTypeAssignmentsPage() {
         bulkActions={(sel) => <RtaBulkDeactivate selection={sel} />}
         defaultSort="client"
         searchPlaceholder="Search client, product, unit, rate type…"
-        filters={{ active: active || undefined }}
+        filters={withClientFilter({ active: active || undefined }, controlledClientId)}
         fetchPage={(query: PageQuery) =>
           api<Paginated<RateTypeAssignmentView>>(
             'GET',

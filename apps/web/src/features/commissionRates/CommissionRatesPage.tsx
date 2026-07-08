@@ -20,13 +20,14 @@ import { ImportButton } from '../../components/import/ImportModal.js';
 import { Button } from '../../components/ui/Button.js';
 import { SearchableSelect, type Opt } from '../../components/ui/SearchableSelect.js';
 import { toast } from 'sonner';
+import { withClientFilter, type EmbeddedPageProps } from '../clientSetup/embed.js';
 
 const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
   e instanceof ApiError && e.status === HTTP_CONFLICT && e.code === 'STALE_UPDATE';
 
 /** Commission Rates (ADR-0036) — per-user agent-commission config. SUPER_ADMIN only (comp data). */
-export function CommissionRatesPage() {
+export function CommissionRatesPage({ clientId: controlledClientId }: EmbeddedPageProps = {}) {
   const navigate = useNavigate();
   // Mirror the server write guard (masterdata.manage) so viewers don't see write controls (H-1).
   const { has } = useAuth();
@@ -192,13 +193,18 @@ export function CommissionRatesPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <ImportButton
-            config={{
-              basePath: '/api/v2/commission-rates',
-              queryKey: 'commission-rates',
-              entityLabel: 'commission rate',
-            }}
-          />
+          {/* Embedded (controlled client, ADR-0092 S2): hide the import — a file import can create
+              commission rates for ANY client, bypassing the hub's client lens. Export stays — it
+              follows the grid's scoped query. */}
+          {!controlledClientId && (
+            <ImportButton
+              config={{
+                basePath: '/api/v2/commission-rates',
+                queryKey: 'commission-rates',
+                entityLabel: 'commission rate',
+              }}
+            />
+          )}
           <Button onClick={() => navigate('/admin/commission-rates/new')}>+ New Commission Rate</Button>
         </div>
       </div>
@@ -208,11 +214,10 @@ export function CommissionRatesPage() {
         rowId={(r) => r.id}
         defaultSort="user"
         searchPlaceholder="Search user, client, rate type…"
-        filters={{
-          active: active || undefined,
-          userId: userId || undefined,
-          clientId: clientId || undefined,
-        }}
+        filters={withClientFilter(
+          { active: active || undefined, userId: userId || undefined, clientId: clientId || undefined },
+          controlledClientId,
+        )}
         fetchPage={(query: PageQuery) =>
           api<Paginated<CommissionRateView>>(
             'GET',
@@ -235,13 +240,15 @@ export function CommissionRatesPage() {
               placeholder="All users"
               width="min-w-[12rem]"
             />
-            <SearchableSelect
-              value={clientId}
-              onChange={setClientId}
-              options={[{ value: '', label: 'All clients' }, ...clientOpts]}
-              placeholder="All clients"
-              width="min-w-[12rem]"
-            />
+            {!controlledClientId && (
+              <SearchableSelect
+                value={clientId}
+                onChange={setClientId}
+                options={[{ value: '', label: 'All clients' }, ...clientOpts]}
+                placeholder="All clients"
+                width="min-w-[12rem]"
+              />
+            )}
             <select
               className="input w-[10rem]"
               aria-label="Filter by status"
