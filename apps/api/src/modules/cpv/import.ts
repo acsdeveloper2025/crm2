@@ -100,14 +100,16 @@ const CpvUnitImportFileSchema = z.object({
 });
 type CpvUnitImportFile = z.infer<typeof CpvUnitImportFileSchema>;
 
-const CPV_IMPORT_COLUMNS: ImportColumn[] = [
+// Exported additively (ADR-0092 S4): the Client Setup onboarding workbook reuses this manifest as
+// one of its 5 sheets — no behavior change to the existing CPV import/template.
+export const CPV_IMPORT_COLUMNS: ImportColumn[] = [
   { id: 'clientCode', header: 'Client Code', required: true },
   { id: 'productCode', header: 'Product Code', required: true },
   { id: 'unitCode', header: 'Unit Code', required: true },
   { id: 'effectiveFrom', header: 'Effective From', parse: parseIsoDate },
 ];
 
-const CPV_IMPORT_SAMPLE: Record<string, string> = {
+export const CPV_IMPORT_SAMPLE: Record<string, string> = {
   clientCode: 'HDFC',
   productCode: 'HOME_LOAN',
   unitCode: 'RESI',

@@ -9,9 +9,10 @@ import {
   type ClientProductView,
 } from '@crm2/sdk';
 import { toast } from 'sonner';
-import { api } from '../../lib/sdk.js';
+import { api, apiBlob } from '../../lib/sdk.js';
 import { useAuth } from '../../lib/AuthContext.js';
 import { Button } from '../../components/ui/Button.js';
+import { DownloadIcon } from '../../components/ui/icons.js';
 import { SearchableSelect, type Opt } from '../../components/ui/SearchableSelect.js';
 import { STEP_DEFS, parseStep, hubReturnTo } from './hubState.js';
 import {
@@ -29,6 +30,19 @@ import { CommissionRatesPage } from '../commissionRates/index.js';
 /** Every 'blocked' StepState today gates on a step-1 count (cpvLinks/cpvUnits — see
  *  `deriveStepStates`), so the prior step to send the user back to is always step 1. */
 const BLOCKED_BY_STEP = 1;
+
+/** Trigger the browser download of a blob (same pattern as ImportModal/DataGrid export — no shared
+ *  helper exists to reuse; ponytail: one more small duplicate beats a new util for an 8-line fn). */
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 /** `?clientId=&page=1&limit=` — one call per checklist count (spec §3.3). */
 function checklistParams(clientId: string, limit: number): string {
@@ -120,6 +134,17 @@ export function ClientSetupPage() {
     setSearchParams(params, { replace: true });
   };
 
+  /** ADR-0092 S4: the 5-sheet onboarding workbook (Products/CPV/RateTypeAssignments/Rates/
+   *  CommissionRates) for the selected client, its `Client Code` samples pre-filled. */
+  const downloadOnboardingWorkbook = async () => {
+    try {
+      const { blob, filename } = await apiBlob(`/api/v2/clients/${clientId}/onboarding-template`);
+      downloadBlob(blob, filename);
+    } catch {
+      toast.error('Could not download the workbook.');
+    }
+  };
+
   const stepperEnabled = knownClient;
   const activeStepDef = STEP_DEFS.find((s) => s.id === step) ?? STEP_DEFS[0]!;
   const activeState = stepStates[activeStepDef.id as 1 | 2 | 3 | 4];
@@ -150,6 +175,12 @@ export function ClientSetupPage() {
         >
           + New client
         </Button>
+        {canManage && (
+          <Button variant="secondary" disabled={!knownClient} onClick={downloadOnboardingWorkbook}>
+            <DownloadIcon />
+            Download workbook
+          </Button>
+        )}
       </div>
 
       <div className="space-y-4">

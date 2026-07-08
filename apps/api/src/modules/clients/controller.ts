@@ -5,7 +5,8 @@ import { AppError } from '../../platform/errors.js';
 import { HTTP_STATUS } from '../../platform/http.js';
 import { requireVersion } from '../../platform/occ.js';
 import { resolveExport, writeExport } from '../../platform/export/index.js';
-import { resolveImportMode, writeTemplate } from '../../platform/import/index.js';
+import { buildWorkbookTemplate, resolveImportMode, writeTemplate } from '../../platform/import/index.js';
+import { onboardingTemplateSheets } from './onboarding.js';
 
 const parseId = (req: Request): number => {
   const id = Number(req.params['id']);
@@ -64,6 +65,20 @@ export const clientController = {
   async importTemplate(_req: Request, res: Response, next: NextFunction) {
     try {
       writeTemplate(res, await svc.importTemplate(), 'clients');
+    } catch (e) {
+      next(e);
+    }
+  },
+
+  /** Client Setup onboarding workbook (ADR-0092 S4): `svc.get` 404s CLIENT_NOT_FOUND for an unknown
+   *  id (same as `GET /:id`). Built here, not in the service — `onboarding.ts` pulls in every
+   *  domain's import manifest, and those modules import `clientService` for FK resolution; building
+   *  the workbook inside `clientService` itself would close that into an import cycle. */
+  async onboardingTemplate(req: Request, res: Response, next: NextFunction) {
+    try {
+      const client = await svc.get(parseId(req));
+      const buffer = await buildWorkbookTemplate(onboardingTemplateSheets(client.code));
+      writeTemplate(res, buffer, `client-${client.code}-onboarding`);
     } catch (e) {
       next(e);
     }

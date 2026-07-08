@@ -24,6 +24,8 @@ clientRoutes.post(
   c.import,
 );
 clientRoutes.get('/:id', authorize(PERMISSIONS.MASTERDATA_VIEW), c.get);
+// Client Setup onboarding workbook (ADR-0092 S4) — multi-segment, no clash with `GET /:id`.
+clientRoutes.get('/:id/onboarding-template', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.onboardingTemplate);
 clientRoutes.post('/', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.create);
 clientRoutes.put('/:id', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.update);
 // Bulk routes are static paths (single segment) — no collision with `/:id/...` (two segments).

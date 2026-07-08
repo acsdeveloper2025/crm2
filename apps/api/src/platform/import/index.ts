@@ -23,7 +23,7 @@ import {
 } from './format.js';
 import { importLogRepository } from './importLog.repository.js';
 
-export { type ImportColumn } from './format.js';
+export { type ImportColumn, buildWorkbookTemplate } from './format.js';
 
 const MODES: ImportMode[] = ['preview', 'confirm'];
 const SAMPLE_LIMIT = 20;

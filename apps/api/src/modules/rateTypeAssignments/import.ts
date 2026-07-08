@@ -21,14 +21,16 @@ const RateTypeAssignmentImportFileSchema = z.object({
 });
 type RateTypeAssignmentImportFile = z.infer<typeof RateTypeAssignmentImportFileSchema>;
 
-const RATE_TYPE_ASSIGNMENT_IMPORT_COLUMNS: ImportColumn[] = [
+// Exported additively (ADR-0092 S4): the Client Setup onboarding workbook reuses this manifest as
+// one of its 5 sheets — no behavior change to the existing rate-type-assignment import/template.
+export const RATE_TYPE_ASSIGNMENT_IMPORT_COLUMNS: ImportColumn[] = [
   { id: 'clientCode', header: 'Client Code', required: true },
   { id: 'productCode', header: 'Product Code' },
   { id: 'unitCode', header: 'Unit Code' },
   { id: 'rateTypeCode', header: 'Rate Type Code', required: true },
 ];
 
-const RATE_TYPE_ASSIGNMENT_IMPORT_SAMPLE: Record<string, string> = {
+export const RATE_TYPE_ASSIGNMENT_IMPORT_SAMPLE: Record<string, string> = {
   clientCode: 'HDFC',
   productCode: 'HOME_LOAN',
   unitCode: 'RESI',

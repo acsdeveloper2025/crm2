@@ -36,7 +36,9 @@ const CommissionRateImportFileSchema = z.object({
 });
 type CommissionRateImportFile = z.infer<typeof CommissionRateImportFileSchema>;
 
-const COMMISSION_RATE_IMPORT_COLUMNS: ImportColumn[] = [
+// Exported additively (ADR-0092 S4): the Client Setup onboarding workbook reuses this manifest as
+// one of its 5 sheets — no behavior change to the existing Commission Rates import/template.
+export const COMMISSION_RATE_IMPORT_COLUMNS: ImportColumn[] = [
   { id: 'username', header: 'Username', required: true },
   // ADR-0050: rate type (LOCAL/OGL) + location (pincode+area) are required keys; the rest = Universal when blank.
   { id: 'fieldRateType', header: 'Rate Type', required: true },
@@ -51,7 +53,7 @@ const COMMISSION_RATE_IMPORT_COLUMNS: ImportColumn[] = [
   { id: 'effectiveFrom', header: 'Effective From', parse: parseIsoDate },
 ];
 
-const COMMISSION_RATE_IMPORT_SAMPLE: Record<string, string> = {
+export const COMMISSION_RATE_IMPORT_SAMPLE: Record<string, string> = {
   username: 'ravi_field',
   fieldRateType: 'LOCAL',
   clientCode: 'HDFC',

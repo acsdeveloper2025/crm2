@@ -26,7 +26,9 @@ const RateImportFileSchema = z.object({
 });
 type RateImportFile = z.infer<typeof RateImportFileSchema>;
 
-const RATE_IMPORT_COLUMNS: ImportColumn[] = [
+// Exported additively (ADR-0092 S4): the Client Setup onboarding workbook reuses this manifest as
+// one of its 5 sheets — no behavior change to the existing Rates import/template.
+export const RATE_IMPORT_COLUMNS: ImportColumn[] = [
   { id: 'clientCode', header: 'Client Code', required: true },
   { id: 'productCode', header: 'Product Code', required: true },
   { id: 'unitCode', header: 'Unit Code', required: true },
@@ -38,7 +40,7 @@ const RATE_IMPORT_COLUMNS: ImportColumn[] = [
   { id: 'effectiveFrom', header: 'Effective From', parse: parseIsoDate },
 ];
 
-const RATE_IMPORT_SAMPLE: Record<string, string> = {
+export const RATE_IMPORT_SAMPLE: Record<string, string> = {
   clientCode: 'HDFC',
   productCode: 'HOME_LOAN',
   unitCode: 'RESI',

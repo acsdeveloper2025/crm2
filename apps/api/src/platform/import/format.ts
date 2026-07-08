@@ -8,6 +8,8 @@
  * bytes (`parseImportFile`), otherwise the buffer is read as CSV text (UTF-8 BOM stripped, RFC-4180).
  */
 
+import type { Worksheet } from 'exceljs';
+
 export interface ImportColumn {
   /** the domain field id — matches the Create-schema key (e.g. `code`, `name`, `effectiveFrom`). */
   id: string;
@@ -180,6 +182,18 @@ export async function countImportRows(buffer: Buffer): Promise<number> {
   return Math.max(0, parseCsvGrid(text).length - 1);
 }
 
+/** A worksheet's body: bold header row from the manifest plus an optional sample data row. Shared by
+ *  `buildImportTemplate` (one sheet) and `buildWorkbookTemplate` (many sheets) — same cell logic. */
+function writeTemplateSheet(
+  ws: Worksheet,
+  columns: ImportColumn[],
+  sample?: Record<string, string | number>,
+): void {
+  ws.addRow(columns.map((c) => c.header));
+  ws.getRow(1).font = { bold: true };
+  if (sample) ws.addRow(columns.map((c) => sample[c.id] ?? ''));
+}
+
 /**
  * Build the downloadable XLSX template: a bold header row from the manifest plus one sample data row
  * (so the user sees the expected format). The headers match what the readers look for.
@@ -190,9 +204,20 @@ export async function buildImportTemplate(
 ): Promise<Buffer> {
   const ExcelJS = (await import('exceljs')).default;
   const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet('Template');
-  ws.addRow(columns.map((c) => c.header));
-  ws.getRow(1).font = { bold: true };
-  if (sample) ws.addRow(columns.map((c) => sample[c.id] ?? ''));
+  writeTemplateSheet(wb.addWorksheet('Template'), columns, sample);
+  return Buffer.from(await wb.xlsx.writeBuffer());
+}
+
+/**
+ * Build a multi-sheet XLSX template: one worksheet per entry (in order), same per-sheet body as
+ * `buildImportTemplate` (ADR-0092 S4 — bundles several domains' templates into one onboarding
+ * workbook download).
+ */
+export async function buildWorkbookTemplate(
+  sheets: { name: string; columns: ImportColumn[]; sample?: Record<string, string | number> }[],
+): Promise<Buffer> {
+  const ExcelJS = (await import('exceljs')).default;
+  const wb = new ExcelJS.Workbook();
+  for (const s of sheets) writeTemplateSheet(wb.addWorksheet(s.name), s.columns, s.sample);
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
