@@ -54,6 +54,9 @@ test('Users: creating a MANAGER with no department Saves and returns to the list
   const username = `zz_mgr_${Date.now()}`; // unique → re-runnable (no USER_EXISTS)
   await page.getByPlaceholder('jane_doe').fill(username);
   await page.getByLabel('Full name', { exact: true }).fill('ZZ Manager E2E');
+  // Email is REQUIRED since a1e85d0 (mig 0115, email-required + sign-in-with-email) — this spec
+  // predated that change, so CI e2e had been red since 2026-07-04 (native `required` blocks Save).
+  await page.getByLabel('Email', { exact: true }).fill(`${username}@test.crm2.local`);
   await page
     .locator('label', { has: page.getByText('Role', { exact: true }) })
     .getByRole('combobox')
