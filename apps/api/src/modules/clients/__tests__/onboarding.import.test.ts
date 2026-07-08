@@ -448,6 +448,15 @@ describe.skipIf(!RUN)('client onboarding workbook import API (ADR-0092 S5)', () 
     expect(badMode.status).toBe(400);
   });
 
+  it('400 NOT_XLSX for a non-XLSX body (the workbook endpoint is XLSX-only; the CSV parser branch would silently scramble sheet selection)', async () => {
+    const client = await newClient('ONB_C11');
+    const csvish = Buffer.from('Code,Name\nONB_X,Not actually a workbook\n', 'utf8');
+
+    const res = await upload(client.id, 'preview', csvish);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('NOT_XLSX');
+  });
+
   // ── Task 13: confirm (`?mode=confirm`) — ordered rebuild-and-commit, CPV two-phase ──
 
   it('happy 5-sheet onboarding confirm: every resource exists after, per-sheet successRows correct, exactly 6 import_log rows', async () => {

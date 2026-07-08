@@ -49,12 +49,15 @@ export function sumUnitCounts(items: { unitCount: number }[]): number {
 }
 
 /** Chip glyph + tone per step state (mirrors the `STATUS_META` lookup-table pattern in
- *  @crm2/ui-theme): amber dot = incomplete, green check = complete, muted + lock = blocked/skipped. */
-export const STEP_STATE_META: Record<StepState, { glyph: string; className: string }> = {
+ *  @crm2/ui-theme): amber dot = incomplete, green check = complete, muted + lock = blocked/skipped.
+ *  `glyph: null` for blocked/skipped — this module stays plain TS (no React, per the file docstring),
+ *  so the lock is a real monochrome `<LockIcon>` (`components/ui/icons.tsx`, `currentColor` stroke)
+ *  rendered by the caller, not a color emoji that would ignore the `className` color token. */
+export const STEP_STATE_META: Record<StepState, { glyph: string | null; className: string }> = {
   complete: { glyph: '✓', className: 'text-success' },
   incomplete: { glyph: '•', className: 'text-warning' },
-  blocked: { glyph: '🔒', className: 'text-muted-foreground' },
-  skipped: { glyph: '🔒', className: 'text-muted-foreground' },
+  blocked: { glyph: null, className: 'text-muted-foreground' },
+  skipped: { glyph: null, className: 'text-muted-foreground' },
 };
 
 /** Per-step chip text: step 1 is `links · units`, steps 2-4 a single count; `null` renders "—". */

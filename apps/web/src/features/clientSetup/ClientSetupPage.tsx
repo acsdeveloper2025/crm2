@@ -12,7 +12,7 @@ import { toast } from 'sonner';
 import { api, apiBlob } from '../../lib/sdk.js';
 import { useAuth } from '../../lib/AuthContext.js';
 import { Button } from '../../components/ui/Button.js';
-import { DownloadIcon } from '../../components/ui/icons.js';
+import { DownloadIcon, LockIcon } from '../../components/ui/icons.js';
 import { WorkbookImportButton, type WorkbookImportConfig } from '../../components/import/ImportModal.js';
 import { SearchableSelect, type Opt } from '../../components/ui/SearchableSelect.js';
 import { STEP_DEFS, parseStep, hubReturnTo } from './hubState.js';
@@ -215,7 +215,7 @@ export function ClientSetupPage() {
                 <span className="inline-flex items-center gap-1.5">
                   {stepperEnabled && (
                     <span className={meta.className} aria-hidden="true">
-                      {meta.glyph}
+                      {meta.glyph ?? <LockIcon />}
                     </span>
                   )}
                   <span>
@@ -226,6 +226,7 @@ export function ClientSetupPage() {
                       ({stepChipLabel(s.id as 1 | 2 | 3 | 4, counts)})
                     </span>
                   )}
+                  {stepperEnabled && <span className="sr-only"> — {state}</span>}
                 </span>
               </button>
             );

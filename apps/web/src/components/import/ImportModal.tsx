@@ -403,6 +403,14 @@ export function sheetSummary(s: OnboardingSheetPreview): string {
   return `✓ ${s.validRows} valid · ⧗ ${s.pendingRows} pending · ✗ ${s.errorRows} error${s.errorRows === 1 ? '' : 's'}`;
 }
 
+/** Confirm-button copy: the total rows confirm will actually act on — valid + pending, summed across
+ *  every sheet (same set {@link workbookConfirmEnabled} gates on) — so the count on the button matches
+ *  what lands, not the raw upload size. Singular for exactly 1 (ADR-0092 S6 review). */
+export function workbookConfirmLabel(p: OnboardingPreviewResult): string {
+  const n = p.sheets.reduce((sum, s) => sum + s.validRows + s.pendingRows, 0);
+  return `Import ${n} row${n === 1 ? '' : 's'}`;
+}
+
 /** The "Import workbook" button + its modal (ADR-0092 S5) — same Stage machinery and dialog chrome as
  *  {@link ImportButton}/{@link ImportModal}, just fanned out over the workbook's 5 sheets. The
  *  template download lives on the hub's existing "Download workbook" button, not this modal. */
@@ -548,7 +556,7 @@ function WorkbookImportModal({ config, onClose }: { config: WorkbookImportConfig
                 Choose different file
               </Button>
               <Button onClick={confirm} disabled={!workbookConfirmEnabled(preview)}>
-                Import workbook
+                {workbookConfirmLabel(preview)}
               </Button>
             </div>
           </div>

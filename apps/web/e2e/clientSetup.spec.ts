@@ -251,7 +251,8 @@ test.describe('onboarding journey B: workbook import', () => {
     await templateReq;
 
     // "Import workbook" opens a modal (WorkbookImportModal) — scope every locator to it: its own
-    // confirm button is also labelled "Import workbook", same text as the trigger behind the overlay.
+    // confirm button is labelled "Import N rows" (N = valid+pending across sheets, ADR-0092 S6 review),
+    // not the trigger's static "Import workbook" text.
     await page.getByRole('button', { name: 'Import workbook' }).click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
@@ -273,7 +274,7 @@ test.describe('onboarding journey B: workbook import', () => {
       (r) =>
         r.url().includes('-import?mode=confirm') && r.request().method() === 'POST' && r.status() === 200,
     );
-    await dialog.getByRole('button', { name: 'Import workbook' }).click();
+    await dialog.getByRole('button', { name: /Import \d+ rows?/ }).click();
     await confirmed;
 
     // Result: both sheets imported (Products creates the product; CPV's phase-1 creates the missing

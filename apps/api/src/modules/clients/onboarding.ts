@@ -64,6 +64,15 @@ export const ONBOARDING_SHEET_NAMES = [
   'CommissionRates',
 ] as const;
 
+/** The onboarding workbook endpoint is XLSX-only — `parseImportFile`'s CSV branch ignores
+ *  `opts.sheet` (single-sheet by nature) and would silently parse a non-XLSX body as one flat sheet,
+ *  scrambling which of the 5 domains each row was meant for. Reject anything that isn't a real XLSX
+ *  (zip, `PK` magic bytes) up front, before any counting/parsing. */
+function assertXlsxWorkbook(buffer: Buffer): void {
+  if (buffer.length < 2 || buffer[0] !== 0x50 || buffer[1] !== 0x4b)
+    throw AppError.badRequest('NOT_XLSX', { hint: 'the onboarding workbook must be an .xlsx file' });
+}
+
 export function onboardingTemplateSheets(
   clientCode: string,
 ): { name: string; columns: ImportColumn[]; sample?: Record<string, string | number> }[] {
@@ -184,7 +193,11 @@ const productGuardError = (
 };
 
 /** ADR-0067 wildcard coverage: a tuple covers (productCode, unitCode, rateTypeCode) iff each non-null
- *  tuple field matches (`null` = Universal). */
+ *  tuple field matches (`null` = Universal). Mirrors the canonical availability SQL
+ *  (rateTypes/repository.ts `available`): client match AND (product NULL|=) AND (unit NULL|=) AND
+ *  rateType match. Any ADR-0067 change to that query MUST be mirrored here or the workbook guard
+ *  diverges from the rate picker. Known safe-direction nuance: this in-memory check does not
+ *  re-verify rt.is_active (the catalog load is active-only at build time). */
 const wildcardCovers = (
   tuples: AssignmentTuple[],
   productCode: string,
@@ -528,13 +541,15 @@ async function loadContext(target: Client): Promise<Ctx> {
  * zero rows, no special-casing needed here.
  */
 export async function onboardingPreview(clientId: number, buffer: Buffer): Promise<OnboardingPreviewResult> {
+  assertXlsxWorkbook(buffer);
   const target = await clientService.get(clientId); // 404 CLIENT_NOT_FOUND
 
-  const counts = await Promise.all(
-    ONBOARDING_SHEET_NAMES.map((name) => countImportRows(buffer, { sheet: name })),
-  );
+  // sequential on purpose: each count fully decompresses the workbook; 5-way concurrency would spike
+  // memory before the caps can reject (security review 2026-07-08). Fast-follow: parse once, count
+  // from the single Workbook.
   let total = 0;
-  for (const count of counts) {
+  for (const name of ONBOARDING_SHEET_NAMES) {
+    const count = await countImportRows(buffer, { sheet: name });
     assertImportable(count);
     total += count;
   }
@@ -617,13 +632,15 @@ export async function onboardingConfirm(
   buffer: Buffer,
   meta: { userId: string; fileName?: string | undefined },
 ): Promise<OnboardingConfirmResult> {
+  assertXlsxWorkbook(buffer);
   const target = await clientService.get(clientId); // 404 CLIENT_NOT_FOUND
 
-  const counts = await Promise.all(
-    ONBOARDING_SHEET_NAMES.map((name) => countImportRows(buffer, { sheet: name })),
-  );
+  // sequential on purpose: each count fully decompresses the workbook; 5-way concurrency would spike
+  // memory before the caps can reject (security review 2026-07-08). Fast-follow: parse once, count
+  // from the single Workbook.
   let total = 0;
-  for (const count of counts) {
+  for (const name of ONBOARDING_SHEET_NAMES) {
+    const count = await countImportRows(buffer, { sheet: name });
     assertImportable(count);
     total += count;
   }
@@ -690,8 +707,17 @@ export async function onboardingConfirm(
       // a 409 (CLIENT_PRODUCT_EXISTS) = already linked = success for onboarding purposes; any other
       // failure just isn't counted — the loop never aborts (partial-import semantics). A swallowed
       // non-409 failure is NOT silent overall: the missing link makes this product's phase-2 unit
-      // rows fail with the module's own "no usable client-product link" row error.
+      // rows fail with the module's own "no usable client-product link" row error — but it's also
+      // logged here so an operator can see WHY without reverse-engineering it from that row error.
       if (e instanceof AppError && e.status === HTTP_STATUS.CONFLICT) linkSuccessRows += 1;
+      else
+        logger.warn('onboarding link create failed', {
+          event: 'import',
+          resource: 'client_products',
+          productId: pair.productId,
+          clientId: pair.clientId,
+          error: e instanceof Error ? e.message : String(e),
+        });
     }
   }
   const linkDurationMs = Date.now() - linkStarted;
