@@ -112,8 +112,12 @@ gone since 0013 (verified above); everything else in its constraint map held up.
 | Rates | ✓ (codes + pincode+area) | ✓ | lossless (currency incl.) | ✓ (blank = Universal) |
 | Commission Rates | ✓ (username + codes + pincode/area) | ✓ **display-only** | ✗ export ≠ import shape (**IE-DEFER-7**, documented) | ✓ |
 
-Notes: import accepts **XLSX only** (verified in `platform/import/index.ts:93` — no CSV parse);
-export does XLSX + CSV with the streaming WorkbookWriter (don't-regress, `9a29cdb`) + CWE-1236
+Notes: ~~import accepts XLSX only~~ **CORRECTION 2026-07-08: CSV import has worked since the repo's
+first commit** — the engine magic-byte-sniffs the format (`format.ts:159`), strips BOM (`:147`),
+parses RFC-4180 (`:110-142`), and ImportModal already accepted `.csv` (`:190`). The audit (and two
+of its agents) were misled by `format.ts:6`'s stale doc comment "XLSX only for now"; UX-14 is
+RETRACTED (Batch 2 added 11 pinning tests + dual-format browser proof instead). Export does XLSX +
+CSV with the streaming WorkbookWriter (don't-regress, `9a29cdb`) + CWE-1236
 formula guards. Preview mode gives per-row errors; confirm persists valid rows (partial import).
 Export ≤ view-perm rule holds; commission export is deliberately `masterdata.manage`-gated.
 Earlier memory claims that Universal rows were dropped by INNER JOINs are **stale — since fixed**
@@ -164,7 +168,7 @@ Severity = admin-experience impact. Disposition column = **PENDING owner review*
 | **UX-11** | LOW | RTA rows immutable (deactivate+recreate to fix a wrong type — 2 ops) + no bulk-deactivate (parity gap with rates/clients/products) | Keep immutable keys (consistent model); add bulk-deactivate; optionally an "replace type" convenience that does deactivate+create atomically | S | No |
 | **UX-12** | LOW | `createOnly`/CODE_LOCKED immutability not visually indicated (code cells look editable) | Lock icon / muted style on immutable cells | S | No |
 | **UX-13** | LOW | Rate History dialog not exportable | Export button in HistoryDialog (CSV) | S | No |
-| **UX-14** | LOW | Import accepts XLSX only (CSV import absent; export has CSV) | Accept CSV in the shared import parser (one parser addition serves all modules) | S | No |
+| **UX-14** | ~~LOW~~ **RETRACTED 2026-07-08** | ~~Import accepts XLSX only~~ — FALSE: CSV import pre-existed since the first commit (magic-byte sniff; the stale `format.ts:6` doc comment misled the audit) | Behavior now pinned by 11 engine tests + dual-format browser round-trip (Batch 2 T10); doc-comment fix spun out | — | — |
 | **UX-15** | INFO | Deactivating a client does not cascade (its CPV/RTA/rates stay active-but-dead) | Document; optionally a "deactivate client + dependents" guided action later | — | Later |
 
 ### Suggested sequencing (if/when owner greenlights build)
