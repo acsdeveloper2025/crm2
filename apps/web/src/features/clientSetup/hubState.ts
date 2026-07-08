@@ -34,3 +34,8 @@ export function hubReturnTo(clientId: string, step: number): string {
 export function safeReturnTo(raw: string | null): string | null {
   return raw !== null && (raw === HUB_PATH || raw.startsWith(`${HUB_PATH}?`)) ? raw : null;
 }
+
+/** The nav target for a record page's hard exits: the hub if `returnTo` is a safe hub deep-link, else `fallback`. */
+export function exitPath(raw: string | null, fallback: string): string {
+  return safeReturnTo(raw) ?? fallback;
+}

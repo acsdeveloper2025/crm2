@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CreateCommissionRateSchema,
@@ -21,9 +21,11 @@ import { useAuth } from '../../lib/AuthContext.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { Button } from '../../components/ui/Button.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
+import { exitPath } from '../clientSetup/hubState.js';
 
 const BASE = '/api/v2/commission-rates';
 const QK = 'commission-rates';
+const LIST_PATH = '/admin/commission-rates';
 const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
   e instanceof ApiError && e.status === HTTP_CONFLICT && e.code === 'STALE_UPDATE';
@@ -72,8 +74,10 @@ export const groupRateTypeOptions = (
 export function CommissionRateRecordPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { has } = useAuth();
   const isEdit = !!id;
+  const exitTo = exitPath(searchParams.get('returnTo'), LIST_PATH);
   const existing = useQuery({
     queryKey: ['commission-rate', id],
     queryFn: () => api<CommissionRateView>('GET', `${BASE}/${id}`),
@@ -91,7 +95,7 @@ export function CommissionRateRecordPage() {
   if (isEdit && (existing.isError || !existing.data)) {
     return (
       <div className="space-y-3">
-        <Button variant="link" size="sm" onClick={() => navigate('/admin/commission-rates')}>
+        <Button variant="link" size="sm" onClick={() => navigate(exitTo)}>
           ← Back to commission rates
         </Button>
         <p className="text-sm text-muted-foreground">Couldn’t load this rate.</p>
@@ -99,7 +103,14 @@ export function CommissionRateRecordPage() {
     );
   }
   // Re-mount the form per record (key) so its state seeds cleanly from the loaded rate.
-  return <CommissionRateForm key={id ?? 'new'} initial={existing.data ?? null} />;
+  return (
+    <CommissionRateForm
+      key={id ?? 'new'}
+      initial={existing.data ?? null}
+      exitTo={exitTo}
+      initialClientId={searchParams.get('clientId')}
+    />
+  );
 }
 
 /**
@@ -108,14 +119,24 @@ export function CommissionRateRecordPage() {
  * REVISE (initial set) shows every dimension read-only and edits only amount + effectiveFrom,
  * POSTing to `…/:id/revise` with the OCC version.
  */
-function CommissionRateForm({ initial }: { initial: CommissionRateView | null }) {
+function CommissionRateForm({
+  initial,
+  exitTo,
+  initialClientId,
+}: {
+  initial: CommissionRateView | null;
+  exitTo: string;
+  initialClientId: string | null;
+}) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const isRevise = !!initial;
 
   const [userId, setUserId] = useState(initial?.userId ?? '');
   const [fieldRateType, setRateType] = useState(initial?.fieldRateType ?? '');
-  const [clientId, setClientId] = useState(initial?.clientId ? String(initial.clientId) : '');
+  const [clientId, setClientId] = useState(
+    initial?.clientId ? String(initial.clientId) : (initialClientId ?? ''),
+  );
   const [productId, setProductId] = useState(initial?.productId ? String(initial.productId) : '');
   const [unitId, setUnitId] = useState(initial?.verificationUnitId ? String(initial.verificationUnitId) : '');
   const [pincode, setPincode] = useState(initial?.pincode ?? '');
@@ -218,7 +239,7 @@ function CommissionRateForm({ initial }: { initial: CommissionRateView | null })
           }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [QK] });
-      navigate('/admin/commission-rates');
+      navigate(exitTo);
     },
     onError: (e: unknown) => {
       if (isStale(e)) {
@@ -250,7 +271,7 @@ function CommissionRateForm({ initial }: { initial: CommissionRateView | null })
 
   return (
     <div className="space-y-4">
-      <Button variant="link" size="sm" onClick={() => navigate('/admin/commission-rates')}>
+      <Button variant="link" size="sm" onClick={() => navigate(exitTo)}>
         ← Back to commission rates
       </Button>
       <div>
@@ -487,11 +508,7 @@ function CommissionRateForm({ initial }: { initial: CommissionRateView | null })
         </Field>
         {error && <p className="text-sm text-destructive">{error}</p>}
         <div className="flex justify-end gap-2 pt-2">
-          <Button
-            variant="ghost"
-            onClick={() => navigate('/admin/commission-rates')}
-            disabled={mut.isPending}
-          >
+          <Button variant="ghost" onClick={() => navigate(exitTo)} disabled={mut.isPending}>
             Cancel
           </Button>
           <Button
@@ -539,7 +556,7 @@ function CommissionRateForm({ initial }: { initial: CommissionRateView | null })
           }}
           onDiscard={() => {
             qc.invalidateQueries({ queryKey: [QK] });
-            navigate('/admin/commission-rates');
+            navigate(exitTo);
           }}
         />
       )}

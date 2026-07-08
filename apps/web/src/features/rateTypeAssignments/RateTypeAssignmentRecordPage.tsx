@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CreateRateTypeAssignmentSchema,
@@ -14,9 +14,11 @@ import { zodFieldErrors } from '../../lib/zodForm.js';
 import { useAuth } from '../../lib/AuthContext.js';
 import { Button } from '../../components/ui/Button.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
+import { exitPath } from '../clientSetup/hubState.js';
 
 const BASE = '/api/v2/rate-type-assignments';
 const QK = 'rate-type-assignments';
+const LIST_PATH = '/admin/rate-type-assignments';
 
 // UX-3: when a concrete client + product has no CPV mapping, /cpv-units/available returns [] — warn
 // (with a link to the CPV admin that fixes it) but leave the unit picker's behavior unchanged.
@@ -34,8 +36,10 @@ export const CPV_ADMIN_PATH = '/admin/cpv';
 export function RateTypeAssignmentRecordPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { has } = useAuth();
   const isEdit = !!id;
+  const exitTo = exitPath(searchParams.get('returnTo'), LIST_PATH);
   const existing = useQuery({
     queryKey: ['rate-type-assignment', id],
     queryFn: () => api<RateTypeAssignmentView>('GET', `${BASE}/${id}`),
@@ -53,23 +57,23 @@ export function RateTypeAssignmentRecordPage() {
   if (isEdit && (existing.isError || !existing.data)) {
     return (
       <div className="space-y-3">
-        <Button variant="link" size="sm" onClick={() => navigate('/admin/rate-type-assignments')}>
+        <Button variant="link" size="sm" onClick={() => navigate(exitTo)}>
           ← Back to rate type assignments
         </Button>
         <p className="text-sm text-muted-foreground">Couldn’t load this assignment.</p>
       </div>
     );
   }
-  if (isEdit && existing.data) return <AssignmentDetail row={existing.data} />;
-  return <AssignmentForm />;
+  if (isEdit && existing.data) return <AssignmentDetail row={existing.data} exitTo={exitTo} />;
+  return <AssignmentForm exitTo={exitTo} initialClientId={searchParams.get('clientId')} />;
 }
 
 /** Read-only detail for an existing assignment — every field is part of the immutable key. */
-function AssignmentDetail({ row }: { row: RateTypeAssignmentView }) {
+function AssignmentDetail({ row, exitTo }: { row: RateTypeAssignmentView; exitTo: string }) {
   const navigate = useNavigate();
   return (
     <div className="space-y-4">
-      <Button variant="link" size="sm" onClick={() => navigate('/admin/rate-type-assignments')}>
+      <Button variant="link" size="sm" onClick={() => navigate(exitTo)}>
         ← Back to rate type assignments
       </Button>
       <div>
@@ -96,11 +100,11 @@ function AssignmentDetail({ row }: { row: RateTypeAssignmentView }) {
 }
 
 /** Create form — Client (required), Product/Unit (blank = Universal), Rate Type (required). */
-function AssignmentForm() {
+function AssignmentForm({ exitTo, initialClientId }: { exitTo: string; initialClientId: string | null }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
 
-  const [clientId, setClientId] = useState('');
+  const [clientId, setClientId] = useState(initialClientId ?? '');
   const [productId, setProductId] = useState('');
   const [unitId, setUnitId] = useState('');
   const [rateTypeId, setRateTypeId] = useState('');
@@ -145,7 +149,7 @@ function AssignmentForm() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [QK] });
-      navigate('/admin/rate-type-assignments');
+      navigate(exitTo);
     },
     onError: (e: unknown) =>
       setError(e instanceof ApiError ? e.code : e instanceof Error ? e.message : 'Save failed'),
@@ -156,7 +160,7 @@ function AssignmentForm() {
 
   return (
     <div className="space-y-4">
-      <Button variant="link" size="sm" onClick={() => navigate('/admin/rate-type-assignments')}>
+      <Button variant="link" size="sm" onClick={() => navigate(exitTo)}>
         ← Back to rate type assignments
       </Button>
       <div>
@@ -239,11 +243,7 @@ function AssignmentForm() {
         </Field>
         {error && <p className="text-sm text-destructive">{error}</p>}
         <div className="flex justify-end gap-2 pt-2">
-          <Button
-            variant="ghost"
-            onClick={() => navigate('/admin/rate-type-assignments')}
-            disabled={mut.isPending}
-          >
+          <Button variant="ghost" onClick={() => navigate(exitTo)} disabled={mut.isPending}>
             Cancel
           </Button>
           <Button

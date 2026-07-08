@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CreateRateSchema,
@@ -20,9 +20,11 @@ import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { Button } from '../../components/ui/Button.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
 import { SearchableSelect, type Opt } from '../../components/ui/SearchableSelect.js';
+import { exitPath } from '../clientSetup/hubState.js';
 
 const BASE = '/api/v2/rates';
 const QK = 'rates';
+const LIST_PATH = '/admin/rates';
 const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
   e instanceof ApiError && e.status === HTTP_CONFLICT && e.code === 'STALE_UPDATE';
@@ -78,8 +80,10 @@ export const isPincodeNotFound = (s: { pincode: string; isSuccess: boolean; coun
 export function RateRecordPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { has } = useAuth();
   const isEdit = !!id;
+  const exitTo = exitPath(searchParams.get('returnTo'), LIST_PATH);
   const existing = useQuery({
     queryKey: ['rate', id],
     queryFn: () => api<RateView>('GET', `${BASE}/${id}`),
@@ -97,7 +101,7 @@ export function RateRecordPage() {
   if (isEdit && (existing.isError || !existing.data)) {
     return (
       <div className="space-y-3">
-        <Button variant="link" size="sm" onClick={() => navigate('/admin/rates')}>
+        <Button variant="link" size="sm" onClick={() => navigate(exitTo)}>
           ← Back to rate management
         </Button>
         <p className="text-sm text-muted-foreground">Couldn’t load this rate.</p>
@@ -105,7 +109,14 @@ export function RateRecordPage() {
     );
   }
   // Re-mount the form per record (key) so its state seeds cleanly from the loaded rate.
-  return <RateForm key={id ?? 'new'} initial={existing.data ?? null} />;
+  return (
+    <RateForm
+      key={id ?? 'new'}
+      initial={existing.data ?? null}
+      exitTo={exitTo}
+      initialClientId={searchParams.get('clientId')}
+    />
+  );
 }
 
 /**
@@ -114,13 +125,21 @@ export function RateRecordPage() {
  * REVISE (initial set) shows every dimension read-only and edits only amount + effective-from,
  * POSTing to `…/:id/revise` with the OCC version.
  */
-function RateForm({ initial }: { initial: RateView | null }) {
+function RateForm({
+  initial,
+  exitTo,
+  initialClientId,
+}: {
+  initial: RateView | null;
+  exitTo: string;
+  initialClientId: string | null;
+}) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const isRevise = !!initial;
 
   // Create cascade state (unused in revise — every dimension is fixed there).
-  const [clientId, setClientId] = useState('');
+  const [clientId, setClientId] = useState(!isRevise ? (initialClientId ?? '') : '');
   const [productId, setProductId] = useState('');
   const [mode, setMode] = useState('FIELD');
   const [unitId, setUnitId] = useState('');
@@ -234,7 +253,7 @@ function RateForm({ initial }: { initial: RateView | null }) {
           }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [QK] });
-      navigate('/admin/rates');
+      navigate(exitTo);
     },
     onError: (e: unknown) => {
       if (isStale(e)) {
@@ -282,7 +301,7 @@ function RateForm({ initial }: { initial: RateView | null }) {
 
   return (
     <div className="space-y-4">
-      <Button variant="link" size="sm" onClick={() => navigate('/admin/rates')}>
+      <Button variant="link" size="sm" onClick={() => navigate(exitTo)}>
         ← Back to rate management
       </Button>
       <div>
@@ -450,7 +469,7 @@ function RateForm({ initial }: { initial: RateView | null }) {
         </Field>
         {error && <p className="text-sm text-destructive">{error}</p>}
         <div className="flex justify-end gap-2 pt-2">
-          <Button variant="ghost" onClick={() => navigate('/admin/rates')} disabled={mut.isPending}>
+          <Button variant="ghost" onClick={() => navigate(exitTo)} disabled={mut.isPending}>
             Cancel
           </Button>
           <Button
@@ -498,7 +517,7 @@ function RateForm({ initial }: { initial: RateView | null }) {
           }}
           onDiscard={() => {
             qc.invalidateQueries({ queryKey: [QK] });
-            navigate('/admin/rates');
+            navigate(exitTo);
           }}
         />
       )}

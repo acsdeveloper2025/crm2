@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { HUB_PATH, STEP_DEFS, parseStep, hubReturnTo, safeReturnTo } from './hubState.js';
+import { HUB_PATH, STEP_DEFS, parseStep, hubReturnTo, safeReturnTo, exitPath } from './hubState.js';
 
 describe('parseStep', () => {
   it('defaults to 1 for null', () => {
@@ -53,6 +53,22 @@ describe('safeReturnTo', () => {
 
   it('accepts the bare hub path', () => {
     expect(safeReturnTo('/admin/client-setup')).toBe('/admin/client-setup');
+  });
+});
+
+describe('exitPath', () => {
+  it('returns the hub URL when returnTo is a safe hub deep-link', () => {
+    expect(exitPath('/admin/client-setup?clientId=1&step=3', '/admin/rates')).toBe(
+      '/admin/client-setup?clientId=1&step=3',
+    );
+  });
+
+  it('falls back for an unsafe returnTo (open-redirect guard)', () => {
+    expect(exitPath('https://evil.com', '/admin/rates')).toBe('/admin/rates');
+  });
+
+  it('falls back when returnTo is null', () => {
+    expect(exitPath(null, '/admin/rates')).toBe('/admin/rates');
   });
 });
 
