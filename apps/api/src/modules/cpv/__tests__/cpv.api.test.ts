@@ -9,6 +9,7 @@ import {
 } from '@crm2/test-utils';
 import { createApp } from '../../../http/app.js';
 import { setPool } from '../../../platform/db.js';
+import { buildCpvUnitSpec, buildCpvUnitWorkbookSpec } from '../import.js';
 
 const RUN = !!process.env['DATABASE_URL'];
 const db = RUN ? createTestDb() : null;
@@ -845,6 +846,38 @@ describe.skipIf(!RUN)('CPV API', () => {
       );
       expect((await request(app).get('/api/v2/cpv-units/import-template').set(FA)).status).toBe(403);
       expect((await request(app).get('/api/v2/cpv-units/import-template')).status).toBe(401);
+    });
+  });
+
+  // ── ADR-0092 S5: CPV-unit WORKBOOK spec delta — additive-only, not yet wired into any route ──
+  describe('cpv-units workbook import spec (ADR-0092 S5)', () => {
+    it('resolves blank/UNIVERSAL/universal unitCode to verificationUnitId: null; a concrete code still resolves; an unknown code still errors', async () => {
+      const clientProductId = await newClientProduct(await newClient('C_WBU'), await newProduct('P_WBU'));
+      await newUnit('RESI_WBU');
+      const spec = await buildCpvUnitWorkbookSpec();
+      const base = { clientCode: 'C_WBU', productCode: 'P_WBU' };
+
+      for (const unitCode of ['', 'UNIVERSAL', 'universal']) {
+        const r = await spec.resolve!({ ...base, unitCode }, 1);
+        expect(r).toMatchObject({ ok: true, value: { clientProductId, verificationUnitId: null } });
+      }
+
+      const concrete = await spec.resolve!({ ...base, unitCode: 'RESI_WBU' }, 1);
+      expect(concrete.ok).toBe(true);
+      if (concrete.ok) expect(concrete.value.verificationUnitId).toBeGreaterThan(0);
+
+      const unknown = await spec.resolve!({ ...base, unitCode: 'NOPE_WBU' }, 1);
+      expect(unknown).toMatchObject({ ok: false, errors: [{ column: 'Unit Code' }] });
+    });
+
+    it('PINNING: the strict spec still rejects a blank unitCode as a row error (unchanged behaviour)', async () => {
+      const strictSpec = await buildCpvUnitSpec();
+      const parsed = strictSpec.schema.safeParse({
+        clientCode: 'C_WBS',
+        productCode: 'P_WBS',
+        unitCode: '',
+      });
+      expect(parsed.success).toBe(false);
     });
   });
 });

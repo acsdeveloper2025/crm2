@@ -124,49 +124,99 @@ export const CPV_TEMPLATE_SPEC: ImportSpec<CpvUnitImportFile> = {
 };
 
 /**
- * Build the CPV-unit ImportSpec for ONE request: preload the client/product/unit code→id maps + the
- * client_product link map ONCE (the engine's `resolve` is per-row, so we close over the maps instead
- * of re-querying per row). The client+product pair resolves to an existing USABLE link
- * (`linkOptionsForImport`); maps are USABLE-only (active AND in effect), so an inactive/future code or
- * link won't resolve — by design, mirroring the clientProduct import. Returns the spec the service
- * feeds to `runImportPreview`/`runImportConfirm`.
+ * Preload the client/product/unit code→id maps + the client_product link map ONCE (shared by the
+ * strict CPV-unit spec below and its workbook variant — the engine's `resolve` is per-row, so both
+ * close over the same maps instead of re-querying per row). Maps are USABLE-only (active AND in
+ * effect), so an inactive/future code or link won't resolve — by design, mirroring the clientProduct
+ * import.
  */
-export async function buildCpvUnitSpec(): Promise<ImportSpec<CpvUnitImportFile, CreateCpvUnitInput>> {
+async function loadCpvUnitMaps(): Promise<{
+  clientMap: Map<string, number>;
+  productMap: Map<string, number>;
+  unitMap: Map<string, number>;
+  linkMap: Map<string, number>;
+}> {
   const [clients, products, units, links] = await Promise.all([
     clientService.options(),
     productService.options(),
     verificationUnitService.options(),
     cpRepo.linkOptionsForImport(),
   ]);
-  const clientMap = new Map(clients.map((c) => [c.code, c.id]));
-  const productMap = new Map(products.map((p) => [p.code, p.id]));
-  const unitMap = new Map(units.map((u) => [u.code, u.id]));
-  // composite key `${clientId}:${productId}` → client_product id (only USABLE links present).
-  const linkMap = new Map(links.map((l) => [`${l.clientId}:${l.productId}`, l.id]));
+  return {
+    clientMap: new Map(clients.map((c) => [c.code, c.id])),
+    productMap: new Map(products.map((p) => [p.code, p.id])),
+    unitMap: new Map(units.map((u) => [u.code, u.id])),
+    // composite key `${clientId}:${productId}` → client_product id (only USABLE links present).
+    linkMap: new Map(links.map((l) => [`${l.clientId}:${l.productId}`, l.id])),
+  };
+}
+
+/** clientCode/productCode → ids, pushing 'unknown ... code' row errors (shared by both CPV-unit specs). */
+function resolveClientAndProduct(
+  clientCode: string,
+  productCode: string,
+  maps: Pick<Awaited<ReturnType<typeof loadCpvUnitMaps>>, 'clientMap' | 'productMap'>,
+  errors: { column: string; message: string }[],
+): { clientId: number | undefined; productId: number | undefined } {
+  const clientId = maps.clientMap.get(clientCode);
+  if (clientId === undefined)
+    errors.push({ column: 'Client Code', message: `unknown client code ${clientCode}` });
+  const productId = maps.productMap.get(productCode);
+  if (productId === undefined)
+    errors.push({ column: 'Product Code', message: `unknown product code ${productCode}` });
+  return { clientId, productId };
+}
+
+/**
+ * Once both ids resolved, the existing USABLE client_product link id (shared by both CPV-unit specs).
+ * Only meaningful once both codes resolved — otherwise the composite key is meaningless.
+ */
+function resolveLink(
+  clientId: number | undefined,
+  productId: number | undefined,
+  clientCode: string,
+  productCode: string,
+  maps: Pick<Awaited<ReturnType<typeof loadCpvUnitMaps>>, 'linkMap'>,
+  errors: { column: string; message: string }[],
+): number | undefined {
+  if (clientId === undefined || productId === undefined) return undefined;
+  const clientProductId = maps.linkMap.get(`${clientId}:${productId}`);
+  if (clientProductId === undefined)
+    errors.push({
+      column: 'Product Code',
+      message: `no usable client-product link for ${clientCode} + ${productCode}`,
+    });
+  return clientProductId;
+}
+
+/**
+ * Build the CPV-unit ImportSpec for ONE request: preload the code→id maps (`loadCpvUnitMaps`) and map
+ * each row to the numeric-id `CreateCpvUnitInput`. Returns the spec the service feeds to
+ * `runImportPreview`/`runImportConfirm`.
+ */
+export async function buildCpvUnitSpec(): Promise<ImportSpec<CpvUnitImportFile, CreateCpvUnitInput>> {
+  const maps = await loadCpvUnitMaps();
 
   const resolve = async (input: CpvUnitImportFile): Promise<ResolveResult<CreateCpvUnitInput>> => {
     const errors: { column: string; message: string }[] = [];
 
-    const clientId = clientMap.get(input.clientCode);
-    if (clientId === undefined)
-      errors.push({ column: 'Client Code', message: `unknown client code ${input.clientCode}` });
-    const productId = productMap.get(input.productCode);
-    if (productId === undefined)
-      errors.push({ column: 'Product Code', message: `unknown product code ${input.productCode}` });
-    const verificationUnitId = unitMap.get(input.unitCode);
+    const { clientId, productId } = resolveClientAndProduct(
+      input.clientCode,
+      input.productCode,
+      maps,
+      errors,
+    );
+    const verificationUnitId = maps.unitMap.get(input.unitCode);
     if (verificationUnitId === undefined)
       errors.push({ column: 'Unit Code', message: `unknown unit code ${input.unitCode}` });
-
-    // Only look up the link once both codes resolved (otherwise the composite key is meaningless).
-    let clientProductId: number | undefined;
-    if (clientId !== undefined && productId !== undefined) {
-      clientProductId = linkMap.get(`${clientId}:${productId}`);
-      if (clientProductId === undefined)
-        errors.push({
-          column: 'Product Code',
-          message: `no usable client-product link for ${input.clientCode} + ${input.productCode}`,
-        });
-    }
+    const clientProductId = resolveLink(
+      clientId,
+      productId,
+      input.clientCode,
+      input.productCode,
+      maps,
+      errors,
+    );
 
     if (errors.length > 0) return { ok: false, errors };
     return {
@@ -183,6 +233,94 @@ export async function buildCpvUnitSpec(): Promise<ImportSpec<CpvUnitImportFile, 
     resource: 'client_product_verification_units',
     columns: CPV_IMPORT_COLUMNS,
     schema: CpvUnitImportFileSchema,
+    sample: CPV_IMPORT_SAMPLE,
+    resolve,
+  };
+}
+
+/**
+ * WORKBOOK-only CPV-unit import delta (ADR-0092 S5): the Client Setup onboarding workbook's CPV sheet
+ * needs Unit Code OPTIONAL — blank or literal 'UNIVERSAL' (case-insensitive) enables ALL units for the
+ * client+product (`verificationUnitId: null`, ADR-0074; `CreateCpvUnitSchema.verificationUnitId` is
+ * already `nullish()`). Mirrors rate-type-assignments' blank-code-is-Universal columns. The standalone
+ * single-sheet CPV import above (`CpvUnitImportFileSchema`/`CPV_IMPORT_COLUMNS`/`buildCpvUnitSpec`) is
+ * untouched — it keeps unitCode REQUIRED.
+ */
+export const WorkbookCpvUnitImportFileSchema = z.object({
+  clientCode: z.string().min(1),
+  productCode: z.string().min(1),
+  // blank or 'UNIVERSAL' (case-insensitive, trimmed) = Universal, resolved to null (ADR-0074).
+  unitCode: z.string().optional(),
+  effectiveFrom: z.string().datetime().optional(),
+});
+type WorkbookCpvUnitImportFile = z.infer<typeof WorkbookCpvUnitImportFileSchema>;
+
+export const WORKBOOK_CPV_IMPORT_COLUMNS: ImportColumn[] = [
+  { id: 'clientCode', header: 'Client Code', required: true },
+  { id: 'productCode', header: 'Product Code', required: true },
+  { id: 'unitCode', header: 'Unit Code' },
+  { id: 'effectiveFrom', header: 'Effective From', parse: parseIsoDate },
+];
+
+/** blank/absent or 'UNIVERSAL' (any case, trimmed) ⇒ Universal (ADR-0074). */
+function isUniversalUnitCode(unitCode: string | undefined): boolean {
+  const trimmed = unitCode?.trim();
+  return !trimmed || trimmed.toUpperCase() === 'UNIVERSAL';
+}
+
+/**
+ * Build the WORKBOOK CPV-unit ImportSpec: same code→id maps + link resolution as `buildCpvUnitSpec`;
+ * only the unit-code handling differs (blank/'UNIVERSAL' ⇒ null, else the same unitMap lookup + error).
+ * Additive-only — not yet wired into any route; the onboarding workbook wires it in a later slice.
+ */
+export async function buildCpvUnitWorkbookSpec(): Promise<
+  ImportSpec<WorkbookCpvUnitImportFile, CreateCpvUnitInput>
+> {
+  const maps = await loadCpvUnitMaps();
+
+  const resolve = async (input: WorkbookCpvUnitImportFile): Promise<ResolveResult<CreateCpvUnitInput>> => {
+    const errors: { column: string; message: string }[] = [];
+
+    const { clientId, productId } = resolveClientAndProduct(
+      input.clientCode,
+      input.productCode,
+      maps,
+      errors,
+    );
+
+    let verificationUnitId: number | null | undefined;
+    if (isUniversalUnitCode(input.unitCode)) {
+      verificationUnitId = null;
+    } else {
+      verificationUnitId = maps.unitMap.get(input.unitCode!.trim());
+      if (verificationUnitId === undefined)
+        errors.push({ column: 'Unit Code', message: `unknown unit code ${input.unitCode}` });
+    }
+
+    const clientProductId = resolveLink(
+      clientId,
+      productId,
+      input.clientCode,
+      input.productCode,
+      maps,
+      errors,
+    );
+
+    if (errors.length > 0) return { ok: false, errors };
+    return {
+      ok: true,
+      value: {
+        clientProductId: clientProductId!,
+        verificationUnitId,
+        ...(input.effectiveFrom ? { effectiveFrom: input.effectiveFrom } : {}),
+      },
+    };
+  };
+
+  return {
+    resource: 'client_product_verification_units',
+    columns: WORKBOOK_CPV_IMPORT_COLUMNS,
+    schema: WorkbookCpvUnitImportFileSchema,
     sample: CPV_IMPORT_SAMPLE,
     resolve,
   };
