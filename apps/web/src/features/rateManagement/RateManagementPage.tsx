@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   pageQueryToParams,
@@ -21,7 +21,7 @@ import { ImportButton } from '../../components/import/ImportModal.js';
 import { Button } from '../../components/ui/Button.js';
 import { SearchableSelect, type Opt } from '../../components/ui/SearchableSelect.js';
 import { useAuth } from '../../lib/AuthContext.js';
-import { withClientFilter, type EmbeddedPageProps } from '../clientSetup/embed.js';
+import { withClientFilter, newRecordHref, type EmbeddedPageProps } from '../clientSetup/index.js';
 
 const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
@@ -91,6 +91,7 @@ function ActiveChip({ active }: { active: boolean }) {
 export function RateManagementPage({ clientId: controlledClientId }: EmbeddedPageProps = {}) {
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const location = useLocation();
   // Writes (add / revise / activate-deactivate / bulk / import) require masterdata.manage; viewing
   // (masterdata.view) does not. Gate the write affordances so a viewer doesn't hit a server 403.
   const { has } = useAuth();
@@ -241,7 +242,15 @@ export function RateManagementPage({ clientId: controlledClientId }: EmbeddedPag
             {!controlledClientId && (
               <ImportButton config={{ basePath: '/api/v2/rates', queryKey: 'rates', entityLabel: 'rate' }} />
             )}
-            <Button onClick={() => navigate('/admin/rates/new')}>+ Add rate</Button>
+            <Button
+              onClick={() =>
+                navigate(
+                  newRecordHref('/admin/rates', controlledClientId, location.pathname, location.search),
+                )
+              }
+            >
+              + Add rate
+            </Button>
           </div>
         )}
       </div>

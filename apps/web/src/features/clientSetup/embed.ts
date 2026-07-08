@@ -19,3 +19,21 @@ export function withClientFilter(
 ): Record<string, string | undefined> {
   return { ...filters, clientId: controlledClientId || filters['clientId'] || undefined };
 }
+
+/**
+ * Builds the href for an embedded list page's "+ New" button (ADR-0092 S2). Controlled (hub client
+ * set): the create route gets `?clientId=` (pre-selects the client on the record page) and
+ * `?returnTo=` back to the current location — when embedded, that location IS the hub URL (step
+ * included), so Save lands back on the hub. Uncontrolled: the bare create route, behaviour-identical
+ * to standalone today.
+ */
+export function newRecordHref(
+  basePath: string,
+  controlledClientId: string | undefined,
+  pathname: string,
+  search: string,
+): string {
+  return controlledClientId
+    ? `${basePath}/new?clientId=${encodeURIComponent(controlledClientId)}&returnTo=${encodeURIComponent(pathname + search)}`
+    : `${basePath}/new`;
+}

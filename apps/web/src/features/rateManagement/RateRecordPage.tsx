@@ -20,7 +20,7 @@ import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { Button } from '../../components/ui/Button.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
 import { SearchableSelect, type Opt } from '../../components/ui/SearchableSelect.js';
-import { exitPath } from '../clientSetup/hubState.js';
+import { exitPath } from '../clientSetup/index.js';
 
 const BASE = '/api/v2/rates';
 const QK = 'rates';

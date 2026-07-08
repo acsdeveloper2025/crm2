@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   pageQueryToParams,
@@ -20,7 +20,7 @@ import { ImportButton } from '../../components/import/ImportModal.js';
 import { Button } from '../../components/ui/Button.js';
 import { SearchableSelect, type Opt } from '../../components/ui/SearchableSelect.js';
 import { toast } from 'sonner';
-import { withClientFilter, type EmbeddedPageProps } from '../clientSetup/embed.js';
+import { withClientFilter, newRecordHref, type EmbeddedPageProps } from '../clientSetup/index.js';
 
 const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
@@ -29,6 +29,7 @@ const isStale = (e: unknown): e is ApiError =>
 /** Commission Rates (ADR-0036) — per-user agent-commission config. SUPER_ADMIN only (comp data). */
 export function CommissionRatesPage({ clientId: controlledClientId }: EmbeddedPageProps = {}) {
   const navigate = useNavigate();
+  const location = useLocation();
   // Mirror the server write guard (masterdata.manage) so viewers don't see write controls (H-1).
   const { has } = useAuth();
   const [active, setActive] = useState('');
@@ -205,7 +206,20 @@ export function CommissionRatesPage({ clientId: controlledClientId }: EmbeddedPa
               }}
             />
           )}
-          <Button onClick={() => navigate('/admin/commission-rates/new')}>+ New Commission Rate</Button>
+          <Button
+            onClick={() =>
+              navigate(
+                newRecordHref(
+                  '/admin/commission-rates',
+                  controlledClientId,
+                  location.pathname,
+                  location.search,
+                ),
+              )
+            }
+          >
+            + New Commission Rate
+          </Button>
         </div>
       </div>
       <DataGrid<CommissionRateView>

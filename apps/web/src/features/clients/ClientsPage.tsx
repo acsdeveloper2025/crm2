@@ -1,5 +1,5 @@
 import { Link, useSearchParams } from 'react-router-dom';
-import { safeReturnTo } from '../clientSetup/hubState.js';
+import { safeReturnTo } from '../clientSetup/index.js';
 import { MasterDataCrud } from '../../components/MasterDataCrud.js';
 
 export function ClientsPage() {

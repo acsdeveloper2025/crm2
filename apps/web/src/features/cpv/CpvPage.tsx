@@ -20,7 +20,7 @@ import { ImportButton } from '../../components/import/ImportModal.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
 import { Button } from '../../components/ui/Button.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
-import { withClientFilter, type EmbeddedPageProps } from '../clientSetup/embed.js';
+import { withClientFilter, type EmbeddedPageProps } from '../clientSetup/index.js';
 
 const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
@@ -266,9 +266,11 @@ export function CpvPage({ clientId: controlledClientId }: EmbeddedPageProps = {}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {/* Embedded (controlled client): hide the per-module imports — an import file can create
-              links/units for ANY client, which would bypass the hub's client lens (ADR-0092 S2).
-              Export stays: it follows the grid's scoped query. */}
+          {/* Embedded (controlled client): hide the per-module imports and the standalone "Export
+              Units" button below — an import file can create links/units for ANY client, and the
+              Export Units button is a hard-coded mode=all export, both bypassing the hub's client
+              lens (ADR-0092 S2). The DataGrid's own Export (in its toolbar) stays: it follows the
+              grid's scoped query, which already carries the controlled client via withClientFilter. */}
           {!controlledClientId && (
             <>
               <ImportButton
@@ -290,14 +292,14 @@ export function CpvPage({ clientId: controlledClientId }: EmbeddedPageProps = {}
                 }}
                 label="Import Units"
               />
+              <Button
+                variant="secondary"
+                onClick={() => void apiExport('/api/v2/cpv-units/export?mode=all&format=xlsx')}
+              >
+                Export Units
+              </Button>
             </>
           )}
-          <Button
-            variant="secondary"
-            onClick={() => void apiExport('/api/v2/cpv-units/export?mode=all&format=xlsx')}
-          >
-            Export Units
-          </Button>
         </div>
       </div>
 

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   pageQueryToParams,
@@ -18,7 +18,7 @@ import { DataGrid, type DataGridColumn, type BulkSelection } from '../../compone
 import { ImportButton } from '../../components/import/ImportModal.js';
 import { Button } from '../../components/ui/Button.js';
 import { toast } from 'sonner';
-import { withClientFilter, type EmbeddedPageProps } from '../clientSetup/embed.js';
+import { withClientFilter, newRecordHref, type EmbeddedPageProps } from '../clientSetup/index.js';
 
 /**
  * Bulk "Deactivate selected" for the RTA grid (UX-11). RTA has no version column (no per-row OCC —
@@ -77,6 +77,7 @@ function RtaBulkDeactivate({ selection }: { selection: BulkSelection<RateTypeAss
  *  to write. Product/Unit render "Universal" when null (applies to all). */
 export function RateTypeAssignmentsPage({ clientId: controlledClientId }: EmbeddedPageProps = {}) {
   const navigate = useNavigate();
+  const location = useLocation();
   // Mirror the server write guard so viewers don't see write controls.
   const { has } = useAuth();
   const canManage = has('masterdata.manage');
@@ -192,7 +193,20 @@ export function RateTypeAssignmentsPage({ clientId: controlledClientId }: Embedd
                 }}
               />
             )}
-            <Button onClick={() => navigate('/admin/rate-type-assignments/new')}>+ New Assignment</Button>
+            <Button
+              onClick={() =>
+                navigate(
+                  newRecordHref(
+                    '/admin/rate-type-assignments',
+                    controlledClientId,
+                    location.pathname,
+                    location.search,
+                  ),
+                )
+              }
+            >
+              + New Assignment
+            </Button>
           </div>
         )}
       </div>

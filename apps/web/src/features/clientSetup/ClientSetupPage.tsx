@@ -4,19 +4,27 @@ import { useQuery } from '@tanstack/react-query';
 import type { Option } from '@crm2/sdk';
 import { toast } from 'sonner';
 import { api } from '../../lib/sdk.js';
+import { useAuth } from '../../lib/AuthContext.js';
 import { Button } from '../../components/ui/Button.js';
 import { SearchableSelect, type Opt } from '../../components/ui/SearchableSelect.js';
 import { STEP_DEFS, parseStep, hubReturnTo } from './hubState.js';
+import { CpvPage } from '../cpv/index.js';
+import { RateTypeAssignmentsPage } from '../rateTypeAssignments/index.js';
+import { RateManagementPage } from '../rateManagement/index.js';
+import { CommissionRatesPage } from '../commissionRates/index.js';
 
 /**
  * Client Setup hub (ADR-0092) — one client, one stepper over the four onboarding screens (Products &
  * CPV units → Rate types → Rates → Commission rates). The URL (`?clientId=&step=`) is the only state
- * store, so the hub is deep-linkable. S1 ships the shell only: client picker + stepper rail + a
- * placeholder card per step — S2 replaces each placeholder with the real embedded page.
+ * store, so the hub is deep-linkable. Each step mounts the real page for that module with the hub's
+ * client as its controlled `clientId` prop (S2) — Step 4 (Commission rates) is SUPER_ADMIN-only
+ * (`masterdata.manage`); a non-SA admin gets a neutral locked card instead, and `CommissionRatesPage`
+ * is never mounted, so no request fires.
  */
 export function ClientSetupPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { has } = useAuth();
   const clientId = searchParams.get('clientId') ?? '';
   const step = parseStep(searchParams.get('step'));
 
@@ -102,10 +110,18 @@ export function ClientSetupPage() {
           <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
             Pick or create a client to begin.
           </div>
+        ) : activeStepDef.key === 'commission' && !has('masterdata.manage') ? (
+          <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
+            Commission rates are managed by a super admin.
+          </div>
         ) : (
-          <div className="min-w-0 rounded-lg border border-border bg-card p-6">
-            <h2 className="mb-1 text-lg font-semibold">{activeStepDef.label}</h2>
-            <p className="text-sm text-muted-foreground">Coming soon.</p>
+          // min-w-0: the embedded page owns its own card (DataGrid renders its own rounded/bordered
+          // wrapper) — a wide grid scrolls inside that card, not the hub page.
+          <div className="min-w-0">
+            {activeStepDef.key === 'cpv' && <CpvPage clientId={clientId} />}
+            {activeStepDef.key === 'rateTypes' && <RateTypeAssignmentsPage clientId={clientId} />}
+            {activeStepDef.key === 'rates' && <RateManagementPage clientId={clientId} />}
+            {activeStepDef.key === 'commission' && <CommissionRatesPage clientId={clientId} />}
           </div>
         )}
       </div>

@@ -21,7 +21,7 @@ import { useAuth } from '../../lib/AuthContext.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { Button } from '../../components/ui/Button.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
-import { exitPath } from '../clientSetup/hubState.js';
+import { exitPath } from '../clientSetup/index.js';
 
 const BASE = '/api/v2/commission-rates';
 const QK = 'commission-rates';
