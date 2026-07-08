@@ -266,25 +266,32 @@ export function CpvPage({ clientId: controlledClientId }: EmbeddedPageProps = {}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <ImportButton
-            config={{
-              basePath: '/api/v2/client-products',
-              queryKey: 'client-products',
-              entityLabel: 'client-product link',
-            }}
-            label="Import Links"
-          />
-          {/* IE-DEFER-2: the unit-enablement leg gains its own bulk import/export (client/product/unit
-              codes round-trip). The enablements span all links, so this is a global import/export here,
-              not per-row in the sub-table (which has no page/cols context). */}
-          <ImportButton
-            config={{
-              basePath: '/api/v2/cpv-units',
-              queryKey: 'cpv-units',
-              entityLabel: 'enabled unit',
-            }}
-            label="Import Units"
-          />
+          {/* Embedded (controlled client): hide the per-module imports — an import file can create
+              links/units for ANY client, which would bypass the hub's client lens (ADR-0092 S2).
+              Export stays: it follows the grid's scoped query. */}
+          {!controlledClientId && (
+            <>
+              <ImportButton
+                config={{
+                  basePath: '/api/v2/client-products',
+                  queryKey: 'client-products',
+                  entityLabel: 'client-product link',
+                }}
+                label="Import Links"
+              />
+              {/* IE-DEFER-2: the unit-enablement leg gains its own bulk import/export (client/product/unit
+                  codes round-trip). The enablements span all links, so this is a global import/export here,
+                  not per-row in the sub-table (which has no page/cols context). */}
+              <ImportButton
+                config={{
+                  basePath: '/api/v2/cpv-units',
+                  queryKey: 'cpv-units',
+                  entityLabel: 'enabled unit',
+                }}
+                label="Import Units"
+              />
+            </>
+          )}
           <Button
             variant="secondary"
             onClick={() => void apiExport('/api/v2/cpv-units/export?mode=all&format=xlsx')}
