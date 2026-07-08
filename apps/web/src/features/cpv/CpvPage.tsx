@@ -20,6 +20,7 @@ import { ImportButton } from '../../components/import/ImportModal.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
 import { Button } from '../../components/ui/Button.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
+import { withClientFilter, type EmbeddedPageProps } from '../clientSetup/embed.js';
 
 const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
@@ -106,9 +107,12 @@ function RescheduleDialog({
   );
 }
 
-export function CpvPage() {
+export function CpvPage({ clientId: controlledClientId }: EmbeddedPageProps = {}) {
   const qc = useQueryClient();
-  const [clientId, setClientId] = useState('');
+  const [ownClientId, setOwnClientId] = useState('');
+  // Controlled (embedded in the Client Setup hub, ADR-0092): the create-form's client is forced to
+  // the hub's client, so link creation always targets it — the picker below becomes read-only.
+  const clientId = controlledClientId ?? ownClientId;
   const [productId, setProductId] = useState('');
   const [effectiveFrom, setEffectiveFrom] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -132,7 +136,7 @@ export function CpvPage() {
         effectiveFrom: toIsoDate(effectiveFrom),
       }),
     onSuccess: () => {
-      setClientId('');
+      setOwnClientId('');
       setProductId('');
       setEffectiveFrom('');
       qc.invalidateQueries({ queryKey: ['client-products'] });
@@ -293,19 +297,32 @@ export function CpvPage() {
       <div className="flex flex-wrap items-end gap-2 rounded-lg border border-border bg-card p-3 shadow-sm">
         <label className="block w-full sm:w-auto">
           <span className="mb-1 block text-xs font-medium text-foreground">Client</span>
-          <select
-            className="input w-full sm:w-auto sm:min-w-[12rem]"
-            aria-label="Client"
-            value={clientId}
-            onChange={(e) => setClientId(e.target.value)}
-          >
-            <option value="">Select client…</option>
-            {clients.data?.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.code} — {c.name}
-              </option>
-            ))}
-          </select>
+          {controlledClientId ? (
+            <input
+              className="input w-full sm:w-auto sm:min-w-[12rem]"
+              aria-label="Client"
+              value={(() => {
+                const c = clients.data?.find((o) => String(o.id) === controlledClientId);
+                return c ? `${c.code} — ${c.name}` : controlledClientId;
+              })()}
+              disabled
+              readOnly
+            />
+          ) : (
+            <select
+              className="input w-full sm:w-auto sm:min-w-[12rem]"
+              aria-label="Client"
+              value={clientId}
+              onChange={(e) => setOwnClientId(e.target.value)}
+            >
+              <option value="">Select client…</option>
+              {clients.data?.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.code} — {c.name}
+                </option>
+              ))}
+            </select>
+          )}
         </label>
         <label className="block w-full sm:w-auto">
           <span className="mb-1 block text-xs font-medium text-foreground">Product</span>
@@ -351,6 +368,7 @@ export function CpvPage() {
         rowId={(l) => l.id}
         defaultSort="client"
         searchPlaceholder="Search client or product…"
+        filters={withClientFilter({}, controlledClientId)}
         fetchPage={(query: PageQuery) =>
           api<Paginated<ClientProductView>>(
             'GET',
