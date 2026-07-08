@@ -3,6 +3,7 @@ import {
   type Paginated,
   type RateTypeAssignment,
   type RateTypeAssignmentView,
+  type BulkResult,
 } from '@crm2/sdk';
 import { rateTypeAssignmentRepository as repo } from './repository.js';
 import { AppError } from '../../platform/errors.js';
@@ -13,6 +14,7 @@ import {
   type ExportColumn,
   type ResolvedExport,
 } from '../../platform/export/index.js';
+import { parseBulkIds } from '../../platform/bulk.js';
 import { buildTemplate, runImportConfirm, runImportPreview } from '../../platform/import/index.js';
 import { buildRateTypeAssignmentSpec, RATE_TYPE_ASSIGNMENT_TEMPLATE_SPEC } from './import.js';
 
@@ -151,4 +153,19 @@ export const rateTypeAssignmentService = {
   },
 
   deactivate: (id: number, userId: string): Promise<RateTypeAssignment> => repo.deactivate(id, userId),
+
+  /** Bulk deactivate (UX-11) — mirrors the SHAPE of rates' bulk endpoint (per-row result map), not
+   *  its OCC mechanics (RTA has no version column). A row already inactive (or unknown) reports
+   *  NOT_FOUND — the repo's single UPDATE only matches active rows, so both cases land in the same
+   *  diff (there's nothing to distinguish "gone" from "already off" without a second read, and the
+   *  bulk action is deactivate-only, so both mean "nothing left to do here"). */
+  async bulkDeactivate(body: unknown, userId: string): Promise<BulkResult> {
+    const ids = parseBulkIds(body);
+    const { okIds, notFoundIds } = await repo.bulkDeactivate(ids, userId);
+    const results: BulkResult['results'] = [
+      ...okIds.map((id) => ({ id: String(id), status: 'OK' as const })),
+      ...notFoundIds.map((id) => ({ id: String(id), status: 'NOT_FOUND' as const })),
+    ];
+    return { results, okCount: okIds.length, conflictCount: 0, notFoundCount: notFoundIds.length };
+  },
 };

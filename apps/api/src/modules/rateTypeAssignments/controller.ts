@@ -88,4 +88,12 @@ export const rateTypeAssignmentController = {
       next(e);
     }
   },
+
+  async bulkDeactivate(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json(await svc.bulkDeactivate(req.body, userId(req)));
+    } catch (e) {
+      next(e);
+    }
+  },
 };

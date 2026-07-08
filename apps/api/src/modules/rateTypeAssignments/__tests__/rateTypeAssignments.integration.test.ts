@@ -177,6 +177,57 @@ describe.skipIf(!RUN)('rate-type assignments CRUD (ADR-0069)', () => {
     expect((avail.body as { id: number }[]).map((r) => r.id)).not.toContain(rtA);
   });
 
+  // ── bulk deactivate (UX-11) — RTA has no version column, so no per-row OCC; mirrors the SHAPE of
+  // rates' bulk endpoint (per-row result map), not its version mechanics. Statuses: OK | NOT_FOUND.
+  describe('bulk-deactivate', () => {
+    it('2 real + 1 missing id → 200 with 2 OK + 1 NOT_FOUND; rows go inactive', async () => {
+      const a = await request(app)
+        .post('/api/v2/rate-type-assignments')
+        .set(SA)
+        .send({ clientId, productId, verificationUnitId: unitId, rateTypeId: rtA });
+      const b = await request(app)
+        .post('/api/v2/rate-type-assignments')
+        .set(SA)
+        .send({ clientId, productId: null, verificationUnitId: null, rateTypeId: rtA });
+      const res = await request(app)
+        .post('/api/v2/rate-type-assignments/bulk-deactivate')
+        .set(SA)
+        .send({ ids: [a.body.id, b.body.id, 999999] });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ okCount: 2, notFoundCount: 1 });
+      const byId = Object.fromEntries(
+        (res.body.results as { id: string; status: string }[]).map((r) => [r.id, r.status]),
+      );
+      expect(byId[String(a.body.id)]).toBe('OK');
+      expect(byId[String(b.body.id)]).toBe('OK');
+      expect(byId['999999']).toBe('NOT_FOUND');
+
+      const getA = await request(app).get(`/api/v2/rate-type-assignments/${a.body.id}`).set(SA);
+      const getB = await request(app).get(`/api/v2/rate-type-assignments/${b.body.id}`).set(SA);
+      expect(getA.body.isActive).toBe(false);
+      expect(getB.body.isActive).toBe(false);
+    });
+
+    it('empty ids → 400 BULK_ITEMS_REQUIRED', async () => {
+      const res = await request(app).post('/api/v2/rate-type-assignments/bulk-deactivate').set(SA).send({
+        ids: [],
+      });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('BULK_ITEMS_REQUIRED');
+    });
+
+    it('requires masterdata.manage (viewer → 403)', async () => {
+      expect(
+        (
+          await request(app)
+            .post('/api/v2/rate-type-assignments/bulk-deactivate')
+            .set(TL)
+            .send({ ids: [1] })
+        ).status,
+      ).toBe(403);
+    });
+  });
+
   it('a non-existent rateTypeId → 400 INVALID_ASSIGNMENT_REF', async () => {
     const res = await request(app)
       .post('/api/v2/rate-type-assignments')

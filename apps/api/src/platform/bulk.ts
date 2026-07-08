@@ -53,6 +53,23 @@ export function parseBulkItems(body: unknown, idKind: 'int' | 'uuid'): BulkItem[
 }
 
 /**
+ * Validate + parse a bulk request body `{ ids: number[] }` — for a resource with NO version column
+ * (no per-row OCC), e.g. rate-type-assignments `/bulk-deactivate` (UX-11). Same 400s as
+ * `parseBulkItems` (empty/oversized/malformed), so both bulk shapes fail the same way.
+ */
+export function parseBulkIds(body: unknown): number[] {
+  const raw = (body as { ids?: unknown } | null)?.ids;
+  if (!Array.isArray(raw) || raw.length === 0) throw AppError.badRequest('BULK_ITEMS_REQUIRED');
+  if (raw.length > MAX_BULK_ITEMS)
+    throw AppError.badRequest('BULK_TOO_LARGE', { max: MAX_BULK_ITEMS, got: raw.length });
+  return raw.map((r) => {
+    const id = Number(r);
+    if (!Number.isInteger(id) || id <= 0) throw AppError.badRequest('BULK_ITEM_INVALID');
+    return id;
+  });
+}
+
+/**
  * Run `apply` for each item, classifying the outcome per row. A stale row (409 STALE_UPDATE) →
  * CONFLICT; a missing row (404) → NOT_FOUND; both are reported, not retried. Any other error
  * propagates (a real failure must not be swallowed as a per-row status).

@@ -139,4 +139,19 @@ export const rateTypeAssignmentRepository = {
     if (!row) throw AppError.notFound('RATE_TYPE_ASSIGNMENT_NOT_FOUND');
     return row;
   },
+
+  /** Bulk deactivate (UX-11): no version column, so no per-row OCC — one `UPDATE ... WHERE id =
+   *  ANY($1)` deactivates every matching row in a single statement; a NOT_FOUND id is whatever's in
+   *  the input set but absent from the RETURNING ids (never existed, or was already deactivated —
+   *  the WHERE also requires `is_active` so a re-deactivate isn't reported as OK). */
+  async bulkDeactivate(ids: number[], userId: string): Promise<{ okIds: number[]; notFoundIds: number[] }> {
+    const rows = await query<{ id: number }>(
+      `UPDATE rate_type_assignments SET is_active = false, updated_by = $2, updated_at = now()
+        WHERE id = ANY($1) AND is_active RETURNING id`,
+      [ids, userId],
+    );
+    const okSet = new Set(rows.map((r) => r.id));
+    const notFoundIds = ids.filter((id) => !okSet.has(id));
+    return { okIds: [...okSet], notFoundIds };
+  },
 };

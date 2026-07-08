@@ -9,14 +9,67 @@ import {
   type PageQuery,
   type Paginated,
   type ExportRequest,
+  type BulkResult,
 } from '@crm2/sdk';
 import { api, apiExport, ApiError } from '../../lib/sdk.js';
 import { formatDateTime } from '../../lib/format.js';
 import { useAuth } from '../../lib/AuthContext.js';
-import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
+import { DataGrid, type DataGridColumn, type BulkSelection } from '../../components/ui/data-grid/index.js';
 import { ImportButton } from '../../components/import/ImportModal.js';
 import { Button } from '../../components/ui/Button.js';
 import { toast } from 'sonner';
+
+/**
+ * Bulk "Deactivate selected" for the RTA grid (UX-11). RTA has no version column (no per-row OCC —
+ * unlike `BulkStatusActions`, which requires it), so this is deactivate-only and sends bare ids;
+ * mirrors `BulkStatusActions`'s shape (busy/message/clear-on-clean-run) with the OCC parts dropped.
+ * Inlined here rather than a shared component — RTA is the only no-OCC bulk-selectable resource today.
+ */
+function RtaBulkDeactivate({ selection }: { selection: BulkSelection<RateTypeAssignmentView> }) {
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const run = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const ids = selection.rows.map((r) => r.id);
+      const res = await api<BulkResult>('POST', '/api/v2/rate-type-assignments/bulk-deactivate', { ids });
+      qc.invalidateQueries({ queryKey: ['rate-type-assignments'] });
+      const parts = [`${res.okCount} deactivated`];
+      if (res.notFoundCount) parts.push(`${res.notFoundCount} not found`);
+      setMessage(parts.join(' · '));
+      if (!res.notFoundCount) selection.clear();
+    } catch {
+      setMessage('Bulk deactivate failed. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (selection.allMatching)
+    return <span className="text-xs text-muted-foreground">Tick individual rows to deactivate.</span>;
+
+  return (
+    <>
+      <Button
+        variant="destructive"
+        size="sm"
+        disabled={selection.rows.length === 0 || busy}
+        loading={busy}
+        onClick={() => void run()}
+      >
+        Deactivate selected
+      </Button>
+      {message && (
+        <span className="text-xs text-muted-foreground" role="status">
+          {message}
+        </span>
+      )}
+    </>
+  );
+}
 
 /** Rate Type Assignments (ADR-0067 / ADR-0069) — which rate type a (client × product × unit) combo may
  *  use. Standard CRUD master data (mirrors Commission Rates): page.masterdata to view, masterdata.manage
@@ -141,6 +194,8 @@ export function RateTypeAssignmentsPage() {
         columns={columns}
         queryKey="rate-type-assignments"
         rowId={(r) => r.id}
+        selectable={canManage}
+        bulkActions={(sel) => <RtaBulkDeactivate selection={sel} />}
         defaultSort="client"
         searchPlaceholder="Search client, product, unit, rate type…"
         filters={{ active: active || undefined }}

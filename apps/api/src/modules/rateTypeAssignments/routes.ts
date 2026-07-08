@@ -22,4 +22,6 @@ rateTypeAssignmentRoutes.post(
   c.import,
 );
 rateTypeAssignmentRoutes.post('/', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.create);
+// Static path (single segment) — no collision with `/:id/deactivate` (two segments).
+rateTypeAssignmentRoutes.post('/bulk-deactivate', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.bulkDeactivate);
 rateTypeAssignmentRoutes.post('/:id/deactivate', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.deactivate);
