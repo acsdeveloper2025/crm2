@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   pageQueryToParams,
   exportQueryToParams,
   type CommissionRate,
   type CommissionRateView,
+  type Option,
+  type UserOption,
   type PageQuery,
   type Paginated,
   type ExportRequest,
@@ -16,6 +18,7 @@ import { useAuth } from '../../lib/AuthContext.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
 import { ImportButton } from '../../components/import/ImportModal.js';
 import { Button } from '../../components/ui/Button.js';
+import { SearchableSelect, type Opt } from '../../components/ui/SearchableSelect.js';
 import { toast } from 'sonner';
 
 const HTTP_CONFLICT = 409;
@@ -28,7 +31,22 @@ export function CommissionRatesPage() {
   // Mirror the server write guard (masterdata.manage) so viewers don't see write controls (H-1).
   const { has } = useAuth();
   const [active, setActive] = useState('');
+  // UX-10: narrow the list by user/client — server-side filters already exist (commissionRates
+  // repository WHERE cr.user_id / cr.client_id); this just wires the toolbar (RateManagementPage
+  // client/product pattern).
+  const [userId, setUserId] = useState('');
+  const [clientId, setClientId] = useState('');
   const qc = useQueryClient();
+  const users = useQuery({
+    queryKey: ['user-options'],
+    queryFn: () => api<UserOption[]>('GET', '/api/v2/users/options'),
+  });
+  const clients = useQuery({
+    queryKey: ['client-options'],
+    queryFn: () => api<Option[]>('GET', '/api/v2/clients/options'),
+  });
+  const userOpts: Opt[] = (users.data ?? []).map((u) => ({ value: u.id, label: u.name }));
+  const clientOpts: Opt[] = (clients.data ?? []).map((c) => ({ value: String(c.id), label: c.name }));
   // Per-row activate/deactivate (OCC version-guarded; single-row routes — no bulk endpoint exists).
   const toggle = useMutation({
     mutationFn: (r: CommissionRateView) =>
@@ -190,7 +208,11 @@ export function CommissionRatesPage() {
         rowId={(r) => r.id}
         defaultSort="user"
         searchPlaceholder="Search user, client, rate type…"
-        filters={{ active: active || undefined }}
+        filters={{
+          active: active || undefined,
+          userId: userId || undefined,
+          clientId: clientId || undefined,
+        }}
         fetchPage={(query: PageQuery) =>
           api<Paginated<CommissionRateView>>(
             'GET',
@@ -205,16 +227,32 @@ export function CommissionRatesPage() {
           apiExport(`/api/v2/commission-rates/export?${exportQueryToParams(req).toString()}`)
         }
         toolbar={
-          <select
-            className="input w-[10rem]"
-            aria-label="Filter by status"
-            value={active}
-            onChange={(e) => setActive(e.target.value)}
-          >
-            <option value="">All statuses</option>
-            <option value="true">Active</option>
-            <option value="false">Inactive</option>
-          </select>
+          <>
+            <SearchableSelect
+              value={userId}
+              onChange={setUserId}
+              options={[{ value: '', label: 'All users' }, ...userOpts]}
+              placeholder="All users"
+              width="min-w-[12rem]"
+            />
+            <SearchableSelect
+              value={clientId}
+              onChange={setClientId}
+              options={[{ value: '', label: 'All clients' }, ...clientOpts]}
+              placeholder="All clients"
+              width="min-w-[12rem]"
+            />
+            <select
+              className="input w-[10rem]"
+              aria-label="Filter by status"
+              value={active}
+              onChange={(e) => setActive(e.target.value)}
+            >
+              <option value="">All statuses</option>
+              <option value="true">Active</option>
+              <option value="false">Inactive</option>
+            </select>
+          </>
         }
       />
     </div>

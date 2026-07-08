@@ -1,9 +1,13 @@
 import { describe, it, expect } from 'vitest';
+import type { RateTypeOption } from '@crm2/sdk';
 import {
   friendlyError,
   PINCODE_NOT_FOUND,
   LOCATIONS_ADMIN_PATH,
   isPincodeNotFound,
+  isOfficeRateType,
+  OFFICE_LOCATIONLESS_HELP,
+  groupRateTypeOptions,
 } from './CommissionRateRecordPage.js';
 
 /**
@@ -56,5 +60,65 @@ describe('isPincodeNotFound (commission rates)', () => {
 
   it('pins the Location Management path', () => {
     expect(LOCATIONS_ADMIN_PATH).toBe('/admin/locations');
+  });
+});
+
+/**
+ * UX-10: OFFICE-category rate types are desk/flat commission — location-less by design (ADR-0068).
+ * isOfficeRateType looks the chosen code up in the loaded RateTypeOption catalog (category carries
+ * FIELD/OFFICE, not the code string) so the FE mirrors the server's zod cross-field rule without
+ * hardcoding "OFFICE" as a magic code.
+ */
+describe('isOfficeRateType (commission rates, UX-10)', () => {
+  const options: RateTypeOption[] = [
+    { id: 1, code: 'LOCAL', category: 'FIELD' },
+    { id: 2, code: 'OGL', category: 'FIELD' },
+    { id: 3, code: 'DESK', category: 'OFFICE' },
+  ];
+
+  it('is true for a code whose catalog entry is OFFICE', () => {
+    expect(isOfficeRateType('DESK', options)).toBe(true);
+  });
+
+  it('is false for a code whose catalog entry is FIELD', () => {
+    expect(isOfficeRateType('LOCAL', options)).toBe(false);
+  });
+
+  it('is false for an empty/unselected code', () => {
+    expect(isOfficeRateType('', options)).toBe(false);
+  });
+
+  it('is false for a code not present in the loaded options (still loading / unknown)', () => {
+    expect(isOfficeRateType('GHOST', options)).toBe(false);
+  });
+
+  it('pins the helper copy verbatim', () => {
+    expect(OFFICE_LOCATIONLESS_HELP).toBe('OFFICE rates are location-less');
+  });
+});
+
+/**
+ * UX-10: the rate-type picker groups options into <optgroup> FIELD / OFFICE so the desk-commission
+ * codes read as a distinct category, not mixed in with the geography-bound field codes.
+ */
+describe('groupRateTypeOptions (commission rates, UX-10)', () => {
+  const options: RateTypeOption[] = [
+    { id: 1, code: 'LOCAL', category: 'FIELD' },
+    { id: 3, code: 'DESK', category: 'OFFICE' },
+    { id: 2, code: 'OGL', category: 'FIELD' },
+  ];
+
+  it('splits options into FIELD and OFFICE buckets, preserving catalog order within each', () => {
+    expect(groupRateTypeOptions(options)).toEqual({
+      FIELD: [
+        { id: 1, code: 'LOCAL', category: 'FIELD' },
+        { id: 2, code: 'OGL', category: 'FIELD' },
+      ],
+      OFFICE: [{ id: 3, code: 'DESK', category: 'OFFICE' }],
+    });
+  });
+
+  it('empty input produces empty buckets, not a crash', () => {
+    expect(groupRateTypeOptions([])).toEqual({ FIELD: [], OFFICE: [] });
   });
 });

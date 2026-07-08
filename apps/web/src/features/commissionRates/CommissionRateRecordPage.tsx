@@ -7,10 +7,11 @@ import {
   type UserOption,
   type VerificationUnitOption,
   type Location,
-  type TatPolicy,
+  type TatPolicyOption,
   type CommissionRate,
   type CommissionRateView,
   type RateTypeOption,
+  type RateTypeCategory,
   type Paginated,
 } from '@crm2/sdk';
 import { api, ApiError } from '../../lib/sdk.js';
@@ -42,6 +43,24 @@ export const PINCODE_NOT_FOUND = 'Pincode not found — add it in Location Manag
 export const LOCATIONS_ADMIN_PATH = '/admin/locations';
 export const isPincodeNotFound = (s: { pincode: string; isSuccess: boolean; count: number }): boolean =>
   /^\d{6}$/.test(s.pincode) && s.isSuccess && s.count === 0;
+
+// UX-10: OFFICE-category rate types are desk/flat commission — location-less by design (ADR-0068;
+// server zod cross-field rule already allows locationId to be blank for OFFICE). Look the chosen
+// code up against the loaded catalog (category, not a hardcoded "OFFICE" string match) so the FE
+// mirrors whatever the catalog says, not a guess.
+export const OFFICE_LOCATIONLESS_HELP = 'OFFICE rates are location-less';
+export const isOfficeRateType = (code: string, options: RateTypeOption[]): boolean =>
+  !!code && options.some((o) => o.code === code && o.category === 'OFFICE');
+
+/** Buckets rate-type options by category for the <optgroup> FIELD/OFFICE picker — catalog order
+ *  preserved within each bucket. */
+export const groupRateTypeOptions = (
+  options: RateTypeOption[],
+): Record<RateTypeCategory, RateTypeOption[]> => {
+  const out: Record<RateTypeCategory, RateTypeOption[]> = { FIELD: [], OFFICE: [] };
+  for (const o of options) out[o.category].push(o);
+  return out;
+};
 
 /**
  * Commission-rate create/revise as a full record-page route (ADR-0051 Wave-4 D4 — no modal).
@@ -160,10 +179,12 @@ function CommissionRateForm({ initial }: { initial: CommissionRateView | null })
     isSuccess: areas.isSuccess,
     count: areas.data?.length ?? 0,
   });
+  // UX-10: `/tat-policies/options` (page.masterdata-gated) returns ALL active-and-in-effect bands
+  // unpaginated — no `limit` to cap, unlike the DataGrid-oriented `/tat-policies` list (server max
+  // 500 via MAX_PAGE_SIZE). Same source the rate-type/client/product option pickers on this page use.
   const tatPolicies = useQuery({
-    queryKey: ['tat-policies', 'active'],
-    queryFn: () =>
-      api<Paginated<TatPolicy>>('GET', '/api/v2/tat-policies?active=true&limit=100').then((r) => r.items),
+    queryKey: ['tat-policies', 'options'],
+    queryFn: () => api<TatPolicyOption[]>('GET', '/api/v2/tat-policies/options'),
     enabled: !isRevise,
   });
   // Rate-type options now come from the managed catalog (ADR-0064/0068), not the hardcoded
@@ -214,12 +235,18 @@ function CommissionRateForm({ initial }: { initial: CommissionRateView | null })
     },
   });
 
+  // UX-10: OFFICE-category rate types are location-less (desk/flat commission) — mirrors the
+  // server's zod cross-field rule (OFFICE ⇒ locationId optional) via the loaded catalog's category,
+  // not a hardcoded code string.
+  const isOffice = isOfficeRateType(fieldRateType, rateTypes.data ?? []);
+  const rateTypeGroups = groupRateTypeOptions(rateTypes.data ?? []);
+
   // ADR-0050: required-specific dims = user + location (area) + rate type; client/product/unit/tat band
   // are Universal-able (blank ⇒ matches any), so they don't gate Save. Location is required for LOCAL/OGL;
   // OFFICE rates are location-less (flat office commission).
   const valid = isRevise
     ? amount !== ''
-    : !!userId && !!fieldRateType && (fieldRateType === 'OFFICE' || !!locationId) && amount !== '';
+    : !!userId && !!fieldRateType && (isOffice || !!locationId) && amount !== '';
 
   return (
     <div className="space-y-4">
@@ -325,7 +352,8 @@ function CommissionRateForm({ initial }: { initial: CommissionRateView | null })
                 className="input"
                 list="commission-pincodes"
                 value={pincode}
-                placeholder="Type ≥2 digits…"
+                placeholder={isOffice ? OFFICE_LOCATIONLESS_HELP : 'Type ≥2 digits…'}
+                disabled={isOffice}
                 onChange={(e) => {
                   setPincode(e.target.value);
                   setLocationId('');
@@ -336,22 +364,31 @@ function CommissionRateForm({ initial }: { initial: CommissionRateView | null })
                   <option key={p} value={p} />
                 ))}
               </datalist>
+              {isOffice && (
+                <span className="mt-1 block text-xs text-muted-foreground">{OFFICE_LOCATIONLESS_HELP}</span>
+              )}
             </Field>
             <Field label="Area">
               <select
                 className="input"
                 value={locationId}
-                disabled={!validPincode}
+                disabled={isOffice || !validPincode}
                 onChange={(e) => setLocationId(e.target.value)}
               >
-                <option value="">{validPincode ? 'Select an area…' : 'Enter a 6-digit pincode first'}</option>
+                <option value="">
+                  {isOffice
+                    ? OFFICE_LOCATIONLESS_HELP
+                    : validPincode
+                      ? 'Select an area…'
+                      : 'Enter a 6-digit pincode first'}
+                </option>
                 {(areas.data ?? []).map((l) => (
                   <option key={l.id} value={String(l.id)}>
                     {l.area}
                   </option>
                 ))}
               </select>
-              {pincodeNotFound && (
+              {!isOffice && pincodeNotFound && (
                 <span className="mt-1 block text-xs text-muted-foreground">
                   {PINCODE_NOT_FOUND} —{' '}
                   <Link to={LOCATIONS_ADMIN_PATH} className="text-primary hover:underline">
@@ -369,16 +406,36 @@ function CommissionRateForm({ initial }: { initial: CommissionRateView | null })
                 className="input"
                 value={fieldRateType}
                 disabled={rateTypes.isLoading}
-                onChange={(e) => setRateType(e.target.value)}
+                onChange={(e) => {
+                  const code = e.target.value;
+                  setRateType(code);
+                  // UX-10: switching TO an OFFICE type clears the now-disabled location inputs; the
+                  // Clear-fields-on-toggle pattern already established for the Field/Office toggle
+                  // (UX-9) — switching back to FIELD leaves both blank for the user to re-enter (no
+                  // stale pincode silently resurrected).
+                  if (isOfficeRateType(code, rateTypes.data ?? [])) {
+                    setPincode('');
+                    setLocationId('');
+                  }
+                }}
               >
                 <option value="">
                   {rateTypes.isLoading ? 'Loading rate types…' : 'Select a rate type…'}
                 </option>
-                {(rateTypes.data ?? []).map((rt) => (
-                  <option key={rt.id} value={rt.code}>
-                    {rt.code}
-                  </option>
-                ))}
+                <optgroup label="Field">
+                  {rateTypeGroups.FIELD.map((rt) => (
+                    <option key={rt.id} value={rt.code}>
+                      {rt.code}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Office">
+                  {rateTypeGroups.OFFICE.map((rt) => (
+                    <option key={rt.id} value={rt.code}>
+                      {rt.code}
+                    </option>
+                  ))}
+                </optgroup>
               </select>
               {rateTypes.isError && (
                 <span className="mt-1 block text-xs text-destructive">Couldn’t load rate types.</span>
