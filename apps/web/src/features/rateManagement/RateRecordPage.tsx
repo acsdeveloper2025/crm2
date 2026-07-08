@@ -34,6 +34,16 @@ const isStale = (e: unknown): e is ApiError =>
 const UNIVERSAL = 'UNIVERSAL';
 const toDim = (v: string): number | null => (v === UNIVERSAL ? null : Number(v));
 
+// Owner fix 2026-07-08: the rate-type picker is assignment-gated even when product/unit is Universal —
+// a Universal dim just OMITS its query param (the API repo drops that dim's predicate entirely and
+// matches every assignment on it) rather than falling back to the full, ungated catalog.
+export const availableRateTypesPath = (clientId: string, productId: string, unitId: string): string => {
+  const params = new URLSearchParams({ clientId });
+  if (productId !== UNIVERSAL) params.set('productId', productId);
+  if (unitId !== UNIVERSAL) params.set('verificationUnitId', unitId);
+  return `/api/v2/rate-types/available?${params.toString()}`;
+};
+
 // UX-4: friendly copy for this page's known 409 code — a local map on purpose (one code per page,
 // a shared error-copy module is YAGNI). Unknown codes fall through to the raw code, unchanged.
 export const friendlyError = (code: string): string | null =>
@@ -201,22 +211,12 @@ function RateForm({
   // resolver). Enabled only once all three dims are chosen — KYC units have no rate type, so the
   // field is greyed out and this query stays idle for them too.
   const comboReady = !isRevise && !isOffice && !!clientId && !!productId && !!unitId;
-  // A Universal (NULL) product/unit can't use the assignment-combo resolver (it needs concrete ids);
-  // fall back to every usable rate type (ADR-0071).
-  const dimsUniversal = productId === UNIVERSAL || unitId === UNIVERSAL;
   const clientRateTypes = useQuery({
-    queryKey: dimsUniversal ? ['rate-types-options'] : ['rate-types-available', clientId, productId, unitId],
-    queryFn: () =>
-      dimsUniversal
-        ? api<RateTypeOption[]>('GET', '/api/v2/rate-types/options')
-        : api<RateTypeOption[]>(
-            'GET',
-            `/api/v2/rate-types/available?clientId=${clientId}&productId=${productId}&verificationUnitId=${unitId}`,
-          ),
+    queryKey: ['rate-types-available', clientId, productId, unitId],
+    queryFn: () => api<RateTypeOption[]>('GET', availableRateTypesPath(clientId, productId, unitId)),
     enabled: comboReady,
   });
-  const noRateTypesForCombo =
-    comboReady && !dimsUniversal && clientRateTypes.isSuccess && clientRateTypes.data.length === 0;
+  const noRateTypesForCombo = comboReady && clientRateTypes.isSuccess && clientRateTypes.data.length === 0;
   const pincodes = useQuery({
     queryKey: ['pincodes', pincodeSearch],
     queryFn: () => api<string[]>('GET', `/api/v2/locations/pincodes?q=${encodeURIComponent(pincodeSearch)}`),

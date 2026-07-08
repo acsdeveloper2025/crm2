@@ -26,6 +26,17 @@ export const posIntParam = (q: Record<string, unknown>, name: string): number =>
   return n;
 };
 
+/** Same as posIntParam but the param may be OMITTED (absent/blank) — used for `available`'s
+ *  product/unit dims, which drop out entirely for a Universal dim (owner fix 2026-07-08) instead of
+ *  requiring a concrete id. A present-but-invalid value still 400s. */
+const optionalPosIntParam = (q: Record<string, unknown>, name: string): number | undefined => {
+  const raw = q[name];
+  if (raw === undefined || raw === null || raw === '') return undefined;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n <= 0) throw AppError.badRequest('BAD_REQUEST', { param: name });
+  return n;
+};
+
 /** Sortable + filterable columns (apiField → SQL column); only whitelisted columns reach ORDER BY /
  *  the WHERE clause (SQL-injection-safe). `code` is the immutable identity (Phase C FK key). */
 const RATE_TYPE_PAGE_SPEC: PageSpec = {
@@ -107,11 +118,14 @@ export const rateTypeService = {
 
   options: (activeOnly: boolean): Promise<RateTypeOption[]> => repo.options(activeOnly),
 
-  /** Resolve the rate types available for a (client × product × unit) combo (ADR-0067, Phase B). */
+  /** Resolve the rate types available for a client, optionally narrowed by product / unit (ADR-0067,
+   *  Phase B; owner fix 2026-07-08). A Universal dim omits its param entirely — the repo then matches
+   *  ALL assignments on that dim (not just the wildcard NULL row) instead of falling back to the full
+   *  catalog. clientId is always required. */
   available(rawQuery: Record<string, unknown>): Promise<RateTypeOption[]> {
     const clientId = posIntParam(rawQuery, 'clientId');
-    const productId = posIntParam(rawQuery, 'productId');
-    const unitId = posIntParam(rawQuery, 'verificationUnitId');
+    const productId = optionalPosIntParam(rawQuery, 'productId');
+    const unitId = optionalPosIntParam(rawQuery, 'verificationUnitId');
     return repo.available(clientId, productId, unitId);
   },
 

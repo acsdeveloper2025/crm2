@@ -10,6 +10,7 @@ import {
   PINCODE_NOT_FOUND,
   LOCATIONS_ADMIN_PATH,
   isPincodeNotFound,
+  availableRateTypesPath,
 } from './RateRecordPage.js';
 
 /**
@@ -48,6 +49,38 @@ describe('rate-type gating copy', () => {
 
   it('links straight to the new-assignment form', () => {
     expect(ASSIGN_RATE_TYPES_PATH).toBe('/admin/rate-type-assignments/new');
+  });
+});
+
+/**
+ * Owner fix 2026-07-08: the rate-type picker stays assignment-gated even when product and/or unit is
+ * Universal — a Universal dim OMITS its query param entirely (the API repo then drops that dim's
+ * predicate) instead of falling back to the full, ungated catalog (`/rate-types/options`). This pins
+ * the query path for all four dim combinations.
+ */
+describe('availableRateTypesPath (rate-type picker, owner fix 2026-07-08)', () => {
+  it('both dims concrete → both ids on the query', () => {
+    expect(availableRateTypesPath('7', '3', '9')).toBe(
+      '/api/v2/rate-types/available?clientId=7&productId=3&verificationUnitId=9',
+    );
+  });
+
+  it('product concrete, unit Universal → verificationUnitId omitted', () => {
+    expect(availableRateTypesPath('7', '3', 'UNIVERSAL')).toBe(
+      '/api/v2/rate-types/available?clientId=7&productId=3',
+    );
+  });
+
+  it('product Universal, unit concrete → productId omitted', () => {
+    expect(availableRateTypesPath('7', 'UNIVERSAL', '9')).toBe(
+      '/api/v2/rate-types/available?clientId=7&verificationUnitId=9',
+    );
+  });
+
+  it('both dims Universal → only clientId on the query (never falls back to /rate-types/options)', () => {
+    expect(availableRateTypesPath('7', 'UNIVERSAL', 'UNIVERSAL')).toBe(
+      '/api/v2/rate-types/available?clientId=7',
+    );
   });
 });
 

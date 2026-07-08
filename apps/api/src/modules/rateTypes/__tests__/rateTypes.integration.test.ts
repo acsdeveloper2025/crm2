@@ -166,9 +166,18 @@ describe.skipIf(!RUN)('rate-types CRUD (ADR-0064)', () => {
       expect(res.body).toEqual([]);
     });
 
-    it('a missing query param → 400', async () => {
+    // productId/verificationUnitId are OPTIONAL (owner fix 2026-07-08 — Universal-dim gating, see the
+    // dedicated describe block below); clientId is the only param that still 400s when missing.
+    it('a missing clientId → 400', async () => {
       const res = await request(app)
-        .get(`/api/v2/rate-types/available?clientId=${clientId}&productId=${productId}`)
+        .get(`/api/v2/rate-types/available?productId=${productId}&verificationUnitId=${unitId}`)
+        .set(SA);
+      expect(res.status).toBe(400);
+    });
+
+    it('an invalid clientId → 400', async () => {
+      const res = await request(app)
+        .get(`/api/v2/rate-types/available?clientId=abc&productId=${productId}&verificationUnitId=${unitId}`)
         .set(SA);
       expect(res.status).toBe(400);
     });
@@ -287,6 +296,67 @@ describe.skipIf(!RUN)('rate-types CRUD (ADR-0064)', () => {
       for (const id of before) expect(after).toContain(id);
       expect(after).toContain(extraRt);
       expect(after.length).toBe(before.length + 1);
+    });
+  });
+
+  // GET /available — omitting a Universal dim drops that dim's predicate entirely (matches every
+  // assignment on that dim) instead of falling back to the full catalog (owner fix 2026-07-08).
+  // Fresh master-data so it never overlaps the other blocks above.
+  describe('GET /available — Universal-dim omission (owner fix 2026-07-08)', () => {
+    let clientId: number;
+    let productId: number; // P
+    let otherProductId: number; // Q — a different concrete product, same client
+    let unitId: number;
+    let rtUniversal: number; // A: assigned fully Universal (product NULL, unit NULL)
+    let rtProductSpecific: number; // B: assigned to product P, unit NULL
+    let rtFullySpecific: number; // C: assigned to the exact (P, U) combo
+
+    beforeAll(async () => {
+      const seedId = async (path: string, body: object): Promise<number> => {
+        const res = await request(app).post(`/api/v2/${path}`).set(SA).send(body);
+        expect(res.status).toBe(201);
+        return res.body.id as number;
+      };
+      clientId = await seedId('clients', clientFactory({ code: 'RT_OMIT_CLIENT' }));
+      productId = await seedId('products', productFactory({ code: 'RT_OMIT_PRODUCT_P' }));
+      otherProductId = await seedId('products', productFactory({ code: 'RT_OMIT_PRODUCT_Q' }));
+      unitId = await seedId('verification-units', verificationUnitFactory({ code: 'RT_OMIT_UNIT' }));
+      const rts = await db!.pool.query<{ id: number }>(
+        `SELECT id FROM rate_types WHERE is_active AND effective_from <= now() ORDER BY sort_order LIMIT 3`,
+      );
+      rtUniversal = rts.rows[0]!.id;
+      rtProductSpecific = rts.rows[1]!.id;
+      rtFullySpecific = rts.rows[2]!.id;
+      await db!.pool.query(
+        `INSERT INTO rate_type_assignments (client_id, product_id, verification_unit_id, rate_type_id, is_active) VALUES
+           ($1, NULL, NULL, $2, true),
+           ($1, $3,   NULL, $4, true),
+           ($1, $3,   $5,   $6, true)`,
+        [clientId, rtUniversal, productId, rtProductSpecific, unitId, rtFullySpecific],
+      );
+    });
+
+    const idsFor = async (qs: string): Promise<number[]> => {
+      const res = await request(app).get(`/api/v2/rate-types/available?clientId=${clientId}${qs}`).set(SA);
+      expect(res.status).toBe(200);
+      return (res.body as { id: number }[]).map((r) => r.id).sort((a, b) => a - b);
+    };
+    const allThree = (): number[] => [rtUniversal, rtProductSpecific, rtFullySpecific].sort((a, b) => a - b);
+
+    it('both dims concrete (P,U) → A,B,C — pins today’s behavior unchanged', async () => {
+      expect(await idsFor(`&productId=${productId}&verificationUnitId=${unitId}`)).toEqual(allThree());
+    });
+
+    it('product concrete + unit omitted → A,B,C', async () => {
+      expect(await idsFor(`&productId=${productId}`)).toEqual(allThree());
+    });
+
+    it('both dims omitted → A,B,C (every usable rate type assigned to the client anywhere)', async () => {
+      expect(await idsFor('')).toEqual(allThree());
+    });
+
+    it('a DIFFERENT concrete product + unit omitted → only the fully-Universal type A', async () => {
+      expect(await idsFor(`&productId=${otherProductId}`)).toEqual([rtUniversal]);
     });
   });
 });

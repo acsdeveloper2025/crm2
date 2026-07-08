@@ -88,11 +88,26 @@ export const rateTypeRepository = {
     );
   },
 
-  /** Rate types AVAILABLE for a (client × product × verification_unit) combo (ADR-0067 / ADR-0069):
-   *  union-with-wildcards — the combo's own active assignments PLUS any assigned to a Universal (NULL)
-   *  parent product or unit, intersected with usable (active + in-effect) rate types. DISTINCT because a
-   *  rate type can be assigned both specifically and Universally. This only WIDENS the picker's set. */
-  available(clientId: number, productId: number, unitId: number): Promise<RateTypeOption[]> {
+  /** Rate types AVAILABLE for a client, optionally narrowed by product / verification_unit
+   *  (ADR-0067 / ADR-0069; owner fix 2026-07-08 for Universal dims):
+   *  a concrete dim keeps the union-with-wildcards predicate — the combo's own active assignments PLUS
+   *  any assigned to a Universal (NULL) parent product or unit. An OMITTED (Universal) dim drops its
+   *  predicate entirely instead — it matches every assignment on that dim, specific or NULL — rather
+   *  than falling back to the full catalog. Both omitted + a bare clientId → every DISTINCT usable rate
+   *  type assigned to the client anywhere. Intersected with usable (active + in-effect) rate types.
+   *  DISTINCT because a rate type can be assigned both specifically and Universally. This only WIDENS
+   *  the picker's set relative to a fully-concrete combo. */
+  available(clientId: number, productId?: number, unitId?: number): Promise<RateTypeOption[]> {
+    const params: unknown[] = [clientId];
+    const predicates: string[] = [];
+    if (productId !== undefined) {
+      params.push(productId);
+      predicates.push(`AND (a.product_id IS NULL OR a.product_id = $${params.length})`);
+    }
+    if (unitId !== undefined) {
+      params.push(unitId);
+      predicates.push(`AND (a.verification_unit_id IS NULL OR a.verification_unit_id = $${params.length})`);
+    }
     // DISTINCT collapses a rate type assigned both specifically AND Universally. ORDER BY sort_order
     // must sit OUTSIDE the DISTINCT (a SELECT DISTINCT can't order by a non-selected column) → subquery.
     return query<RateTypeOption>(
@@ -101,12 +116,11 @@ export const rateTypeRepository = {
            FROM rate_type_assignments a
            JOIN rate_types rt ON rt.id = a.rate_type_id
           WHERE a.client_id = $1
-            AND (a.product_id IS NULL OR a.product_id = $2)
-            AND (a.verification_unit_id IS NULL OR a.verification_unit_id = $3)
+            ${predicates.join('\n            ')}
             AND a.is_active AND rt.is_active AND rt.effective_from <= now()
        ) u
        ORDER BY u.sort_order, u.code`,
-      [clientId, productId, unitId],
+      params,
     );
   },
 
