@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CreateCommissionRateSchema,
@@ -33,6 +33,15 @@ export const friendlyError = (code: string): string | null =>
   code === 'COMMISSION_RATE_EXISTS'
     ? 'An active rate for this combination already overlaps this period — revise or end-date it first.'
     : null;
+
+// UX-7: a complete 6-digit pincode whose areas query comes back empty is a dead end — the Area
+// select just stays disabled with no explanation. Gate on isSuccess (not isError/isLoading) so
+// there's no message flash while the query is in flight. The in-form add-location dialog from the
+// audit is deliberately NOT built — Location Management is one click away (YAGNI).
+export const PINCODE_NOT_FOUND = 'Pincode not found — add it in Location Management first';
+export const LOCATIONS_ADMIN_PATH = '/admin/locations';
+export const isPincodeNotFound = (s: { pincode: string; isSuccess: boolean; count: number }): boolean =>
+  /^\d{6}$/.test(s.pincode) && s.isSuccess && s.count === 0;
 
 /**
  * Commission-rate create/revise as a full record-page route (ADR-0051 Wave-4 D4 — no modal).
@@ -145,6 +154,11 @@ function CommissionRateForm({ initial }: { initial: CommissionRateView | null })
     queryFn: () =>
       api<Paginated<Location>>('GET', `/api/v2/locations?pincode=${pincode}&limit=200`).then((r) => r.items),
     enabled: !isRevise && validPincode,
+  });
+  const pincodeNotFound = isPincodeNotFound({
+    pincode,
+    isSuccess: areas.isSuccess,
+    count: areas.data?.length ?? 0,
   });
   const tatPolicies = useQuery({
     queryKey: ['tat-policies', 'active'],
@@ -337,6 +351,15 @@ function CommissionRateForm({ initial }: { initial: CommissionRateView | null })
                   </option>
                 ))}
               </select>
+              {pincodeNotFound && (
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  {PINCODE_NOT_FOUND} —{' '}
+                  <Link to={LOCATIONS_ADMIN_PATH} className="text-primary hover:underline">
+                    open Location Management
+                  </Link>
+                  .
+                </span>
+              )}
               {fieldErrors['locationId'] && (
                 <span className="mt-1 block text-xs text-destructive">{fieldErrors['locationId']}</span>
               )}

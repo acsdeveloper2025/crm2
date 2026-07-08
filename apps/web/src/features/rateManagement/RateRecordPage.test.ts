@@ -7,6 +7,9 @@ import {
   hasDownstreamValues,
   MODE_LOCKED_HELPER,
   CLEAR_FIELDS_LABEL,
+  PINCODE_NOT_FOUND,
+  LOCATIONS_ADMIN_PATH,
+  isPincodeNotFound,
 } from './RateRecordPage.js';
 
 /**
@@ -85,5 +88,37 @@ describe('hasDownstreamValues (Field/Office toggle guard)', () => {
   // is the recovery path. Same predicate gates both, so visibility can't drift apart.
   it('pins the Clear-fields action label', () => {
     expect(CLEAR_FIELDS_LABEL).toBe('Clear fields');
+  });
+});
+
+/**
+ * UX-7: a 6-digit pincode with zero matching areas is a dead end today — the Area select just stays
+ * disabled with no explanation. isPincodeNotFound gates the explicit message + link to Location
+ * Management (the add-location dialog is deliberately NOT built — YAGNI, Location Mgmt is one click
+ * away). Gate on isSuccess (not isError/isLoading) so there's no flash while the query is in flight.
+ */
+describe('isPincodeNotFound (rates)', () => {
+  it('is false while the pincode is incomplete', () => {
+    expect(isPincodeNotFound({ pincode: '4000', isSuccess: true, count: 0 })).toBe(false);
+  });
+
+  it('is false while the areas query is still in flight (not yet isSuccess)', () => {
+    expect(isPincodeNotFound({ pincode: '400001', isSuccess: false, count: 0 })).toBe(false);
+  });
+
+  it('is false once areas are found', () => {
+    expect(isPincodeNotFound({ pincode: '400001', isSuccess: true, count: 3 })).toBe(false);
+  });
+
+  it('is true for a complete pincode whose areas query succeeded with zero rows', () => {
+    expect(isPincodeNotFound({ pincode: '999999', isSuccess: true, count: 0 })).toBe(true);
+  });
+
+  it('pins the message copy verbatim', () => {
+    expect(PINCODE_NOT_FOUND).toBe('Pincode not found — add it in Location Management first');
+  });
+
+  it('pins the Location Management path', () => {
+    expect(LOCATIONS_ADMIN_PATH).toBe('/admin/locations');
   });
 });

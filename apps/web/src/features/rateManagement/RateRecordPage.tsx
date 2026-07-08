@@ -59,6 +59,15 @@ export const MODE_LOCKED_HELPER = 'Clear unit/location fields to switch mode';
 // action that actually performs the clearing — otherwise the locked toggle is a dead-end.
 export const CLEAR_FIELDS_LABEL = 'Clear fields';
 
+// UX-7: a complete 6-digit pincode whose areas query comes back empty is a dead end — the Area
+// select just stays disabled with no explanation. Gate on isSuccess (not isError/isLoading) so
+// there's no message flash while the query is in flight. The in-form add-location dialog from the
+// audit is deliberately NOT built — Location Management is one click away (YAGNI).
+export const PINCODE_NOT_FOUND = 'Pincode not found — add it in Location Management first';
+export const LOCATIONS_ADMIN_PATH = '/admin/locations';
+export const isPincodeNotFound = (s: { pincode: string; isSuccess: boolean; count: number }): boolean =>
+  /^\d{6}$/.test(s.pincode) && s.isSuccess && s.count === 0;
+
 /**
  * Rate create/revise as a full record-page route (ADR-0051 Wave-4 D4 — no modal).
  * `/admin/rates/new` creates (the full client→product→unit→pincode→area cascade);
@@ -199,6 +208,11 @@ function RateForm({ initial }: { initial: RateView | null }) {
     queryFn: () =>
       api<Paginated<Location>>('GET', `/api/v2/locations?pincode=${pincode}&limit=200`).then((r) => r.items),
     enabled: !isRevise && !!pincode,
+  });
+  const pincodeNotFound = isPincodeNotFound({
+    pincode,
+    isSuccess: areas.isSuccess,
+    count: areas.data?.length ?? 0,
   });
 
   const mut = useMutation({
@@ -368,6 +382,15 @@ function RateForm({ initial }: { initial: RateView | null }) {
                     placeholder={pincode ? 'Select area…' : 'Pick pincode first'}
                     width="w-full"
                   />
+                  {pincodeNotFound && (
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      {PINCODE_NOT_FOUND} —{' '}
+                      <Link to={LOCATIONS_ADMIN_PATH} className="text-primary hover:underline">
+                        open Location Management
+                      </Link>
+                      .
+                    </span>
+                  )}
                   {fieldErrors['locationId'] && (
                     <span className="mt-1 block text-xs text-destructive">{fieldErrors['locationId']}</span>
                   )}
