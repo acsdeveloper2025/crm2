@@ -44,3 +44,15 @@ export function firstError(errors: Record<string, string>): string | null {
   const keys = Object.keys(errors);
   return keys.length > 0 ? (errors[keys[0]!] ?? null) : null;
 }
+
+/** Tooltip for a `createOnly` cell on an existing row (UX-12) — set once at creation, never editable after. */
+export const LOCKED_CELL_TITLE = 'Locked — set at creation';
+
+/**
+ * True when a cell should render the immutable-code affordance (muted + lock glyph + title,
+ * UX-12): a `createOnly` column, but only on an existing row — while `creating` (the add-row
+ * draft) the same column is still a live editable input, not locked.
+ */
+export function isLockedCell(col: { createOnly?: boolean; editable?: boolean }, creating: boolean): boolean {
+  return !!col.createOnly && !creating;
+}

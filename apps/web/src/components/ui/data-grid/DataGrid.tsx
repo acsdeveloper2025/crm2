@@ -25,9 +25,16 @@ import { useLoadingBand } from '../../../lib/useLoadingBand.js';
 import { HexagonLoader } from '../HexagonLoader.js';
 import { Input } from '../Input.js';
 import { Button } from '../Button.js';
-import { DownloadIcon } from '../icons.js';
+import { DownloadIcon, LockIcon } from '../icons.js';
 import { SavedViewsPicker } from './SavedViewsPicker.js';
-import { validateDraft, firstError, type CellEditorKind, type EditableField } from './inline-edit.js';
+import {
+  validateDraft,
+  firstError,
+  isLockedCell,
+  LOCKED_CELL_TITLE,
+  type CellEditorKind,
+  type EditableField,
+} from './inline-edit.js';
 
 /**
  * The Universal DataGrid (docs/DATAGRID_STANDARD.md) — the ONE table for the platform.
@@ -1199,6 +1206,10 @@ export function DataGrid<T>({
                           (inlineEdit.canEdit?.(row.original) ?? true);
                         // Track every editable cell's <td> so focus can return to it after edit (KN-2).
                         const cellEditable = !!inlineEdit && !!col?.editable;
+                        // UX-12: a createOnly column is settable only on the add-row — on an existing
+                        // row it never opens an editor, so mark it muted + lock glyph + title instead
+                        // of leaving it looking like plain (undifferentiated) text.
+                        const locked = !!col && isLockedCell(col, creating);
                         return (
                           <td
                             key={cell.id}
@@ -1218,7 +1229,10 @@ export function DataGrid<T>({
                             tabIndex={clickToEdit ? 0 : undefined}
                             // Keep the cell's value as its accessible name (not a role/aria-label
                             // override, which would hide the value from AT); `title` is the edit hint.
-                            title={clickToEdit ? 'Press Enter to edit' : undefined}
+                            title={
+                              clickToEdit ? 'Press Enter to edit' : locked ? LOCKED_CELL_TITLE : undefined
+                            }
+                            aria-disabled={locked ? true : undefined}
                             onClick={
                               clickToEdit && col
                                 ? (e) => {
@@ -1254,6 +1268,11 @@ export function DataGrid<T>({
                                 onCommit={() => void commitCell()}
                                 onCancel={cancelCell}
                               />
+                            ) : locked ? (
+                              <span className="inline-flex items-center gap-1 text-muted-foreground">
+                                {col?.cell(row.original)}
+                                <LockIcon className="shrink-0" />
+                              </span>
                             ) : (
                               col?.cell(row.original)
                             )}

@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { validateDraft, isDraftValid, firstError, type EditableField } from './inline-edit.js';
+import {
+  validateDraft,
+  isDraftValid,
+  firstError,
+  isLockedCell,
+  LOCKED_CELL_TITLE,
+  type EditableField,
+} from './inline-edit.js';
 
 const FIELDS: EditableField[] = [
   { field: 'name', editor: 'text', required: true },
@@ -37,5 +44,34 @@ describe('validateDraft', () => {
   it('firstError returns the first message or null', () => {
     expect(firstError({})).toBeNull();
     expect(firstError({ name: 'Required' })).toBe('Required');
+  });
+});
+
+/**
+ * UX-12: a `createOnly` column (e.g. rate-type code, ADR-0064 Phase A) is settable on the add-row
+ * but read-only forever after — it renders with no styling hook at all today, so a user has to
+ * click it to discover it doesn't edit. isLockedCell is the exact predicate the JSX gates the
+ * muted+lock-glyph+title affordance on: true only for a createOnly column on an EXISTING row
+ * (never during the add-row draft, where it's still an editable input).
+ */
+describe('isLockedCell (createOnly affordance, UX-12)', () => {
+  it('is true for a createOnly column on an existing row', () => {
+    expect(isLockedCell({ createOnly: true }, false)).toBe(true);
+  });
+
+  it('is false for a createOnly column while creating (still an editable input)', () => {
+    expect(isLockedCell({ createOnly: true }, true)).toBe(false);
+  });
+
+  it('is false for a plain editable column', () => {
+    expect(isLockedCell({ editable: true }, false)).toBe(false);
+  });
+
+  it('is false for a column that is neither createOnly nor editable', () => {
+    expect(isLockedCell({}, false)).toBe(false);
+  });
+
+  it('pins the lock-cell tooltip copy', () => {
+    expect(LOCKED_CELL_TITLE).toBe('Locked — set at creation');
   });
 });

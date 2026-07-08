@@ -20,6 +20,13 @@ const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
   e instanceof ApiError && e.status === HTTP_CONFLICT && e.code === 'STALE_UPDATE';
 
+/**
+ * Tooltip for the code cell (UX-12) — unlike a DataGrid `createOnly` column, this code stays
+ * editable until CODE_LOCKED (the server rejects the edit once another record references it —
+ * see `save` above), hence the different copy from the grid's "Locked — set at creation".
+ */
+export const MASTER_DATA_CODE_TITLE = 'Code locks once referenced';
+
 /** A simple code/name/is-active master-data row (clients, products). */
 export interface MasterRow {
   id: number;
@@ -116,7 +123,11 @@ export function MasterDataCrud({ config }: { config: Config }) {
         editable: true,
         required: true,
         editorPlaceholder: config.codePlaceholder,
-        cell: (r) => <span className="font-mono text-xs">{r.code}</span>,
+        cell: (r) => (
+          <span className="font-mono text-xs" title={MASTER_DATA_CODE_TITLE}>
+            {r.code}
+          </span>
+        ),
       },
       {
         id: 'name',
