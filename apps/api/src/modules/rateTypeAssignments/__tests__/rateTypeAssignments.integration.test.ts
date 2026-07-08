@@ -177,6 +177,21 @@ describe.skipIf(!RUN)('rate-type assignments CRUD (ADR-0069)', () => {
     expect((avail.body as { id: number }[]).map((r) => r.id)).not.toContain(rtA);
   });
 
+  it('deactivate writes an audit_log row (entity_type=rate_type_assignments, action=DEACTIVATE)', async () => {
+    const created = await request(app)
+      .post('/api/v2/rate-type-assignments')
+      .set(SA)
+      .send({ clientId, productId, verificationUnitId: unitId, rateTypeId: rtA });
+    const id = created.body.id as number;
+    await request(app).post(`/api/v2/rate-type-assignments/${id}/deactivate`).set(SA);
+    const rows = await db!.pool.query<{ entity_type: string; entity_id: string; action: string }>(
+      `SELECT entity_type, entity_id, action FROM audit_log WHERE entity_type = 'rate_type_assignments' AND entity_id = $1`,
+      [String(id)],
+    );
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0]).toMatchObject({ action: 'DEACTIVATE', entity_id: String(id) });
+  });
+
   // ── bulk deactivate (UX-11) — RTA has no version column, so no per-row OCC; mirrors the SHAPE of
   // rates' bulk endpoint (per-row result map), not its version mechanics. Statuses: OK | NOT_FOUND.
   describe('bulk-deactivate', () => {
@@ -208,6 +223,15 @@ describe.skipIf(!RUN)('rate-type assignments CRUD (ADR-0069)', () => {
       const getB = await request(app).get(`/api/v2/rate-type-assignments/${b.body.id}`).set(SA);
       expect(getA.body.isActive).toBe(false);
       expect(getB.body.isActive).toBe(false);
+
+      // audit: one DEACTIVATE row per OK id, none for the NOT_FOUND id.
+      const audit = await db!.pool.query<{ entity_id: string; action: string }>(
+        `SELECT entity_id, action FROM audit_log WHERE entity_type = 'rate_type_assignments' ORDER BY entity_id`,
+      );
+      expect(audit.rows).toHaveLength(2);
+      const auditIds = audit.rows.map((r) => r.entity_id).sort();
+      expect(auditIds).toEqual([String(a.body.id), String(b.body.id)].sort());
+      expect(audit.rows.every((r) => r.action === 'DEACTIVATE')).toBe(true);
     });
 
     it('empty ids → 400 BULK_ITEMS_REQUIRED', async () => {

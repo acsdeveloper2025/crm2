@@ -5,7 +5,8 @@ import type {
   SortOrder,
 } from '@crm2/sdk';
 import { filterClauses, likeContains, type AppliedFilter } from '../../platform/pagination.js';
-import { query } from '../../platform/db.js';
+import { query, withTransaction } from '../../platform/db.js';
+import { appendAudit } from '../../platform/audit.js';
 import { AppError } from '../../platform/errors.js';
 
 const pgCode = (e: unknown): string | undefined =>
@@ -129,29 +130,69 @@ export const rateTypeAssignmentRepository = {
     }
   },
 
-  /** Deactivate by id (soft toggle; no OCC — assignments are simple active flags). 0 rows → 404. */
+  /** Deactivate by id (soft toggle; no OCC — assignments are simple active flags). 0 rows → 404.
+   *  Audited like the sibling modules (rateTypes/cpv): one DEACTIVATE row per call, before/after snapshots. */
   async deactivate(id: number, userId: string): Promise<RateTypeAssignment> {
-    const [row] = await query<RateTypeAssignment>(
-      `UPDATE rate_type_assignments SET is_active = false, updated_by = $2, updated_at = now()
-        WHERE id = $1 RETURNING ${RETURNING_COLS}`,
-      [id, userId],
-    );
-    if (!row) throw AppError.notFound('RATE_TYPE_ASSIGNMENT_NOT_FOUND');
-    return row;
+    return withTransaction(async (q) => {
+      const [before] = await q<RateTypeAssignment>(
+        `SELECT ${RETURNING_COLS} FROM rate_type_assignments WHERE id = $1`,
+        [id],
+      );
+      if (!before) throw AppError.notFound('RATE_TYPE_ASSIGNMENT_NOT_FOUND');
+      const [row] = await q<RateTypeAssignment>(
+        `UPDATE rate_type_assignments SET is_active = false, updated_by = $2, updated_at = now()
+          WHERE id = $1 RETURNING ${RETURNING_COLS}`,
+        [id, userId],
+      );
+      if (!row) throw AppError.notFound('RATE_TYPE_ASSIGNMENT_NOT_FOUND');
+      await appendAudit(
+        {
+          entityType: 'rate_type_assignments',
+          entityId: id,
+          action: 'DEACTIVATE',
+          actorId: userId,
+          before,
+          after: row,
+        },
+        q,
+      );
+      return row;
+    });
   },
 
   /** Bulk deactivate (UX-11): no version column, so no per-row OCC — one `UPDATE ... WHERE id =
    *  ANY($1)` deactivates every matching row in a single statement; a NOT_FOUND id is whatever's in
    *  the input set but absent from the RETURNING ids (never existed, or was already deactivated —
-   *  the WHERE also requires `is_active` so a re-deactivate isn't reported as OK). */
+   *  the WHERE also requires `is_active` so a re-deactivate isn't reported as OK). One audit row per
+   *  successfully-deactivated id (OK rows only), written inside the same transaction as the update. */
   async bulkDeactivate(ids: number[], userId: string): Promise<{ okIds: number[]; notFoundIds: number[] }> {
-    const rows = await query<{ id: number }>(
-      `UPDATE rate_type_assignments SET is_active = false, updated_by = $2, updated_at = now()
-        WHERE id = ANY($1) AND is_active RETURNING id`,
-      [ids, userId],
-    );
-    const okSet = new Set(rows.map((r) => r.id));
-    const notFoundIds = ids.filter((id) => !okSet.has(id));
-    return { okIds: [...okSet], notFoundIds };
+    return withTransaction(async (q) => {
+      const beforeRows = await q<RateTypeAssignment>(
+        `SELECT ${RETURNING_COLS} FROM rate_type_assignments WHERE id = ANY($1) AND is_active`,
+        [ids],
+      );
+      const beforeById = new Map(beforeRows.map((r) => [r.id, r]));
+      const rows = await q<RateTypeAssignment>(
+        `UPDATE rate_type_assignments SET is_active = false, updated_by = $2, updated_at = now()
+          WHERE id = ANY($1) AND is_active RETURNING ${RETURNING_COLS}`,
+        [ids, userId],
+      );
+      for (const row of rows) {
+        await appendAudit(
+          {
+            entityType: 'rate_type_assignments',
+            entityId: row.id,
+            action: 'DEACTIVATE',
+            actorId: userId,
+            before: beforeById.get(row.id),
+            after: row,
+          },
+          q,
+        );
+      }
+      const okSet = new Set(rows.map((r) => r.id));
+      const notFoundIds = ids.filter((id) => !okSet.has(id));
+      return { okIds: [...okSet], notFoundIds };
+    });
   },
 };
