@@ -1,7 +1,11 @@
+import { Link, useSearchParams } from 'react-router-dom';
+import { safeReturnTo } from '../clientSetup/hubState.js';
 import { MasterDataCrud } from '../../components/MasterDataCrud.js';
 
 export function ClientsPage() {
-  return (
+  const [params] = useSearchParams();
+  const returnTo = safeReturnTo(params.get('returnTo'));
+  const grid = (
     <MasterDataCrud
       config={{
         title: 'Clients',
@@ -11,5 +15,14 @@ export function ClientsPage() {
         codePlaceholder: 'HDFC',
       }}
     />
+  );
+  if (!returnTo) return grid;
+  return (
+    <div className="space-y-3">
+      <Link to={returnTo} className="text-sm text-primary hover:underline">
+        ← Back to Client Setup
+      </Link>
+      {grid}
+    </div>
   );
 }
