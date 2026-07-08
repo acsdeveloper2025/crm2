@@ -128,6 +128,6 @@ Numbers are never reused. Filenames follow `ADR-NNNN-kebab-slug.md`. Use
 | [ADR-0089](./ADR-0089-ses-api-mail-transport.md) | `MAIL_TRANSPORT=ses` HTTPS mail transport (staging DC blocks SMTP egress); SES DKIM-verified domain | Accepted | 2026-07-04 |
 | [ADR-0090](./ADR-0090-whatsapp-otp-aws-eum.md) | WhatsApp OTP leg via AWS End User Messaging (Social) — third `deliverOtp` channel for all users; mig 0116 `sent_whatsapp` | Accepted | 2026-07-07 |
 | [ADR-0091](./ADR-0091-rds-storage-encryption.md) | RDS storage encryption at rest — snapshot→KMS-copy→restore cutover to `crm2-prod-enc` (aws/rds key); distinct from the still-deferred field-level DATABASE-04 | Accepted | 2026-07-07 |
-| [ADR-0092](./ADR-0092-client-setup-hub-onboarding-workbook.md) | Client Setup hub (`/admin/client-setup` stepper embedding existing pages) + 5-sheet onboarding workbook import; UX-8 enforcement choice (recommend strict-on-workbook only) | **Proposed** — owner sign-off + UX-8 pick pending | 2026-07-08 |
+| [ADR-0092](./ADR-0092-client-setup-hub-onboarding-workbook.md) | Client Setup hub (`/admin/client-setup` stepper embedding existing pages) + 5-sheet onboarding workbook import; UX-8 = strict row errors on the workbook surface only, existing endpoints unchanged | Accepted · Owner 2026-07-08 (option b-for-workbook) | 2026-07-08 |
 
 > ADR-0051 (inline-grid editing) and ADR-0052 (button emphasis) are drafted on the parked `design-audit-wip` branch — not yet on `main`; they'll be indexed when that stream ships.

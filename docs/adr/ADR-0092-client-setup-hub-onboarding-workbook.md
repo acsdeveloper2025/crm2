@@ -1,6 +1,6 @@
 # ADR-0092: Client Setup hub + onboarding workbook import
 
-- **Status:** Proposed (owner sign-off pending — §UX-8 checkbox below)
+- **Status:** Accepted (owner 2026-07-08 — UX-8 option (b)-for-workbook / (a)-for-existing-endpoints, per §UX-8 below)
 - **Date:** 2026-07-08
 
 ## Context
@@ -88,8 +88,8 @@ workbook) still able to create an operationally-dead row. Accepted as the cost o
 consumers; option (c) (additive `warnings[]` field on the per-module imports) is the named future
 tightening if the owner later wants signal there without a breaking change.
 
-**Owner checkbox (pick one):**
-- [ ] Accepted — option (b)-for-workbook / (a)-for-existing-endpoints, as recommended
+**Owner checkbox (picked 2026-07-08):**
+- [x] Accepted — option (b)-for-workbook / (a)-for-existing-endpoints, as recommended
 - [ ] Prefer option (a) everywhere (no new enforcement anywhere, including the workbook)
 - [ ] Prefer option (c) everywhere (warn-only, no refusal anywhere)
 

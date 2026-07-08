@@ -1977,7 +1977,14 @@ Owner-requested full FE+BE+DB+ADR review of the admin config chain (clients → 
 rate types → rate-type assignments → rates → commission rates, incl. XLSX/CSV import-export).
 SoT: [docs/audit/admin-masterdata-ux-2026-07-07/ADMIN_MASTERDATA_UX_AUDIT.md](audit/admin-masterdata-ux-2026-07-07/ADMIN_MASTERDATA_UX_AUDIT.md).
 
-**15 findings (UX-1…UX-15), 0 security-critical — dispositions PENDING owner review.** Headlines:
+**Dispositions (updated 2026-07-08):**
+- **✅ FIXED — Batch 1 shipped** (branch `feat/masterdata-ux-quickwins`, commits `f7c1a0e..fb0176d`; every task TDD + reviewer-gated [2 fix loops] + browser-verified; full `pnpm verify` exit 0; final 3-lens whole-branch review MERGE_READY ×3, 0 Critical/Important): **UX-3** two-state gating messages + deep-links · **UX-4** friendly `RATE_EXISTS`/`COMMISSION_RATE_EXISTS` copy · **UX-5** rate-types import/export (engine clone) · **UX-9** Field/Office toggle guard **+ Clear-fields recovery** (review catch: disable-guard alone was a dead-end vs SearchableSelect's missing clear) · **UX-11** RTA `POST /bulk-deactivate` + ids dedup at the shared validator · **UX-12** lock affordance on immutable code cells · **UX-13** rate-history CSV export (web-local CWE-1236 guard, byte-parity with the api engine).
+- **🟡 DECIDED — UX-8** (owner 2026-07-08, ADR-0092): option **(b) strict on the NEW workbook-import surface only** (`RATE_TYPE_NOT_ASSIGNED`/`CPV_LINK_MISSING`/unknown-rate-type row errors); **(a) unchanged for existing endpoints** (additive-only rule). Residual (direct API + per-module imports can still create dead rows) accepted; option (c) `warnings[]` = named future tightening.
+- **🟢 APPROVED TO BUILD — UX-1/UX-2** (ADR-0092 Accepted; spec Rev 1 post-adversarial-review): Client-Setup hub + onboarding workbook, ~5–6 sessions, scheduled after Batch 2.
+- **⏳ IN PLAN — UX-6/7/10/14** (Batch 2, starting) · **UX-15** stays DEFERRED (documented, owner later).
+- Side-artifacts: RTA deactivate audit-gap spun out as its own task (chip `task_0fcb13e5`); audit's CPV "blank unit = Universal" import claim corrected 2026-07-08 (Universal CPV is UI-only today).
+
+**Original audit summary (15 findings UX-1…UX-15, 0 security-critical).** Headlines:
 onboarding one minimal client ≈ 27 page visits / 35 submissions with the dependency order invisible
 (UX-1); six separate imports for one client's bulk setup (UX-2); misleading picker-gating messages +
 generic 409 overlap errors (UX-3/4); Rate Types is the only master-data page without import/export
