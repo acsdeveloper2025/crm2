@@ -27,10 +27,10 @@ export function hubReturnTo(clientId: string, step: number): string {
 }
 
 /**
- * Open-redirect guard (CWE-601): only a `returnTo` that starts with the hub's own path is honoured —
- * rejects protocol-relative (`//evil.com`) and absolute (`https://evil.com/...`) URLs and any other
- * in-app path.
+ * Open-redirect guard (CWE-601): only the hub's own path (bare or with a query string) is honoured —
+ * rejects protocol-relative (`//evil.com`) and absolute (`https://evil.com/...`) URLs, sibling paths
+ * sharing the prefix (`/admin/client-setup-evil`), and any other in-app path.
  */
 export function safeReturnTo(raw: string | null): string | null {
-  return raw !== null && raw.startsWith(HUB_PATH) ? raw : null;
+  return raw !== null && (raw === HUB_PATH || raw.startsWith(`${HUB_PATH}?`)) ? raw : null;
 }

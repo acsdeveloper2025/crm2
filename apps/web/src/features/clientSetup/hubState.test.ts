@@ -46,6 +46,14 @@ describe('safeReturnTo', () => {
   it('rejects a protocol-relative URL', () => {
     expect(safeReturnTo('//evil.com')).toBeNull();
   });
+
+  it('rejects a sibling path sharing the hub prefix', () => {
+    expect(safeReturnTo('/admin/client-setup-evil')).toBeNull();
+  });
+
+  it('accepts the bare hub path', () => {
+    expect(safeReturnTo('/admin/client-setup')).toBe('/admin/client-setup');
+  });
 });
 
 describe('STEP_DEFS', () => {

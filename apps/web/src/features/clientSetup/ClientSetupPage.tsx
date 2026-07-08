@@ -1,9 +1,10 @@
 import { useEffect } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import type { Option } from '@crm2/sdk';
 import { toast } from 'sonner';
 import { api } from '../../lib/sdk.js';
+import { Button } from '../../components/ui/Button.js';
 import { SearchableSelect, type Opt } from '../../components/ui/SearchableSelect.js';
 import { STEP_DEFS, parseStep, hubReturnTo } from './hubState.js';
 
@@ -14,6 +15,7 @@ import { STEP_DEFS, parseStep, hubReturnTo } from './hubState.js';
  * placeholder card per step — S2 replaces each placeholder with the real embedded page.
  */
 export function ClientSetupPage() {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const clientId = searchParams.get('clientId') ?? '';
   const step = parseStep(searchParams.get('step'));
@@ -67,12 +69,13 @@ export function ClientSetupPage() {
           placeholder="Select a client…"
           width="min-w-[16rem]"
         />
-        <Link
-          to={`/admin/clients?returnTo=${encodeURIComponent(hubReturnTo(clientId, step))}`}
-          className="text-sm text-primary hover:underline"
+        <Button
+          onClick={() =>
+            navigate(`/admin/clients?returnTo=${encodeURIComponent(hubReturnTo(clientId, step))}`)
+          }
         >
-          ＋ New client
-        </Link>
+          + New client
+        </Button>
       </div>
 
       <div className="space-y-4">
