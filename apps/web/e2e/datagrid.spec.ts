@@ -306,15 +306,18 @@ test('DataGrid: master-detail row expansion (§20) toggles the inline detail (CP
   await page.goto('/admin/cpv');
   await page.waitForLoadState('networkidle');
   // Each CPV link row carries a leading chevron expander (renderExpanded). The detail is hidden first.
+  // UX-6 (Batch 2) replaced the one-at-a-time "Enable unit" button with the multi-select
+  // "Enable selected (n)" + "Enable Universal (all units)" pair — assert on the multi-select button.
+  const enableSelected = page.getByRole('button', { name: /Enable selected/ });
   const expander = page.getByRole('button', { name: 'Expand row' }).first();
   await expect(expander).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Enable unit' })).toBeHidden();
+  await expect(enableSelected).toBeHidden();
   // Expand → the inline UnitManager detail row appears; the expander flips to Collapse.
   await expander.click();
-  await expect(page.getByRole('button', { name: 'Enable unit' })).toBeVisible();
+  await expect(enableSelected).toBeVisible();
   const collapse = page.getByRole('button', { name: 'Collapse row' }).first();
   await expect(collapse).toBeVisible();
   // Collapse → the detail is removed again (one row open at a time, ephemeral).
   await collapse.click();
-  await expect(page.getByRole('button', { name: 'Enable unit' })).toBeHidden();
+  await expect(enableSelected).toBeHidden();
 });
