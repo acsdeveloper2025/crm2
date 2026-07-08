@@ -198,9 +198,9 @@ const byRow = (a: ImportRowError, b: ImportRowError): number => a.rowNumber - b.
 export async function runImportPreview<TFile, TInput>(
   buffer: Buffer,
   spec: ImportSpec<TFile, TInput>,
-  opts?: { maxRows?: number },
+  opts?: { maxRows?: number; sheet?: string },
 ): Promise<ImportPreviewResult> {
-  const rows = await parseImportFile(buffer, spec.columns);
+  const rows = await parseImportFile(buffer, spec.columns, opts?.sheet ? { sheet: opts.sheet } : undefined);
   assertImportable(rows.length, opts?.maxRows);
   const { valid, errors } = validateRows<TFile>(rows, spec);
   const { processable, errors: resolveErrors } = await resolveValid(valid, spec);
@@ -225,10 +225,10 @@ export async function runImportConfirm<TFile, TInput>(
   spec: ImportSpec<TFile, TInput>,
   process: (input: TInput) => Promise<void>,
   ctx: { userId: string; fileName?: string | undefined },
-  opts?: { maxRows?: number },
+  opts?: { maxRows?: number; sheet?: string },
 ): Promise<ImportConfirmResult> {
   const started = Date.now();
-  const rows = await parseImportFile(buffer, spec.columns);
+  const rows = await parseImportFile(buffer, spec.columns, opts?.sheet ? { sheet: opts.sheet } : undefined);
   assertImportable(rows.length, opts?.maxRows);
   const { valid, errors } = validateRows<TFile>(rows, spec);
   const { processable, errors: resolveErrors } = await resolveValid(valid, spec);

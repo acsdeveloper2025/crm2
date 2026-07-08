@@ -85,15 +85,21 @@ function mapRows(header: unknown[], dataRows: unknown[][], columns: ImportColumn
   return rows;
 }
 
-/** Read an uploaded XLSX buffer into a grid + map it to typed rows (row 1 = header). */
-export async function parseImportXlsx(buffer: Buffer, columns: ImportColumn[]): Promise<ParsedRow[]> {
+/** Read an uploaded XLSX buffer into a grid + map it to typed rows (row 1 = header). Default (no
+ *  `opts.sheet`) reads `worksheets[0]`, pinning today's single-sheet behavior; a named sheet that
+ *  isn't found yields no rows — the caller decides what a missing sheet means. */
+export async function parseImportXlsx(
+  buffer: Buffer,
+  columns: ImportColumn[],
+  opts?: { sheet?: string },
+): Promise<ParsedRow[]> {
   const ExcelJS = (await import('exceljs')).default;
   const wb = new ExcelJS.Workbook();
   // exceljs (4.4) ships a `Buffer` param type from an older @types/node; our toolchain's `Buffer`
   // has a structurally-incompatible `slice` tag. The value IS a valid Node Buffer at runtime — bridge
   // the upstream type skew with a precise assertion (no `any`/suppression).
   await wb.xlsx.load(buffer as unknown as Parameters<typeof wb.xlsx.load>[0]);
-  const ws = wb.worksheets[0];
+  const ws = opts?.sheet ? wb.worksheets.find((w) => w.name === opts.sheet) : wb.worksheets[0];
   if (!ws) return [];
   const toArr = (rowNumber: number): unknown[] => {
     const arr: unknown[] = [];
@@ -159,27 +165,47 @@ export function parseImportCsv(buffer: Buffer, columns: ImportColumn[]): ParsedR
  * Read an uploaded import file into typed rows, auto-detecting the format: an XLSX is a zip and starts
  * with the `PK` magic bytes; anything else is treated as CSV text. The manifest's `parse` coercers
  * map a cell (a JS value from XLSX, or a string from CSV) to the shape the zod schema expects.
+ * `opts.sheet` selects a named XLSX worksheet (default `worksheets[0]`); ignored for CSV, which is
+ * single-sheet by nature.
  */
-export function parseImportFile(buffer: Buffer, columns: ImportColumn[]): Promise<ParsedRow[]> {
-  if (buffer.length >= 2 && buffer[0] === 0x50 && buffer[1] === 0x4b) return parseImportXlsx(buffer, columns);
+export function parseImportFile(
+  buffer: Buffer,
+  columns: ImportColumn[],
+  opts?: { sheet?: string },
+): Promise<ParsedRow[]> {
+  if (buffer.length >= 2 && buffer[0] === 0x50 && buffer[1] === 0x4b)
+    return parseImportXlsx(buffer, columns, opts);
   return Promise.resolve(parseImportCsv(buffer, columns));
 }
 
 /**
  * Count data rows (excludes the header) without the column manifest — for the sync-vs-job decision.
- * Counts the raw grid (not column-mapped rows, which would be empty with no manifest).
+ * Counts the raw grid (not column-mapped rows, which would be empty with no manifest). `opts.sheet`
+ * selects a named XLSX worksheet (default `worksheets[0]`); ignored for CSV.
  */
-export async function countImportRows(buffer: Buffer): Promise<number> {
+export async function countImportRows(buffer: Buffer, opts?: { sheet?: string }): Promise<number> {
   if (buffer.length >= 2 && buffer[0] === 0x50 && buffer[1] === 0x4b) {
     const ExcelJS = (await import('exceljs')).default;
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(buffer as unknown as Parameters<typeof wb.xlsx.load>[0]);
-    const ws = wb.worksheets[0];
+    const ws = opts?.sheet ? wb.worksheets.find((w) => w.name === opts.sheet) : wb.worksheets[0];
     return ws ? Math.max(0, ws.rowCount - 1) : 0;
   }
   let text = buffer.toString('utf8');
   if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
   return Math.max(0, parseCsvGrid(text).length - 1);
+}
+
+/** List a file's sheet names: XLSX worksheet names in order, or `['Sheet1']` for CSV (single-sheet
+ *  by nature) — feeds the optional sheet-picker UI (ADR-0092 S5). */
+export async function listImportSheets(buffer: Buffer): Promise<string[]> {
+  if (buffer.length >= 2 && buffer[0] === 0x50 && buffer[1] === 0x4b) {
+    const ExcelJS = (await import('exceljs')).default;
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer as unknown as Parameters<typeof wb.xlsx.load>[0]);
+    return wb.worksheets.map((w) => w.name);
+  }
+  return ['Sheet1'];
 }
 
 /** A worksheet's body: bold header row from the manifest plus an optional sample data row. Shared by
