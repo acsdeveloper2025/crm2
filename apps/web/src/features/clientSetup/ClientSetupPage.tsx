@@ -13,6 +13,7 @@ import { api, apiBlob } from '../../lib/sdk.js';
 import { useAuth } from '../../lib/AuthContext.js';
 import { Button } from '../../components/ui/Button.js';
 import { DownloadIcon } from '../../components/ui/icons.js';
+import { WorkbookImportButton, type WorkbookImportConfig } from '../../components/import/ImportModal.js';
 import { SearchableSelect, type Opt } from '../../components/ui/SearchableSelect.js';
 import { STEP_DEFS, parseStep, hubReturnTo } from './hubState.js';
 import {
@@ -145,6 +146,15 @@ export function ClientSetupPage() {
     }
   };
 
+  // ADR-0092 S5: the same 5 sheets as the template, uploaded back for preview/confirm. Invalidating
+  // every root here refreshes the checklist counts AND every step's embedded grid for free (same
+  // prefix-match reasoning as the checklist queries above).
+  const workbookImportConfig: WorkbookImportConfig = {
+    basePath: `/api/v2/clients/${clientId}/onboarding`,
+    queryKeys: ['client-products', 'cpv-units', 'rate-type-assignments', 'rates', 'commission-rates'],
+    entityLabel: 'workbook',
+  };
+
   const stepperEnabled = knownClient;
   const activeStepDef = STEP_DEFS.find((s) => s.id === step) ?? STEP_DEFS[0]!;
   const activeState = stepStates[activeStepDef.id as 1 | 2 | 3 | 4];
@@ -181,6 +191,7 @@ export function ClientSetupPage() {
             Download workbook
           </Button>
         )}
+        {canManage && <WorkbookImportButton config={workbookImportConfig} disabled={!knownClient} />}
       </div>
 
       <div className="space-y-4">
