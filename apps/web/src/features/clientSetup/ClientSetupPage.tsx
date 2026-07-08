@@ -1,17 +1,39 @@
 import { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import type { Option } from '@crm2/sdk';
+import {
+  MAX_PAGE_SIZE,
+  pageQueryToParams,
+  type Option,
+  type Paginated,
+  type ClientProductView,
+} from '@crm2/sdk';
 import { toast } from 'sonner';
 import { api } from '../../lib/sdk.js';
 import { useAuth } from '../../lib/AuthContext.js';
 import { Button } from '../../components/ui/Button.js';
 import { SearchableSelect, type Opt } from '../../components/ui/SearchableSelect.js';
 import { STEP_DEFS, parseStep, hubReturnTo } from './hubState.js';
+import {
+  deriveStepStates,
+  sumUnitCounts,
+  stepChipLabel,
+  STEP_STATE_META,
+  type SetupCounts,
+} from './checklist.js';
 import { CpvPage } from '../cpv/index.js';
 import { RateTypeAssignmentsPage } from '../rateTypeAssignments/index.js';
 import { RateManagementPage } from '../rateManagement/index.js';
 import { CommissionRatesPage } from '../commissionRates/index.js';
+
+/** Every 'blocked' StepState today gates on a step-1 count (cpvLinks/cpvUnits — see
+ *  `deriveStepStates`), so the prior step to send the user back to is always step 1. */
+const BLOCKED_BY_STEP = 1;
+
+/** `?clientId=&page=1&limit=` — one call per checklist count (spec §3.3). */
+function checklistParams(clientId: string, limit: number): string {
+  return pageQueryToParams({ page: 1, limit, filters: { clientId } }).toString();
+}
 
 /**
  * Client Setup hub (ADR-0092) — one client, one stepper over the four onboarding screens (Products &
@@ -38,10 +60,52 @@ export function ClientSetupPage() {
   }));
   const knownClient = clients.data?.some((c) => String(c.id) === clientId) ?? false;
   const unknownClient = clientId !== '' && clients.data !== undefined && !knownClient;
+  const canManage = has('masterdata.manage');
 
   useEffect(() => {
     if (unknownClient) toast.error('Unknown client — pick a client to begin.');
   }, [unknownClient]);
+
+  // Checklist counts (ADR-0092 S3). Query-key roots are SHARED with the embedded grids
+  // (['client-products'|'rate-type-assignments'|'rates'|'commission-rates', ...]) so a mutation made
+  // inside a step invalidates its own root and the checklist refetches for free — every embedded
+  // page's mutations invalidate the bare root key (e.g. `['client-products']`), which is a *prefix*
+  // match under TanStack's default (non-exact) invalidation, so it also matches this longer key.
+  const cpvQuery = useQuery({
+    queryKey: ['client-products', 'setup-checklist', clientId],
+    queryFn: () =>
+      api<Paginated<ClientProductView>>(
+        'GET',
+        `/api/v2/client-products?${checklistParams(clientId, MAX_PAGE_SIZE)}`,
+      ),
+    enabled: knownClient,
+  });
+  const rtaQuery = useQuery({
+    queryKey: ['rate-type-assignments', 'setup-checklist', clientId],
+    queryFn: () =>
+      api<Paginated<unknown>>('GET', `/api/v2/rate-type-assignments?${checklistParams(clientId, 1)}`),
+    enabled: knownClient,
+  });
+  const ratesQuery = useQuery({
+    queryKey: ['rates', 'setup-checklist', clientId],
+    queryFn: () => api<Paginated<unknown>>('GET', `/api/v2/rates?${checklistParams(clientId, 1)}`),
+    enabled: knownClient,
+  });
+  // 403-storm rule: a non-SA viewer never fires this request — count stays null → chip renders "—".
+  const commissionQuery = useQuery({
+    queryKey: ['commission-rates', 'setup-checklist', clientId],
+    queryFn: () => api<Paginated<unknown>>('GET', `/api/v2/commission-rates?${checklistParams(clientId, 1)}`),
+    enabled: knownClient && canManage,
+  });
+
+  const counts: SetupCounts = {
+    cpvLinks: cpvQuery.data?.totalCount ?? null,
+    cpvUnits: cpvQuery.data ? sumUnitCounts(cpvQuery.data.items) : null,
+    rateTypeAssignments: rtaQuery.data?.totalCount ?? null,
+    rates: ratesQuery.data?.totalCount ?? null,
+    commissionRates: canManage ? (commissionQuery.data?.totalCount ?? null) : null,
+  };
+  const stepStates = deriveStepStates(counts, canManage);
 
   const setClientId = (next: string) => {
     const params = new URLSearchParams(searchParams);
@@ -58,6 +122,8 @@ export function ClientSetupPage() {
 
   const stepperEnabled = knownClient;
   const activeStepDef = STEP_DEFS.find((s) => s.id === step) ?? STEP_DEFS[0]!;
+  const activeState = stepStates[activeStepDef.id as 1 | 2 | 3 | 4];
+  const priorStepDef = STEP_DEFS.find((s) => s.id === BLOCKED_BY_STEP)!;
 
   return (
     <div className="space-y-4">
@@ -88,31 +154,56 @@ export function ClientSetupPage() {
 
       <div className="space-y-4">
         <div className="flex flex-wrap gap-2 lg:flex-nowrap lg:overflow-x-auto">
-          {STEP_DEFS.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              disabled={!stepperEnabled}
-              onClick={() => setStep(s.id)}
-              aria-current={stepperEnabled && s.id === step ? 'step' : undefined}
-              className={`whitespace-nowrap rounded-md px-3 py-1.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                stepperEnabled && s.id === step
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-surface-muted text-secondary-foreground hover:enabled:bg-accent hover:enabled:text-accent-foreground'
-              }`}
-            >
-              {s.id}. {s.label}
-            </button>
-          ))}
+          {STEP_DEFS.map((s) => {
+            const state = stepStates[s.id as 1 | 2 | 3 | 4];
+            const meta = STEP_STATE_META[state];
+            return (
+              <button
+                key={s.id}
+                type="button"
+                disabled={!stepperEnabled}
+                onClick={() => setStep(s.id)}
+                aria-current={stepperEnabled && s.id === step ? 'step' : undefined}
+                className={`whitespace-nowrap rounded-md px-3 py-1.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                  stepperEnabled && s.id === step
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-surface-muted text-secondary-foreground hover:enabled:bg-accent hover:enabled:text-accent-foreground'
+                }`}
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  {stepperEnabled && (
+                    <span className={meta.className} aria-hidden="true">
+                      {meta.glyph}
+                    </span>
+                  )}
+                  <span>
+                    {s.id}. {s.label}
+                  </span>
+                  {stepperEnabled && (
+                    <span className="text-xs opacity-80">
+                      ({stepChipLabel(s.id as 1 | 2 | 3 | 4, counts)})
+                    </span>
+                  )}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {!stepperEnabled ? (
           <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
             Pick or create a client to begin.
           </div>
-        ) : activeStepDef.key === 'commission' && !has('masterdata.manage') ? (
+        ) : activeStepDef.key === 'commission' && !canManage ? (
           <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
             Commission rates are managed by a super admin.
+          </div>
+        ) : activeState === 'blocked' ? (
+          <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
+            <p>Complete {priorStepDef.label} first.</p>
+            <Button className="mt-3" onClick={() => setStep(priorStepDef.id)}>
+              Go to {priorStepDef.label}
+            </Button>
           </div>
         ) : (
           // min-w-0: the embedded page owns its own card (DataGrid renders its own rounded/bordered
