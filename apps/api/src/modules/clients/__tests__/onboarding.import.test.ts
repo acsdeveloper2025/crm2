@@ -246,6 +246,64 @@ describe.skipIf(!RUN)('client onboarding workbook import API (ADR-0092 S5)', () 
     expect(ratesWithoutRta.errors.some((e) => /RATE_TYPE_NOT_ASSIGNED/.test(e.message))).toBe(true);
   });
 
+  it('an active assignment pinned to a non-USABLE product/unit never widens to Universal (RATE_TYPE_NOT_ASSIGNED still fires)', async () => {
+    const client = await newClient('ONB_C10');
+    const deadProduct = await newProduct('ONB_P10_DEAD');
+    const liveProduct = await newProduct('ONB_P10_X');
+    const deadUnit = await newUnit('ONB_U10_DEAD');
+    const liveUnit = await newUnit('ONB_U10_LIVE');
+    const rtRes = await request(app)
+      .post('/api/v2/rate-types')
+      .set(SA)
+      .send({ code: 'ONB_RT10', name: 'ONB_RT10', category: 'FIELD' });
+    const rateTypeId = rtRes.body.id as number;
+    // Link the LIVE product so CPV_LINK_MISSING can't fire — this test isolates the assignment guard.
+    await request(app)
+      .post('/api/v2/client-products')
+      .set(SA)
+      .send({ clientId: client.id, productId: liveProduct.id });
+    // Two ACTIVE assignments, each pinned to a soon-to-be-dead specific dimension.
+    await request(app)
+      .post('/api/v2/rate-type-assignments')
+      .set(SA)
+      .send({ clientId: client.id, productId: deadProduct.id, verificationUnitId: null, rateTypeId });
+    await request(app)
+      .post('/api/v2/rate-type-assignments')
+      .set(SA)
+      .send({ clientId: client.id, productId: null, verificationUnitId: deadUnit.id, rateTypeId });
+    // Deactivate the pinned product + unit: their ids no longer resolve in the USABLE-only options
+    // maps. The buggy `?? null` mapping widened these tuples to Universal (matches ANY product/unit).
+    expect(
+      (await request(app).post(`/api/v2/products/${deadProduct.id}/deactivate`).set(SA).send({ version: 1 }))
+        .status,
+    ).toBe(200);
+    expect(
+      (
+        await request(app)
+          .post(`/api/v2/verification-units/${deadUnit.id}/deactivate`)
+          .set(SA)
+          .send({ version: 1 })
+      ).status,
+    ).toBe(200);
+
+    const buf = await buildWorkbook({
+      Rates: [
+        {
+          clientCode: client.code,
+          productCode: liveProduct.code,
+          unitCode: liveUnit.code,
+          clientRateType: 'ONB_RT10',
+          amount: 100,
+        },
+      ],
+    });
+    const res = await upload(client.id, 'preview', buf);
+    expect(res.status).toBe(200);
+    const rates = byName(res.body as OnboardingPreviewResult, 'Rates');
+    expect(rates.errorRows).toBe(1);
+    expect(rates.errors.some((e) => /RATE_TYPE_NOT_ASSIGNED/.test(e.message))).toBe(true);
+  });
+
   it('CPV_LINK_MISSING on a rates row for an unlinked pair absent from the CPV sheet', async () => {
     const client = await newClient('ONB_C4');
     const product = await newProduct('ONB_P4');

@@ -486,11 +486,17 @@ async function loadContext(target: Client): Promise<Ctx> {
     pendingLinkPairs: new Set(),
     futureLinkPairs: new Map(),
     activeRateTypeCodes: new Set(rateTypes.map((rt) => rt.code)),
-    dbAssignmentTuples: assignments.map((a) => ({
-      productCode: a.productId !== null ? (productCodeById.get(a.productId) ?? null) : null,
-      unitCode: a.verificationUnitId !== null ? (unitCodeById.get(a.verificationUnitId) ?? null) : null,
-      rateTypeCode: a.rateTypeCode,
-    })),
+    // An assignment pinned to a SPECIFIC product/unit whose id doesn't resolve in the USABLE-only
+    // options maps (inactive / future-dated) is DROPPED — mapping the miss to `null` would silently
+    // widen it to Universal in the wildcard matcher and make RATE_TYPE_NOT_ASSIGNED under-fire.
+    // Correct per ADR-0017: an assignment pinned to a non-USABLE product/unit can't gate anything
+    // at confirm either; it's operationally dead until its product/unit is USABLE again.
+    dbAssignmentTuples: assignments.flatMap((a) => {
+      const productCode = a.productId !== null ? productCodeById.get(a.productId) : null;
+      const unitCode = a.verificationUnitId !== null ? unitCodeById.get(a.verificationUnitId) : null;
+      if (productCode === undefined || unitCode === undefined) return [];
+      return [{ productCode, unitCode, rateTypeCode: a.rateTypeCode }];
+    }),
     pendingAssignmentTuples: [],
   };
 }
