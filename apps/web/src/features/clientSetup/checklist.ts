@@ -41,7 +41,9 @@ export function deriveStepStates(c: SetupCounts, canManage: boolean): Record<1 |
 }
 
 /** Step 1's unit count = sum of `unitCount` over the client's client-products (no per-client
- *  cpv-units endpoint exists — spec §3.3). */
+ *  cpv-units endpoint exists — spec §3.3).
+ *  ponytail: sums the first 500 links only (the hub reads page=1&limit=500 = server MAX_PAGE_SIZE);
+ *  paginate to totalCount if any client ever exceeds 500 CPV links. */
 export function sumUnitCounts(items: { unitCount: number }[]): number {
   return items.reduce((sum, i) => sum + i.unitCount, 0);
 }

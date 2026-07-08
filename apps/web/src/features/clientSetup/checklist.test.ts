@@ -63,6 +63,17 @@ describe('deriveStepStates', () => {
     const s = deriveStepStates(counts({ cpvLinks: 2, cpvUnits: 3, rateTypeAssignments: null }), true);
     expect(s[2]).toBe('incomplete');
   });
+
+  // Pins the null-GATE rule: a null gating count (cpvLinks unknown) never blocks steps 2/4, and
+  // completeness is judged on the step's OWN count only — a null gate does not demote an
+  // otherwise-complete step (only step 1 folds the gating counts into its own completeness).
+  it('cpvLinks null + positive own-counts: steps 2/4 unblocked and complete, step 1 incomplete', () => {
+    const s = deriveStepStates(
+      counts({ cpvLinks: null, cpvUnits: 5, rateTypeAssignments: 3, rates: 2, commissionRates: 1 }),
+      true,
+    );
+    expect(s).toEqual({ 1: 'incomplete', 2: 'complete', 3: 'complete', 4: 'complete' });
+  });
 });
 
 describe('stepChipLabel', () => {
