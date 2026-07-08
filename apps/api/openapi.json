@@ -1427,6 +1427,25 @@
         ]
       }
     },
+    "/api/v2/clients/{id}/onboarding-import": {
+      "post": {
+        "tags": [
+          "clients"
+        ],
+        "operationId": "post_api_v2_clients_id_onboarding_import",
+        "summary": "POST /api/v2/clients/{id}/onboarding-import",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v2/clients/{id}/onboarding-template": {
       "get": {
         "tags": [

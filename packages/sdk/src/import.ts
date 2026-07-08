@@ -38,6 +38,38 @@ export interface ImportConfirmResult {
   errors: ImportRowError[];
 }
 
+/**
+ * One sheet's outcome within the Client Setup onboarding workbook preview (ADR-0092 S5): the module's
+ * normal valid/error split, PLUS `pendingRows` — rows salvaged by cross-sheet projection (a code that
+ * doesn't exist in the DB yet but is declared by an earlier sheet in THIS SAME workbook, e.g. a brand
+ * new product referenced by the CPV/Rates sheets). A sheet absent from the uploaded workbook reports
+ * all-zero counts, not an error.
+ */
+export interface OnboardingSheetPreview {
+  name: string;
+  totalRows: number;
+  validRows: number;
+  pendingRows: number;
+  errorRows: number;
+  errors: ImportRowError[];
+}
+
+/** Result of the onboarding workbook's `mode:'preview'` — one entry per sheet (`ONBOARDING_SHEET_NAMES`
+ *  order: Products → CPV → RateTypeAssignments → Rates → CommissionRates). */
+export interface OnboardingPreviewResult {
+  sheets: OnboardingSheetPreview[];
+}
+
+/** One sheet's outcome within the onboarding workbook confirm. */
+export interface OnboardingSheetConfirm extends ImportConfirmResult {
+  name: string;
+}
+
+/** Result of the onboarding workbook's `mode:'confirm'`. */
+export interface OnboardingConfirmResult {
+  sheets: OnboardingSheetConfirm[];
+}
+
 /** The downloadable error report (§6: Row Number · Column Name · Error Message) as a CSV blob. */
 export function importErrorsToCsv(errors: ImportRowError[]): string {
   const esc = (s: string): string => {

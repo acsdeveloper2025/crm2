@@ -37,8 +37,10 @@ const PRODUCT_PAGE_SPEC: PageSpec = {
   defaultOrder: 'asc',
 };
 
-/** Import contract (B-14): the shared code/name/effectiveFrom manifest + the Product Create schema. */
-const PRODUCT_IMPORT_SPEC = masterDataImportSpec<CreateProductInput>('products', CreateProductSchema);
+/** Import contract (B-14): the shared code/name/effectiveFrom manifest + the Product Create schema.
+ *  Exported additively (ADR-0092 S5): the Client Setup onboarding workbook runner reuses this spec
+ *  verbatim for its Products sheet — no behavior change to the standalone products import/template. */
+export const PRODUCT_IMPORT_SPEC = masterDataImportSpec<CreateProductInput>('products', CreateProductSchema);
 
 /**
  * Product master-data service:

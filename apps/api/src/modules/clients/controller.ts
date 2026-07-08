@@ -6,7 +6,7 @@ import { HTTP_STATUS } from '../../platform/http.js';
 import { requireVersion } from '../../platform/occ.js';
 import { resolveExport, writeExport } from '../../platform/export/index.js';
 import { buildWorkbookTemplate, resolveImportMode, writeTemplate } from '../../platform/import/index.js';
-import { onboardingTemplateSheets } from './onboarding.js';
+import { onboardingTemplateSheets, onboardingPreview } from './onboarding.js';
 
 const parseId = (req: Request): number => {
   const id = Number(req.params['id']);
@@ -79,6 +79,27 @@ export const clientController = {
       const client = await svc.get(parseId(req));
       const buffer = await buildWorkbookTemplate(onboardingTemplateSheets(client.code));
       writeTemplate(res, buffer, `client-${client.code}-onboarding`);
+    } catch (e) {
+      next(e);
+    }
+  },
+
+  /** Client Setup onboarding workbook import (ADR-0092 S5): `mode=preview` runs the cross-sheet
+   *  runner (`onboarding.ts`); `mode=confirm` is Task 13 — 501 for now (never a silent no-op). Built
+   *  the same way as `onboardingTemplate` (not in `svc`) for the same import-cycle reason. */
+  async onboardingImport(req: Request, res: Response, next: NextFunction) {
+    try {
+      const mode = resolveImportMode(req.query as Record<string, unknown>);
+      if (mode === 'confirm')
+        throw new AppError(
+          HTTP_STATUS.NOT_IMPLEMENTED,
+          'NOT_IMPLEMENTED',
+          'onboarding workbook confirm lands in a later slice (ADR-0092 S5)',
+        );
+      const file = req.body as unknown;
+      if (!Buffer.isBuffer(file) || file.length === 0)
+        throw AppError.badRequest('NO_IMPORT_FILE', { hint: 'POST the .xlsx/.csv file bytes as the body' });
+      res.json(await onboardingPreview(parseId(req), file));
     } catch (e) {
       next(e);
     }
