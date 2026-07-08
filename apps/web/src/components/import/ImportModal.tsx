@@ -71,7 +71,7 @@ function ImportModal({ config, onClose }: { config: ImportConfig; onClose: () =>
       ? TOO_LARGE_MSG
       : e instanceof ApiError && e.code === 'NO_IMPORT_FILE'
         ? 'That file looks empty — choose a filled-in template.'
-        : 'Import failed. Check the file is the .xlsx template and try again.';
+        : 'Import failed. Check the file is the .xlsx or .csv template and try again.';
 
   const downloadTemplate = async () => {
     setError(null);
