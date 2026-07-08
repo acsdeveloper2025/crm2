@@ -26,6 +26,49 @@ const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
   e instanceof ApiError && e.status === HTTP_CONFLICT && e.code === 'STALE_UPDATE';
 
+/** Leading characters a spreadsheet treats as a formula trigger (CWE-1236). */
+const FORMULA_LEAD = /^[=+\-@\t\r]/;
+
+/**
+ * CSV cell escaping for the client-side history export: CWE-1236 formula-injection guard FIRST
+ * (leading `= + - @`/tab/CR gets a `'` prefix so no spreadsheet executes the cell as a formula),
+ * THEN RFC 4180 quoting (mirrors `apps/api/src/platform/export/format.ts#escapeCsvCell` — this
+ * export has no server round-trip so the guard is reimplemented here, not imported cross-package).
+ */
+function escapeCsvCell(raw: string): string {
+  const guarded = FORMULA_LEAD.test(raw) ? `'${raw}` : raw;
+  return /[",\r\n]/.test(guarded) ? `"${guarded.replace(/"/g, '""')}"` : guarded;
+}
+
+/** UX-13: builds the History-dialog export CSV from rows already loaded on screen (no endpoint). */
+export function buildHistoryCsv(rows: RateHistory[]): string {
+  const head = ['When', 'Action', 'Old', 'New'].join(',');
+  const body = rows.map((h) =>
+    [
+      formatDateTime(h.changedAt),
+      h.action,
+      h.oldAmount !== null ? h.oldAmount.toFixed(2) : '',
+      h.newAmount !== null ? h.newAmount.toFixed(2) : '',
+    ]
+      .map(escapeCsvCell)
+      .join(','),
+  );
+  return [head, ...body].join('\r\n');
+}
+
+/** UX-13: triggers the browser download for the built CSV (mirrors the DataGrid export's Blob pattern — no shared helper exists to reuse; ponytail: no new endpoint for data already on screen). */
+function downloadHistoryCsv(rateId: number, rows: RateHistory[]): void {
+  const blob = new Blob([buildHistoryCsv(rows)], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `rate-history-${rateId}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function ActiveChip({ active }: { active: boolean }) {
   return (
     <span
@@ -320,7 +363,14 @@ function HistoryDialog({ rate, onClose }: { rate: RateView; onClose: () => void 
             </tbody>
           </table>
         )}
-        <div className="mt-5 flex justify-end">
+        <div className="mt-5 flex justify-end gap-2">
+          <Button
+            variant="secondary"
+            disabled={!history.data?.length}
+            onClick={() => downloadHistoryCsv(rate.id, history.data ?? [])}
+          >
+            Export CSV
+          </Button>
           <Button variant="ghost" onClick={onClose}>
             Close
           </Button>
