@@ -22,6 +22,7 @@ import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { Button } from '../../components/ui/Button.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
 import { exitPath } from '../clientSetup/index.js';
+import { commissionEligibleUsers } from './eligibleUsers.js';
 
 const BASE = '/api/v2/commission-rates';
 const QK = 'commission-rates';
@@ -317,7 +318,7 @@ function CommissionRateForm({
             <Field label="User">
               <select className="input" value={userId} onChange={(e) => setUserId(e.target.value)}>
                 <option value="">Select a user…</option>
-                {(users.data ?? []).map((u) => (
+                {commissionEligibleUsers(users.data ?? []).map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.name} ({u.role.replace(/_/g, ' ')})
                   </option>

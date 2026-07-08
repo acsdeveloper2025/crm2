@@ -21,6 +21,7 @@ import { Button } from '../../components/ui/Button.js';
 import { SearchableSelect, type Opt } from '../../components/ui/SearchableSelect.js';
 import { toast } from 'sonner';
 import { withClientFilter, newRecordHref, type EmbeddedPageProps } from '../clientSetup/index.js';
+import { commissionEligibleUsers } from './eligibleUsers.js';
 
 const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
@@ -47,7 +48,10 @@ export function CommissionRatesPage({ clientId: controlledClientId }: EmbeddedPa
     queryKey: ['client-options'],
     queryFn: () => api<Option[]>('GET', '/api/v2/clients/options'),
   });
-  const userOpts: Opt[] = (users.data ?? []).map((u) => ({ value: u.id, label: u.name }));
+  const userOpts: Opt[] = commissionEligibleUsers(users.data ?? []).map((u) => ({
+    value: u.id,
+    label: u.name,
+  }));
   const clientOpts: Opt[] = (clients.data ?? []).map((c) => ({ value: String(c.id), label: c.name }));
   // Per-row activate/deactivate (OCC version-guarded; single-row routes — no bulk endpoint exists).
   const toggle = useMutation({
