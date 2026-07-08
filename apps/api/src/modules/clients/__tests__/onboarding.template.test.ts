@@ -84,6 +84,16 @@ describe.skipIf(!RUN)('client onboarding template API', () => {
         expect(ws.getRow(2).getCell(clientCodeIdx + 1).value).toBe('ONBOARD1');
       }
     }
+
+    // The CPV sample documents the CPV-Universal delta (ADR-0074): its Unit Code is UNIVERSAL,
+    // not a physical unit code — pin it so dropping the override fails.
+    const cpvUnitIdx = SHEET_COLUMNS.CPV.findIndex((c) => c.header === 'Unit Code');
+    expect(
+      wb
+        .getWorksheet('CPV')!
+        .getRow(2)
+        .getCell(cpvUnitIdx + 1).value,
+    ).toBe('UNIVERSAL');
   });
 
   it('unknown client id -> 404 CLIENT_NOT_FOUND', async () => {
