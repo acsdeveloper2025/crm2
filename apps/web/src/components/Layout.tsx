@@ -49,23 +49,45 @@ const OPERATIONS: { label: string; to?: string; perm?: string }[] = [
 ];
 // Each item carries the SAME permission its page's read endpoint enforces (so the nav mirrors the
 // API: a route the user would be 403'd from is not shown). Gated below via `has(perm)`.
-const ADMINISTRATION: { label: string; to: string; perm: string }[] = [
-  { label: 'Client Setup', to: '/admin/client-setup', perm: 'page.masterdata' },
-  { label: 'Verification Units', to: '/admin/verification-units', perm: 'page.masterdata' },
-  { label: 'Clients', to: '/admin/clients', perm: 'page.masterdata' },
-  { label: 'Products', to: '/admin/products', perm: 'page.masterdata' },
-  { label: 'CPV Mapping', to: '/admin/cpv', perm: 'page.masterdata' },
-  { label: 'Rate Management', to: '/admin/rates', perm: 'page.masterdata' },
-  { label: 'Rate Types', to: '/admin/rate-types', perm: 'page.masterdata' },
-  { label: 'Rate Type Assignments', to: '/admin/rate-type-assignments', perm: 'page.masterdata' },
-  { label: 'Commission Rates', to: '/admin/commission-rates', perm: 'masterdata.manage' },
-  { label: 'Location Management', to: '/admin/locations', perm: 'page.masterdata' },
-  { label: 'User Management', to: '/admin/users', perm: 'page.users' },
-  { label: 'Departments', to: '/admin/departments', perm: 'page.users' },
-  { label: 'Designations', to: '/admin/designations', perm: 'page.users' },
-  { label: 'Access Control', to: '/admin/rbac', perm: 'page.access' },
-  { label: 'Policies', to: '/admin/policies', perm: 'page.policies' },
-  { label: 'System', to: '/admin/system', perm: 'page.system' },
+// Grouped by workflow, not alphabetically: onboarding follows the client setup dependency chain,
+// then global catalogs, then people/access, then platform-wide settings.
+export const ADMIN_GROUPS: { title: string; items: { label: string; to: string; perm: string }[] }[] = [
+  {
+    title: 'Client Onboarding',
+    items: [
+      { label: 'Client Setup', to: '/admin/client-setup', perm: 'page.masterdata' },
+      { label: 'Clients', to: '/admin/clients', perm: 'page.masterdata' },
+      { label: 'Products', to: '/admin/products', perm: 'page.masterdata' },
+      { label: 'CPV Mapping', to: '/admin/cpv', perm: 'page.masterdata' },
+      { label: 'Rate Type Assignments', to: '/admin/rate-type-assignments', perm: 'page.masterdata' },
+      { label: 'Rate Management', to: '/admin/rates', perm: 'page.masterdata' },
+      { label: 'Commission Rates', to: '/admin/commission-rates', perm: 'masterdata.manage' },
+    ],
+  },
+  {
+    title: 'Catalogs',
+    items: [
+      { label: 'Verification Units', to: '/admin/verification-units', perm: 'page.masterdata' },
+      { label: 'Rate Types', to: '/admin/rate-types', perm: 'page.masterdata' },
+      { label: 'Location Management', to: '/admin/locations', perm: 'page.masterdata' },
+    ],
+  },
+  {
+    title: 'People & Access',
+    items: [
+      { label: 'User Management', to: '/admin/users', perm: 'page.users' },
+      { label: 'Departments', to: '/admin/departments', perm: 'page.users' },
+      { label: 'Designations', to: '/admin/designations', perm: 'page.users' },
+      { label: 'Access Control', to: '/admin/rbac', perm: 'page.access' },
+    ],
+  },
+  {
+    title: 'Platform',
+    items: [
+      { label: 'Policies', to: '/admin/policies', perm: 'page.policies' },
+      { label: 'System', to: '/admin/system', perm: 'page.system' },
+    ],
+  },
 ];
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -89,7 +111,6 @@ function NavContent({ onNavigate }: { onNavigate?: () => void }) {
   const { user } = useAuth();
   const has = (perm: string) =>
     !!user && (user.grantsAll === true || (user.permissions ?? []).includes(perm));
-  const adminItems = ADMINISTRATION.filter((a) => has(a.perm));
   return (
     <>
       <Section title="Operations">
@@ -109,15 +130,19 @@ function NavContent({ onNavigate }: { onNavigate?: () => void }) {
           ),
         )}
       </Section>
-      {adminItems.length > 0 && (
-        <Section title="Administration">
-          {adminItems.map((a) => (
-            <NavLink key={a.label} to={a.to} className={navLinkClass} onClick={onNavigate}>
-              {a.label}
-            </NavLink>
-          ))}
-        </Section>
-      )}
+      {ADMIN_GROUPS.map((group) => {
+        const items = group.items.filter((a) => has(a.perm));
+        if (items.length === 0) return null;
+        return (
+          <Section key={group.title} title={group.title}>
+            {items.map((a) => (
+              <NavLink key={a.label} to={a.to} className={navLinkClass} onClick={onNavigate}>
+                {a.label}
+              </NavLink>
+            ))}
+          </Section>
+        );
+      })}
       {/* Footer carries identity only — Profile / Security / Sign Out moved to the header account menu. */}
       {user && (
         <div className="mt-auto flex min-h-14 flex-col justify-center border-t border-border px-4">

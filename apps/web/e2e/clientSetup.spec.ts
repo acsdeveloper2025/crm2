@@ -102,12 +102,14 @@ async function buildOnboardingWorkbook(opts: { clientCode: string; productCode: 
 test.describe('shell smoke', () => {
   test.skip(({ viewport }) => (viewport?.width ?? 0) !== LAPTOP_WIDTH, 'Viewport-independent — checked once');
 
-  test('"Client Setup" is the first Administration nav link and navigates to the hub', async ({ page }) => {
+  test('"Client Setup" is the first Client Onboarding nav link and navigates to the hub', async ({
+    page,
+  }) => {
     await page.goto('/admin/clients');
-    // Section renders the "Administration" heading then a sibling div holding the links —
+    // Section renders the "Client Onboarding" heading then a sibling div holding the links —
     // walk to that sibling rather than assuming a fixed link count/order elsewhere in the file.
     const adminLinks = page
-      .getByText('Administration', { exact: true })
+      .getByText('Client Onboarding', { exact: true })
       .locator('xpath=following-sibling::div[1]')
       .getByRole('link');
     await expect(adminLinks.first()).toHaveText('Client Setup');
