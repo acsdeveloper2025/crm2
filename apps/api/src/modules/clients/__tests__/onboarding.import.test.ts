@@ -720,4 +720,70 @@ describe.skipIf(!RUN)('client onboarding workbook import API (ADR-0092 S5)', () 
     const units = await db!.pool.query(`SELECT id FROM client_product_verification_units`);
     expect(units.rows).toHaveLength(0);
   });
+
+  it('future-dated CPV effectiveFrom: phase-1 link carries it, so confirm matches preview (unit + rate rows error, no rate written)', async () => {
+    const client = await newClient('ONB2_C6');
+    const product = await newProduct('ONB2_P6');
+    const unit = await newUnit('ONB2_U6');
+    const rateType = await newRateType('ONB2_RT6');
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+    const buf = await buildWorkbook({
+      CPV: [
+        {
+          clientCode: client.code,
+          productCode: product.code,
+          unitCode: unit.code,
+          effectiveFrom: tomorrow,
+        },
+      ],
+      RateTypeAssignments: [
+        { clientCode: client.code, productCode: '', unitCode: '', rateTypeCode: rateType },
+      ],
+      Rates: [
+        {
+          clientCode: client.code,
+          productCode: product.code,
+          unitCode: unit.code,
+          clientRateType: rateType,
+          amount: 100,
+        },
+      ],
+    });
+
+    // Preview: the CPV row is conditional-pending (honesty bound — its own phase-1 makes the link),
+    // and the dependent rate row is refused because the link won't be USABLE at confirm.
+    const preview = await upload(client.id, 'preview', buf);
+    expect(preview.status).toBe(200);
+    const previewBody = preview.body as OnboardingPreviewResult;
+    expect(byName(previewBody, 'CPV')).toMatchObject({ pendingRows: 1, errorRows: 0 });
+    const previewRates = byName(previewBody, 'Rates');
+    expect(previewRates).toMatchObject({ validRows: 0, errorRows: 1 });
+    expect(previewRates.errors.some((e) => /CPV_LINK_NOT_YET_USABLE/.test(e.message))).toBe(true);
+
+    // Confirm: phase 1 creates the link WITH the future effective_from (not now()), so the link is
+    // not yet USABLE — the unit row and the rate row error, matching what preview reported.
+    const confirm = await upload(client.id, 'confirm', buf);
+    expect(confirm.status).toBe(200);
+    const confirmBody = confirm.body as OnboardingConfirmResult;
+
+    const link = await db!.pool.query(
+      `SELECT effective_from FROM client_products WHERE client_id = $1 AND product_id = $2`,
+      [client.id, product.id],
+    );
+    expect(link.rows).toHaveLength(1);
+    expect(new Date(link.rows[0].effective_from as string).getTime()).toBeGreaterThan(Date.now());
+
+    expect(byNameConfirm(confirmBody, 'CPV')).toMatchObject({ successRows: 0, failedRows: 1 });
+    expect(
+      byNameConfirm(confirmBody, 'CPV').errors.some((e) => /no usable client-product link/i.test(e.message)),
+    ).toBe(true);
+    const confirmRates = byNameConfirm(confirmBody, 'Rates');
+    expect(confirmRates).toMatchObject({ successRows: 0, failedRows: 1 });
+
+    const written = await db!.pool.query(`SELECT id FROM rates WHERE client_id = $1`, [client.id]);
+    expect(written.rows).toHaveLength(0);
+    const units = await db!.pool.query(`SELECT id FROM client_product_verification_units`);
+    expect(units.rows).toHaveLength(0);
+  });
 });

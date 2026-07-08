@@ -576,10 +576,12 @@ export async function onboardingPreview(clientId: number, buffer: Buffer): Promi
 // `Ctx`) is rebuilt FRESH — via the SAME `build*Spec()` / `loadContext()` preview already uses —
 // only AFTER the prior sheet has committed, so a later sheet's FK maps see the earlier sheet's real
 // DB writes. There is no cross-sheet projection at confirm (unlike preview): `loadContext`'s
-// `pending*`/`future*` fields start (and stay) empty, so `evaluate*Row`'s `pending` branch can never
-// fire here — only its `error` branch matters, which is exactly the workbook-strict guard this sheet
-// needs (CLIENT_MISMATCH / CPV_LINK_MISSING / RATE_TYPE_NOT_ASSIGNED / UNKNOWN_RATE_TYPE) on top of
-// each module's own native FK resolution (unchanged).
+// `pending*`/`future*` fields start (and stay) empty. Note `evaluateCpvRow` can still return
+// `pending` here via its DB-derived `dbLinked` flag — that's fine: `withGuard` only blocks on
+// `error`, and a genuinely missing link is then caught by the module's native `resolve` ("no usable
+// client-product link"). The guard's `error` branch is the workbook-strict layer this sheet needs
+// (CLIENT_MISMATCH / CPV_LINK_MISSING / RATE_TYPE_NOT_ASSIGNED / UNKNOWN_RATE_TYPE) on top of each
+// module's own native FK resolution (unchanged).
 
 /** Wrap a sheet's `resolve` with the SAME guard function preview uses: the guard runs first (against
  *  a DB-state-only `Ctx`), and a failing row becomes a `ResolveResult` error — it never reaches the
@@ -652,14 +654,31 @@ export async function onboardingConfirm(
   const cpvRawRows = await parseImportFile(buffer, cpvColumnsSpec.columns, { sheet: 'CPV' });
   const productOptions = await productService.options();
   const productIdByCode = new Map(productOptions.map((p) => [p.code, p.id]));
-  const linkPairs = new Map<number, { clientId: number; productId: number }>();
+  // The link carries the EARLIEST `Effective From` among the pair's rows (a row without one means
+  // "effective now", which beats any future date) — so a future-only pair yields a future-dated,
+  // not-yet-USABLE link and its dependent unit/rate rows row-error at confirm, exactly as preview
+  // reported (CPV_LINK_NOT_YET_USABLE). Mirrors the standalone link import, which also carries
+  // Effective From into `client_products`.
+  const linkPairs = new Map<number, { clientId: number; productId: number; effectiveFrom?: string }>();
   for (const row of cpvRawRows) {
     const parsed = cpvColumnsSpec.schema.safeParse(row.data);
     if (!parsed.success) continue; // schema-invalid — phase 2 reports this row's own error
     if (parsed.data.clientCode !== target.code) continue; // CLIENT_MISMATCH — not this phase's job
     const productId = productIdByCode.get(parsed.data.productCode);
     if (productId === undefined) continue; // unknown product — phase 2 reports this row's own error
-    linkPairs.set(productId, { clientId: target.id, productId });
+    const rowEffectiveFrom = parsed.data.effectiveFrom;
+    const prev = linkPairs.get(productId);
+    const keepPrev =
+      prev !== undefined &&
+      (prev.effectiveFrom === undefined ||
+        (rowEffectiveFrom !== undefined && Date.parse(prev.effectiveFrom) <= Date.parse(rowEffectiveFrom)));
+    if (!keepPrev) {
+      linkPairs.set(productId, {
+        clientId: target.id,
+        productId,
+        ...(rowEffectiveFrom !== undefined ? { effectiveFrom: rowEffectiveFrom } : {}),
+      });
+    }
   }
   const linkStarted = Date.now();
   let linkSuccessRows = 0;
@@ -669,7 +688,9 @@ export async function onboardingConfirm(
       linkSuccessRows += 1;
     } catch (e) {
       // a 409 (CLIENT_PRODUCT_EXISTS) = already linked = success for onboarding purposes; any other
-      // failure just isn't counted — the loop never aborts (partial-import semantics).
+      // failure just isn't counted — the loop never aborts (partial-import semantics). A swallowed
+      // non-409 failure is NOT silent overall: the missing link makes this product's phase-2 unit
+      // rows fail with the module's own "no usable client-product link" row error.
       if (e instanceof AppError && e.status === HTTP_STATUS.CONFLICT) linkSuccessRows += 1;
     }
   }
