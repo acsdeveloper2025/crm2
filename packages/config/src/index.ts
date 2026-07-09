@@ -55,11 +55,15 @@ const EnvSchema = z
       .optional()
       .transform((v) => v === 'true'),
     MAIL_FROM: z.string().default('CRM2 <no-reply@crm2.local>'),
-    // OTP SMS via Fast2SMS (ADR-0088). Inert unless BOTH are set: with either missing the SMS sender
-    // is a disabled provider that logs-and-skips (the email leg / gate inertness handle delivery).
-    // The OTP template id comes from the Fast2SMS panel (DLT approval lives there, not in code).
+    // OTP SMS via Fast2SMS DLT route (ADR-0088). Inert unless ALL THREE are set; with any missing the
+    // SMS sender is a disabled provider that logs-and-skips (email/WhatsApp handle delivery). DLT route
+    // (India TRAI): sends from the approved header (SENDER_ID=ALLCHK) using the registered content
+    // template (OTP_TEMPLATE_ID = the DLT template id, NOT the text — Fast2SMS resolves it), passing
+    // the code as the single template variable. DLT entity/header/template live in the Fast2SMS + Jio
+    // Trueconnect panels, never in code.
     FAST2SMS_API_KEY: z.string().optional(),
     FAST2SMS_OTP_TEMPLATE_ID: z.string().optional(),
+    FAST2SMS_SENDER_ID: z.string().optional(),
     // OTP WhatsApp via AWS End User Messaging Social (ADR-0090). Inert unless BOTH the origination
     // phone-number id AND the approved Meta template name are set; then it's a 3rd parallel OTP leg.
     // Credentials resolve via the SDK default chain (prod EC2 instance role) or SES_*/AWS static keys
