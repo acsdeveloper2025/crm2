@@ -27,33 +27,13 @@ export function withClientFilter(
  * included), so Save lands back on the hub. Uncontrolled: the bare create route, behaviour-identical
  * to standalone today.
  */
-function recordHref(
-  basePath: string,
-  suffix: 'new' | 'bulk',
-  controlledClientId: string | undefined,
-  pathname: string,
-  search: string,
-): string {
-  return controlledClientId
-    ? `${basePath}/${suffix}?clientId=${encodeURIComponent(controlledClientId)}&returnTo=${encodeURIComponent(pathname + search)}`
-    : `${basePath}/${suffix}`;
-}
-
 export function newRecordHref(
   basePath: string,
   controlledClientId: string | undefined,
   pathname: string,
   search: string,
 ): string {
-  return recordHref(basePath, 'new', controlledClientId, pathname, search);
-}
-
-/** The multi-location bulk-create route (`/bulk`) variant of {@link newRecordHref}. */
-export function bulkRecordHref(
-  basePath: string,
-  controlledClientId: string | undefined,
-  pathname: string,
-  search: string,
-): string {
-  return recordHref(basePath, 'bulk', controlledClientId, pathname, search);
+  return controlledClientId
+    ? `${basePath}/new?clientId=${encodeURIComponent(controlledClientId)}&returnTo=${encodeURIComponent(pathname + search)}`
+    : `${basePath}/new`;
 }

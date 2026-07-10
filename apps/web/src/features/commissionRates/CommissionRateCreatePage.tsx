@@ -8,16 +8,22 @@ import type {
   Location,
   TatPolicyOption,
   RateTypeOption,
+  CommissionRate,
   BulkCommissionRateResult,
 } from '@crm2/sdk';
-import { api } from '../../lib/sdk.js';
+import { api, ApiError } from '../../lib/sdk.js';
 import { toIsoDate } from '../../lib/format.js';
 import { useAuth } from '../../lib/AuthContext.js';
 import { Button } from '../../components/ui/Button.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
 import { exitPath } from '../clientSetup/index.js';
-import { fieldAgentUsers } from './eligibleUsers.js';
-import { groupRateTypeOptions } from './CommissionRateRecordPage.js';
+import { commissionEligibleUsers } from './eligibleUsers.js';
+import {
+  friendlyError,
+  groupRateTypeOptions,
+  isOfficeRateType,
+  OFFICE_LOCATIONLESS_HELP,
+} from './CommissionRateRecordPage.js';
 
 const BASE = '/api/v2/commission-rates';
 const QK = 'commission-rates';
@@ -29,7 +35,7 @@ interface PincodeGroup {
   city: string;
   areas: { id: number; area: string }[];
 }
-/** Fold the field agent's flat territory (one Location per pincode/area) into pincode groups. */
+/** Fold the field user's flat territory (one Location per pincode/area) into pincode groups. */
 export function groupTerritory(locs: Location[]): PincodeGroup[] {
   const byPc = new Map<string, PincodeGroup>();
   for (const l of locs) {
@@ -44,13 +50,16 @@ export function groupTerritory(locs: Location[]): PincodeGroup[] {
 }
 
 /**
- * Multi-location bulk entry (ADR-0050 ergonomics): set one field agent's rate ONCE — client / product /
- * unit / rate type / TAT band / amount / effective-from — then tick many of that agent's assigned
- * pincode/area locations. One save creates one commission-rate row per location (POST
- * /commission-rates/bulk); active overlaps are skipped and reported, never overwritten. The location
- * picker shows ONLY the selected agent's territory (`/lookups/territory`). masterdata.manage only.
+ * THE commission-rate create page (owner 2026-07-10: ONE entry point — the old single-location
+ * cascade and the separate bulk screen merged). Set the rate once — user / client / product / unit /
+ * rate type / TAT band / amount / effective-from — then:
+ *  - FIELD rate type: tick 1..N of the user's assigned pincode/area locations (the picker shows ONLY
+ *    their territory) → POST /commission-rates/bulk creates one rate per location; active overlaps
+ *    are skipped and reported, never overwritten.
+ *  - OFFICE rate type: location-less (desk/KYC commission) → one plain POST.
+ * Revise stays on the record page (/:id) — keys immutable, one row at a time. masterdata.manage only.
  */
-export function CommissionRateBulkPage() {
+export function CommissionRateCreatePage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { has } = useAuth();
@@ -101,15 +110,17 @@ export function CommissionRateBulkPage() {
     queryKey: ['rate-types', 'options'],
     queryFn: () => api<RateTypeOption[]>('GET', '/api/v2/rate-types/options?active=true'),
   });
-  // The selected field agent's assigned (pincode, area) locations — the ONLY locations offered.
+  // The selected user's assigned (pincode, area) locations — the ONLY locations offered (owner
+  // 2026-07-10: the picker is scoped to the user's territory, not the full locations catalog).
   const territory = useQuery({
     queryKey: ['commission-territory', userId],
     queryFn: () => api<Location[]>('GET', `${BASE}/lookups/territory?userId=${encodeURIComponent(userId)}`),
     enabled: !!userId,
   });
 
+  const isOffice = isOfficeRateType(fieldRateType, rateTypes.data ?? []);
+  const rateTypeGroups = groupRateTypeOptions(rateTypes.data ?? []);
   const groups = useMemo(() => groupTerritory(territory.data ?? []), [territory.data]);
-  const fieldRateTypes = groupRateTypeOptions(rateTypes.data ?? []).FIELD; // bulk is field-only
   const locLabel = useMemo(
     () => new Map((territory.data ?? []).map((l) => [l.id, `${l.pincode} ${l.area}`])),
     [territory.data],
@@ -138,26 +149,44 @@ export function CommissionRateBulkPage() {
   };
 
   const count = selected.size;
-  const valid = !!userId && !!fieldRateType && amount !== '' && count > 0;
+  // ADR-0050: user + rate type + amount are required; FIELD needs ≥1 location, OFFICE is location-less.
+  const valid = !!userId && !!fieldRateType && amount !== '' && (isOffice || count > 0);
 
+  const shared = () => ({
+    userId,
+    clientId: clientId ? Number(clientId) : null,
+    productId: productId ? Number(productId) : null,
+    verificationUnitId: unitId ? Number(unitId) : null,
+    fieldRateType,
+    tatBand: tatBand === '' ? null : Number(tatBand),
+    amount: Number(amount),
+    effectiveFrom: toIsoDate(effectiveFrom),
+  });
+  // OFFICE → one plain create (location-less); FIELD → the bulk endpoint (one rate per ticked area).
   const mut = useMutation({
-    mutationFn: () =>
-      api<BulkCommissionRateResult>('POST', `${BASE}/bulk`, {
-        userId,
-        clientId: clientId ? Number(clientId) : null,
-        productId: productId ? Number(productId) : null,
-        verificationUnitId: unitId ? Number(unitId) : null,
-        fieldRateType,
-        tatBand: tatBand === '' ? null : Number(tatBand),
-        amount: Number(amount),
-        effectiveFrom: toIsoDate(effectiveFrom),
+    mutationFn: async () => {
+      if (isOffice) {
+        await api<CommissionRate>('POST', BASE, { ...shared(), locationId: null });
+        return null;
+      }
+      return api<BulkCommissionRateResult>('POST', `${BASE}/bulk`, {
+        ...shared(),
         locationIds: [...selected],
-      }),
+      });
+    },
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: [QK] });
-      setResult(r);
+      if (r) setResult(r);
+      else navigate(exitTo); // OFFICE single create — straight back to the list
     },
-    onError: (e: unknown) => setError(e instanceof Error ? e.message : 'Save failed'),
+    onError: (e: unknown) =>
+      setError(
+        e instanceof ApiError
+          ? (friendlyError(e.code) ?? e.code)
+          : e instanceof Error
+            ? e.message
+            : 'Save failed',
+      ),
   });
 
   if (!has('masterdata.manage')) return <Navigate to={LIST_PATH} replace />;
@@ -169,7 +198,7 @@ export function CommissionRateBulkPage() {
     return (
       <div className="space-y-4">
         <div>
-          <h1 className="text-xl font-bold tracking-tight">Bulk rates created</h1>
+          <h1 className="text-xl font-bold tracking-tight">Commission rates created</h1>
           <p className="text-sm text-muted-foreground">
             <strong className="tabular-nums text-foreground">{result.createdCount}</strong> created
             {result.existsCount > 0 && (
@@ -219,7 +248,7 @@ export function CommissionRateBulkPage() {
               setSelected(new Set());
             }}
           >
-            Add another batch
+            Add more rates
           </Button>
           <Button onClick={() => navigate(exitTo)}>View commission rates</Button>
         </div>
@@ -234,24 +263,21 @@ export function CommissionRateBulkPage() {
         ← Back to commission rates
       </Button>
       <div>
-        <h1 className="text-xl font-bold tracking-tight">New Commission Rates</h1>
+        <h1 className="text-xl font-bold tracking-tight">New Commission Rate</h1>
         <p className="text-sm text-muted-foreground">
-          Set the rate once for a field agent, then apply it across their assigned pincodes &amp; areas. One
-          save creates one rate per location. Field agents only — office (location-less) rates use the single
-          form.
+          Set the rate once, then pick the user’s assigned pincodes &amp; areas — one save creates one rate
+          per location. OFFICE rate types are location-less (one rate). Client, product, unit &amp; TAT band
+          can be Universal (matches any).
         </p>
       </div>
 
       <div className="max-w-md space-y-3 rounded-lg border border-border bg-card p-6 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Applies to every rate
-        </p>
-        <Field label="Field User">
+        <Field label="User">
           <select className="input" value={userId} onChange={(e) => changeUser(e.target.value)}>
-            <option value="">Select a field agent…</option>
-            {fieldAgentUsers(users.data ?? []).map((u) => (
+            <option value="">Select a user…</option>
+            {commissionEligibleUsers(users.data ?? []).map((u) => (
               <option key={u.id} value={u.id}>
-                {u.name}
+                {u.name} ({u.role.replace(/_/g, ' ')})
               </option>
             ))}
           </select>
@@ -291,15 +317,33 @@ export function CommissionRateBulkPage() {
             className="input"
             value={fieldRateType}
             disabled={rateTypes.isLoading}
-            onChange={(e) => setRateType(e.target.value)}
+            onChange={(e) => {
+              const code = e.target.value;
+              setRateType(code);
+              // Switching to OFFICE makes the location list irrelevant — clear it so a stale
+              // selection can't silently survive a switch back to FIELD (UX-9 Clear-fields pattern).
+              if (isOfficeRateType(code, rateTypes.data ?? [])) setSelected(new Set());
+            }}
           >
             <option value="">{rateTypes.isLoading ? 'Loading rate types…' : 'Select a rate type…'}</option>
-            {fieldRateTypes.map((rt) => (
-              <option key={rt.id} value={rt.code}>
-                {rt.code}
-              </option>
-            ))}
+            <optgroup label="Field">
+              {rateTypeGroups.FIELD.map((rt) => (
+                <option key={rt.id} value={rt.code}>
+                  {rt.code}
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Office">
+              {rateTypeGroups.OFFICE.map((rt) => (
+                <option key={rt.id} value={rt.code}>
+                  {rt.code}
+                </option>
+              ))}
+            </optgroup>
           </select>
+          {rateTypes.isError && (
+            <span className="mt-1 block text-xs text-destructive">Couldn’t load rate types.</span>
+          )}
         </Field>
         <Field label="TAT Band (blank = Universal)">
           <select className="input" value={tatBand} onChange={(e) => setTatBand(e.target.value)}>
@@ -333,74 +377,76 @@ export function CommissionRateBulkPage() {
         </Field>
       </div>
 
-      {/* Locations — the selected field agent's assigned territory */}
-      <div className="max-w-md space-y-3 rounded-lg border border-border bg-card p-6 shadow-sm">
-        <div className="flex items-baseline justify-between gap-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Locations</p>
-          {count > 0 && (
-            <p className="text-xs text-muted-foreground">
-              <span className="tabular-nums">{count}</span> selected
+      {/* Locations — the selected user's assigned territory (hidden for location-less OFFICE types) */}
+      {!isOffice && (
+        <div className="max-w-md space-y-3 rounded-lg border border-border bg-card p-6 shadow-sm">
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Locations</p>
+            {count > 0 && (
+              <p className="text-xs text-muted-foreground">
+                <span className="tabular-nums">{count}</span> selected
+              </p>
+            )}
+          </div>
+          {!userId ? (
+            <p className="text-sm text-muted-foreground">Select a user to see their assigned locations.</p>
+          ) : territory.isLoading ? (
+            <div className="py-4">
+              <HexagonLoader operation="Loading territory" />
+            </div>
+          ) : groups.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No territory assigned to this user — field (location-based) rates need one. Assign
+              pincodes/areas in{' '}
+              <Link to={USERS_ADMIN_PATH} className="text-primary hover:underline">
+                User Management
+              </Link>
+              , or pick an OFFICE rate type for location-less commission.
             </p>
+          ) : (
+            <div className="space-y-3">
+              {groups.map((g) => {
+                const allOn = g.areas.every((a) => selected.has(a.id));
+                return (
+                  <div key={g.pincode} className="rounded-md border border-border">
+                    <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-3 py-2">
+                      <span className="font-semibold tabular-nums">{g.pincode}</span>
+                      <span className="text-xs text-muted-foreground">{g.city}</span>
+                      <label className="ml-auto inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+                        <input type="checkbox" checked={allOn} onChange={() => toggleGroup(g)} />
+                        Select all
+                      </label>
+                    </div>
+                    <div className="flex flex-wrap gap-2 p-3">
+                      {g.areas.map((a) => (
+                        <label
+                          key={a.id}
+                          className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border-strong px-2.5 py-1 text-xs has-[:checked]:border-primary has-[:checked]:bg-primary-muted"
+                        >
+                          <input
+                            type="checkbox"
+                            className="h-3.5 w-3.5"
+                            checked={selected.has(a.id)}
+                            onChange={() => toggleArea(a.id)}
+                          />
+                          {a.area}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
-        {!userId ? (
-          <p className="text-sm text-muted-foreground">
-            Select a field agent to see their assigned locations.
-          </p>
-        ) : territory.isLoading ? (
-          <div className="py-4">
-            <HexagonLoader operation="Loading territory" />
-          </div>
-        ) : groups.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No territory assigned to this field agent — assign pincodes/areas in{' '}
-            <Link to={USERS_ADMIN_PATH} className="text-primary hover:underline">
-              User Management
-            </Link>{' '}
-            first, and their locations will appear here.
-          </p>
-        ) : (
-          <div className="space-y-3">
-            {groups.map((g) => {
-              const allOn = g.areas.every((a) => selected.has(a.id));
-              return (
-                <div key={g.pincode} className="rounded-md border border-border">
-                  <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-3 py-2">
-                    <span className="font-semibold tabular-nums">{g.pincode}</span>
-                    <span className="text-xs text-muted-foreground">{g.city}</span>
-                    <label className="ml-auto inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
-                      <input type="checkbox" checked={allOn} onChange={() => toggleGroup(g)} />
-                      Select all
-                    </label>
-                  </div>
-                  <div className="flex flex-wrap gap-2 p-3">
-                    {g.areas.map((a) => (
-                      <label
-                        key={a.id}
-                        className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border-strong px-2.5 py-1 text-xs has-[:checked]:border-primary has-[:checked]:bg-primary-muted"
-                      >
-                        <input
-                          type="checkbox"
-                          className="h-3.5 w-3.5"
-                          checked={selected.has(a.id)}
-                          onChange={() => toggleArea(a.id)}
-                        />
-                        {a.area}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      )}
+      {isOffice && <p className="max-w-md text-xs text-muted-foreground">{OFFICE_LOCATIONLESS_HELP}.</p>}
 
       {error && <p className="max-w-md text-sm text-destructive">{error}</p>}
       <div className="flex max-w-md items-center gap-3">
         <p className="text-sm">
-          <strong className="text-lg tabular-nums">{count}</strong> rate{count === 1 ? '' : 's'} will be
-          created
+          <strong className="text-lg tabular-nums">{isOffice ? 1 : count}</strong> rate
+          {!isOffice && count !== 1 ? 's' : ''} will be created
         </p>
         <div className="ml-auto flex gap-2">
           <Button variant="ghost" onClick={() => navigate(exitTo)} disabled={mut.isPending}>
@@ -414,7 +460,7 @@ export function CommissionRateBulkPage() {
             disabled={!valid}
             loading={mut.isPending}
           >
-            {count > 0 ? `Create ${count} rate${count === 1 ? '' : 's'}` : 'Create rates'}
+            {isOffice ? 'Save' : count > 0 ? `Create ${count} rate${count === 1 ? '' : 's'}` : 'Create rates'}
           </Button>
         </div>
       </div>

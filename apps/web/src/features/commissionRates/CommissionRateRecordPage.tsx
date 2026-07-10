@@ -1,27 +1,14 @@
 import { useState } from 'react';
-import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  CreateCommissionRateSchema,
-  type Option,
-  type UserOption,
-  type VerificationUnitOption,
-  type Location,
-  type TatPolicyOption,
-  type CommissionRate,
-  type CommissionRateView,
-  type RateTypeOption,
-  type RateTypeCategory,
-} from '@crm2/sdk';
+import type { CommissionRate, CommissionRateView, RateTypeOption, RateTypeCategory } from '@crm2/sdk';
 import { api, ApiError } from '../../lib/sdk.js';
-import { zodFieldErrors } from '../../lib/zodForm.js';
 import { toIsoDate } from '../../lib/format.js';
 import { useAuth } from '../../lib/AuthContext.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { Button } from '../../components/ui/Button.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
 import { exitPath } from '../clientSetup/index.js';
-import { commissionEligibleUsers } from './eligibleUsers.js';
 
 const BASE = '/api/v2/commission-rates';
 const QK = 'commission-rates';
@@ -36,15 +23,6 @@ export const friendlyError = (code: string): string | null =>
   code === 'COMMISSION_RATE_EXISTS'
     ? 'An active rate for this combination already overlaps this period — revise or end-date it first.'
     : null;
-
-// UX-7: a complete 6-digit pincode whose areas query comes back empty is a dead end — the Area
-// select just stays disabled with no explanation. Gate on isSuccess (not isError/isLoading) so
-// there's no message flash while the query is in flight. The in-form add-location dialog from the
-// audit is deliberately NOT built — Location Management is one click away (YAGNI).
-export const PINCODE_NOT_FOUND = 'Pincode not found — add it in Location Management first';
-export const LOCATIONS_ADMIN_PATH = '/admin/locations';
-export const isPincodeNotFound = (s: { pincode: string; isSuccess: boolean; count: number }): boolean =>
-  /^\d{6}$/.test(s.pincode) && s.isSuccess && s.count === 0;
 
 // UX-10: OFFICE-category rate types are desk/flat commission — location-less by design (ADR-0068;
 // server zod cross-field rule already allows locationId to be blank for OFFICE). Look the chosen
@@ -65,34 +43,32 @@ export const groupRateTypeOptions = (
 };
 
 /**
- * Commission-rate create/revise as a full record-page route (ADR-0051 Wave-4 D4 — no modal).
- * `/admin/commission-rates/new` creates (the full dimension cascade); `/admin/commission-rates/:id`
- * loads that rate by id and revises it (amount + effectiveFrom only — keys are immutable, revise appends
- * a version). RBAC: `masterdata.manage` only (SUPER_ADMIN; the server enforces it on POST too); a viewer
- * who deep-links here is bounced back to the list.
+ * Commission-rate REVISE as a full record-page route (ADR-0051 Wave-4 D4 — no modal).
+ * `/admin/commission-rates/:id` loads that rate and revises it — amount + effectiveFrom only; the keys
+ * are immutable (a revision appends a new effective-dated version, the prior row is end-dated).
+ * CREATE lives on `/admin/commission-rates/new` (CommissionRateCreatePage — the multi-location entry,
+ * owner 2026-07-10). RBAC: `masterdata.manage` only; a viewer who deep-links here is bounced back.
  */
 export function CommissionRateRecordPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { has } = useAuth();
-  const isEdit = !!id;
   const exitTo = exitPath(searchParams.get('returnTo'), LIST_PATH);
   const existing = useQuery({
     queryKey: ['commission-rate', id],
     queryFn: () => api<CommissionRateView>('GET', `${BASE}/${id}`),
-    enabled: isEdit,
   });
 
-  if (!has('masterdata.manage')) return <Navigate to="/admin/commission-rates" replace />;
-  if (isEdit && existing.isLoading) {
+  if (!has('masterdata.manage')) return <Navigate to={LIST_PATH} replace />;
+  if (existing.isLoading) {
     return (
       <div className="py-10">
         <HexagonLoader operation="Loading commission rate" />
       </div>
     );
   }
-  if (isEdit && (existing.isError || !existing.data)) {
+  if (existing.isError || !existing.data) {
     return (
       <div className="space-y-3">
         <Button variant="link" size="sm" onClick={() => navigate(exitTo)}>
@@ -103,139 +79,31 @@ export function CommissionRateRecordPage() {
     );
   }
   // Re-mount the form per record (key) so its state seeds cleanly from the loaded rate.
-  return (
-    <CommissionRateForm
-      key={id ?? 'new'}
-      initial={existing.data ?? null}
-      exitTo={exitTo}
-      initialClientId={searchParams.get('clientId')}
-    />
-  );
+  return <CommissionRateReviseForm key={id} initial={existing.data} exitTo={exitTo} />;
 }
 
-/**
- * Asymmetric form. CREATE (initial null) renders the full cascade (user / Universal-able
- * client·product·unit / pincode→area / rate type / TAT band / amount / effectiveFrom) and POSTs.
- * REVISE (initial set) shows every dimension read-only and edits only amount + effectiveFrom,
- * POSTing to `…/:id/revise` with the OCC version.
- */
-function CommissionRateForm({
-  initial,
-  exitTo,
-  initialClientId,
-}: {
-  initial: CommissionRateView | null;
-  exitTo: string;
-  initialClientId: string | null;
-}) {
+/** Revise: every dimension read-only; edits only amount + effectiveFrom, POSTing to `…/:id/revise`
+ *  with the OCC version. */
+function CommissionRateReviseForm({ initial, exitTo }: { initial: CommissionRateView; exitTo: string }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const isRevise = !!initial;
 
-  const [userId, setUserId] = useState(initial?.userId ?? '');
-  const [fieldRateType, setRateType] = useState(initial?.fieldRateType ?? '');
-  const [clientId, setClientId] = useState(
-    initial?.clientId ? String(initial.clientId) : (initialClientId ?? ''),
-  );
-  const [productId, setProductId] = useState(initial?.productId ? String(initial.productId) : '');
-  const [unitId, setUnitId] = useState(initial?.verificationUnitId ? String(initial.verificationUnitId) : '');
-  const [pincode, setPincode] = useState(initial?.pincode ?? '');
-  const [locationId, setLocationId] = useState(initial?.locationId ? String(initial.locationId) : '');
-  const [tatBand, setTatBand] = useState(initial?.tatBand != null ? String(initial.tatBand) : '');
-  const [amount, setAmount] = useState(initial ? String(initial.amount) : '');
-  // Effective-From defaults to blank (= now) for BOTH create and revise. Don't seed it from the rate on
-  // revise: <input type=date> truncates the stored timestamp to midnight, which is EARLIER than the rate's
-  // real effective_from, so end-dating the prior row inverts the server tstzrange (lower > upper → 500).
+  const [amount, setAmount] = useState(String(initial.amount));
+  // Effective-From defaults to blank (= now). Don't seed it from the rate: <input type=date> truncates
+  // the stored timestamp to midnight, which is EARLIER than the rate's real effective_from, so
+  // end-dating the prior row inverts the server tstzrange (lower > upper → 500).
   const [effectiveFrom, setEffectiveFrom] = useState('');
-  const [version, setVersion] = useState(initial?.version ?? 0); // OCC token the revise started from
+  const [version, setVersion] = useState(initial.version); // OCC token the revise started from
   const [error, setError] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [conflict, setConflict] = useState<{ updatedAt?: string; version?: number } | null>(null);
-  const validPincode = /^\d{6}$/.test(pincode);
-
-  // Create-only option sources (skipped entirely in revise — every dimension is fixed there).
-  const users = useQuery({
-    queryKey: ['user-options'],
-    queryFn: () => api<UserOption[]>('GET', '/api/v2/users/options'),
-    enabled: !isRevise,
-  });
-  const clients = useQuery({
-    queryKey: ['client-options'],
-    queryFn: () => api<Option[]>('GET', '/api/v2/clients/options'),
-    enabled: !isRevise,
-  });
-  const products = useQuery({
-    queryKey: ['product-options'],
-    queryFn: () => api<Option[]>('GET', '/api/v2/products/options'),
-    enabled: !isRevise,
-  });
-  // ADR-0074: with a specific client + product chosen, the unit options are the CPV-mapped units (a
-  // Universal CPV ⇒ all units); else (no product / Universal product) all active units.
-  const unitCpvScoped = !isRevise && !!clientId && !!productId;
-  const units = useQuery({
-    queryKey: unitCpvScoped ? ['cpv-available-units', clientId, productId] : ['verification-unit-options'],
-    queryFn: () =>
-      unitCpvScoped
-        ? api<{ id: number; code: string; name: string }[]>(
-            'GET',
-            `/api/v2/cpv-units/available?clientId=${clientId}&productId=${productId}`,
-          )
-        : api<VerificationUnitOption[]>('GET', '/api/v2/verification-units/options'),
-    enabled: !isRevise,
-  });
-  // Scope the location picker to the selected field agent's assigned territory — only their pincodes/
-  // areas are offered (owner 2026-07-10). Empty for a user with no territory (e.g. a KYC verifier —
-  // office/location-less). UX-only: the server resolves commission by exact location either way.
-  const territory = useQuery({
-    queryKey: ['commission-territory', userId],
-    queryFn: () => api<Location[]>('GET', `${BASE}/lookups/territory?userId=${encodeURIComponent(userId)}`),
-    enabled: !isRevise && !!userId,
-  });
-  const coveredPincodes = [...new Set((territory.data ?? []).map((l) => l.pincode))];
-  const territoryAreas = (territory.data ?? []).filter((l) => l.pincode === pincode);
-  // A complete 6-digit pincode with no covered areas ⇒ it isn't in this agent's territory.
-  const pincodeNotFound = isPincodeNotFound({
-    pincode,
-    isSuccess: territory.isSuccess,
-    count: territoryAreas.length,
-  });
-  // UX-10: `/tat-policies/options` (page.masterdata-gated) returns ALL active-and-in-effect bands
-  // unpaginated — no `limit` to cap, unlike the DataGrid-oriented `/tat-policies` list (server max
-  // 500 via MAX_PAGE_SIZE). Same source the rate-type/client/product option pickers on this page use.
-  const tatPolicies = useQuery({
-    queryKey: ['tat-policies', 'options'],
-    queryFn: () => api<TatPolicyOption[]>('GET', '/api/v2/tat-policies/options'),
-    enabled: !isRevise,
-  });
-  // Rate-type options now come from the managed catalog (ADR-0064/0068), not the hardcoded
-  // COMMISSION_RATE_TYPES enum. Commission dims are Universal-able, so this is NOT combo-gated —
-  // all active catalog rows are offered. The form still SENDS fieldRateType as the chosen code string.
-  const rateTypes = useQuery({
-    queryKey: ['rate-types', 'options'],
-    queryFn: () => api<RateTypeOption[]>('GET', '/api/v2/rate-types/options?active=true'),
-    enabled: !isRevise,
-  });
 
   const mut = useMutation({
     mutationFn: () =>
-      isRevise
-        ? api<CommissionRate>('POST', `${BASE}/${initial!.id}/revise`, {
-            amount: Number(amount),
-            effectiveFrom: toIsoDate(effectiveFrom),
-            version,
-          })
-        : api<CommissionRate>('POST', BASE, {
-            userId,
-            locationId: locationId ? Number(locationId) : null, // required for LOCAL/OGL; null for OFFICE
-            fieldRateType, // LOCAL/OGL (field) or OFFICE (desk)
-            // Universal-able: blank ⇒ null ⇒ matches any (ADR-0050).
-            clientId: clientId ? Number(clientId) : null,
-            productId: productId ? Number(productId) : null,
-            verificationUnitId: unitId ? Number(unitId) : null,
-            tatBand: tatBand === '' ? null : Number(tatBand),
-            amount: Number(amount),
-            effectiveFrom: toIsoDate(effectiveFrom),
-          }),
+      api<CommissionRate>('POST', `${BASE}/${initial.id}/revise`, {
+        amount: Number(amount),
+        effectiveFrom: toIsoDate(effectiveFrom),
+        version,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [QK] });
       navigate(exitTo);
@@ -255,247 +123,43 @@ function CommissionRateForm({
     },
   });
 
-  // UX-10: OFFICE-category rate types are location-less (desk/flat commission) — mirrors the
-  // server's zod cross-field rule (OFFICE ⇒ locationId optional) via the loaded catalog's category,
-  // not a hardcoded code string.
-  const isOffice = isOfficeRateType(fieldRateType, rateTypes.data ?? []);
-  const rateTypeGroups = groupRateTypeOptions(rateTypes.data ?? []);
-  // A field agent with no assigned territory (a FIELD rate then has nowhere to land).
-  const noTerritory =
-    !isRevise && !isOffice && !!userId && territory.isSuccess && coveredPincodes.length === 0;
-
-  // ADR-0050: required-specific dims = user + location (area) + rate type; client/product/unit/tat band
-  // are Universal-able (blank ⇒ matches any), so they don't gate Save. Location is required for LOCAL/OGL;
-  // OFFICE rates are location-less (flat office commission).
-  const valid = isRevise
-    ? amount !== ''
-    : !!userId && !!fieldRateType && (isOffice || !!locationId) && amount !== '';
-
   return (
     <div className="space-y-4">
       <Button variant="link" size="sm" onClick={() => navigate(exitTo)}>
         ← Back to commission rates
       </Button>
       <div>
-        <h1 className="text-xl font-bold tracking-tight">{isRevise ? 'Revise' : 'New'} Commission Rate</h1>
+        <h1 className="text-xl font-bold tracking-tight">Revise Commission Rate</h1>
         <p className="text-sm text-muted-foreground">
-          {isRevise
-            ? 'Keys are immutable — revising appends a new effective-dated version (amount & effective-from only).'
-            : 'Per-executive commission tariff. Required: user, location (pincode/area) & rate type (LOCAL/OGL; OFFICE is location-less). Client, product, unit & TAT band can be Universal (matches any).'}
+          Keys are immutable — revising appends a new effective-dated version (amount &amp; effective-from
+          only).
         </p>
       </div>
 
       <div className="max-w-md space-y-3 rounded-lg border border-border bg-card p-6 shadow-sm">
-        {isRevise ? (
-          <dl className="space-y-2 rounded-md border border-border p-3 text-sm">
-            <ReadOnlyRow label="User" value={initial.userName} />
-            <ReadOnlyRow label="Rate Type" value={initial.fieldRateType} mono />
-            <ReadOnlyRow label="Client" value={initial.clientName} universal />
-            <ReadOnlyRow
-              label="Product"
-              value={`${initial.productCode ?? ''} ${initial.productName ?? ''}`.trim() || null}
-              universal
-            />
-            <ReadOnlyRow label="Verification Unit" value={initial.verificationUnitName} universal />
-            <ReadOnlyRow
-              label="Location"
-              value={`${initial.pincode ?? ''} ${initial.area ?? ''}`.trim() || null}
-              universal
-            />
-            <ReadOnlyRow
-              label="TAT Band"
-              value={
-                initial.tatBand == null
-                  ? null
-                  : initial.tatBand === -1
-                    ? 'Out of band'
-                    : `${initial.tatBand}h`
-              }
-              universal
-            />
-          </dl>
-        ) : (
-          <>
-            <Field label="User">
-              <select
-                className="input"
-                value={userId}
-                onChange={(e) => {
-                  setUserId(e.target.value);
-                  setPincode(''); // territory changed → clear the location
-                  setLocationId('');
-                }}
-              >
-                <option value="">Select a user…</option>
-                {commissionEligibleUsers(users.data ?? []).map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name} ({u.role.replace(/_/g, ' ')})
-                  </option>
-                ))}
-              </select>
-              {fieldErrors['userId'] && (
-                <span className="mt-1 block text-xs text-destructive">{fieldErrors['userId']}</span>
-              )}
-            </Field>
-            <Field label="Client (blank = Universal)">
-              <select className="input" value={clientId} onChange={(e) => setClientId(e.target.value)}>
-                <option value="">Universal (all clients)</option>
-                {(clients.data ?? []).map((c) => (
-                  <option key={c.id} value={String(c.id)}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-              {fieldErrors['clientId'] && (
-                <span className="mt-1 block text-xs text-destructive">{fieldErrors['clientId']}</span>
-              )}
-            </Field>
-            <Field label="Product (blank = Universal)">
-              <select className="input" value={productId} onChange={(e) => setProductId(e.target.value)}>
-                <option value="">Universal (all products)</option>
-                {(products.data ?? []).map((p) => (
-                  <option key={p.id} value={String(p.id)}>
-                    {p.code} — {p.name}
-                  </option>
-                ))}
-              </select>
-              {fieldErrors['productId'] && (
-                <span className="mt-1 block text-xs text-destructive">{fieldErrors['productId']}</span>
-              )}
-            </Field>
-            <Field label="Verification Unit (blank = Universal)">
-              <select className="input" value={unitId} onChange={(e) => setUnitId(e.target.value)}>
-                <option value="">Universal (all units)</option>
-                {(units.data ?? []).map((u) => (
-                  <option key={u.id} value={String(u.id)}>
-                    {u.code} — {u.name}
-                  </option>
-                ))}
-              </select>
-              {fieldErrors['verificationUnitId'] && (
-                <span className="mt-1 block text-xs text-destructive">
-                  {fieldErrors['verificationUnitId']}
-                </span>
-              )}
-            </Field>
-            <Field label="Pincode">
-              <input
-                className="input"
-                list="commission-pincodes"
-                value={pincode}
-                placeholder={isOffice ? OFFICE_LOCATIONLESS_HELP : 'Type ≥2 digits…'}
-                disabled={isOffice}
-                onChange={(e) => {
-                  setPincode(e.target.value);
-                  setLocationId('');
-                }}
-              />
-              <datalist id="commission-pincodes">
-                {coveredPincodes.map((p) => (
-                  <option key={p} value={p} />
-                ))}
-              </datalist>
-              {isOffice && (
-                <span className="mt-1 block text-xs text-muted-foreground">{OFFICE_LOCATIONLESS_HELP}</span>
-              )}
-            </Field>
-            <Field label="Area">
-              <select
-                className="input"
-                value={locationId}
-                disabled={isOffice || !validPincode}
-                onChange={(e) => setLocationId(e.target.value)}
-              >
-                <option value="">
-                  {isOffice
-                    ? OFFICE_LOCATIONLESS_HELP
-                    : validPincode
-                      ? 'Select an area…'
-                      : 'Enter a 6-digit pincode first'}
-                </option>
-                {territoryAreas.map((l) => (
-                  <option key={l.id} value={String(l.id)}>
-                    {l.area}
-                  </option>
-                ))}
-              </select>
-              {!isOffice && noTerritory && (
-                <span className="mt-1 block text-xs text-muted-foreground">
-                  No territory assigned to this field agent —{' '}
-                  <Link to="/admin/users" className="text-primary hover:underline">
-                    assign pincodes/areas in User Management
-                  </Link>{' '}
-                  first.
-                </span>
-              )}
-              {!isOffice && !noTerritory && pincodeNotFound && (
-                <span className="mt-1 block text-xs text-muted-foreground">
-                  This pincode isn’t in the agent’s territory — pick one of their assigned pincodes.
-                </span>
-              )}
-              {fieldErrors['locationId'] && (
-                <span className="mt-1 block text-xs text-destructive">{fieldErrors['locationId']}</span>
-              )}
-            </Field>
-            <Field label="Rate Type">
-              <select
-                className="input"
-                value={fieldRateType}
-                disabled={rateTypes.isLoading}
-                onChange={(e) => {
-                  const code = e.target.value;
-                  setRateType(code);
-                  // UX-10: switching TO an OFFICE type clears the now-disabled location inputs; the
-                  // Clear-fields-on-toggle pattern already established for the Field/Office toggle
-                  // (UX-9) — switching back to FIELD leaves both blank for the user to re-enter (no
-                  // stale pincode silently resurrected).
-                  if (isOfficeRateType(code, rateTypes.data ?? [])) {
-                    setPincode('');
-                    setLocationId('');
-                  }
-                }}
-              >
-                <option value="">
-                  {rateTypes.isLoading ? 'Loading rate types…' : 'Select a rate type…'}
-                </option>
-                <optgroup label="Field">
-                  {rateTypeGroups.FIELD.map((rt) => (
-                    <option key={rt.id} value={rt.code}>
-                      {rt.code}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="Office">
-                  {rateTypeGroups.OFFICE.map((rt) => (
-                    <option key={rt.id} value={rt.code}>
-                      {rt.code}
-                    </option>
-                  ))}
-                </optgroup>
-              </select>
-              {rateTypes.isError && (
-                <span className="mt-1 block text-xs text-destructive">Couldn’t load rate types.</span>
-              )}
-              {fieldErrors['fieldRateType'] && (
-                <span className="mt-1 block text-xs text-destructive">{fieldErrors['fieldRateType']}</span>
-              )}
-            </Field>
-            <Field label="TAT Band (blank = Universal)">
-              <select className="input" value={tatBand} onChange={(e) => setTatBand(e.target.value)}>
-                <option value="">Universal (all bands)</option>
-                {(tatPolicies.data ?? []).map((tp) => (
-                  <option key={tp.id} value={String(tp.tatHours)}>
-                    {tp.label}
-                  </option>
-                ))}
-                <option value="-1">Out of band</option>
-              </select>
-              {fieldErrors['tatBand'] && (
-                <span className="mt-1 block text-xs text-destructive">{fieldErrors['tatBand']}</span>
-              )}
-            </Field>
-          </>
-        )}
+        <dl className="space-y-2 rounded-md border border-border p-3 text-sm">
+          <ReadOnlyRow label="User" value={initial.userName} />
+          <ReadOnlyRow label="Rate Type" value={initial.fieldRateType} mono />
+          <ReadOnlyRow label="Client" value={initial.clientName} universal />
+          <ReadOnlyRow
+            label="Product"
+            value={`${initial.productCode ?? ''} ${initial.productName ?? ''}`.trim() || null}
+            universal
+          />
+          <ReadOnlyRow label="Verification Unit" value={initial.verificationUnitName} universal />
+          <ReadOnlyRow
+            label="Location"
+            value={`${initial.pincode ?? ''} ${initial.area ?? ''}`.trim() || null}
+            universal
+          />
+          <ReadOnlyRow
+            label="TAT Band"
+            value={
+              initial.tatBand == null ? null : initial.tatBand === -1 ? 'Out of band' : `${initial.tatBand}h`
+            }
+            universal
+          />
+        </dl>
         <Field label="Amount (₹)">
           <input
             className="input tabular-nums"
@@ -506,9 +170,6 @@ function CommissionRateForm({
             onChange={(e) => setAmount(e.target.value)}
             placeholder="50.00"
           />
-          {fieldErrors['amount'] && (
-            <span className="mt-1 block text-xs text-destructive">{fieldErrors['amount']}</span>
-          )}
         </Field>
         <Field label="Effective From (blank = now)">
           <input
@@ -517,9 +178,6 @@ function CommissionRateForm({
             value={effectiveFrom}
             onChange={(e) => setEffectiveFrom(e.target.value)}
           />
-          {fieldErrors['effectiveFrom'] && (
-            <span className="mt-1 block text-xs text-destructive">{fieldErrors['effectiveFrom']}</span>
-          )}
         </Field>
         {error && <p className="text-sm text-destructive">{error}</p>}
         <div className="flex justify-end gap-2 pt-2">
@@ -529,30 +187,9 @@ function CommissionRateForm({
           <Button
             onClick={() => {
               setError(null);
-              // CREATE only: validate the full cascade against the canonical create schema (the SAME
-              // payload the mutationFn POSTs). Revise posts only { amount, effectiveFrom } and has no
-              // matching create schema, so server-side validation stands (amount keeps its disabled gate).
-              if (!isRevise) {
-                const errs = zodFieldErrors(CreateCommissionRateSchema, {
-                  userId,
-                  locationId: locationId ? Number(locationId) : null,
-                  fieldRateType,
-                  clientId: clientId ? Number(clientId) : null,
-                  productId: productId ? Number(productId) : null,
-                  verificationUnitId: unitId ? Number(unitId) : null,
-                  tatBand: tatBand === '' ? null : Number(tatBand),
-                  amount: Number(amount),
-                  effectiveFrom: toIsoDate(effectiveFrom),
-                });
-                if (Object.keys(errs).length > 0) {
-                  setFieldErrors(errs);
-                  return;
-                }
-                setFieldErrors({});
-              }
               mut.mutate();
             }}
-            disabled={!valid}
+            disabled={amount === ''}
             loading={mut.isPending}
           >
             Save

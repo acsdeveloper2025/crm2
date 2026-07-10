@@ -41,7 +41,7 @@ import { ProfilePage } from './features/profile/ProfilePage.js';
 import { BillingPage } from './features/billing/BillingPage.js';
 import { CommissionRatesPage } from './features/commissionRates/CommissionRatesPage.js';
 import { CommissionRateRecordPage } from './features/commissionRates/CommissionRateRecordPage.js';
-import { CommissionRateBulkPage } from './features/commissionRates/CommissionRateBulkPage.js';
+import { CommissionRateCreatePage } from './features/commissionRates/CommissionRateCreatePage.js';
 import { CommissionSummaryPage } from './features/commissionSummary/CommissionSummaryPage.js';
 import { ClientSetupPage } from './features/clientSetup/ClientSetupPage.js';
 
@@ -212,15 +212,7 @@ export function App() {
           path="/admin/commission-rates/new"
           element={
             <RequirePerm perm="masterdata.manage">
-              <CommissionRateRecordPage />
-            </RequirePerm>
-          }
-        />
-        <Route
-          path="/admin/commission-rates/bulk"
-          element={
-            <RequirePerm perm="masterdata.manage">
-              <CommissionRateBulkPage />
+              <CommissionRateCreatePage />
             </RequirePerm>
           }
         />
