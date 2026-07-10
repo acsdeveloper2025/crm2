@@ -120,6 +120,7 @@ export function CommissionRateCreatePage() {
 
   const isOffice = isOfficeRateType(fieldRateType, rateTypes.data ?? []);
   const rateTypeGroups = groupRateTypeOptions(rateTypes.data ?? []);
+  const selectedUserName = (users.data ?? []).find((u) => u.id === userId)?.name ?? '';
   const groups = useMemo(() => groupTerritory(territory.data ?? []), [territory.data]);
   const locLabel = useMemo(
     () => new Map((territory.data ?? []).map((l) => [l.id, `${l.pincode} ${l.area}`])),
@@ -256,141 +257,169 @@ export function CommissionRateCreatePage() {
     );
   }
 
-  // ── Entry ─────────────────────────────────────────────────────────────────────────────────────
+  // ── Entry (layout mirrors the owner-approved mockup: numbered step cards, wide field grid,
+  //    territory badge, sticky summary bar) ──────────────────────────────────────────────────────
+  const pincodesSelected = groups.filter((g) => g.areas.some((a) => selected.has(a.id))).length;
   return (
-    <div className="space-y-4">
+    <div className="max-w-4xl space-y-4">
       <Button variant="link" size="sm" onClick={() => navigate(exitTo)}>
         ← Back to commission rates
       </Button>
       <div>
         <h1 className="text-xl font-bold tracking-tight">New Commission Rate</h1>
         <p className="text-sm text-muted-foreground">
-          Set the rate once, then pick the user’s assigned pincodes &amp; areas — one save creates one rate
-          per location. OFFICE rate types are location-less (one rate). Client, product, unit &amp; TAT band
-          can be Universal (matches any).
+          Set the rate once, then apply it across the user’s assigned pincodes &amp; areas. One save creates
+          one rate per location.
         </p>
       </div>
 
-      <div className="max-w-md space-y-3 rounded-lg border border-border bg-card p-6 shadow-sm">
-        <Field label="User">
-          <select className="input" value={userId} onChange={(e) => changeUser(e.target.value)}>
-            <option value="">Select a user…</option>
-            {commissionEligibleUsers(users.data ?? []).map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name} ({u.role.replace(/_/g, ' ')})
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Client (blank = Universal)">
-          <select className="input" value={clientId} onChange={(e) => setClientId(e.target.value)}>
-            <option value="">Universal (all clients)</option>
-            {(clients.data ?? []).map((c) => (
-              <option key={c.id} value={String(c.id)}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Product (blank = Universal)">
-          <select className="input" value={productId} onChange={(e) => setProductId(e.target.value)}>
-            <option value="">Universal (all products)</option>
-            {(products.data ?? []).map((p) => (
-              <option key={p.id} value={String(p.id)}>
-                {p.code} — {p.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Verification Unit (blank = Universal)">
-          <select className="input" value={unitId} onChange={(e) => setUnitId(e.target.value)}>
-            <option value="">Universal (all units)</option>
-            {(units.data ?? []).map((u) => (
-              <option key={u.id} value={String(u.id)}>
-                {u.code} — {u.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Rate Type">
-          <select
-            className="input"
-            value={fieldRateType}
-            disabled={rateTypes.isLoading}
-            onChange={(e) => {
-              const code = e.target.value;
-              setRateType(code);
-              // Switching to OFFICE makes the location list irrelevant — clear it so a stale
-              // selection can't silently survive a switch back to FIELD (UX-9 Clear-fields pattern).
-              if (isOfficeRateType(code, rateTypes.data ?? [])) setSelected(new Set());
-            }}
-          >
-            <option value="">{rateTypes.isLoading ? 'Loading rate types…' : 'Select a rate type…'}</option>
-            <optgroup label="Field">
-              {rateTypeGroups.FIELD.map((rt) => (
-                <option key={rt.id} value={rt.code}>
-                  {rt.code}
+      {/* Step 1 — the shared fields, identical on every row created */}
+      <StepCard
+        n={1}
+        title="Applies to every rate"
+        hint="These values are identical on every row created below."
+      >
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Field label="User" required>
+            <select className="input" value={userId} onChange={(e) => changeUser(e.target.value)}>
+              <option value="">Select a user…</option>
+              {commissionEligibleUsers(users.data ?? []).map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name} — {u.role.replace(/_/g, ' ')}
                 </option>
               ))}
-            </optgroup>
-            <optgroup label="Office">
-              {rateTypeGroups.OFFICE.map((rt) => (
-                <option key={rt.id} value={rt.code}>
-                  {rt.code}
+            </select>
+          </Field>
+          <Field label="Client" optional>
+            <select className="input" value={clientId} onChange={(e) => setClientId(e.target.value)}>
+              <option value="">Universal (all clients)</option>
+              {(clients.data ?? []).map((c) => (
+                <option key={c.id} value={String(c.id)}>
+                  {c.name}
                 </option>
               ))}
-            </optgroup>
-          </select>
-          {rateTypes.isError && (
-            <span className="mt-1 block text-xs text-destructive">Couldn’t load rate types.</span>
-          )}
-        </Field>
-        <Field label="TAT Band (blank = Universal)">
-          <select className="input" value={tatBand} onChange={(e) => setTatBand(e.target.value)}>
-            <option value="">Universal (all bands)</option>
-            {(tatPolicies.data ?? []).map((tp) => (
-              <option key={tp.id} value={String(tp.tatHours)}>
-                {tp.label}
-              </option>
-            ))}
-            <option value="-1">Out of band</option>
-          </select>
-        </Field>
-        <Field label="Amount (₹)">
-          <input
-            className="input tabular-nums"
-            type="number"
-            min="0"
-            step="0.01"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder="50.00"
-          />
-        </Field>
-        <Field label="Effective From (blank = now)">
-          <input
-            type="date"
-            className="input"
-            value={effectiveFrom}
-            onChange={(e) => setEffectiveFrom(e.target.value)}
-          />
-        </Field>
-      </div>
-
-      {/* Locations — the selected user's assigned territory (hidden for location-less OFFICE types) */}
-      {!isOffice && (
-        <div className="max-w-md space-y-3 rounded-lg border border-border bg-card p-6 shadow-sm">
-          <div className="flex items-baseline justify-between gap-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Locations</p>
-            {count > 0 && (
-              <p className="text-xs text-muted-foreground">
-                <span className="tabular-nums">{count}</span> selected
-              </p>
+            </select>
+          </Field>
+          <Field label="Product" optional>
+            <select className="input" value={productId} onChange={(e) => setProductId(e.target.value)}>
+              <option value="">Universal (all products)</option>
+              {(products.data ?? []).map((p) => (
+                <option key={p.id} value={String(p.id)}>
+                  {p.code} — {p.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Verification Unit" optional>
+            <select className="input" value={unitId} onChange={(e) => setUnitId(e.target.value)}>
+              <option value="">Universal (all units)</option>
+              {(units.data ?? []).map((u) => (
+                <option key={u.id} value={String(u.id)}>
+                  {u.code} — {u.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Rate Type" required>
+            <select
+              className="input"
+              value={fieldRateType}
+              disabled={rateTypes.isLoading}
+              onChange={(e) => {
+                const code = e.target.value;
+                setRateType(code);
+                // Switching to OFFICE makes the location list irrelevant — clear it so a stale
+                // selection can't silently survive a switch back to FIELD (UX-9 Clear-fields pattern).
+                if (isOfficeRateType(code, rateTypes.data ?? [])) setSelected(new Set());
+              }}
+            >
+              <option value="">{rateTypes.isLoading ? 'Loading rate types…' : 'Select a rate type…'}</option>
+              <optgroup label="Field">
+                {rateTypeGroups.FIELD.map((rt) => (
+                  <option key={rt.id} value={rt.code}>
+                    {rt.code}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Office">
+                {rateTypeGroups.OFFICE.map((rt) => (
+                  <option key={rt.id} value={rt.code}>
+                    {rt.code}
+                  </option>
+                ))}
+              </optgroup>
+            </select>
+            {rateTypes.isError && (
+              <span className="mt-1 block text-xs text-destructive">Couldn’t load rate types.</span>
             )}
-          </div>
-          {!userId ? (
-            <p className="text-sm text-muted-foreground">Select a user to see their assigned locations.</p>
-          ) : territory.isLoading ? (
+          </Field>
+          <Field label="TAT Band" optional>
+            <select className="input" value={tatBand} onChange={(e) => setTatBand(e.target.value)}>
+              <option value="">Universal (all bands)</option>
+              {(tatPolicies.data ?? []).map((tp) => (
+                <option key={tp.id} value={String(tp.tatHours)}>
+                  {tp.label}
+                </option>
+              ))}
+              <option value="-1">Out of band</option>
+            </select>
+          </Field>
+          <Field label="Amount (₹)" required>
+            <div className="relative">
+              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                ₹
+              </span>
+              <input
+                className="input pl-6 tabular-nums"
+                type="number"
+                min="0"
+                step="0.01"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="50.00"
+              />
+            </div>
+          </Field>
+          <Field label="Effective From" hint="blank = now">
+            <input
+              type="date"
+              className="input"
+              value={effectiveFrom}
+              onChange={(e) => setEffectiveFrom(e.target.value)}
+            />
+          </Field>
+        </div>
+        <div className="flex gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          <span aria-hidden>ℹ️</span>
+          <span>
+            <b className="font-semibold text-foreground">{OFFICE_LOCATIONLESS_HELP}</b> — picking one skips
+            the location step and saves a single rate. Field rate types apply per location below.
+          </span>
+        </div>
+      </StepCard>
+
+      {/* Step 2 — the user's assigned territory (hidden for location-less OFFICE types) */}
+      {!isOffice && (
+        <StepCard
+          n={2}
+          title="Locations"
+          badge={
+            userId && territory.isSuccess
+              ? `${groups.length} pincode${groups.length === 1 ? '' : 's'} assigned`
+              : undefined
+          }
+          hint={
+            userId ? (
+              <>
+                Only <b className="font-semibold text-foreground">{selectedUserName}</b>’s assigned pincodes
+                &amp; areas are shown — tick the ones to rate. Each ticked area becomes one rate.
+              </>
+            ) : (
+              'Select a user to see their assigned locations.'
+            )
+          }
+        >
+          {!userId ? null : territory.isLoading ? (
             <div className="py-4">
               <HexagonLoader operation="Loading territory" />
             </div>
@@ -406,13 +435,20 @@ export function CommissionRateCreatePage() {
           ) : (
             <div className="space-y-3">
               {groups.map((g) => {
-                const allOn = g.areas.every((a) => selected.has(a.id));
+                const on = g.areas.filter((a) => selected.has(a.id)).length;
+                const allOn = on === g.areas.length && on > 0;
                 return (
-                  <div key={g.pincode} className="rounded-md border border-border">
-                    <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-3 py-2">
+                  <div
+                    key={g.pincode}
+                    className="overflow-hidden rounded-md border border-border bg-surface-muted"
+                  >
+                    <div className="flex items-center gap-2.5 border-b border-border px-3 py-2">
                       <span className="font-semibold tabular-nums">{g.pincode}</span>
                       <span className="text-xs text-muted-foreground">{g.city}</span>
-                      <label className="ml-auto inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+                      <span className="ml-auto text-xs tabular-nums text-muted-foreground">
+                        {on}/{g.areas.length} areas
+                      </span>
+                      <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
                         <input type="checkbox" checked={allOn} onChange={() => toggleGroup(g)} />
                         Select all
                       </label>
@@ -421,7 +457,7 @@ export function CommissionRateCreatePage() {
                       {g.areas.map((a) => (
                         <label
                           key={a.id}
-                          className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border-strong px-2.5 py-1 text-xs has-[:checked]:border-primary has-[:checked]:bg-primary-muted"
+                          className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border-strong bg-card px-3 py-1.5 text-xs has-[:checked]:border-primary has-[:checked]:bg-primary-muted"
                         >
                           <input
                             type="checkbox"
@@ -438,17 +474,33 @@ export function CommissionRateCreatePage() {
               })}
             </div>
           )}
-        </div>
+        </StepCard>
       )}
-      {isOffice && <p className="max-w-md text-xs text-muted-foreground">{OFFICE_LOCATIONLESS_HELP}.</p>}
 
-      {error && <p className="max-w-md text-sm text-destructive">{error}</p>}
-      <div className="flex max-w-md items-center gap-3">
-        <p className="text-sm">
-          <strong className="text-lg tabular-nums">{isOffice ? 1 : count}</strong> rate
+      {error && <p className="text-sm text-destructive">{error}</p>}
+
+      {/* Sticky summary bar — the live count + actions (mockup) */}
+      <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-border-strong bg-card px-4 py-3 shadow-md">
+        <p className="text-sm font-semibold">
+          <span className="text-lg tabular-nums">{isOffice ? 1 : count}</span> rate
           {!isOffice && count !== 1 ? 's' : ''} will be created
         </p>
+        {!isOffice && (
+          <p className="text-xs tabular-nums text-muted-foreground">
+            {pincodesSelected} pincode{pincodesSelected === 1 ? '' : 's'} · {count} area
+            {count === 1 ? '' : 's'} selected
+          </p>
+        )}
         <div className="ml-auto flex gap-2">
+          {!isOffice && (
+            <Button
+              variant="ghost"
+              onClick={() => setSelected(new Set())}
+              disabled={mut.isPending || count === 0}
+            >
+              Clear
+            </Button>
+          )}
           <Button variant="ghost" onClick={() => navigate(exitTo)} disabled={mut.isPending}>
             Cancel
           </Button>
@@ -468,10 +520,67 @@ export function CommissionRateCreatePage() {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+/** A numbered step card (mockup): blue circle badge + title (+ optional right-side pill) + hint. */
+function StepCard({
+  n,
+  title,
+  badge,
+  hint,
+  children,
+}: {
+  n: number;
+  title: string;
+  badge?: string | undefined;
+  hint: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-4 rounded-lg border border-border bg-card p-5 shadow-sm">
+      <div>
+        <div className="flex items-center gap-2.5">
+          <span
+            aria-hidden
+            className="inline-flex h-6 w-6 flex-none items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground"
+          >
+            {n}
+          </span>
+          <h2 className="text-[15px] font-semibold">{title}</h2>
+          {badge && (
+            <span className="ml-auto rounded-full bg-primary-muted px-2.5 py-0.5 text-[11px] font-semibold text-primary">
+              {badge}
+            </span>
+          )}
+        </div>
+        <p className="ml-[34px] mt-0.5 text-xs text-muted-foreground">{hint}</p>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Field({
+  label,
+  required,
+  optional,
+  hint,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  optional?: boolean;
+  /** short inline marker after the label (e.g. "blank = now"); `optional` renders "· optional". */
+  hint?: string;
+  children: React.ReactNode;
+}) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs font-medium text-foreground">{label}</span>
+      <span className="mb-1 block text-xs font-medium text-foreground">
+        {label}
+        {required && <span className="ml-0.5 text-destructive">*</span>}
+        {(optional || hint) && (
+          <span className="ml-1 font-normal text-muted-foreground">· {optional ? 'optional' : hint}</span>
+        )}
+      </span>
       {children}
     </label>
   );
