@@ -7,3 +7,10 @@ export const COMMISSION_ELIGIBLE_ROLES = ['FIELD_AGENT', 'KYC_VERIFIER'] as cons
 export function commissionEligibleUsers<T extends { role: string }>(users: T[]): T[] {
   return users.filter((u) => (COMMISSION_ELIGIBLE_ROLES as readonly string[]).includes(u.role));
 }
+
+// Multi-location bulk entry is field/location-based (a rate per pincode/area), so only FIELD_AGENT —
+// the role that holds pincode/area territory — is offered. KYC_VERIFIER commission is office /
+// location-less (single form). Owner decision 2026-07-10.
+export function fieldAgentUsers<T extends { role: string }>(users: T[]): T[] {
+  return users.filter((u) => u.role === 'FIELD_AGENT');
+}

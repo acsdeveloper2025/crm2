@@ -20,7 +20,12 @@ import { ImportButton } from '../../components/import/ImportModal.js';
 import { Button } from '../../components/ui/Button.js';
 import { SearchableSelect, type Opt } from '../../components/ui/SearchableSelect.js';
 import { toast } from 'sonner';
-import { withClientFilter, newRecordHref, type EmbeddedPageProps } from '../clientSetup/index.js';
+import {
+  withClientFilter,
+  newRecordHref,
+  bulkRecordHref,
+  type EmbeddedPageProps,
+} from '../clientSetup/index.js';
 import { commissionEligibleUsers } from './eligibleUsers.js';
 
 const HTTP_CONFLICT = 409;
@@ -210,6 +215,21 @@ export function CommissionRatesPage({ clientId: controlledClientId }: EmbeddedPa
               }}
             />
           )}
+          <Button
+            variant="secondary"
+            onClick={() =>
+              navigate(
+                bulkRecordHref(
+                  '/admin/commission-rates',
+                  controlledClientId,
+                  location.pathname,
+                  location.search,
+                ),
+              )
+            }
+          >
+            Bulk add
+          </Button>
           <Button
             onClick={() =>
               navigate(

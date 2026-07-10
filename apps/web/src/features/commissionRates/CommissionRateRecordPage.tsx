@@ -12,7 +12,6 @@ import {
   type CommissionRateView,
   type RateTypeOption,
   type RateTypeCategory,
-  type Paginated,
 } from '@crm2/sdk';
 import { api, ApiError } from '../../lib/sdk.js';
 import { zodFieldErrors } from '../../lib/zodForm.js';
@@ -184,22 +183,21 @@ function CommissionRateForm({
         : api<VerificationUnitOption[]>('GET', '/api/v2/verification-units/options'),
     enabled: !isRevise,
   });
-  // Cascading location: type a pincode (server-search suggestions) → pick the area = a locations row.
-  const pincodes = useQuery({
-    queryKey: ['location-pincodes', pincode],
-    queryFn: () => api<string[]>('GET', `/api/v2/locations/pincodes?q=${encodeURIComponent(pincode)}`),
-    enabled: !isRevise && pincode.length >= 2,
+  // Scope the location picker to the selected field agent's assigned territory — only their pincodes/
+  // areas are offered (owner 2026-07-10). Empty for a user with no territory (e.g. a KYC verifier —
+  // office/location-less). UX-only: the server resolves commission by exact location either way.
+  const territory = useQuery({
+    queryKey: ['commission-territory', userId],
+    queryFn: () => api<Location[]>('GET', `${BASE}/lookups/territory?userId=${encodeURIComponent(userId)}`),
+    enabled: !isRevise && !!userId,
   });
-  const areas = useQuery({
-    queryKey: ['location-areas', pincode],
-    queryFn: () =>
-      api<Paginated<Location>>('GET', `/api/v2/locations?pincode=${pincode}&limit=200`).then((r) => r.items),
-    enabled: !isRevise && validPincode,
-  });
+  const coveredPincodes = [...new Set((territory.data ?? []).map((l) => l.pincode))];
+  const territoryAreas = (territory.data ?? []).filter((l) => l.pincode === pincode);
+  // A complete 6-digit pincode with no covered areas ⇒ it isn't in this agent's territory.
   const pincodeNotFound = isPincodeNotFound({
     pincode,
-    isSuccess: areas.isSuccess,
-    count: areas.data?.length ?? 0,
+    isSuccess: territory.isSuccess,
+    count: territoryAreas.length,
   });
   // UX-10: `/tat-policies/options` (page.masterdata-gated) returns ALL active-and-in-effect bands
   // unpaginated — no `limit` to cap, unlike the DataGrid-oriented `/tat-policies` list (server max
@@ -262,6 +260,9 @@ function CommissionRateForm({
   // not a hardcoded code string.
   const isOffice = isOfficeRateType(fieldRateType, rateTypes.data ?? []);
   const rateTypeGroups = groupRateTypeOptions(rateTypes.data ?? []);
+  // A field agent with no assigned territory (a FIELD rate then has nowhere to land).
+  const noTerritory =
+    !isRevise && !isOffice && !!userId && territory.isSuccess && coveredPincodes.length === 0;
 
   // ADR-0050: required-specific dims = user + location (area) + rate type; client/product/unit/tat band
   // are Universal-able (blank ⇒ matches any), so they don't gate Save. Location is required for LOCAL/OGL;
@@ -316,7 +317,15 @@ function CommissionRateForm({
         ) : (
           <>
             <Field label="User">
-              <select className="input" value={userId} onChange={(e) => setUserId(e.target.value)}>
+              <select
+                className="input"
+                value={userId}
+                onChange={(e) => {
+                  setUserId(e.target.value);
+                  setPincode(''); // territory changed → clear the location
+                  setLocationId('');
+                }}
+              >
                 <option value="">Select a user…</option>
                 {commissionEligibleUsers(users.data ?? []).map((u) => (
                   <option key={u.id} value={u.id}>
@@ -382,7 +391,7 @@ function CommissionRateForm({
                 }}
               />
               <datalist id="commission-pincodes">
-                {(pincodes.data ?? []).map((p) => (
+                {coveredPincodes.map((p) => (
                   <option key={p} value={p} />
                 ))}
               </datalist>
@@ -404,19 +413,24 @@ function CommissionRateForm({
                       ? 'Select an area…'
                       : 'Enter a 6-digit pincode first'}
                 </option>
-                {(areas.data ?? []).map((l) => (
+                {territoryAreas.map((l) => (
                   <option key={l.id} value={String(l.id)}>
                     {l.area}
                   </option>
                 ))}
               </select>
-              {!isOffice && pincodeNotFound && (
+              {!isOffice && noTerritory && (
                 <span className="mt-1 block text-xs text-muted-foreground">
-                  {PINCODE_NOT_FOUND} —{' '}
-                  <Link to={LOCATIONS_ADMIN_PATH} className="text-primary hover:underline">
-                    open Location Management
-                  </Link>
-                  .
+                  No territory assigned to this field agent —{' '}
+                  <Link to="/admin/users" className="text-primary hover:underline">
+                    assign pincodes/areas in User Management
+                  </Link>{' '}
+                  first.
+                </span>
+              )}
+              {!isOffice && !noTerritory && pincodeNotFound && (
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  This pincode isn’t in the agent’s territory — pick one of their assigned pincodes.
                 </span>
               )}
               {fieldErrors['locationId'] && (
