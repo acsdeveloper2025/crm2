@@ -184,6 +184,13 @@ describe('createSdk — transport', () => {
       s.commissionRates.revise(1, { amount: 75, version: 1 }),
       s.commissionRates.activate(1, 1),
       s.commissionRates.deactivate(1, 1),
+      s.commissionRates.territory('00000000-0000-0000-0000-000000000001'),
+      s.commissionRates.bulkCreate({
+        userId: '00000000-0000-0000-0000-000000000001',
+        fieldRateType: 'LOCAL',
+        amount: 150,
+        locationIds: [4, 5, 6],
+      }),
       s.tatPolicies.list(),
       s.tatPolicies.create({ tatHours: 4, label: '4 hours' }),
       s.tatPolicies.revise(1, { label: '4 hrs', version: 1 }),
@@ -346,7 +353,7 @@ describe('createSdk — transport', () => {
       s.savedViews.remove('00000000-0000-0000-0000-0000000000aa'),
       s.savedViews.setDefault('00000000-0000-0000-0000-0000000000aa', true),
     ]);
-    expect(calls.length).toBe(146); // ADR-0086 removed billing.{caseTasks,breakdown} (cases→lines, −2); ADR-0084 +mis.{reportTypes,rows,summary}; ADR-0083 removed reportLayouts + dataEntry
+    expect(calls.length).toBe(148); // +commissionRates.{territory,bulkCreate} (multi-location bulk entry); ADR-0086 removed billing.{caseTasks,breakdown} (cases→lines, −2); ADR-0084 +mis.{reportTypes,rows,summary}; ADR-0083 removed reportLayouts + dataEntry
     expect(calls.some((c) => c.url === 'http://x/api/v2/commission-rates')).toBe(true);
     expect(calls.some((c) => c.url === 'http://x/api/v2/tat-policies')).toBe(true);
     expect(

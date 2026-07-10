@@ -16,6 +16,9 @@ commissionRateRoutes.get('/', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.list);
 // `/export` + `/import-template` are literal single-segment paths — declared before the param routes.
 commissionRateRoutes.get('/export', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.export);
 commissionRateRoutes.get('/import-template', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.importTemplate);
+// Territory lookup: a field user's assigned (pincode, area) locations — the location-picker source
+// for bulk + single commission entry. Two-segment static path, declared before the numeric `:id`.
+commissionRateRoutes.get('/lookups/territory', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.territory);
 // Single rate by id (the record-page loader). Read = masterdata.manage, consistent with the whole
 // module (commission AMOUNTS are SA-only comp data — viewing one is no less sensitive than the list).
 // Declared AFTER the static single-segment paths above so `/export`, `/import-template` are never
@@ -28,6 +31,9 @@ commissionRateRoutes.post(
   c.import,
 );
 commissionRateRoutes.post('/', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.create);
+// Multi-location bulk create — one field agent's rate fanned across many territory locations. Static
+// path (before the numeric `:id` param routes); per-row CREATED/EXISTS/ERROR result.
+commissionRateRoutes.post('/bulk', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.bulkCreate);
 commissionRateRoutes.post('/:id/revise', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.revise);
 commissionRateRoutes.post('/:id/activate', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.activate);
 commissionRateRoutes.post('/:id/deactivate', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.deactivate);

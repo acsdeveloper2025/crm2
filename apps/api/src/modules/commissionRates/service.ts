@@ -1,8 +1,11 @@
 import {
+  BulkCreateCommissionRatesSchema,
   CreateCommissionRateSchema,
   ReviseCommissionRateSchema,
+  type BulkCommissionRateResult,
   type CommissionRate,
   type CommissionRateView,
+  type Location,
   type Paginated,
 } from '@crm2/sdk';
 import { commissionRateRepository as repo } from './repository.js';
@@ -46,6 +49,8 @@ const toPosInt = (v: unknown): number | undefined => {
   const n = Number(v);
   return Number.isInteger(n) && n > 0 ? n : undefined;
 };
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** DataGrid export manifest — `id`s match the FE column ids (CommissionRatesPage). The ADR-0046
  *  resolution dimensions (product / verification-unit / location / tat-band) and the currency are
@@ -127,6 +132,13 @@ export const commissionRateService = {
     return rate;
   },
 
+  /** The field user's assigned (pincode, area) locations — the bulk/single location-picker source
+   *  (multi-location bulk entry). Scoped read; gated masterdata.manage at the route. */
+  async territory(userId: string): Promise<Location[]> {
+    if (!UUID_RE.test(userId)) throw AppError.badRequest('BAD_REQUEST', { param: 'userId' });
+    return repo.coveredLocationsForUser(userId);
+  },
+
   /** Export rows for the DataGrid (IMPORT_EXPORT_STANDARD) — re-runs the SAME list query. */
   async exportData(rawQuery: Record<string, unknown>, ex: ResolvedExport) {
     const r = resolvePage(rawQuery, CR_PAGE_SPEC);
@@ -179,6 +191,29 @@ export const commissionRateService = {
   create(input: unknown, userId: string): Promise<CommissionRate> {
     const validated = CreateCommissionRateSchema.parse(input); // throws ZodError → 400
     return repo.create(validated, userId);
+  },
+
+  /** Multi-location bulk create (field agents only). Enforces the trust boundary — role + rate-type +
+   *  each location within the agent's territory — then fans the rate across the locations, per-row
+   *  (CREATED / EXISTS / ERROR). The picker is already scoped; the API re-checks (never trust the client). */
+  async bulkCreate(input: unknown, actorId: string): Promise<BulkCommissionRateResult> {
+    const v = BulkCreateCommissionRatesSchema.parse(input); // ZodError → 400
+    // Bulk is field/location-based only — OFFICE rates are location-less (use the single form).
+    if (v.fieldRateType === 'OFFICE') throw AppError.badRequest('OFFICE_NOT_BULKABLE');
+    // ADR-0022: gate on the role ATTRIBUTE (territory), never the role NAME. Only a user with an
+    // assigned pincode/area territory (i.e. a field agent) can hold location-based commission; a user
+    // with none is ineligible — a non-field role, or an un-provisioned agent (assign territory first).
+    const covered = await repo.coveredLocationsForUser(v.userId);
+    const allowed = new Set(covered.map((l) => l.id));
+    if (allowed.size === 0) throw AppError.badRequest('USER_HAS_NO_TERRITORY');
+    const locationIds = [...new Set(v.locationIds)]; // dedupe (picker may repeat)
+    const results = await repo.bulkCreate(v, locationIds, allowed, actorId);
+    return {
+      results,
+      createdCount: results.filter((r) => r.status === 'CREATED').length,
+      existsCount: results.filter((r) => r.status === 'EXISTS').length,
+      errorCount: results.filter((r) => r.status === 'ERROR').length,
+    };
   },
 
   async revise(id: number, input: unknown, userId: string): Promise<CommissionRate> {

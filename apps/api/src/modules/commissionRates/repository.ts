@@ -1,4 +1,11 @@
-import type { CommissionRate, CommissionRateView, CreateCommissionRateInput, SortOrder } from '@crm2/sdk';
+import type {
+  BulkCommissionRateRow,
+  CommissionRate,
+  CommissionRateView,
+  CreateCommissionRateInput,
+  Location,
+  SortOrder,
+} from '@crm2/sdk';
 import { filterClauses, likeContains, type AppliedFilter } from '../../platform/pagination.js';
 import { query, withTransaction } from '../../platform/db.js';
 import { AppError } from '../../platform/errors.js';
@@ -133,6 +140,22 @@ export const commissionRateRepository = {
     return rows[0] ?? null;
   },
 
+  /** The (pincode, area) locations a field user is assigned — their territory (the location-picker
+   *  source). Reuses the assignee-pool resolution: `user_scope_assignments.entity_id = locations.id`
+   *  for the PINCODE/AREA dims (a PINCODE grant is pre-expanded to one row per area at assign time). */
+  async coveredLocationsForUser(userId: string): Promise<Location[]> {
+    return query<Location>(
+      `SELECT DISTINCT l.id, l.pincode, l.area, l.city, l.state, l.country,
+              l.is_active, l.effective_from, l.version, l.created_by, l.updated_by, l.created_at, l.updated_at
+       FROM locations l
+       JOIN user_scope_assignments usa
+         ON usa.entity_id = l.id AND usa.dimension_code IN ('PINCODE', 'AREA') AND usa.is_active
+       WHERE usa.user_id = $1 AND l.is_active
+       ORDER BY l.pincode, l.area`,
+      [userId],
+    );
+  },
+
   async create(input: CreateCommissionRateInput, userId: string): Promise<CommissionRate> {
     try {
       const [row] = await query<CommissionRate>(
@@ -161,6 +184,75 @@ export const commissionRateRepository = {
     } catch (e) {
       return mapWriteError(e);
     }
+  },
+
+  /** Bulk create: one field agent's rate fanned across many territory locations. SAVEPOINT-per-row so a
+   *  per-row overlap (23P01 → EXISTS, skipped not overwritten) or bad FK (23503 → ERROR) is captured
+   *  without aborting the batch; a location outside `allowed` (the agent's territory) is a per-row
+   *  NOT_IN_TERRITORY error. One wrapping transaction — mirrors the CPV bulk pattern. */
+  async bulkCreate(
+    input: {
+      userId: string;
+      fieldRateType: string;
+      clientId?: number | null | undefined;
+      productId?: number | null | undefined;
+      verificationUnitId?: number | null | undefined;
+      tatBand?: number | null | undefined;
+      amount: number;
+      currency: string;
+      effectiveFrom?: string | undefined;
+    },
+    locationIds: number[],
+    allowed: Set<number>,
+    actorId: string,
+  ): Promise<BulkCommissionRateRow[]> {
+    return withTransaction(async (q) => {
+      const out: BulkCommissionRateRow[] = [];
+      for (const [i, locationId] of locationIds.entries()) {
+        if (!allowed.has(locationId)) {
+          out.push({ locationId, status: 'ERROR', rateId: null, error: 'NOT_IN_TERRITORY' });
+          continue;
+        }
+        const sp = `sp_cr_bulk_${i}`;
+        await q(`SAVEPOINT ${sp}`);
+        try {
+          const [row] = await q<{ id: number }>(
+            `INSERT INTO commission_rates
+               (user_id, rate_type_id, client_id, location_id, product_id, verification_unit_id, tat_band,
+                amount, currency, effective_from, created_by, updated_by)
+             VALUES ($1, (SELECT id FROM rate_types WHERE code = UPPER($2)), $3, $4, $5, $6, $7, $8, $9, COALESCE($10::timestamptz, now()), $11, $11)
+             RETURNING id`,
+            [
+              input.userId,
+              input.fieldRateType,
+              input.clientId ?? null,
+              locationId,
+              input.productId ?? null,
+              input.verificationUnitId ?? null,
+              input.tatBand ?? null,
+              input.amount,
+              input.currency,
+              input.effectiveFrom ?? null,
+              actorId,
+            ],
+          );
+          if (!row) throw AppError.internal('bulk insert returned no row');
+          await q(`RELEASE SAVEPOINT ${sp}`);
+          out.push({ locationId, status: 'CREATED', rateId: row.id, error: null });
+        } catch (e) {
+          await q(`ROLLBACK TO SAVEPOINT ${sp}`);
+          const code = pgCode(e);
+          if (code === EXCLUSION_VIOLATION) {
+            out.push({ locationId, status: 'EXISTS', rateId: null, error: null });
+          } else if (code === FK_VIOLATION) {
+            out.push({ locationId, status: 'ERROR', rateId: null, error: 'INVALID_REFERENCE' });
+          } else {
+            throw e; // unexpected → abort the whole batch
+          }
+        }
+      }
+      return out;
+    });
   },
 
   /** Effective-dated revision: end-date the current row, insert a new dated version. */

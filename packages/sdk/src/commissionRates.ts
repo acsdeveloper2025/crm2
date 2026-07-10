@@ -110,3 +110,46 @@ export const ReviseCommissionRateSchema = z.object({
 
 export type CreateCommissionRateInput = z.input<typeof CreateCommissionRateSchema>;
 export type ReviseCommissionRateInput = z.input<typeof ReviseCommissionRateSchema>;
+
+// ── Multi-location bulk entry ──────────────────────────────────────────────────────────────────
+/** Max (pincode, area) locations per bulk save — mirrors the scope-assignment / CPV bulk caps. */
+const MAX_BULK_LOCATIONS = 500;
+
+/**
+ * Bulk commission-rate create: ONE field agent + ONE rate (the shared dims + amount) fanned across
+ * MANY of the agent's assigned (pincode, area) locations — the server writes one commission-rate row
+ * per location, identical to N single creates (pure ergonomics; payout resolution unchanged, ADR-0050).
+ * Field/location-based only — OFFICE is location-less (single form). `locationIds` are `locations` area
+ * ids and MUST be within the agent's territory (the server re-checks; the picker is already scoped).
+ */
+export const BulkCreateCommissionRatesSchema = z.object({
+  userId: uuid,
+  clientId: positiveInt.nullish(),
+  productId: positiveInt.nullish(),
+  verificationUnitId: positiveInt.nullish(),
+  fieldRateType: z.string().trim().min(1).max(40).transform(toUpper),
+  tatBand: z.number().int().nullish(),
+  amount: money,
+  currency: z.string().length(3).default('INR'),
+  effectiveFrom: isoDate.optional(),
+  locationIds: z.array(positiveInt).min(1).max(MAX_BULK_LOCATIONS),
+});
+export type BulkCreateCommissionRatesInput = z.input<typeof BulkCreateCommissionRatesSchema>;
+
+/** Per-location outcome. CREATED = new row; EXISTS = an active rate already overlaps (skipped, NOT
+ *  overwritten); ERROR = rejected (NOT_IN_TERRITORY | INVALID_REFERENCE). */
+export type BulkCommissionRateStatus = 'CREATED' | 'EXISTS' | 'ERROR';
+export interface BulkCommissionRateRow {
+  locationId: number;
+  status: BulkCommissionRateStatus;
+  /** the new rate id when status = CREATED, else null. */
+  rateId: number | null;
+  /** an error code when status = ERROR (NOT_IN_TERRITORY | INVALID_REFERENCE), else null. */
+  error: string | null;
+}
+export interface BulkCommissionRateResult {
+  results: BulkCommissionRateRow[];
+  createdCount: number;
+  existsCount: number;
+  errorCount: number;
+}

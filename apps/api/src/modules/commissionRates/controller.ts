@@ -30,6 +30,16 @@ export const commissionRateController = {
     }
   },
 
+  async territory(req: Request, res: Response, next: NextFunction) {
+    try {
+      const uid = req.query['userId'];
+      if (typeof uid !== 'string') throw AppError.badRequest('BAD_REQUEST', { param: 'userId' });
+      res.json(await svc.territory(uid));
+    } catch (e) {
+      next(e);
+    }
+  },
+
   async export(req: Request, res: Response, next: NextFunction) {
     try {
       const q = req.query as Record<string, unknown>;
@@ -77,6 +87,15 @@ export const commissionRateController = {
   async create(req: Request, res: Response, next: NextFunction) {
     try {
       res.status(HTTP_STATUS.CREATED).json(await svc.create(req.body, userId(req)));
+    } catch (e) {
+      next(e);
+    }
+  },
+
+  // Batch result summary (per-row CREATED/EXISTS/ERROR) — 200, not 201: partial success is normal.
+  async bulkCreate(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json(await svc.bulkCreate(req.body, userId(req)));
     } catch (e) {
       next(e);
     }

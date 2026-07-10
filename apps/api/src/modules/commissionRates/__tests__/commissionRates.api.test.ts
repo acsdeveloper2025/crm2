@@ -33,6 +33,16 @@ const newUser = async (username: string): Promise<string> => {
   return res.body.id as string;
 };
 
+/** Create a user with an explicit (non-field) role — for the bulk field-agent-only guard test. */
+const newUserRole = async (username: string, role: string): Promise<string> => {
+  const res = await request(app)
+    .post('/api/v2/users')
+    .set(SA)
+    .send({ email: `${username}@test.crm2.local`, username, name: username.toUpperCase(), role });
+  expect(res.status).toBe(201);
+  return res.body.id as string;
+};
+
 /**
  * ADR-0050: a commission rate is a fully-specified tariff line — every dimension is required. Seed one
  * full set of dimensions (client/product/unit/location) so create payloads can carry them all. `tag`
@@ -256,6 +266,185 @@ describe.skipIf(!RUN)('commission-rates API (ADR-0036)', () => {
       // FIELD_AGENT holds neither perm; MANAGER holds masterdata.VIEW but NOT masterdata.manage.
       expect((await request(app).get('/api/v2/commission-rates/1').set(FA)).status).toBe(403);
       expect((await request(app).get('/api/v2/commission-rates/1').set(MGR)).status).toBe(403);
+    });
+  });
+
+  describe('GET /lookups/territory (field-user territory — bulk/single location picker source)', () => {
+    // Assign one (pincode, area) location to a field user via the generic scope API (AREA dimension).
+    const assignArea = async (userId: string, locationId: number) => {
+      const res = await request(app)
+        .post(`/api/v2/users/${userId}/scope-assignments`)
+        .set(SA)
+        .send({ dimension: 'AREA', entityIds: [locationId] });
+      expect(res.status).toBe(200);
+    };
+
+    it('returns only the field user’s assigned locations, ordered by pincode/area', async () => {
+      const userId = await newUser('terr_u1');
+      const locB = await seedId('locations', {
+        pincode: '400071',
+        area: 'ZONE_B',
+        city: 'Mumbai',
+        state: 'MH',
+      });
+      const locA = await seedId('locations', {
+        pincode: '400071',
+        area: 'ZONE_A',
+        city: 'Mumbai',
+        state: 'MH',
+      });
+      const unassigned = await seedId('locations', {
+        pincode: '400072',
+        area: 'ZONE_C',
+        city: 'Mumbai',
+        state: 'MH',
+      });
+      await assignArea(userId, locB);
+      await assignArea(userId, locA);
+
+      const res = await request(app)
+        .get(`/api/v2/commission-rates/lookups/territory?userId=${userId}`)
+        .set(SA);
+      expect(res.status).toBe(200);
+      const rows = res.body as { id: number; area: string; pincode: string; city: string }[];
+      expect(rows.map((r) => r.id).sort()).toEqual([locA, locB].sort((a, b) => a - b));
+      expect(rows.map((r) => r.id)).not.toContain(unassigned);
+      // ordered by pincode then area → ZONE_A before ZONE_B (same pincode)
+      expect(rows.map((r) => r.area)).toEqual(['ZONE_A', 'ZONE_B']);
+      expect(rows[0]!.pincode).toBe('400071'); // display fields present for the picker
+      expect(rows[0]!.city).toBeTruthy();
+    });
+
+    it('returns [] for a field user with no territory assigned', async () => {
+      const userId = await newUser('terr_empty');
+      const res = await request(app)
+        .get(`/api/v2/commission-rates/lookups/territory?userId=${userId}`)
+        .set(SA);
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual([]);
+    });
+
+    it('gated masterdata.manage — FIELD_AGENT + MANAGER denied (403)', async () => {
+      const userId = await newUser('terr_perm');
+      const url = `/api/v2/commission-rates/lookups/territory?userId=${userId}`;
+      expect((await request(app).get(url).set(FA)).status).toBe(403);
+      expect((await request(app).get(url).set(MGR)).status).toBe(403);
+    });
+
+    it('bad userId → 400', async () => {
+      const res = await request(app)
+        .get('/api/v2/commission-rates/lookups/territory?userId=not-a-uuid')
+        .set(SA);
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe('POST /bulk (multi-location bulk entry)', () => {
+    const assignArea = async (userId: string, locationId: number) => {
+      const res = await request(app)
+        .post(`/api/v2/users/${userId}/scope-assignments`)
+        .set(SA)
+        .send({ dimension: 'AREA', entityIds: [locationId] });
+      expect(res.status).toBe(200);
+    };
+    const seedLoc = (pincode: string, area: string) =>
+      seedId('locations', { pincode, area, city: 'Mumbai', state: 'MH' });
+    const bulk = (body: object, auth = SA) =>
+      request(app).post('/api/v2/commission-rates/bulk').set(auth).send(body);
+
+    it('creates one rate per assigned location (all CREATED) and grows the list', async () => {
+      const userId = await newUser('blk_all');
+      const l1 = await seedLoc('400081', 'BAREA1');
+      const l2 = await seedLoc('400081', 'BAREA2');
+      const l3 = await seedLoc('400082', 'BAREA3');
+      for (const l of [l1, l2, l3]) await assignArea(userId, l);
+      const res = await bulk({ userId, fieldRateType: 'LOCAL', amount: 150, locationIds: [l1, l2, l3] });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ createdCount: 3, existsCount: 0, errorCount: 0 });
+      expect(res.body.results.every((r: { status: string }) => r.status === 'CREATED')).toBe(true);
+      const list = await request(app).get(`/api/v2/commission-rates?userId=${userId}`).set(SA);
+      expect(list.body.totalCount).toBe(3);
+    });
+
+    it('skips an already-existing location as EXISTS, creates the rest, never overwrites (partial success)', async () => {
+      const userId = await newUser('blk_dup');
+      const l1 = await seedLoc('400083', 'DAREA1');
+      const l2 = await seedLoc('400083', 'DAREA2');
+      await assignArea(userId, l1);
+      await assignArea(userId, l2);
+      const pre = await request(app)
+        .post('/api/v2/commission-rates')
+        .set(SA)
+        .send({ userId, fieldRateType: 'LOCAL', locationId: l1, amount: 140 });
+      expect(pre.status).toBe(201);
+      const res = await bulk({ userId, fieldRateType: 'LOCAL', amount: 150, locationIds: [l1, l2] });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ createdCount: 1, existsCount: 1, errorCount: 0 });
+      const byLoc = Object.fromEntries(
+        res.body.results.map((r: { locationId: number; status: string }) => [r.locationId, r.status]),
+      );
+      expect(byLoc[l1]).toBe('EXISTS');
+      expect(byLoc[l2]).toBe('CREATED');
+      // the pre-existing rate kept its own amount (never overwritten)
+      const list = await request(app).get(`/api/v2/commission-rates?userId=${userId}`).set(SA);
+      const l1row = (list.body.items as { locationId: number; amount: number }[]).find(
+        (r) => r.locationId === l1,
+      )!;
+      expect(l1row.amount).toBe(140);
+    });
+
+    it('flags a location outside the agent’s territory as ERROR NOT_IN_TERRITORY (others still created)', async () => {
+      const userId = await newUser('blk_terr');
+      const assigned = await seedLoc('400084', 'TAREA1');
+      const outside = await seedLoc('400084', 'TAREA2'); // seeded but NOT assigned to the user
+      await assignArea(userId, assigned);
+      const res = await bulk({
+        userId,
+        fieldRateType: 'LOCAL',
+        amount: 150,
+        locationIds: [assigned, outside],
+      });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ createdCount: 1, errorCount: 1 });
+      const byLoc = Object.fromEntries(
+        res.body.results.map((r: { locationId: number; status: string; error: string | null }) => [
+          r.locationId,
+          r,
+        ]),
+      );
+      expect(byLoc[outside]).toMatchObject({ status: 'ERROR', error: 'NOT_IN_TERRITORY' });
+    });
+
+    it('rejects an OFFICE rate type (400) and a user with no territory (400)', async () => {
+      const fieldUser = await newUser('blk_field');
+      const loc = await seedLoc('400085', 'OAREA1');
+      await assignArea(fieldUser, loc);
+      const office = await bulk({
+        userId: fieldUser,
+        fieldRateType: 'OFFICE',
+        amount: 150,
+        locationIds: [loc],
+      });
+      expect(office.status).toBe(400);
+      expect(office.body.error).toBe('OFFICE_NOT_BULKABLE');
+      const mgrId = await newUserRole('blk_mgr', 'MANAGER');
+      const nonField = await bulk({ userId: mgrId, fieldRateType: 'LOCAL', amount: 150, locationIds: [loc] });
+      expect(nonField.status).toBe(400);
+      expect(nonField.body.error).toBe('USER_HAS_NO_TERRITORY');
+    });
+
+    it('gated masterdata.manage — FIELD_AGENT + MANAGER denied (403)', async () => {
+      const userId = await newUser('blk_perm');
+      const loc = await seedLoc('400086', 'PAREA1');
+      const body = { userId, fieldRateType: 'LOCAL', amount: 150, locationIds: [loc] };
+      expect((await bulk(body, FA)).status).toBe(403);
+      expect((await bulk(body, MGR)).status).toBe(403);
+    });
+
+    it('validates input: empty locationIds → 400', async () => {
+      const userId = await newUser('blk_empty');
+      const res = await bulk({ userId, fieldRateType: 'LOCAL', amount: 150, locationIds: [] });
+      expect(res.status).toBe(400);
     });
   });
 

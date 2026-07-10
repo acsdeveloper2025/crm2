@@ -1691,6 +1691,25 @@
         ]
       }
     },
+    "/api/v2/commission-rates/bulk": {
+      "post": {
+        "tags": [
+          "commission-rates"
+        ],
+        "operationId": "post_api_v2_commission_rates_bulk",
+        "summary": "POST /api/v2/commission-rates/bulk",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v2/commission-rates/export": {
       "get": {
         "tags": [
@@ -1736,6 +1755,25 @@
         ],
         "operationId": "get_api_v2_commission_rates_import_template",
         "summary": "GET /api/v2/commission-rates/import-template",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/commission-rates/lookups/territory": {
+      "get": {
+        "tags": [
+          "commission-rates"
+        ],
+        "operationId": "get_api_v2_commission_rates_lookups_territory",
+        "summary": "GET /api/v2/commission-rates/lookups/territory",
         "responses": {
           "default": {
             "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."

@@ -34,6 +34,8 @@ import type {
 } from './rates.js';
 import type { RateTypeOption } from './rateTypes.js';
 import type {
+  BulkCommissionRateResult,
+  BulkCreateCommissionRatesInput,
   CommissionRate,
   CommissionRateView,
   CreateCommissionRateInput,
@@ -347,6 +349,15 @@ export function createSdk(opts: SdkOptions) {
       },
       create: (input: CreateCommissionRateInput) =>
         req<CommissionRate>('POST', '/api/v2/commission-rates', input),
+      /** The field user's assigned (pincode, area) locations — the bulk/single location-picker source. */
+      territory: (userId: string) =>
+        req<Location[]>(
+          'GET',
+          `/api/v2/commission-rates/lookups/territory?userId=${encodeURIComponent(userId)}`,
+        ),
+      /** Multi-location bulk create — one field agent's rate fanned across many territory locations. */
+      bulkCreate: (input: BulkCreateCommissionRatesInput) =>
+        req<BulkCommissionRateResult>('POST', '/api/v2/commission-rates/bulk', input),
       // OCC (ADR-0019): revise/(de)activate carry the current row's `version`; 409 STALE_UPDATE on conflict.
       revise: (id: number, input: ReviseCommissionRateInput & { version: number }) =>
         req<CommissionRate>('POST', `/api/v2/commission-rates/${id}/revise`, input),
