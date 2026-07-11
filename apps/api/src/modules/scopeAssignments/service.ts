@@ -93,8 +93,43 @@ const SCOPE_IMPORT_SPEC: ImportSpec<ScopeImportFile, ScopeImportInput> = {
   ],
   schema: ScopeImportFileSchema,
   sample: { username: 'jdoe', dimension: 'PINCODE', entity: '400001' },
+  // One sample row PER accepted dimension, each showing its Entity format (owner 2026-07-11: the
+  // single-PINCODE sample taught none of the other shapes and imports kept failing).
+  sampleRows: [
+    { username: 'jdoe', dimension: 'PINCODE', entity: '400001' },
+    { username: 'jdoe', dimension: 'AREA', entity: '400001:FORT' },
+    { username: 'asmith', dimension: 'CLIENT', entity: 'HDFC' },
+    { username: 'asmith', dimension: 'PRODUCT', entity: 'HOME_LOAN' },
+  ],
   resolve: resolveImportRow,
 };
+
+/** Entity-format hint per dimension code (dimension codes are config keys, not role names). */
+const DIMENSION_ENTITY_HINTS: Record<string, string> = {
+  PINCODE: 'the 6-digit pincode — assigns ALL its areas (e.g. 400001)',
+  AREA: 'PINCODE:AREA — one specific area (e.g. 400001:FORT)',
+  CLIENT: 'the client CODE from Clients (e.g. HDFC)',
+  PRODUCT: 'the product CODE from Products (e.g. HOME_LOAN)',
+};
+
+/** The template's Notes sheet, generated from the LIVE role wiring (`role_scope_dimensions` is
+ *  admin data — hardcoded role lists would drift the moment an admin edits a role). */
+async function buildScopeTemplateNotes(): Promise<string[]> {
+  const wiring = await repo.allRoleDimensions();
+  const byRole = new Map<string, string[]>();
+  for (const w of wiring) byRole.set(w.roleCode, [...(byRole.get(w.roleCode) ?? []), w.dimensionCode]);
+  return [
+    'HOW TO IMPORT SCOPE ASSIGNMENTS (all three columns are required on every row)',
+    'Username — the user’s login username (active users only).',
+    'Dimension — what kind of scope the row assigns. A row is accepted only when the user’s ROLE may hold that dimension:',
+    ...[...byRole.entries()].map(([role, dims]) => `    ${role}: ${dims.join(', ')}`),
+    'Roles not listed above hold NO scope dimensions — e.g. KYC verifiers are scoped by verification unit (User Management → KYC Units), not by this import.',
+    'Entity — the value being assigned, formatted per dimension:',
+    ...Object.entries(DIMENSION_ENTITY_HINTS).map(([dim, hint]) => `    ${dim}: ${hint}`),
+    'Re-importing an existing assignment is safe — it re-activates the row instead of duplicating it.',
+    'CSV works too: same header row, comma-separated, first sheet only.',
+  ];
+}
 
 /**
  * Export manifest. The header trio `Username` / `Dimension` / `Entity` MATCHES the bulk-import spec
@@ -162,7 +197,8 @@ export const scopeAssignmentService = {
   },
 
   // ── bulk assignment (IMPORT_EXPORT_STANDARD): template → preview → confirm + export ──
-  importTemplate: () => buildTemplate(SCOPE_IMPORT_SPEC),
+  importTemplate: async () =>
+    buildTemplate({ ...SCOPE_IMPORT_SPEC, templateNotes: await buildScopeTemplateNotes() }),
   importPreview: (file: Buffer) => runImportPreview(file, SCOPE_IMPORT_SPEC),
   importConfirm: (file: Buffer, actorId: string, fileName: string | undefined) =>
     runImportConfirm(

@@ -208,29 +208,41 @@ export async function listImportSheets(buffer: Buffer): Promise<string[]> {
   return ['Sheet1'];
 }
 
-/** A worksheet's body: bold header row from the manifest plus an optional sample data row. Shared by
+/** A worksheet's body: bold header row from the manifest plus optional sample data row(s). Shared by
  *  `buildImportTemplate` (one sheet) and `buildWorkbookTemplate` (many sheets) — same cell logic. */
 function writeTemplateSheet(
   ws: Worksheet,
   columns: ImportColumn[],
   sample?: Record<string, string | number>,
+  sampleRows?: Record<string, string | number>[],
 ): void {
   ws.addRow(columns.map((c) => c.header));
   ws.getRow(1).font = { bold: true };
-  if (sample) ws.addRow(columns.map((c) => sample[c.id] ?? ''));
+  const rows = sampleRows ?? (sample ? [sample] : []);
+  for (const r of rows) ws.addRow(columns.map((c) => r[c.id] ?? ''));
 }
 
 /**
- * Build the downloadable XLSX template: a bold header row from the manifest plus one sample data row
- * (so the user sees the expected format). The headers match what the readers look for.
+ * Build the downloadable XLSX template: a bold header row from the manifest plus sample data row(s)
+ * (so the user sees the expected format). The headers match what the readers look for. Optional
+ * `notes` become a second "Notes" worksheet — the importer only reads the first sheet, so a template
+ * (with its notes) re-uploads cleanly.
  */
 export async function buildImportTemplate(
   columns: ImportColumn[],
   sample?: Record<string, string | number>,
+  opts?: { sampleRows?: Record<string, string | number>[]; notes?: string[] },
 ): Promise<Buffer> {
   const ExcelJS = (await import('exceljs')).default;
   const wb = new ExcelJS.Workbook();
-  writeTemplateSheet(wb.addWorksheet('Template'), columns, sample);
+  writeTemplateSheet(wb.addWorksheet('Template'), columns, sample, opts?.sampleRows);
+  if (opts?.notes?.length) {
+    const NOTES_COL_WIDTH = 110;
+    const ns = wb.addWorksheet('Notes');
+    ns.getColumn(1).width = NOTES_COL_WIDTH;
+    for (const line of opts.notes) ns.addRow([line]);
+    ns.getRow(1).font = { bold: true };
+  }
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
 

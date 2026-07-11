@@ -222,6 +222,60 @@ describe.skipIf(!RUN)('scope assignments API (ADR-0022 slice 3 — generic, role
     ).toBe(403);
   });
 
+  it('template teaches every dimension: 4 sample rows + a Notes sheet with the LIVE role wiring (owner 2026-07-11)', async () => {
+    const tpl = await request(app)
+      .get('/api/v2/users/scope/import-template')
+      .set(SA)
+      .buffer(true)
+      .parse((res2, cb) => {
+        const chunks: Buffer[] = [];
+        res2.on('data', (c: Buffer) => chunks.push(c));
+        res2.on('end', () => cb(null, Buffer.concat(chunks)));
+      });
+    expect(tpl.status).toBe(200);
+    const ExcelJS = (await import('exceljs')).default;
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(tpl.body as Buffer as unknown as Parameters<typeof wb.xlsx.load>[0]);
+
+    // Sheet 1 "Template": bold header + one sample row PER dimension, each showing its Entity form.
+    const ws = wb.worksheets[0]!;
+    const cell = (r: number, c: number) => {
+      const v = ws.getRow(r).getCell(c).value;
+      return v == null ? '' : String(v);
+    };
+    expect([cell(1, 1), cell(1, 2), cell(1, 3)]).toEqual(['Username', 'Dimension', 'Entity']);
+    const samples = [2, 3, 4, 5].map((r) => [cell(r, 1), cell(r, 2), cell(r, 3)]);
+    expect(samples).toEqual([
+      ['jdoe', 'PINCODE', '400001'],
+      ['jdoe', 'AREA', '400001:FORT'],
+      ['asmith', 'CLIENT', 'HDFC'],
+      ['asmith', 'PRODUCT', 'HOME_LOAN'],
+    ]);
+
+    // Sheet 2 "Notes": generated from the LIVE role wiring + entity-format hints + the KYC pointer.
+    const notes = wb.worksheets.find((w) => w.name === 'Notes');
+    expect(notes).toBeDefined();
+    const text: string[] = [];
+    notes!.eachRow((row) => text.push(String(row.getCell(1).value ?? '')));
+    const all = text.join('\n');
+    expect(all).toContain('FIELD_AGENT: AREA, PINCODE'); // live wiring, not a hardcoded list
+    expect(all).toContain('BACKEND_USER: CLIENT, PRODUCT');
+    expect(all).toContain('KYC verifiers are scoped by verification unit');
+    expect(all).toContain('PINCODE:AREA'); // the AREA entity form is spelled out
+    expect(all).toContain('CSV works too');
+
+    // The template itself re-imports cleanly through the parser (Notes sheet ignored): the sample
+    // usernames don't exist so every row errors, but they are ROW errors — not a parse failure.
+    const again = await request(app)
+      .post('/api/v2/users/scope/import?mode=preview')
+      .set(SA)
+      .set('content-type', 'application/octet-stream')
+      .send(tpl.body as Buffer);
+    expect(again.status).toBe(200);
+    expect(again.body.totalRows).toBe(4);
+    expect(again.body.errorRows).toBe(4); // unknown sample usernames — per-row, never a crash
+  });
+
   it('export round-trips through import (IE-DEFER-6): exported file re-imports with 0 errors', async () => {
     const { p1, p2, clientId } = await seed();
     // a second area row for 400001 — so a PINCODE assignment spans >1 location id

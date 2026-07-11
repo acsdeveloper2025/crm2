@@ -50,6 +50,11 @@ export interface ImportSpec<TFile, TInput = TFile> {
   uniqueKey?: string;
   /** one sample data row for the downloadable template (column id → display value). */
   sample?: Record<string, string | number>;
+  /** several sample rows (one per accepted value shape) — wins over `sample` in the template. */
+  sampleRows?: Record<string, string | number>[];
+  /** guidance lines written to a second "Notes" worksheet in the template. The importer reads only
+   *  the FIRST sheet, so notes never interfere with re-uploading the same file. */
+  templateNotes?: string[];
   /** optional async per-row resolution (FK code→id etc.); runs in preview AND confirm. */
   resolve?: (input: TFile, rowNumber: number) => Promise<ResolveResult<TInput>>;
 }
@@ -94,7 +99,10 @@ const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
 
 /** Build the downloadable XLSX template for a domain. */
 export function buildTemplate<TFile, TInput = TFile>(spec: ImportSpec<TFile, TInput>): Promise<Buffer> {
-  return buildImportTemplate(spec.columns, spec.sample);
+  return buildImportTemplate(spec.columns, spec.sample, {
+    ...(spec.sampleRows ? { sampleRows: spec.sampleRows } : {}),
+    ...(spec.templateNotes ? { notes: spec.templateNotes } : {}),
+  });
 }
 
 /** Stream a built template as an XLSX download (mirrors export's `writeExport`). */

@@ -317,6 +317,34 @@ describe.skipIf(!RUN)('commission-rates API (ADR-0036)', () => {
       expect(rows[0]!.city).toBeTruthy();
     });
 
+    it('a STALE assignment whose dimension the role no longer holds is inert (mirrors resolveScope)', async () => {
+      // A unit-scoped (non-territorial) user with a legacy pincode/area assignment row — e.g. a KYC
+      // verifier assigned territory before mig 0089 dropped that wiring. The row must be INERT: no
+      // territory, and the bulk has-territory gate stays closed.
+      const userId = await newUserRole('terr_stale', 'KYC_VERIFIER');
+      const loc = await seedId('locations', {
+        pincode: '400096',
+        area: 'STALE1',
+        city: 'Mumbai',
+        state: 'MH',
+      });
+      await db!.pool.query(
+        `INSERT INTO user_scope_assignments (user_id, dimension_code, entity_id) VALUES ($1, 'AREA', $2)`,
+        [userId, loc],
+      );
+      const res = await request(app)
+        .get(`/api/v2/commission-rates/lookups/territory?userId=${userId}`)
+        .set(SA);
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual([]); // stale row filtered by the role-wiring intersection
+      const blk = await request(app)
+        .post('/api/v2/commission-rates/bulk')
+        .set(SA)
+        .send({ userId, fieldRateType: 'LOCAL', amount: 100, locationIds: [loc] });
+      expect(blk.status).toBe(400);
+      expect(blk.body.error).toBe('USER_HAS_NO_TERRITORY');
+    });
+
     it('returns [] for a field user with no territory assigned', async () => {
       const userId = await newUser('terr_empty');
       const res = await request(app)

@@ -145,12 +145,19 @@ export const commissionRateRepository = {
    *  for the PINCODE/AREA dims (a PINCODE grant is pre-expanded to one row per area at assign time).
    *  Slim projection on purpose — the picker needs id/pincode/area/city/state; audit + OCC columns
    *  (created_by/updated_by/version/…) never leave the server on this lookup (data minimization). */
+  // Intersected with the user's ROLE wiring exactly like `resolveScope` — a stale assignment whose
+  // dimension the role no longer holds (e.g. KYC territory dropped by mig 0089) is INERT here too,
+  // so it can't smuggle a location-less role past the bulk has-territory gate.
   async coveredLocationsForUser(userId: string): Promise<CommissionTerritoryLocation[]> {
     return query<CommissionTerritoryLocation>(
       `SELECT DISTINCT l.id, l.pincode, l.area, l.city, l.state
        FROM locations l
        JOIN user_scope_assignments usa
          ON usa.entity_id = l.id AND usa.dimension_code IN ('PINCODE', 'AREA') AND usa.is_active
+       JOIN users u ON u.id = usa.user_id
+       JOIN role_scope_dimensions rsd
+         ON rsd.role_code = u.role AND rsd.dimension_code = usa.dimension_code AND rsd.is_active
+       JOIN scope_dimensions sd ON sd.code = usa.dimension_code AND sd.is_active
        WHERE usa.user_id = $1 AND l.is_active
        ORDER BY l.pincode, l.area`,
       [userId],

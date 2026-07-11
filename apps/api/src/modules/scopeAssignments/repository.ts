@@ -137,6 +137,17 @@ export const scopeAssignmentRepository = {
     }));
   },
 
+  /** Every role's active dimension wiring (for the template's Notes sheet) — role → its dimensions. */
+  async allRoleDimensions(): Promise<{ roleCode: string; dimensionCode: string }[]> {
+    return query<{ roleCode: string; dimensionCode: string }>(
+      `SELECT rsd.role_code, rsd.dimension_code
+       FROM role_scope_dimensions rsd
+       JOIN scope_dimensions sd ON sd.code = rsd.dimension_code AND sd.is_active
+       WHERE rsd.is_active
+       ORDER BY rsd.role_code, rsd.dimension_code`,
+    );
+  },
+
   /** The dimensions a role may hold (active wiring only) → dimension_code → mode. */
   async roleDimensions(roleCode: string): Promise<Map<string, string>> {
     const rows = await query<{ dimensionCode: string; mode: string }>(
