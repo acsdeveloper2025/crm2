@@ -236,26 +236,37 @@ export async function buildImportTemplate(
   const ExcelJS = (await import('exceljs')).default;
   const wb = new ExcelJS.Workbook();
   writeTemplateSheet(wb.addWorksheet('Template'), columns, sample, opts?.sampleRows);
-  if (opts?.notes?.length) {
-    const NOTES_COL_WIDTH = 110;
-    const ns = wb.addWorksheet('Notes');
-    ns.getColumn(1).width = NOTES_COL_WIDTH;
-    for (const line of opts.notes) ns.addRow([line]);
-    ns.getRow(1).font = { bold: true };
-  }
+  if (opts?.notes?.length) writeNotesSheet(wb, opts.notes);
   return Buffer.from(await wb.xlsx.writeBuffer());
+}
+
+/** The guidance worksheet appended to a template — one line per row, bold title, readable width. */
+function writeNotesSheet(wb: { addWorksheet: (n: string) => Worksheet }, notes: string[]): void {
+  const NOTES_COL_WIDTH = 110;
+  const ns = wb.addWorksheet('Notes');
+  ns.getColumn(1).width = NOTES_COL_WIDTH;
+  for (const line of notes) ns.addRow([line]);
+  ns.getRow(1).font = { bold: true };
 }
 
 /**
  * Build a multi-sheet XLSX template: one worksheet per entry (in order), same per-sheet body as
  * `buildImportTemplate` (ADR-0092 S4 — bundles several domains' templates into one onboarding
- * workbook download).
+ * workbook download). `opts.notes` appends the same trailing "Notes" worksheet as the single-sheet
+ * template.
  */
 export async function buildWorkbookTemplate(
-  sheets: { name: string; columns: ImportColumn[]; sample?: Record<string, string | number> }[],
+  sheets: {
+    name: string;
+    columns: ImportColumn[];
+    sample?: Record<string, string | number>;
+    sampleRows?: Record<string, string | number>[];
+  }[],
+  opts?: { notes?: string[] },
 ): Promise<Buffer> {
   const ExcelJS = (await import('exceljs')).default;
   const wb = new ExcelJS.Workbook();
-  for (const s of sheets) writeTemplateSheet(wb.addWorksheet(s.name), s.columns, s.sample);
+  for (const s of sheets) writeTemplateSheet(wb.addWorksheet(s.name), s.columns, s.sample, s.sampleRows);
+  if (opts?.notes?.length) writeNotesSheet(wb, opts.notes);
   return Buffer.from(await wb.xlsx.writeBuffer());
 }

@@ -109,6 +109,17 @@ userRoutes.post(
   raw({ type: () => true, limit: '10mb' }),
   scopeAssignmentController.import,
 );
+// Role-shaped scope workbook (owner 2026-07-11) — one sheet per user type (Field Agents / Backend
+// Users / KYC Users; the KYC sheet writes unit grants, ADR-0073). Additive alongside the legacy
+// single-sheet routes above; the web Import Scope dialog uses THESE. Two-segment static paths
+// (a single-segment path would be captured by the `/:id` param routes above).
+userRoutes.get('/scope/workbook-template', authorize(T), scopeAssignmentController.workbookTemplate);
+userRoutes.post(
+  '/scope/workbook-import',
+  authorize(T),
+  raw({ type: () => true, limit: '10mb' }),
+  scopeAssignmentController.workbookImport,
+);
 // the export dumps the FULL access-control topology — same authority as reading/assigning it
 // (data.export alone would WIDEN access: MANAGER/TL/BE hold it but cannot read assignments).
 userRoutes.get('/scope/export', authorize(T), scopeAssignmentController.export);

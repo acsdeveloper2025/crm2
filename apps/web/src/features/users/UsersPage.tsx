@@ -12,7 +12,7 @@ import {
   type UserView,
 } from '@crm2/sdk';
 import { toast } from 'sonner';
-import { api, apiExport, ApiError } from '../../lib/sdk.js';
+import { api, apiBlob, apiExport, ApiError } from '../../lib/sdk.js';
 import { formatDateTime } from '../../lib/format.js';
 import { useFocusTrap } from '../../lib/useFocusTrap.js';
 import { BulkStatusActions } from '../../components/BulkStatusActions.js';
@@ -20,7 +20,7 @@ import { StatusChip } from '../../components/StatusChip.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { PasswordPolicyChecklist, isPasswordStrong } from '../../components/PasswordPolicyChecklist.js';
 import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
-import { ImportButton } from '../../components/import/ImportModal.js';
+import { ImportButton, WorkbookImportButton } from '../../components/import/ImportModal.js';
 import { Button } from '../../components/ui/Button.js';
 import { DownloadIcon } from '../../components/ui/icons.js';
 import { Input } from '../../components/ui/Input.js';
@@ -28,6 +28,18 @@ import { Input } from '../../components/ui/Input.js';
 const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
   e instanceof ApiError && e.status === HTTP_CONFLICT && e.code === 'STALE_UPDATE';
+
+/** Save a downloaded blob (same local helper pattern as ClientSetupPage/ImportModal). */
+function downloadScopeBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 const BASE = '/api/v2/users';
 const QK = 'users';
@@ -198,9 +210,30 @@ export function UsersPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <ImportButton config={{ basePath: BASE, queryKey: QK, entityLabel: 'user' }} label="Import Users" />
-          {/* Bulk assignment (ADR-0022): spreadsheet import + all-assignments export of data scope */}
-          <ImportButton
-            config={{ basePath: `${BASE}/scope`, queryKey: 'user-scope', entityLabel: 'scope assignment' }}
+          {/* Bulk assignment (ADR-0022 + owner 2026-07-11): the role-shaped scope WORKBOOK — one
+              sheet per user type (Field Agents / Backend Users / KYC Users) instead of the long
+              Username/Dimension/Entity layout. Template download sits beside the importer (the
+              workbook modal itself has no download, mirroring the Client Setup hub). */}
+          <Button
+            variant="secondary"
+            onClick={async () => {
+              try {
+                const { blob, filename } = await apiBlob(`${BASE}/scope/workbook-template`);
+                downloadScopeBlob(blob, filename);
+              } catch {
+                toast.error('Could not download the scope template.');
+              }
+            }}
+          >
+            <DownloadIcon className="mr-1.5 h-4 w-4" />
+            Scope Template
+          </Button>
+          <WorkbookImportButton
+            config={{
+              basePath: `${BASE}/scope/workbook`,
+              queryKeys: ['user-scope'],
+              entityLabel: 'scope assignment',
+            }}
             label="Import Scope"
           />
           <Button

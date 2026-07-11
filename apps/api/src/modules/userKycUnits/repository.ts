@@ -55,4 +55,25 @@ export const userKycUnitsRepository = {
     const rows = await query<{ role: string }>(`SELECT role FROM users WHERE id = $1`, [userId]);
     return rows[0]?.role ?? null;
   },
+
+  /** ADD grants without touching existing ones (the scope-workbook import path — `setForUser` is
+   *  replace-semantics and would silently revoke unlisted units on a partial file). Idempotent. */
+  async addForUser(userId: string, unitIds: number[], actorId: string): Promise<void> {
+    if (unitIds.length === 0) return;
+    await query(
+      `INSERT INTO user_kyc_unit_access (user_id, verification_unit_id, created_by)
+       SELECT $1, u, $3 FROM unnest($2::int[]) AS u
+       ON CONFLICT (user_id, verification_unit_id) DO UPDATE SET is_active = true`,
+      [userId, unitIds, actorId],
+    );
+  },
+
+  /** An ACTIVE verification unit by CODE (the workbook's Unit Code column) → id. */
+  async unitIdByCode(code: string): Promise<number | undefined> {
+    const rows = await query<{ id: number }>(
+      `SELECT id FROM verification_units WHERE upper(code) = upper($1) AND is_active`,
+      [code],
+    );
+    return rows[0]?.id;
+  },
 };

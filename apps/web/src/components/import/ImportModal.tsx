@@ -446,7 +446,7 @@ function WorkbookImportModal({ config, onClose }: { config: WorkbookImportConfig
   const [error, setError] = useState<string | null>(null);
 
   const toMessage = (e: unknown): string =>
-    importErrorMessage(e, 'Import failed. Check the file is the onboarding workbook (.xlsx) and try again.');
+    importErrorMessage(e, 'Import failed. Check the file is the workbook (.xlsx) and try again.');
 
   const onPick = async (picked: File | undefined) => {
     if (!picked) return;
@@ -510,7 +510,7 @@ function WorkbookImportModal({ config, onClose }: { config: WorkbookImportConfig
       dialogRef={dialogRef}
       titleId="workbook-import-dialog-title"
       title={`Import ${config.entityLabel}`}
-      subtitle="Upload the filled-in onboarding workbook to preview before importing."
+      subtitle="Upload the filled-in workbook to preview before importing."
       error={error}
     >
       <>

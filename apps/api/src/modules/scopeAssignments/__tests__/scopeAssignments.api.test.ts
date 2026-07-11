@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import request from 'supertest';
-import { createTestDb, authHeaderForRole, clientFactory } from '@crm2/test-utils';
+import { createTestDb, authHeaderForRole, clientFactory, verificationUnitFactory } from '@crm2/test-utils';
 import { createApp } from '../../../http/app.js';
 import { setPool } from '../../../platform/db.js';
 
@@ -274,6 +274,181 @@ describe.skipIf(!RUN)('scope assignments API (ADR-0022 slice 3 — generic, role
     expect(again.status).toBe(200);
     expect(again.body.totalRows).toBe(4);
     expect(again.body.errorRows).toBe(4); // unknown sample usernames — per-row, never a crash
+  });
+
+  describe('role-shaped scope workbook (owner 2026-07-11)', () => {
+    const KYC = '00000000-0000-0000-0000-0000000000e3';
+    const wbUpload = (mode: string, buf: Buffer) =>
+      request(app)
+        .post(`/api/v2/users/scope/workbook-import?mode=${mode}`)
+        .set(SA)
+        .set('content-type', 'application/octet-stream')
+        .send(buf);
+    /** Build a workbook with the 3 named sheets (any subset). */
+    const mkWorkbook = async (sheets: Record<string, string[][]>): Promise<Buffer> => {
+      const ExcelJS = (await import('exceljs')).default;
+      const wb = new ExcelJS.Workbook();
+      const HEADERS: Record<string, string[]> = {
+        'Field Agents': ['Username', 'Pincode', 'Area'],
+        'Backend Users': ['Username', 'Client Code', 'Product Code'],
+        'KYC Users': ['Username', 'Unit Code'],
+      };
+      for (const [name, rows] of Object.entries(sheets)) {
+        const ws = wb.addWorksheet(name);
+        ws.addRow(HEADERS[name]!);
+        for (const r of rows) ws.addRow(r);
+      }
+      return Buffer.from(await wb.xlsx.writeBuffer());
+    };
+    const seedUnit = async (code: string): Promise<number> => {
+      const res = await request(app)
+        .post('/api/v2/verification-units')
+        .set(SA)
+        .send(verificationUnitFactory({ code }));
+      expect(res.status).toBe(201);
+      return res.body.id as number;
+    };
+
+    it('template = 3 role sheets with per-shape samples + a Notes sheet from live wiring', async () => {
+      const tpl = await request(app)
+        .get('/api/v2/users/scope/workbook-template')
+        .set(SA)
+        .buffer(true)
+        .parse((res2, cb) => {
+          const chunks: Buffer[] = [];
+          res2.on('data', (c: Buffer) => chunks.push(c));
+          res2.on('end', () => cb(null, Buffer.concat(chunks)));
+        });
+      expect(tpl.status).toBe(200);
+      const ExcelJS = (await import('exceljs')).default;
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(tpl.body as Buffer as unknown as Parameters<typeof wb.xlsx.load>[0]);
+      expect(wb.worksheets.map((w) => w.name)).toEqual([
+        'Field Agents',
+        'Backend Users',
+        'KYC Users',
+        'Notes',
+      ]);
+      const cell = (ws: (typeof wb.worksheets)[0], r: number, c: number) => {
+        const v = ws.getRow(r).getCell(c).value;
+        return v == null ? '' : String(v);
+      };
+      // Every sheet carries a trailing guidance column the importer ignores (owner 2026-07-11:
+      // the meaning must be ON the sheet, not only the Notes tab).
+      const GUIDE = 'How this sheet works (leave this column as-is)';
+      const field = wb.worksheets[0]!;
+      expect([cell(field, 1, 1), cell(field, 1, 2), cell(field, 1, 3), cell(field, 1, 4)]).toEqual([
+        'Username',
+        'Pincode',
+        'Area',
+        GUIDE,
+      ]);
+      expect([cell(field, 2, 2), cell(field, 2, 3)]).toEqual(['400001', '']); // whole-pincode sample
+      expect(cell(field, 2, 4)).toContain('ALL areas'); // the blank-Area meaning, on the row itself
+      expect([cell(field, 3, 2), cell(field, 3, 3)]).toEqual(['400001', 'FORT']); // one-area sample
+      expect(cell(field, 3, 4)).toContain('only that one area');
+      const backend = wb.worksheets[1]!;
+      expect([cell(backend, 1, 1), cell(backend, 1, 2), cell(backend, 1, 3), cell(backend, 1, 4)]).toEqual([
+        'Username',
+        'Client Code',
+        'Product Code',
+        GUIDE,
+      ]);
+      expect(cell(backend, 2, 4)).toContain('one assignment');
+      const kyc = wb.worksheets[2]!;
+      expect([cell(kyc, 1, 1), cell(kyc, 1, 2), cell(kyc, 1, 3)]).toEqual(['Username', 'Unit Code', GUIDE]);
+      expect(cell(kyc, 2, 3)).toContain('ADDS to existing grants');
+      const notes: string[] = [];
+      wb.worksheets[3]!.eachRow((row) => notes.push(String(row.getCell(1).value ?? '')));
+      const all = notes.join('\n');
+      expect(all).toContain('For roles: FIELD_AGENT'); // live wiring, not hardcoded
+      expect(all).toContain('For roles: BACKEND_USER');
+      expect(all).toContain('For role: KYC_VERIFIER'); // office-pool role, data-driven
+
+      // The guidance column + Notes sheet never break a re-upload: previewing the template itself
+      // parses fine (sample usernames are unknown → row errors, never a parse failure).
+      const again = await wbUpload('preview', tpl.body as Buffer);
+      expect(again.status).toBe(200);
+      const total = (again.body.sheets as { totalRows: number; errorRows: number }[]).reduce(
+        (n, s) => n + s.totalRows,
+        0,
+      );
+      expect(total).toBe(5); // 2 field + 2 backend + 1 kyc sample rows
+    });
+
+    it('imports all three sheets in one upload; role-mismatched rows fail per-row; KYC grant lands additively', async () => {
+      await seed();
+      await mkUser(KYC, 'scope_kyc', 'KYC_VERIFIER');
+      const unitId = await seedUnit('WBUNIT');
+      // pre-existing grant that a partial import must NOT revoke (add ≠ replace semantics)
+      const otherUnit = await seedUnit('WBKEEP');
+      await request(app)
+        .put(`/api/v2/users/${KYC}/kyc-units`)
+        .set(SA)
+        .send({ unitIds: [otherUnit] });
+
+      const wb = await mkWorkbook({
+        'Field Agents': [
+          ['scope_fa', '400001', ''], // whole pincode
+          ['scope_fa', '400002', 'Kalbadevi'], // one area
+          ['scope_be', '400001', ''], // backend user on the field sheet → row error
+        ],
+        'Backend Users': [
+          ['scope_be', 'SC1', ''], // client only
+          ['scope_kyc', 'SC1', ''], // kyc user on the backend sheet → row error
+        ],
+        'KYC Users': [
+          ['scope_kyc', 'WBUNIT'],
+          ['scope_fa', 'WBUNIT'], // field agent on the kyc sheet → row error
+        ],
+      });
+
+      const preview = await wbUpload('preview', wb);
+      expect(preview.status).toBe(200);
+      const byName = Object.fromEntries(
+        (preview.body.sheets as { name: string; validRows: number; errorRows: number }[]).map((s) => [
+          s.name,
+          s,
+        ]),
+      );
+      expect(byName['Field Agents']).toMatchObject({ validRows: 2, errorRows: 1 });
+      expect(byName['Backend Users']).toMatchObject({ validRows: 1, errorRows: 1 });
+      expect(byName['KYC Users']).toMatchObject({ validRows: 1, errorRows: 1 });
+
+      const confirm = await wbUpload('confirm', wb);
+      expect(confirm.status).toBe(200);
+      const cByName = Object.fromEntries(
+        (confirm.body.sheets as { name: string; successRows: number; failedRows: number }[]).map((s) => [
+          s.name,
+          s,
+        ]),
+      );
+      expect(cByName['Field Agents']).toMatchObject({ successRows: 2, failedRows: 1 });
+      expect(cByName['Backend Users']).toMatchObject({ successRows: 1, failedRows: 1 });
+      expect(cByName['KYC Users']).toMatchObject({ successRows: 1, failedRows: 1 });
+
+      // landed: field agent has the pincode (all areas) + the one area; backend has the client
+      const fa = await request(app).get(`/api/v2/users/${FIELD_USER}/scope-assignments`).set(SA);
+      expect(fa.body.PINCODE).toHaveLength(1);
+      expect(fa.body.AREA).toHaveLength(1);
+      const be = await request(app).get(`/api/v2/users/${BACKEND}/scope-assignments`).set(SA);
+      expect(be.body.CLIENT).toHaveLength(1);
+      // KYC grant ADDED — the pre-existing grant survives (additive, not replace)
+      const ku = await request(app).get(`/api/v2/users/${KYC}/kyc-units`).set(SA);
+      expect(ku.body.grantedUnitIds.sort()).toEqual([unitId, otherUnit].sort());
+    });
+
+    it('a CSV carrying ONE sheet’s headers routes to that sheet; unknown headers → 400', async () => {
+      await seed();
+      const csv = ['Username,Pincode,Area', 'scope_fa,400002,Kalbadevi'].join('\n');
+      const res = await wbUpload('confirm', Buffer.from(csv, 'utf8'));
+      expect(res.status).toBe(200);
+      expect(res.body.sheets).toHaveLength(1);
+      expect(res.body.sheets[0]).toMatchObject({ name: 'Field Agents', successRows: 1 });
+      const bad = await wbUpload('preview', Buffer.from('Foo,Bar\n1,2', 'utf8'));
+      expect(bad.status).toBe(400);
+      expect(bad.body.error).toBe('UNKNOWN_SCOPE_SHEET');
+    });
   });
 
   it('export round-trips through import (IE-DEFER-6): exported file re-imports with 0 errors', async () => {

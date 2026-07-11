@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { scopeAssignmentService as svc } from './service.js';
+import { scopeWorkbookConfirm, scopeWorkbookPreview, scopeWorkbookTemplate } from './workbook.js';
 import { AppError } from '../../platform/errors.js';
 import { resolveImportMode, writeTemplate } from '../../platform/import/index.js';
 import { resolveExport, writeExport } from '../../platform/export/index.js';
@@ -66,6 +67,35 @@ export const scopeAssignmentController = {
         mode === 'preview'
           ? await svc.importPreview(file)
           : await svc.importConfirm(file, actorId(req), fileName),
+      );
+    } catch (e) {
+      next(e);
+    }
+  },
+
+  // ── Role-shaped scope workbook (owner 2026-07-11): Field Agents / Backend Users / KYC Users ──
+  async workbookTemplate(_req: Request, res: Response, next: NextFunction) {
+    try {
+      writeTemplate(res, await scopeWorkbookTemplate(), 'scope-workbook');
+    } catch (e) {
+      next(e);
+    }
+  },
+
+  async workbookImport(req: Request, res: Response, next: NextFunction) {
+    try {
+      const mode = resolveImportMode(req.query as Record<string, unknown>);
+      const file = req.body as unknown;
+      if (!Buffer.isBuffer(file) || file.length === 0)
+        throw AppError.badRequest('NO_IMPORT_FILE', {
+          hint: 'POST the .xlsx workbook (or one sheet as CSV) as the body',
+        });
+      const fn = req.headers['x-filename'];
+      const fileName = typeof fn === 'string' ? fn : undefined;
+      res.json(
+        mode === 'preview'
+          ? await scopeWorkbookPreview(file)
+          : await scopeWorkbookConfirm(file, actorId(req), fileName),
       );
     } catch (e) {
       next(e);

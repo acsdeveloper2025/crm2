@@ -5522,6 +5522,44 @@
         ]
       }
     },
+    "/api/v2/users/scope/workbook-import": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "post_api_v2_users_scope_workbook_import",
+        "summary": "POST /api/v2/users/scope/workbook-import",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/users/scope/workbook-template": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "get_api_v2_users_scope_workbook_template",
+        "summary": "GET /api/v2/users/scope/workbook-template",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v2/verification-tasks/{id}/attachments": {
       "get": {
         "tags": [
