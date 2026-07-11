@@ -71,3 +71,15 @@ saved-view; `<10k` immediate, `≥10k` background job). **Import = one `@crm2/im
 download template → fill → upload → validate → preview errors → confirm → background process → result
 summary (Total/Success/Failed/Duration + downloadable error file Row/Column/Message) + permanent import
 audit record. No module writes a bespoke import/export.
+
+## Create pages, result screens & feedback (2026-07-11) — SoT `docs/CREATE_PAGE_STANDARD.md`
+Entry pages = **numbered step cards** (blue circle number + title + context pill + hint) with the
+pick-once fields in a responsive `sm:grid-cols-2 lg:grid-cols-3` grid (required `*` / `· optional`
+markers, Universal-able selects say "Universal (…)"), pick-many sets as **grouped chip tick-lists**
+carrying **existing-data hints** (amber = would skip, red+disabled = rule-blocked), and a **sticky
+summary bar** (live count + echo of the consequential values + Clear/Cancel/CTA-with-count). Batch
+result = **one row per submitted item styled like the module's list** with a Created/Skipped/error
+Status column and an honest zero heading. Feedback: success = green toast ALWAYS; error = red toast
++ persistent inline `role="alert"`; every known code mapped to plain English, unknown codes fall
+through raw. Import templates: exact headers + one sample row per accepted shape + a "Notes" second
+sheet generated from live config. Reference: `CommissionRateCreatePage.tsx`.
