@@ -48,15 +48,18 @@ describe('workbookConfirmLabel', () => {
 });
 
 describe('sheetSummary', () => {
-  it('renders the exact chip copy with a singular error', () => {
+  it('renders the exact chip copy with a singular error, showing pending when > 0', () => {
     expect(sheetSummary(sheet({ validRows: 3, pendingRows: 2, errorRows: 1 }))).toBe(
       '✓ 3 valid · ⧗ 2 pending · ✗ 1 error',
     );
   });
 
-  it('renders the exact chip copy for an all-zero (sheet absent from the workbook) sheet', () => {
+  it('omits the "pending" clause when 0 (surfaces like the scope workbook never produce pending rows)', () => {
     expect(sheetSummary(sheet({ validRows: 0, pendingRows: 0, errorRows: 0 }))).toBe(
-      '✓ 0 valid · ⧗ 0 pending · ✗ 0 errors',
+      '✓ 0 valid · ✗ 0 errors',
+    );
+    expect(sheetSummary(sheet({ validRows: 5, pendingRows: 0, errorRows: 2 }))).toBe(
+      '✓ 5 valid · ✗ 2 errors',
     );
   });
 });

@@ -68,10 +68,12 @@ export const userKycUnitsRepository = {
     );
   },
 
-  /** An ACTIVE verification unit by CODE (the workbook's Unit Code column) → id. */
+  /** A USABLE verification unit by CODE (the workbook's Unit Code column) → id. Matches the
+   *  interactive grant gate (ADR-0017 USABLE = active AND in effect) — a future-effective unit is
+   *  not grantable, same as `forUser().availableUnits` and every other USABLE query. */
   async unitIdByCode(code: string): Promise<number | undefined> {
     const rows = await query<{ id: number }>(
-      `SELECT id FROM verification_units WHERE upper(code) = upper($1) AND is_active`,
+      `SELECT id FROM verification_units WHERE upper(code) = upper($1) AND is_active AND effective_from <= now()`,
       [code],
     );
     return rows[0]?.id;

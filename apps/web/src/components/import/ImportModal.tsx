@@ -44,12 +44,23 @@ const TOO_LARGE_MSG = 'Too many rows for a direct import — split the file (bac
 /** Maps an upload failure to user copy. Shared by the single-resource and workbook modals — the two
  *  server error codes (413 too-large, empty-file) mean the same thing either way; only the generic
  *  fallback (wrong file type) differs, so it's the one caller-supplied bit. */
+/** A server `{ error, details:{ hint } }` body → the hint string, when present. */
+function errorHint(e: ApiError): string | undefined {
+  const details = (e.body as { details?: { hint?: unknown } } | undefined)?.details;
+  return typeof details?.hint === 'string' ? details.hint : undefined;
+}
+
 function importErrorMessage(e: unknown, invalidFileMsg: string): string {
-  return e instanceof ApiError && e.code === 'IMPORT_TOO_LARGE'
-    ? TOO_LARGE_MSG
-    : e instanceof ApiError && e.code === 'NO_IMPORT_FILE'
-      ? 'That file looks empty — choose a filled-in template.'
-      : invalidFileMsg;
+  if (e instanceof ApiError && e.code === 'IMPORT_TOO_LARGE') return TOO_LARGE_MSG;
+  if (e instanceof ApiError && e.code === 'NO_IMPORT_FILE')
+    return 'That file looks empty — choose a filled-in template.';
+  // Surface a server-supplied hint (e.g. UNKNOWN_SCOPE_SHEET tells the operator exactly which sheet
+  // headers a CSV must carry) instead of the generic wrong-file-type fallback.
+  if (e instanceof ApiError) {
+    const hint = errorHint(e);
+    if (hint) return hint;
+  }
+  return invalidFileMsg;
 }
 
 /** The dialog chrome (overlay, focus-trapped box, title/subtitle, error banner) shared by every
@@ -397,10 +408,12 @@ export function workbookConfirmEnabled(p: OnboardingPreviewResult): boolean {
   return p.sheets.some((s) => s.validRows + s.pendingRows > 0);
 }
 
-/** The per-sheet preview chip copy — singular/plural on the error count only (valid/pending read fine
- *  either way, kept dead simple per spec). */
+/** The per-sheet preview chip copy — singular/plural on the error count only. "Pending" is the
+ *  onboarding cross-sheet-projection concept; it's omitted when 0 so surfaces that never produce
+ *  pending rows (e.g. the scope workbook) don't show a meaningless "⧗ 0 pending". */
 export function sheetSummary(s: OnboardingSheetPreview): string {
-  return `✓ ${s.validRows} valid · ⧗ ${s.pendingRows} pending · ✗ ${s.errorRows} error${s.errorRows === 1 ? '' : 's'}`;
+  const pending = s.pendingRows > 0 ? ` · ⧗ ${s.pendingRows} pending` : '';
+  return `✓ ${s.validRows} valid${pending} · ✗ ${s.errorRows} error${s.errorRows === 1 ? '' : 's'}`;
 }
 
 /** Confirm-button copy: the total rows confirm will actually act on — valid + pending, summed across
