@@ -2,8 +2,8 @@ import type {
   BulkCommissionRateRow,
   CommissionRate,
   CommissionRateView,
+  CommissionTerritoryLocation,
   CreateCommissionRateInput,
-  Location,
   SortOrder,
 } from '@crm2/sdk';
 import { filterClauses, likeContains, type AppliedFilter } from '../../platform/pagination.js';
@@ -142,11 +142,12 @@ export const commissionRateRepository = {
 
   /** The (pincode, area) locations a field user is assigned — their territory (the location-picker
    *  source). Reuses the assignee-pool resolution: `user_scope_assignments.entity_id = locations.id`
-   *  for the PINCODE/AREA dims (a PINCODE grant is pre-expanded to one row per area at assign time). */
-  async coveredLocationsForUser(userId: string): Promise<Location[]> {
-    return query<Location>(
-      `SELECT DISTINCT l.id, l.pincode, l.area, l.city, l.state, l.country,
-              l.is_active, l.effective_from, l.version, l.created_by, l.updated_by, l.created_at, l.updated_at
+   *  for the PINCODE/AREA dims (a PINCODE grant is pre-expanded to one row per area at assign time).
+   *  Slim projection on purpose — the picker needs id/pincode/area/city/state; audit + OCC columns
+   *  (created_by/updated_by/version/…) never leave the server on this lookup (data minimization). */
+  async coveredLocationsForUser(userId: string): Promise<CommissionTerritoryLocation[]> {
+    return query<CommissionTerritoryLocation>(
+      `SELECT DISTINCT l.id, l.pincode, l.area, l.city, l.state
        FROM locations l
        JOIN user_scope_assignments usa
          ON usa.entity_id = l.id AND usa.dimension_code IN ('PINCODE', 'AREA') AND usa.is_active
@@ -154,6 +155,15 @@ export const commissionRateRepository = {
        ORDER BY l.pincode, l.area`,
       [userId],
     );
+  },
+
+  /** A rate-type catalog row by code — the bulk guard's category lookup (unknown code → undefined). */
+  async rateTypeByCode(code: string): Promise<{ id: number; category: string } | undefined> {
+    const rows = await query<{ id: number; category: string }>(
+      `SELECT id, category FROM rate_types WHERE code = UPPER($1)`,
+      [code],
+    );
+    return rows[0];
   },
 
   async create(input: CreateCommissionRateInput, userId: string): Promise<CommissionRate> {

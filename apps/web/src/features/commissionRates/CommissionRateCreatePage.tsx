@@ -1,15 +1,16 @@
 import { useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type {
-  Option,
-  UserOption,
-  VerificationUnitOption,
-  Location,
-  TatPolicyOption,
-  RateTypeOption,
-  CommissionRate,
-  BulkCommissionRateResult,
+import {
+  MAX_BULK_LOCATIONS,
+  type Option,
+  type UserOption,
+  type VerificationUnitOption,
+  type CommissionTerritoryLocation,
+  type TatPolicyOption,
+  type RateTypeOption,
+  type CommissionRate,
+  type BulkCommissionRateResult,
 } from '@crm2/sdk';
 import { api, ApiError } from '../../lib/sdk.js';
 import { toIsoDate } from '../../lib/format.js';
@@ -30,13 +31,25 @@ const QK = 'commission-rates';
 const LIST_PATH = '/admin/commission-rates';
 const USERS_ADMIN_PATH = '/admin/users';
 
+// UX: the create page's known 4xx codes in plain English (the shared friendlyError only maps the
+// overlap code). Unknown codes still fall through to the raw code — never silently swallowed.
+export const createFriendlyError = (code: string): string | null =>
+  friendlyError(code) ??
+  (code === 'VALIDATION'
+    ? `Too many locations or an invalid field — a save is capped at ${MAX_BULK_LOCATIONS} locations.`
+    : code === 'USER_HAS_NO_TERRITORY'
+      ? 'This user has no assigned pincodes/areas — assign territory in User Management first.'
+      : code === 'OFFICE_NOT_BULKABLE' || code === 'INVALID_RATE_TYPE'
+        ? 'Pick a rate type from the list — office (location-less) types save as a single rate.'
+        : null);
+
 interface PincodeGroup {
   pincode: string;
   city: string;
   areas: { id: number; area: string }[];
 }
 /** Fold the field user's flat territory (one Location per pincode/area) into pincode groups. */
-export function groupTerritory(locs: Location[]): PincodeGroup[] {
+export function groupTerritory(locs: CommissionTerritoryLocation[]): PincodeGroup[] {
   const byPc = new Map<string, PincodeGroup>();
   for (const l of locs) {
     let g = byPc.get(l.pincode);
@@ -114,7 +127,11 @@ export function CommissionRateCreatePage() {
   // 2026-07-10: the picker is scoped to the user's territory, not the full locations catalog).
   const territory = useQuery({
     queryKey: ['commission-territory', userId],
-    queryFn: () => api<Location[]>('GET', `${BASE}/lookups/territory?userId=${encodeURIComponent(userId)}`),
+    queryFn: () =>
+      api<CommissionTerritoryLocation[]>(
+        'GET',
+        `${BASE}/lookups/territory?userId=${encodeURIComponent(userId)}`,
+      ),
     enabled: !!userId,
   });
 
@@ -148,10 +165,22 @@ export function CommissionRateCreatePage() {
     setUserId(id);
     setSelected(new Set()); // territory changed → drop the old selection
   };
+  // Changing client/product re-scopes the CPV unit list (ADR-0074) — clear the unit so a stale,
+  // no-longer-offered unit can't be silently submitted (same Clear-fields pattern as changeUser).
+  const changeClient = (id: string) => {
+    setClientId(id);
+    setUnitId('');
+  };
+  const changeProduct = (id: string) => {
+    setProductId(id);
+    setUnitId('');
+  };
 
   const count = selected.size;
-  // ADR-0050: user + rate type + amount are required; FIELD needs ≥1 location, OFFICE is location-less.
-  const valid = !!userId && !!fieldRateType && amount !== '' && (isOffice || count > 0);
+  const overCap = !isOffice && count > MAX_BULK_LOCATIONS;
+  // ADR-0050: user + rate type + amount are required; FIELD needs ≥1 location (≤ the bulk cap),
+  // OFFICE is location-less.
+  const valid = !!userId && !!fieldRateType && amount !== '' && (isOffice || (count > 0 && !overCap));
 
   const shared = () => ({
     userId,
@@ -183,7 +212,7 @@ export function CommissionRateCreatePage() {
     onError: (e: unknown) =>
       setError(
         e instanceof ApiError
-          ? (friendlyError(e.code) ?? e.code)
+          ? (createFriendlyError(e.code) ?? e.code)
           : e instanceof Error
             ? e.message
             : 'Save failed',
@@ -199,7 +228,9 @@ export function CommissionRateCreatePage() {
     return (
       <div className="space-y-4">
         <div>
-          <h1 className="text-xl font-bold tracking-tight">Commission rates created</h1>
+          <h1 className="text-xl font-bold tracking-tight">
+            {result.createdCount > 0 ? 'Commission rates created' : 'No new rates created'}
+          </h1>
           <p className="text-sm text-muted-foreground">
             <strong className="tabular-nums text-foreground">{result.createdCount}</strong> created
             {result.existsCount > 0 && (
@@ -235,7 +266,13 @@ export function CommissionRateCreatePage() {
               {errored.map((r) => (
                 <li key={r.locationId} className="flex items-baseline justify-between gap-3">
                   <span className="tabular-nums">{locLabel.get(r.locationId) ?? r.locationId}</span>
-                  <span className="text-xs text-destructive">{r.error}</span>
+                  <span className="text-xs text-destructive">
+                    {r.error === 'NOT_IN_TERRITORY'
+                      ? 'not in this user’s territory'
+                      : r.error === 'INVALID_REFERENCE'
+                        ? 'invalid reference'
+                        : r.error}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -291,7 +328,7 @@ export function CommissionRateCreatePage() {
             </select>
           </Field>
           <Field label="Client" optional>
-            <select className="input" value={clientId} onChange={(e) => setClientId(e.target.value)}>
+            <select className="input" value={clientId} onChange={(e) => changeClient(e.target.value)}>
               <option value="">Universal (all clients)</option>
               {(clients.data ?? []).map((c) => (
                 <option key={c.id} value={String(c.id)}>
@@ -301,7 +338,7 @@ export function CommissionRateCreatePage() {
             </select>
           </Field>
           <Field label="Product" optional>
-            <select className="input" value={productId} onChange={(e) => setProductId(e.target.value)}>
+            <select className="input" value={productId} onChange={(e) => changeProduct(e.target.value)}>
               <option value="">Universal (all products)</option>
               {(products.data ?? []).map((p) => (
                 <option key={p.id} value={String(p.id)}>
@@ -423,6 +460,12 @@ export function CommissionRateCreatePage() {
             <div className="py-4">
               <HexagonLoader operation="Loading territory" />
             </div>
+          ) : territory.isError ? (
+            // A failed lookup must NOT read as "no territory" — that sends the admin off to
+            // re-assign territory that already exists.
+            <p className="text-sm text-destructive" role="alert">
+              Couldn’t load this user’s territory — check your connection and re-select the user to retry.
+            </p>
           ) : groups.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No territory assigned to this user — field (location-based) rates need one. Assign
@@ -449,7 +492,16 @@ export function CommissionRateCreatePage() {
                         {on}/{g.areas.length} areas
                       </span>
                       <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
-                        <input type="checkbox" checked={allOn} onChange={() => toggleGroup(g)} />
+                        <input
+                          type="checkbox"
+                          checked={allOn}
+                          aria-label={`Select all areas in ${g.pincode}`}
+                          // Partially-ticked group reads as mixed, not untouched (DataGrid pattern).
+                          ref={(el) => {
+                            if (el) el.indeterminate = on > 0 && !allOn;
+                          }}
+                          onChange={() => toggleGroup(g)}
+                        />
                         Select all
                       </label>
                     </div>
@@ -477,20 +529,43 @@ export function CommissionRateCreatePage() {
         </StepCard>
       )}
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
-
-      {/* Sticky summary bar — the live count + actions (mockup) */}
-      <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-border-strong bg-card px-4 py-3 shadow-md">
-        <p className="text-sm font-semibold">
-          <span className="text-lg tabular-nums">{isOffice ? 1 : count}</span> rate
-          {!isOffice && count !== 1 ? 's' : ''} will be created
+      {error && (
+        <p className="text-sm text-destructive" role="alert">
+          {error}
         </p>
-        {!isOffice && (
-          <p className="text-xs tabular-nums text-muted-foreground">
-            {pincodesSelected} pincode{pincodesSelected === 1 ? '' : 's'} · {count} area
-            {count === 1 ? '' : 's'} selected
+      )}
+
+      {/* Sticky summary bar — the live count + actions (mockup). Echoes WHO and HOW MUCH so the
+          money-determining fields are visible at the moment of commit even when Step 1 is scrolled
+          away (a wrong-amount bulk is N single revises to undo). */}
+      <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-border-strong bg-card px-4 py-3 shadow-md">
+        <div>
+          <p className="text-sm font-semibold">
+            <span className="text-lg tabular-nums">{isOffice ? 1 : count}</span> rate
+            {!isOffice && count !== 1 ? 's' : ''} will be created
           </p>
-        )}
+          {userId && fieldRateType && (
+            <p className="text-xs text-muted-foreground">
+              {selectedUserName} · {fieldRateType} ·{' '}
+              <span className="tabular-nums">₹{amount === '' ? '—' : amount}</span> ·{' '}
+              {clientId
+                ? ((clients.data ?? []).find((c) => String(c.id) === clientId)?.name ?? '…')
+                : 'Universal (all clients)'}
+            </p>
+          )}
+        </div>
+        {!isOffice &&
+          (overCap ? (
+            <p className="text-xs font-medium text-destructive" role="alert">
+              A save is capped at {MAX_BULK_LOCATIONS} locations — deselect{' '}
+              <span className="tabular-nums">{count - MAX_BULK_LOCATIONS}</span> or save in batches.
+            </p>
+          ) : (
+            <p className="text-xs tabular-nums text-muted-foreground">
+              {pincodesSelected} pincode{pincodesSelected === 1 ? '' : 's'} · {count} area
+              {count === 1 ? '' : 's'} selected
+            </p>
+          ))}
         <div className="ml-auto flex gap-2">
           {!isOffice && (
             <Button

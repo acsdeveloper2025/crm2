@@ -66,6 +66,8 @@ const positiveInt = z.number().int().positive();
 const money = z.number().nonnegative().max(9999999999.99);
 const isoDate = z.string().datetime();
 const uuid = z.string().uuid();
+// tat_hours (bounded well inside int4) or -1 = out-of-band; anything else would be an inert row.
+const tatBand = z.number().int().gte(-1).lte(100000);
 
 /**
  * ADR-0050: a commission tariff line. Three dimensions are REQUIRED-specific — `userId`, `locationId`
@@ -91,7 +93,7 @@ export const CreateCommissionRateSchema = z
      *  code); uppercased/trimmed. The FK + repo lookup enforce validity (ADR-0068). */
     fieldRateType: z.string().trim().min(1).max(40).transform(toUpper),
     /** completed-in TAT band: tat_hours, -1 (out of band), or null/absent ⇒ Universal (any band). */
-    tatBand: z.number().int().nullish(),
+    tatBand: tatBand.nullish(),
     amount: money,
     currency: z.string().length(3).default('INR'),
     /** when the rate takes effect; defaults to now server-side. */
@@ -112,8 +114,19 @@ export type CreateCommissionRateInput = z.input<typeof CreateCommissionRateSchem
 export type ReviseCommissionRateInput = z.input<typeof ReviseCommissionRateSchema>;
 
 // ── Multi-location bulk entry ──────────────────────────────────────────────────────────────────
-/** Max (pincode, area) locations per bulk save — mirrors the scope-assignment / CPV bulk caps. */
-const MAX_BULK_LOCATIONS = 500;
+/** Max (pincode, area) locations per bulk save — mirrors the scope-assignment / CPV bulk caps.
+ *  Exported so the create page can gate Save client-side instead of surfacing a raw zod 400. */
+export const MAX_BULK_LOCATIONS = 500;
+
+/** A territory picker row — the slim projection the commission location picker needs (deliberately
+ *  NOT the full Location: no audit/OCC columns leave the server on this lookup). */
+export interface CommissionTerritoryLocation {
+  id: number;
+  pincode: string;
+  area: string;
+  city: string;
+  state: string;
+}
 
 /**
  * Bulk commission-rate create: ONE field agent + ONE rate (the shared dims + amount) fanned across
@@ -128,7 +141,7 @@ export const BulkCreateCommissionRatesSchema = z.object({
   productId: positiveInt.nullish(),
   verificationUnitId: positiveInt.nullish(),
   fieldRateType: z.string().trim().min(1).max(40).transform(toUpper),
-  tatBand: z.number().int().nullish(),
+  tatBand: tatBand.nullish(),
   amount: money,
   currency: z.string().length(3).default('INR'),
   effectiveFrom: isoDate.optional(),

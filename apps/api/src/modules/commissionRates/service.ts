@@ -5,7 +5,7 @@ import {
   type BulkCommissionRateResult,
   type CommissionRate,
   type CommissionRateView,
-  type Location,
+  type CommissionTerritoryLocation,
   type Paginated,
 } from '@crm2/sdk';
 import { commissionRateRepository as repo } from './repository.js';
@@ -134,7 +134,7 @@ export const commissionRateService = {
 
   /** The field user's assigned (pincode, area) locations — the bulk/single location-picker source
    *  (multi-location bulk entry). Scoped read; gated masterdata.manage at the route. */
-  async territory(userId: string): Promise<Location[]> {
+  async territory(userId: string): Promise<CommissionTerritoryLocation[]> {
     if (!UUID_RE.test(userId)) throw AppError.badRequest('BAD_REQUEST', { param: 'userId' });
     return repo.coveredLocationsForUser(userId);
   },
@@ -198,15 +198,21 @@ export const commissionRateService = {
    *  (CREATED / EXISTS / ERROR). The picker is already scoped; the API re-checks (never trust the client). */
   async bulkCreate(input: unknown, actorId: string): Promise<BulkCommissionRateResult> {
     const v = BulkCreateCommissionRatesSchema.parse(input); // ZodError → 400
-    // Bulk is field/location-based only — OFFICE rates are location-less (use the single form).
-    if (v.fieldRateType === 'OFFICE') throw AppError.badRequest('OFFICE_NOT_BULKABLE');
+    // Bulk is field/location-based only, decided by the CATALOG (unknown codes would otherwise fan
+    // dead NULL-rate_type_id rows; an admin-defined OFFICE-category code is as location-less as the
+    // literal OFFICE — both belong on the single, location-less path).
+    const rateType = await repo.rateTypeByCode(v.fieldRateType);
+    if (!rateType) throw AppError.badRequest('INVALID_RATE_TYPE', { code: v.fieldRateType });
+    if (rateType.category === 'OFFICE') throw AppError.badRequest('OFFICE_NOT_BULKABLE');
     // ADR-0022: gate on the role ATTRIBUTE (territory), never the role NAME. Only a user with an
     // assigned pincode/area territory (i.e. a field agent) can hold location-based commission; a user
     // with none is ineligible — a non-field role, or an un-provisioned agent (assign territory first).
     const covered = await repo.coveredLocationsForUser(v.userId);
     const allowed = new Set(covered.map((l) => l.id));
     if (allowed.size === 0) throw AppError.badRequest('USER_HAS_NO_TERRITORY');
-    const locationIds = [...new Set(v.locationIds)]; // dedupe (picker may repeat)
+    // Dedupe (picker may repeat) + sort so two concurrent batches insert in the same order — a
+    // deterministic order can't deadlock against itself on the EXCLUDE index.
+    const locationIds = [...new Set(v.locationIds)].sort((a, b) => a - b);
     const results = await repo.bulkCreate(v, locationIds, allowed, actorId);
     return {
       results,

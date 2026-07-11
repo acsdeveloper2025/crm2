@@ -38,6 +38,7 @@ import type {
   BulkCreateCommissionRatesInput,
   CommissionRate,
   CommissionRateView,
+  CommissionTerritoryLocation,
   CreateCommissionRateInput,
   ReviseCommissionRateInput,
 } from './commissionRates.js';
@@ -351,7 +352,7 @@ export function createSdk(opts: SdkOptions) {
         req<CommissionRate>('POST', '/api/v2/commission-rates', input),
       /** The field user's assigned (pincode, area) locations — the bulk/single location-picker source. */
       territory: (userId: string) =>
-        req<Location[]>(
+        req<CommissionTerritoryLocation[]>(
           'GET',
           `/api/v2/commission-rates/lookups/territory?userId=${encodeURIComponent(userId)}`,
         ),

@@ -415,6 +415,25 @@ describe.skipIf(!RUN)('commission-rates API (ADR-0036)', () => {
       expect(byLoc[outside]).toMatchObject({ status: 'ERROR', error: 'NOT_IN_TERRITORY' });
     });
 
+    it('rejects an admin-defined OFFICE-category code and an unknown code — the guard is catalog-driven', async () => {
+      const userId = await newUser('blk_cat');
+      const loc = await seedLoc('400087', 'CAREA1');
+      await assignArea(userId, loc);
+      // An OFFICE-category type with a NON-'OFFICE' code is as location-less as the literal OFFICE.
+      const mk = await request(app)
+        .post('/api/v2/rate-types')
+        .set(SA)
+        .send({ code: 'KYC_DESK', name: 'KYC Desk', category: 'OFFICE' });
+      expect(mk.status).toBe(201);
+      const desk = await bulk({ userId, fieldRateType: 'KYC_DESK', amount: 150, locationIds: [loc] });
+      expect(desk.status).toBe(400);
+      expect(desk.body.error).toBe('OFFICE_NOT_BULKABLE');
+      // Unknown codes must 400, not fan dead NULL-rate_type_id rows reported CREATED.
+      const ghost = await bulk({ userId, fieldRateType: 'GHOST_TYPE', amount: 150, locationIds: [loc] });
+      expect(ghost.status).toBe(400);
+      expect(ghost.body.error).toBe('INVALID_RATE_TYPE');
+    });
+
     it('rejects an OFFICE rate type (400) and a user with no territory (400)', async () => {
       const fieldUser = await newUser('blk_field');
       const loc = await seedLoc('400085', 'OAREA1');
