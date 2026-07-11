@@ -633,6 +633,112 @@ describe.skipIf(!RUN)('commission-rates API (ADR-0036)', () => {
       expect(list.body.items[0]).toMatchObject({ fieldRateType: 'LOCAL1', amount: 77 });
     });
 
+    it('template headers + sample row match the import contract exactly (owner check 2026-07-11)', async () => {
+      const res = await request(app)
+        .get('/api/v2/commission-rates/import-template')
+        .set(SA)
+        .buffer(true)
+        .parse((r, cb) => {
+          const chunks: Buffer[] = [];
+          r.on('data', (c: Buffer) => chunks.push(c));
+          r.on('end', () => cb(null, Buffer.concat(chunks)));
+        });
+      expect(res.status).toBe(200);
+      const ExcelJS = (await import('exceljs')).default;
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(res.body as Buffer as unknown as Parameters<typeof wb.xlsx.load>[0]);
+      const ws = wb.worksheets[0]!;
+      const cell = (row: number, col: number) => {
+        const v = ws.getRow(row).getCell(col).value;
+        return v == null ? '' : String(v);
+      };
+      const headers = Array.from({ length: 11 }, (_, i) => cell(1, i + 1));
+      expect(headers).toEqual([
+        'Username',
+        'Rate Type',
+        'Client Code',
+        'Location Pincode',
+        'Area',
+        'Product Code',
+        'Unit Code',
+        'TAT Band',
+        'Amount',
+        'Currency',
+        'Effective From',
+      ]);
+      // The sample row admins copy from — every filled cell must be a plausible, parseable value.
+      const sample = Array.from({ length: 10 }, (_, i) => cell(2, i + 1));
+      expect(sample).toEqual([
+        'ravi_field',
+        'LOCAL',
+        'HDFC',
+        '400001',
+        'Fort',
+        'HOME_LOAN',
+        'RESI',
+        '24',
+        '50',
+        'INR',
+      ]);
+    });
+
+    it('confirm surfaces duplicates + the one-type rule as per-row errors with descriptive messages (result screen contract)', async () => {
+      await newUser('imp_rule');
+      // Two locations under one fresh pincode: L1 gets a LOCAL rate first; L2 stays free.
+      await seedId('locations', { pincode: '400098', area: 'IMPA1', city: 'Mumbai', state: 'MH' });
+      await seedId('locations', { pincode: '400098', area: 'IMPA2', city: 'Mumbai', state: 'MH' });
+      const rowAt = (rateType: string, area: string, amount: number): (string | number)[] => [
+        'imp_rule',
+        rateType,
+        impDims.clientCode,
+        '400098',
+        area,
+        impDims.productCode,
+        impDims.unitCode,
+        24,
+        amount,
+      ];
+      // Seed: LOCAL @ L1 via a first confirm (goes through the same guarded create).
+      const seed = await upload('confirm', await mkXlsx([rowAt('LOCAL', 'IMPA1', 70)]));
+      expect(seed.status).toBe(200);
+      expect(seed.body.successRows).toBe(1);
+
+      // The batch under test: exact duplicate (overlap 409) + different type at L1 (one-type rule)
+      // + a clean row at L2 — partial success, each failure a distinct row error.
+      const res = await upload(
+        'confirm',
+        await mkXlsx([
+          rowAt('LOCAL', 'IMPA1', 80), // duplicate combination → COMMISSION_RATE_EXISTS
+          rowAt('OGL', 'IMPA1', 90), // second type at L1 → HAS_OTHER_RATE_TYPE
+          rowAt('LOCAL', 'IMPA2', 100), // fresh location → succeeds
+        ]),
+      );
+      expect(res.status).toBe(200);
+      expect(res.body.successRows).toBe(1);
+      expect(res.body.failedRows).toBe(2);
+      const messages = (res.body.errors as { rowNumber: number; message: string }[]).map((e) => e.message);
+      expect(messages.some((m) => m.includes('already overlaps'))).toBe(true); // duplicate row
+      expect(messages.some((m) => m.includes('one location holds one rate type'))).toBe(true); // one-type row
+      // Only the clean row landed.
+      const list = await request(app).get('/api/v2/commission-rates?search=imp_rule').set(SA);
+      expect(list.body.totalCount).toBe(2); // the seeded LOCAL@L1 + the new LOCAL@L2
+    });
+
+    it('CSV import works through the same guarded path (engine sniffs the format)', async () => {
+      await newUser('imp_csv');
+      await seedId('locations', { pincode: '400097', area: 'CSVA1', city: 'Mumbai', state: 'MH' });
+      const csv = [
+        'Username,Rate Type,Client Code,Location Pincode,Area,Product Code,Unit Code,TAT Band,Amount',
+        `imp_csv,LOCAL,${impDims.clientCode},400097,CSVA1,${impDims.productCode},${impDims.unitCode},24,65`,
+      ].join('\n');
+      const res = await upload('confirm', Buffer.from(csv, 'utf8'));
+      expect(res.status).toBe(200);
+      expect(res.body.successRows).toBe(1);
+      const list = await request(app).get('/api/v2/commission-rates?search=imp_csv').set(SA);
+      expect(list.body.totalCount).toBe(1);
+      expect(list.body.items[0]).toMatchObject({ fieldRateType: 'LOCAL', amount: 65 });
+    });
+
     it('export carries comp data → gated masterdata.manage (SA ok), NOT data.export (TEAM_LEADER 403)', async () => {
       const userId = await newUser('exp_user');
       const dims = await seedDims('exp');
