@@ -78,6 +78,11 @@ Clone the CPV bulk triplet, adapted for report-as-EXISTS (not upsert).
   created); location outside territory → ERROR; non-field-agent → 400; OFFICE type → 400; counts
   correct; single wrapping transaction (partial success survives).
 
+> **AMENDED mid-build (owner 2026-07-10): ONE create entry.** Slices C+D merged — no separate
+> "Bulk add"; `/admin/commission-rates/new` (`CommissionRateCreatePage`) IS the multi-location
+> design (FIELD → territory tick-list → `/bulk`; OFFICE → location-less single POST). The record
+> page is revise-only. Shipped `f609430`.
+
 ### Slice C — Bulk-add web screen
 The mockup, built with real components. Reached from a **"Bulk add"** button on
 `CommissionRatesPage`. **No prominent "Bulk add" page title** (per owner) — match the record-page
