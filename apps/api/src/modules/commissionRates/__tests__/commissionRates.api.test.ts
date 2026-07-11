@@ -140,13 +140,15 @@ describe.skipIf(!RUN)('commission-rates API (ADR-0036)', () => {
       .send(fullRate(userId, dims, { fieldRateType: 'LOCAL', amount: 60 }));
     expect(dup.status).toBe(409);
     expect(dup.body.error).toBe('COMMISSION_RATE_EXISTS');
-    // a DIFFERENT field_rate_type (LOCAL vs OGL) for the same dimensions is allowed (ADR-0050 — a distinct
-    // tariff line: LOCAL and OGL can price differently).
+    // Owner rule (2026-07-11): one (user, location) holds ONE rate type — a DIFFERENT type at the
+    // same location is rejected (409), not added as a second tariff line. (Supersedes the earlier
+    // different-type-allowed behavior at the CREATE boundary; payout resolution is unchanged.)
     const other = await request(app)
       .post('/api/v2/commission-rates')
       .set(SA)
       .send(fullRate(userId, dims, { fieldRateType: 'OGL', amount: 100 }));
-    expect(other.status).toBe(201);
+    expect(other.status).toBe(409);
+    expect(other.body.error).toBe('HAS_OTHER_RATE_TYPE');
   });
 
   it('revise end-dates the old row and creates a new version; stale version → 409', async () => {
@@ -413,6 +415,31 @@ describe.skipIf(!RUN)('commission-rates API (ADR-0036)', () => {
         ]),
       );
       expect(byLoc[outside]).toMatchObject({ status: 'ERROR', error: 'NOT_IN_TERRITORY' });
+    });
+
+    it('one location = one rate type (owner 2026-07-11): a location holding another type errors per-row, the rest create', async () => {
+      const userId = await newUser('blk_1type');
+      const l1 = await seedLoc('400088', 'RAREA1');
+      const l2 = await seedLoc('400088', 'RAREA2');
+      await assignArea(userId, l1);
+      await assignArea(userId, l2);
+      // l1 already has LOCAL — bulk OGL over [l1, l2] must error l1 and create l2.
+      const pre = await request(app)
+        .post('/api/v2/commission-rates')
+        .set(SA)
+        .send({ userId, fieldRateType: 'LOCAL', locationId: l1, amount: 140 });
+      expect(pre.status).toBe(201);
+      const res = await bulk({ userId, fieldRateType: 'OGL', amount: 150, locationIds: [l1, l2] });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ createdCount: 1, existsCount: 0, errorCount: 1 });
+      const byLoc = Object.fromEntries(
+        res.body.results.map((r: { locationId: number; status: string; error: string | null }) => [
+          r.locationId,
+          r,
+        ]),
+      );
+      expect(byLoc[l1]).toMatchObject({ status: 'ERROR', error: 'HAS_OTHER_RATE_TYPE' });
+      expect(byLoc[l2]).toMatchObject({ status: 'CREATED' });
     });
 
     it('rejects an admin-defined OFFICE-category code and an unknown code — the guard is catalog-driven', async () => {

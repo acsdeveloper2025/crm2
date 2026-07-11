@@ -188,8 +188,26 @@ export const commissionRateService = {
     );
   },
 
-  create(input: unknown, userId: string): Promise<CommissionRate> {
+  async create(input: unknown, userId: string): Promise<CommissionRate> {
     const validated = CreateCommissionRateSchema.parse(input); // throws ZodError → 400
+    // Owner rule (2026-07-11): one (user, location) holds ONE rate type — a located rate whose
+    // location already carries a different type is rejected, not added as a second tariff line.
+    // Service-level guard on NEW saves (import routes here too); payout resolution unchanged.
+    if (validated.locationId != null) {
+      const rateType = await repo.rateTypeByCode(validated.fieldRateType);
+      if (rateType) {
+        const [conflict] = await repo.otherTypeAtLocations(
+          validated.userId,
+          [validated.locationId],
+          rateType.id,
+        );
+        if (conflict)
+          throw AppError.conflict(
+            'HAS_OTHER_RATE_TYPE',
+            `location already has a ${conflict.code} rate for this user — one location holds one rate type; revise or deactivate the existing rate first`,
+          );
+      }
+    }
     return repo.create(validated, userId);
   },
 
@@ -213,7 +231,12 @@ export const commissionRateService = {
     // Dedupe (picker may repeat) + sort so two concurrent batches insert in the same order — a
     // deterministic order can't deadlock against itself on the EXCLUDE index.
     const locationIds = [...new Set(v.locationIds)].sort((a, b) => a - b);
-    const results = await repo.bulkCreate(v, locationIds, allowed, actorId);
+    // Owner rule (2026-07-11): one (user, location) = one rate type — locations already holding a
+    // DIFFERENT type become per-row HAS_OTHER_RATE_TYPE errors, never a second tariff line.
+    const otherType = new Set(
+      (await repo.otherTypeAtLocations(v.userId, locationIds, rateType.id)).map((r) => r.locationId),
+    );
+    const results = await repo.bulkCreate(v, locationIds, allowed, otherType, actorId);
     return {
       results,
       createdCount: results.filter((r) => r.status === 'CREATED').length,

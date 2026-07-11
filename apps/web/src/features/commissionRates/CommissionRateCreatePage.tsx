@@ -44,7 +44,9 @@ export const createFriendlyError = (code: string): string | null =>
       ? 'This user has no assigned pincodes/areas — assign territory in User Management first.'
       : code === 'OFFICE_NOT_BULKABLE' || code === 'INVALID_RATE_TYPE'
         ? 'Pick a rate type from the list — office (location-less) types save as a single rate.'
-        : null);
+        : code === 'HAS_OTHER_RATE_TYPE'
+          ? 'This location already has a different rate type for this user — one location holds one rate type. Revise or deactivate the existing rate first.'
+          : null);
 
 /** One existing-rate hint on an area chip: which rate type at what amount. */
 export interface ExistingRateHint {
@@ -67,6 +69,21 @@ export function existingByLocation(
 /** Compact "LOCAL ₹50 · OGL ₹45" label for an area chip's existing rates. */
 export const existingRateLabel = (entries: ExistingRateHint[]): string =>
   entries.map((e) => `${e.fieldRateType ?? '—'} ₹${e.amount}`).join(' · ');
+
+/** Owner rule (2026-07-11): one (user, location) holds ONE rate type. Locations whose existing
+ *  rates carry a DIFFERENT type than the chosen one can't be ticked (the server rejects them). */
+export function blockedLocations(
+  existing: Map<number | null, ExistingRateHint[]>,
+  chosenType: string,
+): Set<number> {
+  const out = new Set<number>();
+  if (!chosenType) return out;
+  for (const [locationId, hints] of existing) {
+    if (locationId !== null && hints.some((h) => h.fieldRateType && h.fieldRateType !== chosenType))
+      out.add(locationId);
+  }
+  return out;
+}
 
 interface PincodeGroup {
   pincode: string;
@@ -176,6 +193,11 @@ export function CommissionRateCreatePage() {
   const rateTypeGroups = groupRateTypeOptions(rateTypes.data ?? []);
   const selectedUserName = (users.data ?? []).find((u) => u.id === userId)?.name ?? '';
   const existingByLoc = useMemo(() => existingByLocation(existing.data ?? []), [existing.data]);
+  // One location = one rate type (owner 2026-07-11): areas holding a DIFFERENT type are untickable.
+  const blocked = useMemo(
+    () => blockedLocations(existingByLoc, fieldRateType),
+    [existingByLoc, fieldRateType],
+  );
   const groups = useMemo(() => groupTerritory(territory.data ?? []), [territory.data]);
   const locLabel = useMemo(
     () => new Map((territory.data ?? []).map((l) => [l.id, `${l.pincode} ${l.area}`])),
@@ -192,8 +214,10 @@ export function CommissionRateCreatePage() {
   const toggleGroup = (g: PincodeGroup) =>
     setSelected((s) => {
       const n = new Set(s);
-      const all = g.areas.every((a) => n.has(a.id));
-      for (const a of g.areas) {
+      // Select-all only ever toggles the tickable areas — blocked ones (different rate type) stay out.
+      const selectable = g.areas.filter((a) => !blocked.has(a.id));
+      const all = selectable.length > 0 && selectable.every((a) => n.has(a.id));
+      for (const a of selectable) {
         if (all) n.delete(a.id);
         else n.add(a.id);
       }
@@ -349,9 +373,11 @@ export function CommissionRateCreatePage() {
                       <span className="text-xs font-semibold uppercase text-destructive">
                         {r.error === 'NOT_IN_TERRITORY'
                           ? 'Not in territory'
-                          : r.error === 'INVALID_REFERENCE'
-                            ? 'Invalid reference'
-                            : r.error}
+                          : r.error === 'HAS_OTHER_RATE_TYPE'
+                            ? 'Has another rate type'
+                            : r.error === 'INVALID_REFERENCE'
+                              ? 'Invalid reference'
+                              : r.error}
                       </span>
                     )}
                   </td>
@@ -451,11 +477,11 @@ export function CommissionRateCreatePage() {
               value={fieldRateType}
               disabled={rateTypes.isLoading}
               onChange={(e) => {
-                const code = e.target.value;
-                setRateType(code);
-                // Switching to OFFICE makes the location list irrelevant — clear it so a stale
-                // selection can't silently survive a switch back to FIELD (UX-9 Clear-fields pattern).
-                if (isOfficeRateType(code, rateTypes.data ?? [])) setSelected(new Set());
+                setRateType(e.target.value);
+                // The type decides which areas are tickable (one location = one rate type) and
+                // OFFICE has no locations at all — clear the selection on EVERY type change so a
+                // now-blocked area can't ride along in a stale selection (UX-9 Clear-fields pattern).
+                setSelected(new Set());
               }}
             >
               <option value="">{rateTypes.isLoading ? 'Loading rate types…' : 'Select a rate type…'}</option>
@@ -567,7 +593,8 @@ export function CommissionRateCreatePage() {
             <div className="space-y-3">
               {groups.map((g) => {
                 const on = g.areas.filter((a) => selected.has(a.id)).length;
-                const allOn = on === g.areas.length && on > 0;
+                const selectable = g.areas.filter((a) => !blocked.has(a.id));
+                const allOn = selectable.length > 0 && on === selectable.length;
                 return (
                   <div
                     key={g.pincode}
@@ -598,23 +625,30 @@ export function CommissionRateCreatePage() {
                         // What this user already earns here — visible BEFORE saving a duplicate.
                         const have = existingByLoc.get(a.id) ?? [];
                         const clash = !!fieldRateType && have.some((h) => h.fieldRateType === fieldRateType);
+                        // One location = one rate type: a different existing type makes the area untickable.
+                        const isBlocked = blocked.has(a.id);
                         return (
                           <label
                             key={a.id}
                             title={
-                              clash
-                                ? `Already has a ${fieldRateType} rate here — saving will skip it (revise the existing rate to change the amount)`
-                                : undefined
+                              isBlocked
+                                ? `Has a different rate type here (${existingRateLabel(have)}) — one location holds one rate type; revise or deactivate the existing rate first`
+                                : clash
+                                  ? `Already has a ${fieldRateType} rate here — saving will skip it (revise the existing rate to change the amount)`
+                                  : undefined
                             }
-                            className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs has-[:checked]:border-primary has-[:checked]:bg-primary-muted ${
-                              clash
-                                ? 'border-st-under-review bg-st-under-review-bg'
-                                : 'border-border-strong bg-card'
+                            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs has-[:checked]:border-primary has-[:checked]:bg-primary-muted ${
+                              isBlocked
+                                ? 'cursor-not-allowed border-st-rejected bg-st-rejected-bg opacity-80'
+                                : clash
+                                  ? 'cursor-pointer border-st-under-review bg-st-under-review-bg'
+                                  : 'cursor-pointer border-border-strong bg-card'
                             }`}
                           >
                             <input
                               type="checkbox"
                               className="h-3.5 w-3.5"
+                              disabled={isBlocked}
                               checked={selected.has(a.id)}
                               onChange={() => toggleArea(a.id)}
                             />
@@ -622,7 +656,11 @@ export function CommissionRateCreatePage() {
                             {have.length > 0 && (
                               <span
                                 className={`text-[10px] tabular-nums ${
-                                  clash ? 'font-semibold text-st-under-review' : 'text-muted-foreground'
+                                  isBlocked
+                                    ? 'font-semibold text-st-rejected'
+                                    : clash
+                                      ? 'font-semibold text-st-under-review'
+                                      : 'text-muted-foreground'
                                 }`}
                               >
                                 {existingRateLabel(have)}

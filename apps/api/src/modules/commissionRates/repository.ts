@@ -166,6 +166,26 @@ export const commissionRateRepository = {
     return rows[0];
   },
 
+  /** Owner rule (2026-07-11): one (user, location) holds ONE rate type. Returns the locations among
+   *  `locationIds` that already carry a CURRENT active rate of a DIFFERENT type for this user (with
+   *  the existing type's code, for the error message). Service-level guard on new saves only —
+   *  payout resolution (COMMISSION_LATERAL) is untouched and legacy multi-type rows still resolve. */
+  async otherTypeAtLocations(
+    userId: string,
+    locationIds: number[],
+    rateTypeId: number,
+  ): Promise<{ locationId: number; code: string }[]> {
+    return query<{ locationId: number; code: string }>(
+      `SELECT DISTINCT cr.location_id AS location_id, rt.code
+       FROM commission_rates cr
+       JOIN rate_types rt ON rt.id = cr.rate_type_id
+       WHERE cr.user_id = $1 AND cr.location_id = ANY($2::int[]) AND cr.is_active
+         AND (cr.effective_to IS NULL OR cr.effective_to > now())
+         AND cr.rate_type_id <> $3`,
+      [userId, locationIds, rateTypeId],
+    );
+  },
+
   async create(input: CreateCommissionRateInput, userId: string): Promise<CommissionRate> {
     try {
       const [row] = await query<CommissionRate>(
@@ -214,6 +234,7 @@ export const commissionRateRepository = {
     },
     locationIds: number[],
     allowed: Set<number>,
+    otherType: Set<number>,
     actorId: string,
   ): Promise<BulkCommissionRateRow[]> {
     return withTransaction(async (q) => {
@@ -221,6 +242,12 @@ export const commissionRateRepository = {
       for (const [i, locationId] of locationIds.entries()) {
         if (!allowed.has(locationId)) {
           out.push({ locationId, status: 'ERROR', rateId: null, error: 'NOT_IN_TERRITORY' });
+          continue;
+        }
+        // Owner rule 2026-07-11: one (user, location) = one rate type — a location that already
+        // holds a different type is a per-row error, never a second tariff line.
+        if (otherType.has(locationId)) {
+          out.push({ locationId, status: 'ERROR', rateId: null, error: 'HAS_OTHER_RATE_TYPE' });
           continue;
         }
         const sp = `sp_cr_bulk_${i}`;

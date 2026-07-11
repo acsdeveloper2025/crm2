@@ -5,6 +5,7 @@ import {
   createFriendlyError,
   existingByLocation,
   existingRateLabel,
+  blockedLocations,
 } from './CommissionRateCreatePage.js';
 
 const loc = (
@@ -86,6 +87,36 @@ describe('existingByLocation / existingRateLabel', () => {
       ]),
     ).toBe('LOCAL ₹50 · OGL ₹45');
     expect(existingRateLabel([{ fieldRateType: null, amount: 10 }])).toBe('— ₹10');
+  });
+});
+
+/**
+ * Owner rule (2026-07-11): one (user, pincode, area) holds exactly ONE rate type. An area whose
+ * existing rates carry a DIFFERENT type than the chosen one is untickable (the server rejects it
+ * with HAS_OTHER_RATE_TYPE); the same type is fine (it skips per the overlap key, never errors).
+ */
+describe('blockedLocations (one location = one rate type)', () => {
+  const map = existingByLocation([
+    { locationId: 7, fieldRateType: 'LOCAL', amount: 50 },
+    { locationId: 9, fieldRateType: 'OGL', amount: 45 },
+    { locationId: null, fieldRateType: 'OFFICE', amount: 90 },
+    { locationId: 11, fieldRateType: null, amount: 5 }, // legacy typeless row — never blocks
+  ]);
+
+  it('blocks locations holding a DIFFERENT type; same type stays tickable', () => {
+    const blocked = blockedLocations(map, 'LOCAL');
+    expect(blocked.has(9)).toBe(true); // has OGL — LOCAL not addable
+    expect(blocked.has(7)).toBe(false); // has LOCAL — same type (skip path, not error)
+    expect(blocked.has(11)).toBe(false); // typeless legacy row never blocks
+  });
+
+  it('location-less OFFICE rows (null key) never block area chips', () => {
+    expect(blockedLocations(map, 'LOCAL').has(0)).toBe(false);
+    expect([...blockedLocations(map, 'LOCAL')]).not.toContain(null);
+  });
+
+  it('no chosen type → nothing blocked yet', () => {
+    expect(blockedLocations(map, '').size).toBe(0);
   });
 });
 
