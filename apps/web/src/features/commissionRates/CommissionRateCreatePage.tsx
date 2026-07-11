@@ -10,7 +10,9 @@ import {
   type TatPolicyOption,
   type RateTypeOption,
   type CommissionRate,
+  type CommissionRateView,
   type BulkCommissionRateResult,
+  type Paginated,
 } from '@crm2/sdk';
 import { toast } from 'sonner';
 import { api, ApiError } from '../../lib/sdk.js';
@@ -43,6 +45,28 @@ export const createFriendlyError = (code: string): string | null =>
       : code === 'OFFICE_NOT_BULKABLE' || code === 'INVALID_RATE_TYPE'
         ? 'Pick a rate type from the list — office (location-less) types save as a single rate.'
         : null);
+
+/** One existing-rate hint on an area chip: which rate type at what amount. */
+export interface ExistingRateHint {
+  fieldRateType: string | null;
+  amount: number;
+}
+/** Fold the user's existing ACTIVE rates into locationId → hints (null key = location-less OFFICE
+ *  rows), so the picker can show what's already priced before the admin saves a duplicate. */
+export function existingByLocation(
+  items: Pick<CommissionRateView, 'locationId' | 'fieldRateType' | 'amount'>[],
+): Map<number | null, ExistingRateHint[]> {
+  const map = new Map<number | null, ExistingRateHint[]>();
+  for (const r of items) {
+    const list = map.get(r.locationId) ?? [];
+    list.push({ fieldRateType: r.fieldRateType, amount: r.amount });
+    map.set(r.locationId, list);
+  }
+  return map;
+}
+/** Compact "LOCAL ₹50 · OGL ₹45" label for an area chip's existing rates. */
+export const existingRateLabel = (entries: ExistingRateHint[]): string =>
+  entries.map((e) => `${e.fieldRateType ?? '—'} ₹${e.amount}`).join(' · ');
 
 interface PincodeGroup {
   pincode: string;
@@ -136,9 +160,22 @@ export function CommissionRateCreatePage() {
     enabled: !!userId,
   });
 
+  // The user's existing ACTIVE rates — surfaced on the area chips so the admin sees which rate
+  // type + amount a location already has BEFORE saving a duplicate (owner 2026-07-11). 500 = the
+  // server page cap; a user beyond it still saves fine — the server skip-check is authoritative.
+  const existing = useQuery({
+    queryKey: ['commission-existing', userId],
+    queryFn: () =>
+      api<Paginated<CommissionRateView>>('GET', `${BASE}?userId=${userId}&active=true&limit=500`).then(
+        (r) => r.items,
+      ),
+    enabled: !!userId,
+  });
+
   const isOffice = isOfficeRateType(fieldRateType, rateTypes.data ?? []);
   const rateTypeGroups = groupRateTypeOptions(rateTypes.data ?? []);
   const selectedUserName = (users.data ?? []).find((u) => u.id === userId)?.name ?? '';
+  const existingByLoc = useMemo(() => existingByLocation(existing.data ?? []), [existing.data]);
   const groups = useMemo(() => groupTerritory(territory.data ?? []), [territory.data]);
   const locLabel = useMemo(
     () => new Map((territory.data ?? []).map((l) => [l.id, `${l.pincode} ${l.area}`])),
@@ -207,6 +244,7 @@ export function CommissionRateCreatePage() {
     },
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: [QK] });
+      qc.invalidateQueries({ queryKey: ['commission-existing'] }); // refresh the area-chip hints
       if (r) {
         // FIELD bulk: the result panel is the primary confirmation; the toast is the at-a-glance
         // recap (created / skipped) since the list sorts by user, not recency.
@@ -236,17 +274,28 @@ export function CommissionRateCreatePage() {
 
   if (!has('masterdata.manage')) return <Navigate to={LIST_PATH} replace />;
 
-  // ── Result summary (created / skipped / errored) ──────────────────────────────────────────────
+  // ── Result summary — one row per submitted location, styled like the Commission Rates list
+  //    (owner 2026-07-11: show the created rates as rows, not a blank panel) ─────────────────────
   if (result) {
-    const skipped = result.results.filter((r) => r.status === 'EXISTS');
-    const errored = result.results.filter((r) => r.status === 'ERROR');
+    const clientName = clientId
+      ? ((clients.data ?? []).find((c) => String(c.id) === clientId)?.name ?? '…')
+      : 'Universal';
+    const productName = productId
+      ? ((products.data ?? []).find((p) => String(p.id) === productId)?.name ?? '…')
+      : 'Any';
+    const unitName = unitId ? ((units.data ?? []).find((u) => String(u.id) === unitId)?.name ?? '…') : 'Any';
+    const tatLabel = tatBand === '' ? 'Any' : tatBand === '-1' ? 'Out of band' : `${tatBand}h`;
+    const rows = [...result.results].sort((a, b) =>
+      (locLabel.get(a.locationId) ?? '').localeCompare(locLabel.get(b.locationId) ?? ''),
+    );
     return (
-      <div className="space-y-4">
+      <div className="max-w-4xl space-y-4">
         <div>
           <h1 className="text-xl font-bold tracking-tight">
             {result.createdCount > 0 ? 'Commission rates created' : 'No new rates created'}
           </h1>
           <p className="text-sm text-muted-foreground">
+            {selectedUserName} —{' '}
             <strong className="tabular-nums text-foreground">{result.createdCount}</strong> created
             {result.existsCount > 0 && (
               <>
@@ -263,35 +312,59 @@ export function CommissionRateCreatePage() {
             )}
           </p>
         </div>
-        {(skipped.length > 0 || errored.length > 0) && (
-          <div className="max-w-md space-y-2 rounded-lg border border-border bg-card p-4 text-sm shadow-sm">
-            {skipped.length > 0 && (
-              <p className="text-muted-foreground">
-                Skipped rows already had an active rate for this combination — they kept their existing amount
-                and weren’t touched. Revise them one at a time on the list.
-              </p>
-            )}
-            <ul className="space-y-1">
-              {skipped.map((r) => (
-                <li key={r.locationId} className="flex items-baseline justify-between gap-3">
-                  <span className="tabular-nums">{locLabel.get(r.locationId) ?? r.locationId}</span>
-                  <span className="text-xs text-muted-foreground">already exists</span>
-                </li>
+        <div className="overflow-x-auto rounded-lg border border-border bg-card shadow-sm">
+          <table className="w-full border-collapse whitespace-nowrap text-sm">
+            <thead>
+              <tr className="border-b border-border bg-surface-muted text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <th className="px-3 py-2">Location</th>
+                <th className="px-3 py-2">Rate Type</th>
+                <th className="px-3 py-2">Client</th>
+                <th className="px-3 py-2">Product</th>
+                <th className="px-3 py-2">Unit</th>
+                <th className="px-3 py-2">TAT Band</th>
+                <th className="px-3 py-2 text-right">Amount</th>
+                <th className="px-3 py-2">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.locationId} className="border-b border-border last:border-b-0">
+                  <td className="px-3 py-2 tabular-nums">{locLabel.get(r.locationId) ?? r.locationId}</td>
+                  <td className="px-3 py-2 text-xs uppercase">{fieldRateType}</td>
+                  <td className="px-3 py-2">{clientName}</td>
+                  <td className="px-3 py-2">{productName}</td>
+                  <td className="px-3 py-2">{unitName}</td>
+                  <td className="px-3 py-2">{tatLabel}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {r.status === 'CREATED' ? `₹${amount}` : '—'}
+                  </td>
+                  <td className="px-3 py-2">
+                    {r.status === 'CREATED' ? (
+                      <span className="text-xs font-semibold uppercase text-st-approved">Created</span>
+                    ) : r.status === 'EXISTS' ? (
+                      <span className="text-xs font-semibold uppercase text-st-under-review">
+                        Skipped — already exists
+                      </span>
+                    ) : (
+                      <span className="text-xs font-semibold uppercase text-destructive">
+                        {r.error === 'NOT_IN_TERRITORY'
+                          ? 'Not in territory'
+                          : r.error === 'INVALID_REFERENCE'
+                            ? 'Invalid reference'
+                            : r.error}
+                      </span>
+                    )}
+                  </td>
+                </tr>
               ))}
-              {errored.map((r) => (
-                <li key={r.locationId} className="flex items-baseline justify-between gap-3">
-                  <span className="tabular-nums">{locLabel.get(r.locationId) ?? r.locationId}</span>
-                  <span className="text-xs text-destructive">
-                    {r.error === 'NOT_IN_TERRITORY'
-                      ? 'not in this user’s territory'
-                      : r.error === 'INVALID_REFERENCE'
-                        ? 'invalid reference'
-                        : r.error}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
+            </tbody>
+          </table>
+        </div>
+        {result.existsCount > 0 && (
+          <p className="text-xs text-muted-foreground">
+            Skipped rows already had an active rate for this combination — they kept their existing amount and
+            weren’t touched. Change one with Revise on the list.
+          </p>
         )}
         <div className="flex gap-2">
           <Button
@@ -521,20 +594,43 @@ export function CommissionRateCreatePage() {
                       </label>
                     </div>
                     <div className="flex flex-wrap gap-2 p-3">
-                      {g.areas.map((a) => (
-                        <label
-                          key={a.id}
-                          className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border-strong bg-card px-3 py-1.5 text-xs has-[:checked]:border-primary has-[:checked]:bg-primary-muted"
-                        >
-                          <input
-                            type="checkbox"
-                            className="h-3.5 w-3.5"
-                            checked={selected.has(a.id)}
-                            onChange={() => toggleArea(a.id)}
-                          />
-                          {a.area}
-                        </label>
-                      ))}
+                      {g.areas.map((a) => {
+                        // What this user already earns here — visible BEFORE saving a duplicate.
+                        const have = existingByLoc.get(a.id) ?? [];
+                        const clash = !!fieldRateType && have.some((h) => h.fieldRateType === fieldRateType);
+                        return (
+                          <label
+                            key={a.id}
+                            title={
+                              clash
+                                ? `Already has a ${fieldRateType} rate here — saving will skip it (revise the existing rate to change the amount)`
+                                : undefined
+                            }
+                            className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs has-[:checked]:border-primary has-[:checked]:bg-primary-muted ${
+                              clash
+                                ? 'border-st-under-review bg-st-under-review-bg'
+                                : 'border-border-strong bg-card'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              className="h-3.5 w-3.5"
+                              checked={selected.has(a.id)}
+                              onChange={() => toggleArea(a.id)}
+                            />
+                            {a.area}
+                            {have.length > 0 && (
+                              <span
+                                className={`text-[10px] tabular-nums ${
+                                  clash ? 'font-semibold text-st-under-review' : 'text-muted-foreground'
+                                }`}
+                              >
+                                {existingRateLabel(have)}
+                              </span>
+                            )}
+                          </label>
+                        );
+                      })}
                     </div>
                   </div>
                 );
@@ -543,6 +639,28 @@ export function CommissionRateCreatePage() {
           )}
         </StepCard>
       )}
+
+      {/* OFFICE: surface the user's existing location-less rates so a duplicate is visible before Save */}
+      {isOffice &&
+        !!userId &&
+        (() => {
+          const office = (existing.data ?? []).filter((r) => r.locationId === null);
+          if (office.length === 0) return null;
+          return (
+            <div className="rounded-lg border border-st-under-review bg-st-under-review-bg px-4 py-3 text-xs text-st-under-review">
+              <b className="font-semibold">{selectedUserName} already has office rates:</b>{' '}
+              {office
+                .map(
+                  (r) =>
+                    `${r.fieldRateType ?? '—'} ₹${r.amount} (${r.clientName ?? 'Universal'}${
+                      r.productName ? ` · ${r.productName}` : ''
+                    })`,
+                )
+                .join(' · ')}{' '}
+              — an identical combination will be rejected; use Revise on the list to change an amount.
+            </div>
+          );
+        })()}
 
       {error && (
         <p className="text-sm text-destructive" role="alert">
