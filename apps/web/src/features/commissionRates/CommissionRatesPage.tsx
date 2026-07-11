@@ -22,6 +22,7 @@ import { SearchableSelect, type Opt } from '../../components/ui/SearchableSelect
 import { toast } from 'sonner';
 import { withClientFilter, newRecordHref, type EmbeddedPageProps } from '../clientSetup/index.js';
 import { commissionEligibleUsers } from './eligibleUsers.js';
+import { createFriendlyError } from './CommissionRateCreatePage.js';
 
 const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
@@ -67,7 +68,7 @@ export function CommissionRatesPage({ clientId: controlledClientId }: EmbeddedPa
         isStale(e)
           ? 'This rate changed — reload and retry.'
           : e instanceof ApiError
-            ? e.code
+            ? (createFriendlyError(e.code) ?? e.code) // e.g. reactivating into a location that now holds another type
             : 'Update failed',
       ),
   });

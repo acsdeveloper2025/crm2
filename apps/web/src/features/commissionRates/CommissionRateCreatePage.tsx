@@ -634,7 +634,7 @@ export function CommissionRateCreatePage() {
                               isBlocked
                                 ? `Has a different rate type here (${existingRateLabel(have)}) — one location holds one rate type; revise or deactivate the existing rate first`
                                 : clash
-                                  ? `Already has a ${fieldRateType} rate here — saving will skip it (revise the existing rate to change the amount)`
+                                  ? `Already has a ${fieldRateType} rate here — an identical combination will be skipped (revise the existing rate to change its amount)`
                                   : undefined
                             }
                             className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs has-[:checked]:border-primary has-[:checked]:bg-primary-muted ${

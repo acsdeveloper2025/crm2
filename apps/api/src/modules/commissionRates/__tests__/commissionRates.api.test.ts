@@ -417,6 +417,35 @@ describe.skipIf(!RUN)('commission-rates API (ADR-0036)', () => {
       expect(byLoc[outside]).toMatchObject({ status: 'ERROR', error: 'NOT_IN_TERRITORY' });
     });
 
+    it('reactivation runs the one-type guard: Deactivate LOCAL → add OGL → Activate LOCAL → 409', async () => {
+      const userId = await newUser('blk_react');
+      const loc = await seedLoc('400089', 'XAREA1');
+      await assignArea(userId, loc);
+      const local = await request(app)
+        .post('/api/v2/commission-rates')
+        .set(SA)
+        .send({ userId, fieldRateType: 'LOCAL', locationId: loc, amount: 100 });
+      expect(local.status).toBe(201);
+      const off = await request(app)
+        .post(`/api/v2/commission-rates/${local.body.id}/deactivate`)
+        .set(SA)
+        .send({ version: 1 });
+      expect(off.status).toBe(200);
+      // LOCAL is inactive → OGL may take over the location…
+      const ogl = await request(app)
+        .post('/api/v2/commission-rates')
+        .set(SA)
+        .send({ userId, fieldRateType: 'OGL', locationId: loc, amount: 90 });
+      expect(ogl.status).toBe(201);
+      // …so resurrecting the old LOCAL row must be blocked (else two active types coexist).
+      const back = await request(app)
+        .post(`/api/v2/commission-rates/${local.body.id}/activate`)
+        .set(SA)
+        .send({ version: 2 });
+      expect(back.status).toBe(409);
+      expect(back.body.error).toBe('HAS_OTHER_RATE_TYPE');
+    });
+
     it('one location = one rate type (owner 2026-07-11): a location holding another type errors per-row, the rest create', async () => {
       const userId = await newUser('blk_1type');
       const l1 = await seedLoc('400088', 'RAREA1');

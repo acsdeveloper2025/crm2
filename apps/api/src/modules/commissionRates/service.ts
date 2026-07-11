@@ -251,6 +251,23 @@ export const commissionRateService = {
     return repo.revise(id, validated.amount, validated.effectiveFrom ?? null, userId, expectedVersion);
   },
 
-  activate: (id: number, version: number, userId: string) => repo.setActive(id, true, userId, version),
+  /** Reactivation runs the same one-location-one-type guard as create (owner rule 2026-07-11) —
+   *  otherwise Deactivate LOCAL → add OGL → Activate LOCAL resurrects a second type at the location. */
+  async activate(id: number, version: number, userId: string): Promise<CommissionRate> {
+    const rate = await repo.findById(id);
+    if (!rate) throw AppError.notFound('COMMISSION_RATE_NOT_FOUND');
+    if (rate.locationId != null && rate.fieldRateType) {
+      const rateType = await repo.rateTypeByCode(rate.fieldRateType);
+      if (rateType) {
+        const [conflict] = await repo.otherTypeAtLocations(rate.userId, [rate.locationId], rateType.id);
+        if (conflict)
+          throw AppError.conflict(
+            'HAS_OTHER_RATE_TYPE',
+            `location now has a ${conflict.code} rate for this user — deactivate it first to reactivate this ${rate.fieldRateType} rate`,
+          );
+      }
+    }
+    return repo.setActive(id, true, userId, version);
+  },
   deactivate: (id: number, version: number, userId: string) => repo.setActive(id, false, userId, version),
 };
