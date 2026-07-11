@@ -12,6 +12,7 @@ import {
   type CommissionRate,
   type BulkCommissionRateResult,
 } from '@crm2/sdk';
+import { toast } from 'sonner';
 import { api, ApiError } from '../../lib/sdk.js';
 import { toIsoDate } from '../../lib/format.js';
 import { useAuth } from '../../lib/AuthContext.js';
@@ -206,17 +207,31 @@ export function CommissionRateCreatePage() {
     },
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: [QK] });
-      if (r) setResult(r);
-      else navigate(exitTo); // OFFICE single create — straight back to the list
+      if (r) {
+        // FIELD bulk: the result panel is the primary confirmation; the toast is the at-a-glance
+        // recap (created / skipped) since the list sorts by user, not recency.
+        setResult(r);
+        toast.success(
+          `${r.createdCount} rate${r.createdCount === 1 ? '' : 's'} created` +
+            (r.existsCount > 0 ? ` · ${r.existsCount} skipped (already exist)` : '') +
+            (r.errorCount > 0 ? ` · ${r.errorCount} errored` : ''),
+        );
+      } else {
+        // OFFICE single create navigates straight back to the list — the toast is its only confirmation.
+        toast.success('Commission rate created');
+        navigate(exitTo);
+      }
     },
-    onError: (e: unknown) =>
-      setError(
+    onError: (e: unknown) => {
+      const msg =
         e instanceof ApiError
           ? (createFriendlyError(e.code) ?? e.code)
           : e instanceof Error
             ? e.message
-            : 'Save failed',
-      ),
+            : 'Save failed';
+      setError(msg); // stays on the page while the admin fixes it (persistent, role=alert)
+      toast.error(msg); // + a top-right toast so a failure is impossible to miss
+    },
   });
 
   if (!has('masterdata.manage')) return <Navigate to={LIST_PATH} replace />;
