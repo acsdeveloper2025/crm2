@@ -2046,3 +2046,49 @@ Counts after fixes: rates api 68, web rateManagement 25, SDK smoke 149. No migra
 pushed `main`=`34ba19d` → staging (2026-07-12); prod promotion pending owner.** Recorded
 (owner-requested) in **ADR-0093** (multi-location bulk + one-slot-one-type, rate & commission;
 additive — cross-refs on frozen ADR-0016/0018/0036/0048/0050/0068/0071). Next ADR = `0094`.
+
+## Clients + Products CREATE_PAGE_STANDARD retrofit — 6-lens review dispositions (2026-07-12)
+
+Roll-out page 1 of the CREATE_PAGE_STANDARD sweep. **Audit-first: the audit corrected the kickoff's
+premise** — `ClientsPage` is NOT a modal, it renders the shared `MasterDataCrud` **inline DataGrid**
+(ADR-0051, already the non-modal shape the standard wants); the entity is `code`+`name`+`effectiveFrom`
+only (no GST/contact — out of scope); the shared `MasterDataCrud` + `masterDataImport` blast radius is
+**Clients + Products only** (not the 5-page family). Owner picked: **retrofit inline-grid in place ·
+Clients + Products together · client-side friendly-duplicate message**. A client is a **singular
+entity** → fan-out items #1/#2/#3-as-chips are **N/A** (owner decision). Applicable = §5 toasts+inline,
+§3-reinterpreted (inline "code already exists"), §5 RBAC verify, §6 import template. **Additive —
+no schema, no migration (next mig stays 0117), no new ADR** (ADR-0093 + CREATE_PAGE_STANDARD cover it).
+**BUILT + `pnpm verify` green + browser-verified (dup→red toast+inline, create→green toast,
+deactivate→green toast, both import templates = 2 sample rows + Notes sheet), PUSH PENDING owner.**
+Six-lens adversarial review (CEO/CTO/design/security/standards/logicality), every finding verified.
+**No security/BLOCKING findings.**
+
+**✅ FIXED (2):**
+- **🟢 MINOR — bank-named import sample bled into the PRODUCTS template** (`shared/masterDataImport.ts`):
+  the shared spec shipped `ACME_BANK / Acme Bank Ltd` sample rows to both entities; a products admin
+  saw company names where a real code is `HOME_LOAN`. **Fix:** per-resource examples
+  (`masterSampleRows(resource)`) — Clients `ACME_BANK`/`GLOBAL_CORP`, Products `HOME_LOAN`/
+  `PERSONAL_LOAN`; two distinct codes so the unmodified template imports without self-collision.
+  Browser-verified both templates.
+- **🟢 §5 create-path showed the RAW code `CLIENT_CODE_EXISTS`** (`MasterDataCrud.tsx`): the create
+  path re-threw unmapped and the error middleware drops `AppError.message` (`http/app.ts` serializes
+  `{error:code}`), so no friendly text reached the client. **Fix:** `friendlyMasterError()` composes
+  the plain-English duplicate sentence client-side from the attempted code + green success / red error
+  toasts on create/save/(de)activate (unknown codes fall through raw — never swallowed). Exported +
+  unit-tested. Browser-verified.
+
+**⚪ DEFERRED / by-design (2):**
+- **🟡 DEFERRED — DataGrid inline error text lacks `role="alert"`** (`ui/data-grid/DataGrid.tsx`, NOT in
+  this diff): §5 wants the persistent inline message marked `role="alert"`; today it renders as
+  `text-destructive` text (create) / red cell + `title` (save). The new red toast (sonner richColors)
+  already carries an aria-live announcement, so the user is notified; the missing role is a
+  visual-persistent-a11y gap in the **shared DataGrid** (every grid consumer) → out of scope for this
+  MasterDataCrud slice. Fix belongs in DataGrid.
+- **⚪ Client-side RBAC gating is affordance-only** (`MasterDataCrud.tsx` `canManage =
+  has('masterdata.manage')`): hides Import / Activate-Deactivate column / bulk / inline-edit for a
+  non-manager, **mirroring** the unchanged server `MASTERDATA_MANAGE` guard (server stays
+  authoritative). By-design, verified no orphaned reachable write path.
+
+Counts after fixes: clients+products api 91, web MasterDataCrud test 5 (`friendlyMasterError`). Shared
+`MASTER_IMPORT_SAMPLE`/`MASTER_IMPORT_COLUMNS` untouched → onboarding workbook Products sheet
+unaffected. No migration, no ADR. Plan: `docs/plans/2026-07-12-clients-create-page-standard-plan.md`.

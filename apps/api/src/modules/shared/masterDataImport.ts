@@ -20,6 +20,48 @@ export const MASTER_IMPORT_SAMPLE: Record<string, string> = {
   effectiveFrom: '2026-01-01',
 };
 
+/** Two example records per resource so each template teaches with realistic codes (a bank for Clients,
+ *  a product for Products) rather than a generic placeholder. Two DISTINCT codes so importing the
+ *  unmodified template never self-collides on the unique `code`. Unknown resources fall back to the
+ *  first (generic) pair. */
+const MASTER_IMPORT_EXAMPLES: Record<
+  string,
+  [{ code: string; name: string }, { code: string; name: string }]
+> = {
+  clients: [
+    { code: 'ACME_BANK', name: 'Acme Bank Ltd' },
+    { code: 'GLOBAL_CORP', name: 'Global Corp' },
+  ],
+  products: [
+    { code: 'HOME_LOAN', name: 'Home Loan' },
+    { code: 'PERSONAL_LOAN', name: 'Personal Loan' },
+  ],
+};
+
+/** Sample rows for a resource's template (CREATE_PAGE_STANDARD §6, one row per accepted value shape):
+ *  the first example dated, the second with a blank effectiveFrom (= server default now(), ADR-0017). */
+export function masterSampleRows(resource: string): Record<string, string>[] {
+  const [a, b] = MASTER_IMPORT_EXAMPLES[resource] ?? MASTER_IMPORT_EXAMPLES['clients']!;
+  return [
+    { ...a, effectiveFrom: '2026-01-01' },
+    { ...b, effectiveFrom: '' },
+  ];
+}
+
+/** The template's Notes sheet. Static — a code/name master's rules (UPPER_SNAKE code, required name,
+ *  blank effectiveFrom = now) don't drift like a live catalog, so no async builder is needed (cf.
+ *  rates' `buildRateTemplateNotes`). `resource` is the plural lowercase list name (clients/products). */
+export function masterTemplateNotes(resource: string): string[] {
+  return [
+    `HOW TO IMPORT ${resource.toUpperCase()} (Code and Name are required on every row).`,
+    'Code — the unique identifier in UPPER_SNAKE_CASE: start with a letter, then letters, digits or underscore (e.g. ACME_BANK). A code already in the list is reported per-row and skips only that row.',
+    'Name — the display name (free text, required).',
+    'Effective From — ISO date (e.g. 2026-01-01); leave blank for "now".',
+    'Rows fail independently: valid rows import even when others error (per-row errors list Row · Column · Error).',
+    'CSV works too: same header row, comma-separated, first sheet only.',
+  ];
+}
+
 /** Build the ImportSpec shared by code/name/effectiveFrom domains (no FK resolve → TInput = T). */
 export function masterDataImportSpec<T>(resource: string, schema: ZodType<T>): ImportSpec<T> {
   return {
@@ -28,5 +70,7 @@ export function masterDataImportSpec<T>(resource: string, schema: ZodType<T>): I
     schema,
     uniqueKey: 'code',
     sample: MASTER_IMPORT_SAMPLE,
+    sampleRows: masterSampleRows(resource),
+    templateNotes: masterTemplateNotes(resource),
   };
 }

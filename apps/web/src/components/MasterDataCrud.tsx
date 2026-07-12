@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   exportQueryToParams,
   pageQueryToParams,
@@ -9,11 +10,12 @@ import {
 } from '@crm2/sdk';
 import { api, apiExport, ApiError } from '../lib/sdk.js';
 import { formatDateTime, toDateInput, toIsoDate } from '../lib/format.js';
+import { useAuth } from '../lib/AuthContext.js';
 import { BulkStatusActions } from './BulkStatusActions.js';
 import { ImportButton } from './import/ImportModal.js';
 import { StatusChip } from './StatusChip.js';
 import { ConflictDialog } from './ConflictDialog.js';
-import { DataGrid, type DataGridColumn } from './ui/data-grid/index.js';
+import { DataGrid, type DataGridColumn, type BulkSelection } from './ui/data-grid/index.js';
 import { Button } from './ui/Button.js';
 
 const HTTP_CONFLICT = 409;
@@ -26,6 +28,24 @@ const isStale = (e: unknown): e is ApiError =>
  * see `save` above), hence the different copy from the grid's "Locked — set at creation".
  */
 export const MASTER_DATA_CODE_TITLE = 'Code locks once referenced';
+
+/**
+ * Plain-English copy for the master-data write errors (CREATE_PAGE_STANDARD §5). The API error body
+ * carries only `{ error: code }` — the error middleware drops `AppError.message` (`http/app.ts`) — so
+ * the duplicate-code text is composed here from the attempted code. Unknown codes fall through to the
+ * raw code so nothing is ever swallowed. `entity` is the singular label ("Client" / "Product").
+ */
+export function friendlyMasterError(e: unknown, entity: string, attemptedCode?: string): string {
+  if (e instanceof ApiError) {
+    if (e.code.endsWith('_CODE_EXISTS'))
+      return `A ${entity.toLowerCase()} with code “${(attemptedCode ?? '').toUpperCase()}” already exists.`;
+    if (e.code === 'CODE_LOCKED')
+      return 'This code is in use by other records and can’t be changed. Deactivate and recreate to fix it.';
+    if (e.code === 'STALE_UPDATE')
+      return 'This row changed since you opened it — refreshed; Save again to re-apply.';
+  }
+  return e instanceof Error ? e.message : 'Something went wrong.';
+}
 
 /** A simple code/name/is-active master-data row (clients, products). */
 export interface MasterRow {
@@ -59,57 +79,65 @@ interface Config {
  */
 export function MasterDataCrud({ config }: { config: Config }) {
   const qc = useQueryClient();
+  const { has } = useAuth();
+  const canManage = has('masterdata.manage'); // mirrors the server MASTERDATA_MANAGE guard on every write
   const [active, setActive] = useState('');
   const [toggleConflict, setToggleConflict] = useState<MasterRow | null>(null);
+  const entity = config.title.replace(/s$/, ''); // "Clients" → "Client" (singular label for copy)
 
   const toggle = useMutation({
     mutationFn: (r: MasterRow) =>
       api<MasterRow>('POST', `${config.basePath}/${r.id}/${r.isActive ? 'deactivate' : 'activate'}`, {
         version: r.version, // OCC: (de)activation is a version-guarded edit (ADR-0019)
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: [config.queryKey] }),
+    onSuccess: (_res, r: MasterRow) => {
+      qc.invalidateQueries({ queryKey: [config.queryKey] });
+      toast.success(`${entity} “${r.code}” ${r.isActive ? 'deactivated' : 'activated'}`);
+    },
     onError: (e: unknown, r: MasterRow) => {
-      if (isStale(e)) setToggleConflict(r); // someone else changed this record first
+      if (isStale(e)) {
+        setToggleConflict(r); // someone else changed this record first → OCC dialog, no toast
+        return;
+      }
+      toast.error(friendlyMasterError(e, entity));
     },
   });
 
   const save = async (row: MasterRow, changed: Record<string, string>, version: number): Promise<void> => {
+    const nextCode = changed['code'] !== undefined ? changed['code'].toUpperCase() : row.code;
     try {
       await api<MasterRow>('PUT', `${config.basePath}/${row.id}`, {
-        code: changed['code'] !== undefined ? changed['code'].toUpperCase() : row.code,
+        code: nextCode,
         name: changed['name'] ?? row.name,
         effectiveFrom:
           changed['effectiveFrom'] !== undefined ? toIsoDate(changed['effectiveFrom']) : row.effectiveFrom,
         version,
       });
       await qc.invalidateQueries({ queryKey: [config.queryKey] });
+      toast.success(`${entity} “${nextCode}” saved`);
     } catch (e) {
-      if (isStale(e)) {
-        await qc.invalidateQueries({ queryKey: [config.queryKey] });
-        throw new Error('This row changed since you opened it — refreshed; Save again to re-apply.', {
-          cause: e,
-        });
-      }
-      if (e instanceof ApiError && e.code === 'CODE_LOCKED')
-        throw new Error(
-          'This code is in use by other records and can’t be changed. Deactivate and recreate to fix it.',
-          { cause: e },
-        );
-      throw e instanceof Error ? e : new Error('Save failed');
+      if (isStale(e)) await qc.invalidateQueries({ queryKey: [config.queryKey] }); // refresh the stale row
+      const msg = friendlyMasterError(e, entity, nextCode);
+      toast.error(msg); // red toast (§5) …
+      throw new Error(msg, { cause: e }); // … and persist inline in the grid
     }
   };
 
   const create = async (values: Record<string, string>): Promise<void> => {
     const effectiveFrom = (values['effectiveFrom'] ?? '').trim();
+    const code = (values['code'] ?? '').toUpperCase();
     try {
       await api<MasterRow>('POST', config.basePath, {
-        code: (values['code'] ?? '').toUpperCase(),
+        code,
         name: values['name'] ?? '',
         ...(effectiveFrom ? { effectiveFrom: toIsoDate(effectiveFrom) } : {}),
       });
       await qc.invalidateQueries({ queryKey: [config.queryKey] });
+      toast.success(`${entity} “${code}” created`);
     } catch (e) {
-      throw e instanceof Error ? e : new Error('Create failed');
+      const msg = friendlyMasterError(e, entity, code);
+      toast.error(msg); // red toast (§5) …
+      throw new Error(msg, { cause: e }); // … and persist inline under the add-row
     }
   };
 
@@ -165,25 +193,31 @@ export function MasterDataCrud({ config }: { config: Config }) {
         sortable: true,
         cell: (r) => <StatusChip isActive={r.isActive} effectiveFrom={r.effectiveFrom} />,
       },
-      {
-        id: 'actions',
-        header: 'Actions',
-        align: 'right',
-        editAction: true,
-        cell: (r) => (
-          <div className="flex items-center justify-end gap-2">
-            <Button
-              variant={r.isActive ? 'destructive' : 'secondary'}
-              size="sm"
-              onClick={() => toggle.mutate(r)}
-            >
-              {r.isActive ? 'Deactivate' : 'Activate'}
-            </Button>
-          </div>
-        ),
-      },
+      // The write column (Edit affordance + Activate/Deactivate) shows only for users who can manage —
+      // mirrors the server MASTERDATA_MANAGE guard so a read-only user sees no dead buttons (403-on-click).
+      ...(canManage
+        ? ([
+            {
+              id: 'actions',
+              header: 'Actions',
+              align: 'right',
+              editAction: true,
+              cell: (r) => (
+                <div className="flex items-center justify-end gap-2">
+                  <Button
+                    variant={r.isActive ? 'destructive' : 'secondary'}
+                    size="sm"
+                    onClick={() => toggle.mutate(r)}
+                  >
+                    {r.isActive ? 'Deactivate' : 'Activate'}
+                  </Button>
+                </div>
+              ),
+            },
+          ] as DataGridColumn<MasterRow>[])
+        : []),
     ],
-    [toggle, config.codePlaceholder],
+    [toggle, config.codePlaceholder, canManage],
   );
 
   return (
@@ -193,23 +227,29 @@ export function MasterDataCrud({ config }: { config: Config }) {
           <h1 className="text-xl font-bold tracking-tight">{config.title}</h1>
           <p className="text-sm text-muted-foreground">{config.subtitle}</p>
         </div>
-        <ImportButton
-          config={{
-            basePath: config.basePath,
-            queryKey: config.queryKey,
-            entityLabel: config.title.replace(/s$/, '').toLowerCase(),
-          }}
-        />
+        {canManage && (
+          <ImportButton
+            config={{
+              basePath: config.basePath,
+              queryKey: config.queryKey,
+              entityLabel: entity.toLowerCase(),
+            }}
+          />
+        )}
       </div>
 
       <DataGrid<MasterRow>
         columns={columns}
         queryKey={config.queryKey}
         rowId={(r) => r.id}
-        selectable
-        bulkActions={(sel) => (
-          <BulkStatusActions selection={sel} basePath={config.basePath} queryKey={config.queryKey} />
-        )}
+        selectable={canManage}
+        {...(canManage
+          ? {
+              bulkActions: (sel: BulkSelection<MasterRow>) => (
+                <BulkStatusActions selection={sel} basePath={config.basePath} queryKey={config.queryKey} />
+              ),
+            }
+          : {})}
         defaultSort="name"
         searchPlaceholder="Search code or name…"
         filters={{ active: active || undefined }}
@@ -223,7 +263,9 @@ export function MasterDataCrud({ config }: { config: Config }) {
         exportFn={(req: ExportRequest) =>
           apiExport(`${config.basePath}/export?${exportQueryToParams(req).toString()}`)
         }
-        inlineEdit={{ version: (r) => r.version, onSave: save, onCreate: create }}
+        {...(canManage
+          ? { inlineEdit: { version: (r: MasterRow) => r.version, onSave: save, onCreate: create } }
+          : {})}
         toolbar={
           <select
             className="input w-[10rem]"
