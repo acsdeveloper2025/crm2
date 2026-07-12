@@ -136,7 +136,25 @@ function UnitForm({ initial }: { initial: VerificationUnit | null }) {
   // The exact write payload (sans OCC `version`) — reused by both the mutation and client validation,
   // so the inline checks run over the SAME field names the server schema enforces.
   const buildPayload = () => {
-    const profile = profileFor(workerRole);
+    // The worker-role profile (ADR-0070) is locked and workerRole is immutable on edit — so on EDIT we
+    // PRESERVE the unit's stored profile rather than re-deriving the role default. Re-sending
+    // profileFor()'s hardcoded values would silently reset any per-unit value the form doesn't expose —
+    // notably requiredAttachments (e.g. an imported KYC unit's DOCUMENT,PAN:2), which gates case
+    // finalization — wiping it on an unrelated edit. On create there is no stored unit → use the default.
+    const profile =
+      isEdit && initial
+        ? {
+            workerRole: initial.workerRole,
+            assignmentMethod: initial.assignmentMethod,
+            requiredPhotos: initial.requiredPhotos,
+            requiredGps: initial.requiredGps,
+            requiredAttachments: initial.requiredAttachments,
+            billingProfile: initial.billingProfile,
+            commissionProfile: initial.commissionProfile,
+            reportTemplateType: initial.reportTemplateType,
+            reverificationRule: initial.reverificationRule,
+          }
+        : profileFor(workerRole);
     return {
       ...profile,
       code,

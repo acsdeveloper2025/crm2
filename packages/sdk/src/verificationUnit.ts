@@ -140,6 +140,18 @@ export const EffectiveFromSchema = z.object({ effectiveFrom: z.string().datetime
 
 export const CreateVerificationUnitSchema = z.object(baseShape).superRefine(applyInvariants);
 
+/**
+ * Import-only schema: KEEPS `effectiveFrom` in the parsed row. The create/update schemas strip it
+ * (baseShape has no such key, per the ADR-0017 split above), which on the import path would discard a
+ * dated row and force every imported unit to `now()` — contradicting the template's "Effective From =
+ * ISO date" promise. Import validates with this so `create()`'s `EffectiveFromSchema.parse(input)` sees
+ * the date and persists it (consistent with the other master imports).
+ */
+export const ImportVerificationUnitSchema = z
+  .object({ ...baseShape, effectiveFrom: z.string().datetime().optional() })
+  .superRefine(applyInvariants);
+export type ImportVerificationUnitInput = z.input<typeof ImportVerificationUnitSchema>;
+
 /** Update: `code` optional — correctable while the unit is unreferenced (ADR-0020); server locks once in use. */
 // ADR-0020: `code` is now an optional update field (correctable while unreferenced; server locks once in use).
 export const UpdateVerificationUnitSchema = z

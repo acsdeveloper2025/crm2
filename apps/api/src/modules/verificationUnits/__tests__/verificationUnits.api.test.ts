@@ -766,6 +766,18 @@ describe.skipIf(!RUN)('verification-units API', () => {
       expect(exp.text).toContain('DOCUMENT,PAN:2'); // min=1 ⇒ bare "DOCUMENT"; min>1 ⇒ "PAN:2"
     });
 
+    it('honors a future Effective From on import (was silently forced to now())', async () => {
+      const row = validRow('FUT_IMPORT');
+      row[18] = '2099-01-01'; // Effective From column (last)
+      const res = await upload('confirm', await mkXlsx([row]));
+      expect(res.body).toMatchObject({ totalRows: 1, successRows: 1, failedRows: 0 });
+      const { rows } = await db!.pool.query(
+        `SELECT effective_from FROM verification_units WHERE code = 'FUT_IMPORT'`,
+      );
+      expect(rows).toHaveLength(1);
+      expect(new Date(rows[0].effective_from as string).toISOString().slice(0, 10)).toBe('2099-01-01');
+    });
+
     it('a KYC_DOCUMENT row with no Required Attachments is rejected against that column (invariant enforced)', async () => {
       const res = await upload('preview', await mkXlsx([kycRow('KYC_NOATT', '')]));
       expect(res.status).toBe(200);

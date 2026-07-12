@@ -1,8 +1,9 @@
 import {
   CreateVerificationUnitSchema,
+  ImportVerificationUnitSchema,
   EffectiveFromSchema,
   WORKER_ROLES,
-  type CreateVerificationUnitInput,
+  type ImportVerificationUnitInput,
   type VerificationUnit,
   type VerificationUnitOption,
   type Paginated,
@@ -216,13 +217,15 @@ const VU_TEMPLATE_NOTES: string[] = [
 
 /**
  * Import contract (B-14): the full VU column manifest + the Create schema (which runs `applyInvariants`).
- * FK-free → no `resolve`; `TInput = CreateVerificationUnitInput`. `sampleRows` demonstrates BOTH worker
- * roles (CREATE_PAGE_STANDARD §6) — each passes the invariants so the unmodified template re-imports.
+ * FK-free → no `resolve`. Uses `ImportVerificationUnitSchema` (Create + a kept `effectiveFrom`) so a
+ * dated row actually lands on that date — `create()` reads `effectiveFrom` from the raw input, which
+ * the create schema would otherwise strip (ADR-0017). `sampleRows` demonstrates BOTH worker roles
+ * (CREATE_PAGE_STANDARD §6) — each passes the invariants so the unmodified template re-imports.
  */
-const VU_IMPORT_SPEC: ImportSpec<CreateVerificationUnitInput> = {
+const VU_IMPORT_SPEC: ImportSpec<ImportVerificationUnitInput> = {
   resource: 'verification-units',
   columns: VU_IMPORT_COLUMNS,
-  schema: CreateVerificationUnitSchema,
+  schema: ImportVerificationUnitSchema,
   uniqueKey: 'code',
   sample: VU_IMPORT_SAMPLE_FIELD,
   sampleRows: [VU_IMPORT_SAMPLE_FIELD, VU_IMPORT_SAMPLE_KYC],
