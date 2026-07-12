@@ -10,6 +10,7 @@ import {
 } from '@crm2/sdk';
 import { api, apiExport, ApiError } from '../lib/sdk.js';
 import { formatDateTime, toDateInput, toIsoDate } from '../lib/format.js';
+import { friendlyMasterError } from '../lib/friendlyError.js';
 import { useAuth } from '../lib/AuthContext.js';
 import { BulkStatusActions } from './BulkStatusActions.js';
 import { ImportButton } from './import/ImportModal.js';
@@ -28,24 +29,6 @@ const isStale = (e: unknown): e is ApiError =>
  * see `save` above), hence the different copy from the grid's "Locked — set at creation".
  */
 export const MASTER_DATA_CODE_TITLE = 'Code locks once referenced';
-
-/**
- * Plain-English copy for the master-data write errors (CREATE_PAGE_STANDARD §5). The API error body
- * carries only `{ error: code }` — the error middleware drops `AppError.message` (`http/app.ts`) — so
- * the duplicate-code text is composed here from the attempted code. Unknown codes fall through to the
- * raw code so nothing is ever swallowed. `entity` is the singular label ("Client" / "Product").
- */
-export function friendlyMasterError(e: unknown, entity: string, attemptedCode?: string): string {
-  if (e instanceof ApiError) {
-    if (e.code.endsWith('_CODE_EXISTS'))
-      return `A ${entity.toLowerCase()} with code “${(attemptedCode ?? '').toUpperCase()}” already exists.`;
-    if (e.code === 'CODE_LOCKED')
-      return 'This code is in use by other records and can’t be changed. Deactivate and recreate to fix it.';
-    if (e.code === 'STALE_UPDATE')
-      return 'This row changed since you opened it — refreshed; Save again to re-apply.';
-  }
-  return e instanceof Error ? e.message : 'Something went wrong.';
-}
 
 /** A simple code/name/is-active master-data row (clients, products). */
 export interface MasterRow {

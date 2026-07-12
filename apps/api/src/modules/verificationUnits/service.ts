@@ -154,39 +154,79 @@ const VU_IMPORT_COLUMNS: ImportColumn[] = [
   { id: 'effectiveFrom', header: 'Effective From', parse: parseIsoDate },
 ];
 
+// A valid FIELD_AGENT sample (mirrors the seeded RESIDENCE unit) — passes the cross-field invariants.
+// `requiredAttachments` also demonstrates the cell grammar: comma-separated `TYPE[:MIN]` (MIN omitted ⇒ 1).
+const VU_IMPORT_SAMPLE_FIELD: Record<string, string | number> = {
+  code: 'RESIDENCE',
+  name: 'Residence Verification',
+  description: 'Physical residence verification',
+  category: 'FIELD',
+  workerRole: 'FIELD_AGENT',
+  assignmentMethod: 'TERRITORY_AUTO',
+  requiredFormCode: 'RESIDENCE_FORM',
+  requiredPhotos: 5,
+  requiredGps: 'true',
+  requiredAttachments: 'DOCUMENT,PAN:2',
+  resultSet: 'Positive,Negative,Refer,Fraud',
+  reviewRequired: 'true',
+  billingProfile: 'AGENT_COMMISSION',
+  commissionProfile: 'FIELD_RATE',
+  reportTemplateType: 'FIELD_NARRATIVE',
+  reverificationRule: 'REVISIT_PARENT_RATE',
+  piiSensitive: 'false',
+  sortOrder: 1,
+  effectiveFrom: '2026-01-01',
+};
+
+// A valid KYC_VERIFIER sample — the OPPOSITE locked profile (0 photos, no GPS, client invoice, no
+// commission, recheck fresh rate). KYC units MUST carry ≥1 Required Attachment; Effective From blank = now.
+const VU_IMPORT_SAMPLE_KYC: Record<string, string | number> = {
+  code: 'PAN_CARD',
+  name: 'PAN Card Verification',
+  description: 'Verify PAN document',
+  category: 'KYC',
+  workerRole: 'KYC_VERIFIER',
+  assignmentMethod: 'DESK_POOL',
+  requiredFormCode: '',
+  requiredPhotos: 0,
+  requiredGps: 'false',
+  requiredAttachments: 'DOCUMENT',
+  resultSet: 'Positive,Negative,Refer,Fraud',
+  reviewRequired: 'true',
+  billingProfile: 'CLIENT_INVOICE',
+  commissionProfile: 'NONE',
+  reportTemplateType: 'KYC_DOCUMENT',
+  reverificationRule: 'RECHECK_FRESH_RATE',
+  piiSensitive: 'true',
+  sortOrder: 2,
+  effectiveFrom: '',
+};
+
+/** The template's Notes sheet (CREATE_PAGE_STANDARD §6). Static — worker_role and its locked profile
+ *  are frozen (ADR-0070), so these rules can't drift like a live catalog. */
+const VU_TEMPLATE_NOTES: string[] = [
+  'HOW TO IMPORT VERIFICATION UNITS (Code, Name, Category, Worker Role, Assignment Method, Billing Profile, Report Template Type and Reverification Rule are required on every row).',
+  'Worker Role decides the locked profile: FIELD_AGENT (field visit — ≥5 photos, GPS, agent commission, revisit the parent rate) or KYC_VERIFIER (desk — 0 photos, client invoice, no commission, recheck a fresh rate). The two sample rows show one of each.',
+  'Required Attachments — a comma-separated list of TYPE[:MIN] tokens (MIN omitted = 1), e.g. "DOCUMENT,PAN:2". KYC_VERIFIER units MUST carry ≥1; FIELD_AGENT units may leave it blank.',
+  'Result Set — a comma-separated list of the allowed outcomes; at least one (e.g. Positive,Negative,Refer,Fraud).',
+  'Required GPS / Review Required / PII Sensitive — true or false. Required Photos / Sort Order — whole numbers.',
+  'Effective From — ISO date (e.g. 2026-01-01); leave blank for "now". A Code already in the list is reported per-row and skips only that row.',
+  'Rows fail independently: valid rows import even when others error (per-row errors list Row · Column · Error). CSV works too — same header row, first sheet only.',
+];
+
 /**
  * Import contract (B-14): the full VU column manifest + the Create schema (which runs `applyInvariants`).
- * FK-free → no `resolve`; `TInput = CreateVerificationUnitInput`. The sample row mirrors the seeded
- * RESIDENCE FIELD_AGENT unit so it passes the cross-field invariants.
+ * FK-free → no `resolve`; `TInput = CreateVerificationUnitInput`. `sampleRows` demonstrates BOTH worker
+ * roles (CREATE_PAGE_STANDARD §6) — each passes the invariants so the unmodified template re-imports.
  */
 const VU_IMPORT_SPEC: ImportSpec<CreateVerificationUnitInput> = {
   resource: 'verification-units',
   columns: VU_IMPORT_COLUMNS,
   schema: CreateVerificationUnitSchema,
   uniqueKey: 'code',
-  sample: {
-    code: 'RESIDENCE',
-    name: 'Residence Verification',
-    description: 'Physical residence verification',
-    category: 'FIELD',
-    workerRole: 'FIELD_AGENT',
-    assignmentMethod: 'TERRITORY_AUTO',
-    requiredFormCode: 'RESIDENCE_FORM',
-    requiredPhotos: 5,
-    requiredGps: 'true',
-    // demonstrates the Required Attachments cell grammar in the downloadable template: comma-separated
-    // `TYPE[:MIN]` tokens (MIN omitted ⇒ 1). KYC_VERIFIER units MUST carry ≥1; FIELD_AGENT may leave it blank.
-    requiredAttachments: 'DOCUMENT,PAN:2',
-    resultSet: 'Positive,Negative,Refer,Fraud',
-    reviewRequired: 'true',
-    billingProfile: 'AGENT_COMMISSION',
-    commissionProfile: 'FIELD_RATE',
-    reportTemplateType: 'FIELD_NARRATIVE',
-    reverificationRule: 'REVISIT_PARENT_RATE',
-    piiSensitive: 'false',
-    sortOrder: 1,
-    effectiveFrom: '2026-01-01',
-  },
+  sample: VU_IMPORT_SAMPLE_FIELD,
+  sampleRows: [VU_IMPORT_SAMPLE_FIELD, VU_IMPORT_SAMPLE_KYC],
+  templateNotes: VU_TEMPLATE_NOTES,
 };
 
 /**

@@ -707,6 +707,23 @@ describe.skipIf(!RUN)('verification-units API', () => {
       expect((res.body as Buffer).subarray(0, 2).toString('latin1')).toBe('PK');
     });
 
+    it('the template’s own sample rows re-import cleanly (both worker-role shapes; CREATE_PAGE_STANDARD §6)', async () => {
+      const tpl = await request(app)
+        .get('/api/v2/verification-units/import-template')
+        .set(SA)
+        .buffer(true)
+        .parse((r, cb) => {
+          const chunks: Buffer[] = [];
+          r.on('data', (c: Buffer) => chunks.push(c));
+          r.on('end', () => cb(null, Buffer.concat(chunks)));
+        });
+      // Re-upload the unmodified template: the two sampleRows (FIELD_AGENT + KYC_VERIFIER) must both
+      // validate, proving each independently passes applyInvariants; the Notes sheet is ignored (first sheet only).
+      const res = await upload('preview', tpl.body as Buffer);
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ totalRows: 2, validRows: 2, errorRows: 0 });
+    });
+
     it('preview flags an invalid row (bad worker role) against its column, keeps the valid one', async () => {
       const res = await upload('preview', await mkXlsx([validRow('RESIDENCE'), badWorkerRoleRow('OFFICE')]));
       expect(res.status).toBe(200);

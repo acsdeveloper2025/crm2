@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import type { VerificationUnit } from '@crm2/sdk';
 import { CreateVerificationUnitSchema, UpdateVerificationUnitSchema } from '@crm2/sdk';
 import { api, ApiError } from '../../lib/sdk.js';
 import { useAuth } from '../../lib/AuthContext.js';
 import { toDateInput, toIsoDate } from '../../lib/format.js';
+import { friendlyMasterError } from '../../lib/friendlyError.js';
 import { zodFieldErrors } from '../../lib/zodForm.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { Button } from '../../components/ui/Button.js';
@@ -48,6 +50,13 @@ function profileFor(workerRole: WorkerRole) {
         reverificationRule: 'RECHECK_FRESH_RATE',
       };
 }
+
+// ponytail: readable display of the frozen profileFor() values (ADR-0070) — display only, mirrors the
+// locked profile so the user sees what worker role decided; kept in sync by hand (the map is frozen).
+const LOCKED_CHIPS: Record<WorkerRole, string[]> = {
+  FIELD_AGENT: ['≥5 photos', 'GPS required', 'Agent commission', 'Field narrative', 'Revisit (parent rate)'],
+  KYC_VERIFIER: ['0 photos', 'No GPS', 'Client invoice', 'No commission', 'Recheck (fresh rate)'],
+};
 
 /**
  * Verification-unit create/edit as a full record-page route (ADR-0051 — no modal). `/admin/verification-units/new`
@@ -152,19 +161,37 @@ function UnitForm({ initial }: { initial: VerificationUnit | null }) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [QK] });
+      toast.success(`Verification unit “${code}” ${isEdit ? 'saved' : 'created'}`);
       navigate(LIST);
     },
     onError: (e: unknown) => {
       if (isStale(e)) {
         const current = (e.body as { current?: { updatedAt?: string; version?: number } } | null)?.current;
         setConflict(current ?? {});
-      } else if (e instanceof ApiError && e.code === 'CODE_LOCKED') {
-        setError(
-          'This code is in use by other records and can’t be changed. Deactivate and recreate to fix it.',
-        );
-      } else setError(e instanceof Error ? e.message : 'Save failed');
+        return;
+      }
+      // friendlyMasterError maps UNIT_CODE_EXISTS + CODE_LOCKED to plain English; unknown codes fall through raw.
+      const msg = friendlyMasterError(e, 'Verification unit', code);
+      setError(msg); // persistent inline (role="alert") …
+      toast.error(msg); // … and a red toast (CREATE_PAGE_STANDARD §5)
     },
   });
+
+  const isField = workerRole === 'FIELD_AGENT';
+  const handleSave = () => {
+    setError(null);
+    // Validate the SAME payload the mutationFn posts (sans OCC `version`, not a schema field).
+    const errs = zodFieldErrors(
+      isEdit ? UpdateVerificationUnitSchema : CreateVerificationUnitSchema,
+      buildPayload(),
+    );
+    if (Object.keys(errs).length > 0) {
+      setFieldErrors(errs);
+      return;
+    }
+    setFieldErrors({});
+    mut.mutate();
+  };
 
   return (
     <div className="space-y-4">
@@ -172,113 +199,138 @@ function UnitForm({ initial }: { initial: VerificationUnit | null }) {
         ← Back to verification units
       </Button>
       <div>
-        <h1 className="text-xl font-bold tracking-tight">{isEdit ? 'Edit' : 'New'} Verification Unit</h1>
-        <p className="text-sm text-muted-foreground">The unified catalog — field visits and KYC documents.</p>
+        <h1 className="text-xl font-bold tracking-tight">{isEdit ? 'Edit' : 'New'} verification unit</h1>
+        <p className="text-sm text-muted-foreground">One catalog entry — a field visit or a KYC document.</p>
       </div>
 
-      <div className="max-w-lg space-y-3 rounded-lg border border-border bg-card p-6 shadow-sm">
-        <Field label="Code (UPPER_SNAKE)">
-          <Input
-            className="input"
-            uppercase={false}
-            value={code}
-            onChange={(e) =>
-              setCode(
-                e.target.value
-                  .toUpperCase()
-                  .replace(/[^A-Z0-9]+/g, '_')
-                  .replace(/^_+/, ''),
-              )
-            }
-            placeholder="PAN_CARD"
-          />
-          {fieldErrors['code'] && (
-            <span className="mt-1 block text-xs text-destructive">{fieldErrors['code']}</span>
-          )}
-        </Field>
-        <Field label="Name">
-          <Input className="input" value={name} onChange={(e) => setName(e.target.value)} />
-          {fieldErrors['name'] && (
-            <span className="mt-1 block text-xs text-destructive">{fieldErrors['name']}</span>
-          )}
-        </Field>
-        <Field label="Worker Role">
-          <select
-            className="input"
-            value={workerRole}
-            disabled={isEdit}
-            onChange={(e) => setWorkerRole(e.target.value as WorkerRole)}
-          >
-            <option value="FIELD_AGENT">Field Agent (field visit)</option>
-            <option value="KYC_VERIFIER">KYC Verifier (desk document)</option>
-          </select>
-        </Field>
-        <Field label="Category">
-          <Input className="input" value={category} onChange={(e) => setCategory(e.target.value)} />
-          {fieldErrors['category'] && (
-            <span className="mt-1 block text-xs text-destructive">{fieldErrors['category']}</span>
-          )}
-        </Field>
-        {workerRole === 'FIELD_AGENT' && (
-          <Field label="Form code">
+      <StepCard n={1} title="Identity & role">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Code" required hint="UPPER_SNAKE">
             <Input
               className="input"
               uppercase={false}
-              value={requiredFormCode ?? ''}
-              onChange={(e) => setRequiredFormCode(e.target.value)}
-              placeholder="RESIDENCE_FORM"
+              value={code}
+              onChange={(e) =>
+                setCode(
+                  e.target.value
+                    .toUpperCase()
+                    .replace(/[^A-Z0-9]+/g, '_')
+                    .replace(/^_+/, ''),
+                )
+              }
+              placeholder="PAN_CARD"
             />
-            {fieldErrors['requiredFormCode'] && (
-              <span className="mt-1 block text-xs text-destructive">{fieldErrors['requiredFormCode']}</span>
+            {fieldErrors['code'] && (
+              <span className="mt-1 block text-xs text-destructive">{fieldErrors['code']}</span>
             )}
           </Field>
-        )}
-        <Field label="Description">
-          <Input className="input" value={description} onChange={(e) => setDescription(e.target.value)} />
-          {fieldErrors['description'] && (
-            <span className="mt-1 block text-xs text-destructive">{fieldErrors['description']}</span>
+          <Field label="Name" required>
+            <Input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+            {fieldErrors['name'] && (
+              <span className="mt-1 block text-xs text-destructive">{fieldErrors['name']}</span>
+            )}
+          </Field>
+          <Field label="Worker role" required hint={isEdit ? 'locked after creation' : 'sets the profile'}>
+            <select
+              className="input"
+              value={workerRole}
+              disabled={isEdit}
+              onChange={(e) => setWorkerRole(e.target.value as WorkerRole)}
+            >
+              <option value="FIELD_AGENT">Field agent (field visit)</option>
+              <option value="KYC_VERIFIER">KYC verifier (desk document)</option>
+            </select>
+          </Field>
+          <Field label="Category" required>
+            <Input className="input" value={category} onChange={(e) => setCategory(e.target.value)} />
+            {fieldErrors['category'] && (
+              <span className="mt-1 block text-xs text-destructive">{fieldErrors['category']}</span>
+            )}
+          </Field>
+        </div>
+        <div className="mt-3 rounded-md border border-border bg-muted/40 p-2.5 text-xs text-muted-foreground">
+          Worker role locks the behaviour profile below — it can’t be changed after the unit is created.
+        </div>
+      </StepCard>
+
+      <StepCard
+        n={2}
+        title={isField ? 'Field profile' : 'Desk profile'}
+        badge={isField ? 'Field agent' : 'KYC verifier'}
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          {isField && (
+            <Field label="Form code" hint="blank = code">
+              <Input
+                className="input"
+                uppercase={false}
+                value={requiredFormCode ?? ''}
+                onChange={(e) => setRequiredFormCode(e.target.value)}
+                placeholder="RESIDENCE_FORM"
+              />
+              {fieldErrors['requiredFormCode'] && (
+                <span className="mt-1 block text-xs text-destructive">{fieldErrors['requiredFormCode']}</span>
+              )}
+            </Field>
           )}
-        </Field>
-        <Field label="Effective From (blank = now)">
-          <input
-            type="date"
-            className="input"
-            value={effectiveFrom}
-            onChange={(e) => setEffectiveFrom(e.target.value)}
-          />
-        </Field>
-        <label className="flex items-center gap-2 text-sm">
+          <Field label="Effective from" hint="blank = now">
+            <input
+              type="date"
+              className="input"
+              value={effectiveFrom}
+              onChange={(e) => setEffectiveFrom(e.target.value)}
+            />
+          </Field>
+          <Field label="Description">
+            <Input className="input" value={description} onChange={(e) => setDescription(e.target.value)} />
+            {fieldErrors['description'] && (
+              <span className="mt-1 block text-xs text-destructive">{fieldErrors['description']}</span>
+            )}
+          </Field>
+        </div>
+        <label className="mt-3 flex items-center gap-2 text-sm">
           <input type="checkbox" checked={piiSensitive} onChange={(e) => setPiiSensitive(e.target.checked)} />
           PII sensitive (DPDP masking)
         </label>
-        <p className="rounded bg-surface-muted p-2 text-xs text-muted-foreground">
-          {workerRole === 'FIELD_AGENT'
-            ? 'Profile locked: FIELD_AGENT · ≥5 photos · GPS · agent commission · revisit (parent rate).'
-            : 'Profile locked: KYC_VERIFIER · document · client invoice · no commission · recheck (fresh rate).'}
+        {!isField && (
+          <div className="mt-3 rounded-md border border-border bg-muted/40 p-2.5 text-xs text-muted-foreground">
+            Requires ≥1 document attachment — no form code, no photos.
+          </div>
+        )}
+        <div className="mt-3">
+          <p className="mb-1.5 text-xs font-medium text-muted-foreground">Locked profile</p>
+          <div className="flex flex-wrap gap-1.5">
+            {LOCKED_CHIPS[workerRole].map((c) => (
+              <span
+                key={c}
+                className="rounded-full border border-border bg-surface-muted px-2.5 py-1 text-[11px] text-muted-foreground"
+              >
+                {c}
+              </span>
+            ))}
+          </div>
+        </div>
+      </StepCard>
+
+      {error && (
+        <p className="text-sm text-destructive" role="alert">
+          {error}
         </p>
-        {error && <p className="text-sm text-destructive">{error}</p>}
-        <div className="flex justify-end gap-2 pt-2">
+      )}
+
+      <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-border-strong bg-card px-4 py-3 shadow-md">
+        <div className="text-sm">
+          <span className="font-semibold">{code || '—'}</span>
+          <span className="text-muted-foreground">
+            {' · '}
+            {name || 'unnamed'} · {isField ? 'Field agent' : 'KYC verifier'}
+          </span>
+        </div>
+        <div className="ml-auto flex items-center gap-2">
           <Button variant="ghost" onClick={() => navigate(LIST)} disabled={mut.isPending}>
             Cancel
           </Button>
-          <Button
-            onClick={() => {
-              setError(null);
-              // Validate the SAME payload the mutationFn posts (sans OCC `version`, not a schema field).
-              const errs = zodFieldErrors(
-                isEdit ? UpdateVerificationUnitSchema : CreateVerificationUnitSchema,
-                buildPayload(),
-              );
-              if (Object.keys(errs).length > 0) {
-                setFieldErrors(errs);
-                return;
-              }
-              setFieldErrors({});
-              mut.mutate();
-            }}
-            disabled={!name || !code}
-            loading={mut.isPending}
-          >
+          <Button onClick={handleSave} disabled={!name || !code} loading={mut.isPending}>
             Save
           </Button>
         </div>
@@ -303,10 +355,54 @@ function UnitForm({ initial }: { initial: VerificationUnit | null }) {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+/** A numbered step card (CREATE_PAGE_STANDARD §1) — blue circle number + title + optional context pill. */
+function StepCard({
+  n,
+  title,
+  badge,
+  children,
+}: {
+  n: number;
+  title: string;
+  badge?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
+      <div className="mb-3 flex items-center gap-2">
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
+          {n}
+        </span>
+        <h2 className="text-[15px] font-semibold">{title}</h2>
+        {badge && (
+          <span className="ml-auto rounded-full bg-primary-muted px-2 py-0.5 text-[11px] font-semibold text-primary">
+            {badge}
+          </span>
+        )}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Field({
+  label,
+  required,
+  hint,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  hint?: string;
+  children: React.ReactNode;
+}) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs font-medium text-foreground">{label}</span>
+      <span className="mb-1 block text-xs font-medium text-foreground">
+        {label}
+        {required && <span className="text-destructive"> *</span>}
+        {hint && <span className="text-muted-foreground"> · {hint}</span>}
+      </span>
       {children}
     </label>
   );

@@ -2094,3 +2094,26 @@ promotion pending owner.** Six-lens adversarial review (CEO/CTO/design/security/
 Counts after fixes: clients+products api 91, web MasterDataCrud test 5 (`friendlyMasterError`). Shared
 `MASTER_IMPORT_SAMPLE`/`MASTER_IMPORT_COLUMNS` untouched → onboarding workbook Products sheet
 unaffected. No migration, no ADR. Plan: `docs/plans/2026-07-12-clients-create-page-standard-plan.md`.
+
+## Verification Units CREATE_PAGE_STANDARD retrofit (2026-07-12)
+
+Roll-out page 2. VU is **bespoke** (not MasterDataCrud) + singular → fan-out N/A; owner approved (via a
+before/after mockup) matching VU to the rate/commission "new add design", both worker-role variants.
+**Additive: no schema, no migration (0117), no ADR (0094).** **BUILT + `pnpm verify` green +
+browser-verified on crm2_dev (both role variants; KYC create→green toast; duplicate `RESIDENCE`→red
+toast + inline "A verification unit with code …"; list deactivate→green toast + RBAC actions; console
+clean); PUSH PENDING owner.** 6-lens + logicality reviewed **inline** (no blocking; token-limit — agents
+skipped, verified from the code + browser).
+
+**Changes:** (1) extracted shared `friendlyMasterError` → `apps/web/src/lib/friendlyError.ts` (MasterDataCrud
+imports it; Clients/Products unchanged; tests → `friendlyError.test.ts`). (2) `VerificationUnitRecordPage`
+single-column → **step cards** + role-aware Step 2 (Form code drops for KYC; ≥1-document note; role-specific
+locked-profile chip recap) + green/red toasts + inline `role=alert` + sticky Save bar (ghost Cancel +
+solid-blue `primary` Save). (3) `VerificationUnitsPage` client RBAC gate `has('verification_unit.manage')` on
+Import/+New/actions/selectable+bulk + (de)activate toasts. (4) `VU_IMPORT_SPEC` per-role `sampleRows`
+(FIELD_AGENT + KYC_VERIFIER, each passing `applyInvariants`) + static `templateNotes`.
+
+**Frozen — untouched:** `workerRole`→locked profile (ADR-0070), `isSystem` mobile locks, code-lock (ADR-0020),
+`workerRole` disabled on edit. **Deferred/by-design:** `LOCKED_CHIPS` is hand-maintained display copy of the
+frozen `profileFor()` (marked `ponytail:`; display-only, low drift). Counts: web 28→29 test files, VU api 41→42
+(+ "template sample rows re-import cleanly"). Plan: `docs/plans/2026-07-12-verification-units-create-page-standard-plan.md`.

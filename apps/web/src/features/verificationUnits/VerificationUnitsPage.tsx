@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   exportQueryToParams,
   pageQueryToParams,
@@ -11,9 +12,11 @@ import {
 } from '@crm2/sdk';
 import { api, apiExport, ApiError } from '../../lib/sdk.js';
 import { formatDateTime } from '../../lib/format.js';
+import { useAuth } from '../../lib/AuthContext.js';
+import { friendlyMasterError } from '../../lib/friendlyError.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
-import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
+import { DataGrid, type DataGridColumn, type BulkSelection } from '../../components/ui/data-grid/index.js';
 import { Button } from '../../components/ui/Button.js';
 import { BulkStatusActions } from '../../components/BulkStatusActions.js';
 import { ImportButton } from '../../components/import/ImportModal.js';
@@ -47,6 +50,8 @@ function WorkerRoleBadge({ workerRole }: { workerRole: string }) {
 export function VerificationUnitsPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const { has } = useAuth();
+  const canManage = has('verification_unit.manage'); // mirrors the server VERIFICATION_UNIT_MANAGE guard
   const [active, setActive] = useState('');
   const [toggleConflict, setToggleConflict] = useState<VerificationUnit | null>(null);
 
@@ -57,9 +62,16 @@ export function VerificationUnitsPage() {
         `/api/v2/verification-units/${u.id}/${u.isActive ? 'deactivate' : 'activate'}`,
         { version: u.version }, // OCC: (de)activation is a version-guarded edit (ADR-0019)
       ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['verification-units'] }),
+    onSuccess: (_res, u: VerificationUnit) => {
+      qc.invalidateQueries({ queryKey: ['verification-units'] });
+      toast.success(`Verification unit “${u.code}” ${u.isActive ? 'deactivated' : 'activated'}`);
+    },
     onError: (e: unknown, u: VerificationUnit) => {
-      if (isStale(e)) setToggleConflict(u);
+      if (isStale(e)) {
+        setToggleConflict(u); // someone else changed it first → OCC dialog, no toast
+        return;
+      }
+      toast.error(friendlyMasterError(e, 'Verification unit'));
     },
   });
 
@@ -129,51 +141,57 @@ export function VerificationUnitsPage() {
         sortable: true,
         cell: (u) => <StatusChip isActive={u.isActive} effectiveFrom={u.effectiveFrom} />,
       },
-      {
-        id: 'actions',
-        header: 'Actions',
-        align: 'right',
-        cell: (u) =>
-          u.isSystem ? (
-            <span
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground"
-              title="Linked to the mobile app — locked. These field-visit types cannot be edited or deactivated."
-            >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                aria-hidden="true"
-              >
-                <rect x="5" y="11" width="14" height="10" rx="2" />
-                <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-              </svg>
-              System
-            </span>
-          ) : (
-            <div className="flex items-center justify-end gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => navigate(`/admin/verification-units/${u.id}`)}
-              >
-                Edit
-              </Button>
-              <Button
-                variant={u.isActive ? 'destructive' : 'secondary'}
-                size="sm"
-                onClick={() => toggle.mutate(u)}
-              >
-                {u.isActive ? 'Deactivate' : 'Activate'}
-              </Button>
-            </div>
-          ),
-      },
+      // Write column (Edit + Activate/Deactivate) only for managers — mirrors the server
+      // VERIFICATION_UNIT_MANAGE guard so a read-only viewer sees no dead 403-on-click buttons.
+      ...(canManage
+        ? ([
+            {
+              id: 'actions',
+              header: 'Actions',
+              align: 'right',
+              cell: (u) =>
+                u.isSystem ? (
+                  <span
+                    className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+                    title="Linked to the mobile app — locked. These field-visit types cannot be edited or deactivated."
+                  >
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      aria-hidden="true"
+                    >
+                      <rect x="5" y="11" width="14" height="10" rx="2" />
+                      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                    </svg>
+                    System
+                  </span>
+                ) : (
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => navigate(`/admin/verification-units/${u.id}`)}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      variant={u.isActive ? 'destructive' : 'secondary'}
+                      size="sm"
+                      onClick={() => toggle.mutate(u)}
+                    >
+                      {u.isActive ? 'Deactivate' : 'Activate'}
+                    </Button>
+                  </div>
+                ),
+            },
+          ] as DataGridColumn<VerificationUnit>[])
+        : []),
     ],
-    [toggle],
+    [toggle, canManage, navigate],
   );
 
   return (
@@ -185,23 +203,25 @@ export function VerificationUnitsPage() {
             The unified catalog — field visits and KYC documents.
           </p>
         </div>
-        <div className="flex gap-2">
-          <ImportButton
-            config={{
-              basePath: '/api/v2/verification-units',
-              queryKey: 'verification-units',
-              entityLabel: 'verification unit',
-            }}
-          />
-          <Button onClick={() => navigate('/admin/verification-units/new')}>+ New Unit</Button>
-        </div>
+        {canManage && (
+          <div className="flex gap-2">
+            <ImportButton
+              config={{
+                basePath: '/api/v2/verification-units',
+                queryKey: 'verification-units',
+                entityLabel: 'verification unit',
+              }}
+            />
+            <Button onClick={() => navigate('/admin/verification-units/new')}>+ New Unit</Button>
+          </div>
+        )}
       </div>
 
       <DataGrid<VerificationUnit>
         columns={columns}
         queryKey="verification-units"
         rowId={(u) => u.id}
-        selectable
+        selectable={canManage}
         defaultSort="sortOrder"
         searchPlaceholder="Search code or name…"
         filters={{ active: active || undefined }}
@@ -218,13 +238,17 @@ export function VerificationUnitsPage() {
         exportFn={(req: ExportRequest) =>
           apiExport(`/api/v2/verification-units/export?${exportQueryToParams(req).toString()}`)
         }
-        bulkActions={(sel) => (
-          <BulkStatusActions
-            selection={sel}
-            basePath="/api/v2/verification-units"
-            queryKey="verification-units"
-          />
-        )}
+        {...(canManage
+          ? {
+              bulkActions: (sel: BulkSelection<VerificationUnit>) => (
+                <BulkStatusActions
+                  selection={sel}
+                  basePath="/api/v2/verification-units"
+                  queryKey="verification-units"
+                />
+              ),
+            }
+          : {})}
         toolbar={
           <select
             className="input w-[10rem]"
