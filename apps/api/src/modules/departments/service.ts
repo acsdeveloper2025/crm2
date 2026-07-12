@@ -64,6 +64,21 @@ const DEPARTMENT_IMPORT_SPEC: ImportSpec<CreateDepartmentInput> = {
   columns: DEPARTMENT_IMPORT_COLUMNS,
   schema: CreateDepartmentSchema,
   sample: { name: 'Operations', description: 'Field operations team' },
+  // One row per shape (CREATE_PAGE_STANDARD §6): a dated row and a blank-effectiveFrom row
+  // (blank = server default now(), ADR-0017). Distinct names so the unmodified template can't
+  // self-collide on the unique name.
+  sampleRows: [
+    { name: 'Operations', description: 'Field operations team', effectiveFrom: '2026-01-01' },
+    { name: 'Compliance', description: 'KYC and audit', effectiveFrom: '' },
+  ],
+  templateNotes: [
+    'HOW TO IMPORT DEPARTMENTS (Name is required on every row).',
+    'Name — the department name; must be unique. A name already in the list is reported per-row and skips only that row.',
+    'Description — optional free text.',
+    'Effective From — ISO date (e.g. 2026-01-01); leave blank for "now".',
+    'Rows fail independently: valid rows import even when others error (per-row errors list Row · Column · Error).',
+    'CSV works too: same header row, comma-separated, first sheet only.',
+  ],
 };
 
 /** Department service — organisational-unit CRUD (a required dropdown on the user form). */

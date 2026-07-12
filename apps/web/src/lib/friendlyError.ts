@@ -19,3 +19,17 @@ export function friendlyMasterError(e: unknown, entity: string, attemptedCode?: 
   }
   return e instanceof Error ? e.message : 'Something went wrong.';
 }
+
+/**
+ * Same as {@link friendlyMasterError} but for NAME-keyed masters (Departments, Designations — org
+ * sub-entities whose unique key is `name`, not `code`). Their duplicate code is `<ENTITY>_EXISTS`
+ * (e.g. DEPARTMENT_EXISTS), so the sentence is name-based. Unknown codes fall through to the raw code.
+ */
+export function friendlyNameError(e: unknown, entity: string): string {
+  if (e instanceof ApiError) {
+    if (e.code.endsWith('_EXISTS')) return `A ${entity.toLowerCase()} with this name already exists.`;
+    if (e.code === 'STALE_UPDATE')
+      return 'This row changed since you opened it — refreshed; Save again to re-apply.';
+  }
+  return e instanceof Error ? e.message : 'Something went wrong.';
+}

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   exportQueryToParams,
   pageQueryToParams,
@@ -11,11 +12,13 @@ import {
 } from '@crm2/sdk';
 import { api, apiExport, ApiError } from '../../lib/sdk.js';
 import { formatDateTime, toDateInput, toIsoDate } from '../../lib/format.js';
+import { useAuth } from '../../lib/AuthContext.js';
+import { friendlyNameError } from '../../lib/friendlyError.js';
 import { BulkStatusActions } from '../../components/BulkStatusActions.js';
 import { ImportButton } from '../../components/import/ImportModal.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
-import { DataGrid, type DataGridColumn } from '../../components/ui/data-grid/index.js';
+import { DataGrid, type DataGridColumn, type BulkSelection } from '../../components/ui/data-grid/index.js';
 import { Button } from '../../components/ui/Button.js';
 
 const BASE = '/api/v2/designations';
@@ -31,6 +34,8 @@ const isStale = (e: unknown): e is ApiError =>
  */
 export function DesignationsPage() {
   const qc = useQueryClient();
+  const { has } = useAuth();
+  const canManage = has('user.manage'); // mirrors the server USER_MANAGE guard on every write
   const [active, setActive] = useState('');
   const [toggleConflict, setToggleConflict] = useState<Designation | null>(null);
 
@@ -51,17 +56,25 @@ export function DesignationsPage() {
       api<Designation>('POST', `${BASE}/${d.id}/${d.isActive ? 'deactivate' : 'activate'}`, {
         version: d.version, // OCC: (de)activation is version-guarded (ADR-0019)
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: [QK] }),
+    onSuccess: (_res, d: Designation) => {
+      qc.invalidateQueries({ queryKey: [QK] });
+      toast.success(`Designation “${d.name}” ${d.isActive ? 'deactivated' : 'activated'}`);
+    },
     onError: (e: unknown, d: Designation) => {
-      if (isStale(e)) setToggleConflict(d);
+      if (isStale(e)) {
+        setToggleConflict(d);
+        return;
+      }
+      toast.error(friendlyNameError(e, 'Designation'));
     },
   });
 
   // Per-cell commit hands only the CHANGED field(s); merge over the row's raw values for the PUT.
   const save = async (row: Designation, changed: Record<string, string>, version: number): Promise<void> => {
+    const nextName = changed['name'] ?? row.name;
     try {
       await api<Designation>('PUT', `${BASE}/${row.id}`, {
-        name: changed['name'] ?? row.name,
+        name: nextName,
         description: changed['description'] ?? row.description,
         departmentId:
           changed['departmentId'] !== undefined
@@ -74,33 +87,31 @@ export function DesignationsPage() {
         version,
       });
       await qc.invalidateQueries({ queryKey: [QK] });
+      toast.success(`Designation “${nextName}” saved`);
     } catch (e) {
-      if (isStale(e)) {
-        await qc.invalidateQueries({ queryKey: [QK] });
-        throw new Error('This row changed since you opened it — refreshed; Save again to re-apply.', {
-          cause: e,
-        });
-      }
-      if (e instanceof ApiError && e.code === 'DESIGNATION_EXISTS')
-        throw new Error('A designation with this name already exists.', { cause: e });
-      throw e instanceof Error ? e : new Error('Save failed');
+      if (isStale(e)) await qc.invalidateQueries({ queryKey: [QK] }); // refresh the stale row
+      const msg = friendlyNameError(e, 'Designation');
+      toast.error(msg); // red toast …
+      throw new Error(msg, { cause: e }); // … and persist inline in the grid
     }
   };
 
   const create = async (values: Record<string, string>): Promise<void> => {
     const effectiveFrom = (values['effectiveFrom'] ?? '').trim();
+    const name = values['name'] ?? '';
     try {
       await api<Designation>('POST', BASE, {
-        name: values['name'] ?? '',
+        name,
         description: values['description'] ?? '',
         departmentId: values['departmentId'] ? Number(values['departmentId']) : null,
         ...(effectiveFrom ? { effectiveFrom: toIsoDate(effectiveFrom) } : {}),
       });
       await qc.invalidateQueries({ queryKey: [QK] });
+      toast.success(`Designation “${name}” created`);
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'DESIGNATION_EXISTS')
-        throw new Error('A designation with this name already exists.', { cause: e });
-      throw e instanceof Error ? e : new Error('Create failed');
+      const msg = friendlyNameError(e, 'Designation');
+      toast.error(msg);
+      throw new Error(msg, { cause: e });
     }
   };
 
@@ -159,25 +170,30 @@ export function DesignationsPage() {
         sortable: true,
         cell: (d) => <StatusChip isActive={d.isActive} effectiveFrom={d.effectiveFrom} />,
       },
-      {
-        id: 'actions',
-        header: 'Actions',
-        align: 'right',
-        editAction: true,
-        cell: (d) => (
-          <div className="flex items-center justify-end gap-2">
-            <Button
-              variant={d.isActive ? 'destructive' : 'secondary'}
-              size="sm"
-              onClick={() => toggle.mutate(d)}
-            >
-              {d.isActive ? 'Deactivate' : 'Activate'}
-            </Button>
-          </div>
-        ),
-      },
+      // Write column only for managers — mirrors the server USER_MANAGE guard (no dead 403 buttons).
+      ...(canManage
+        ? ([
+            {
+              id: 'actions',
+              header: 'Actions',
+              align: 'right',
+              editAction: true,
+              cell: (d) => (
+                <div className="flex items-center justify-end gap-2">
+                  <Button
+                    variant={d.isActive ? 'destructive' : 'secondary'}
+                    size="sm"
+                    onClick={() => toggle.mutate(d)}
+                  >
+                    {d.isActive ? 'Deactivate' : 'Activate'}
+                  </Button>
+                </div>
+              ),
+            },
+          ] as DataGridColumn<Designation>[])
+        : []),
     ],
-    [toggle, deptOptions],
+    [toggle, deptOptions, canManage],
   );
 
   return (
@@ -190,15 +206,21 @@ export function DesignationsPage() {
             edit; use “+ Add row” to create.
           </p>
         </div>
-        <ImportButton config={{ basePath: BASE, queryKey: QK, entityLabel: 'designation' }} />
+        {canManage && <ImportButton config={{ basePath: BASE, queryKey: QK, entityLabel: 'designation' }} />}
       </div>
 
       <DataGrid<Designation>
         columns={columns}
         queryKey={QK}
         rowId={(d) => d.id}
-        selectable
-        bulkActions={(sel) => <BulkStatusActions selection={sel} basePath={BASE} queryKey={QK} />}
+        selectable={canManage}
+        {...(canManage
+          ? {
+              bulkActions: (sel: BulkSelection<Designation>) => (
+                <BulkStatusActions selection={sel} basePath={BASE} queryKey={QK} />
+              ),
+            }
+          : {})}
         defaultSort="name"
         searchPlaceholder="Search name or description…"
         filters={{ active: active || undefined }}
@@ -210,7 +232,9 @@ export function DesignationsPage() {
           { id: 'effectiveFrom', label: 'Effective From' },
         ]}
         exportFn={(req: ExportRequest) => apiExport(`${BASE}/export?${exportQueryToParams(req).toString()}`)}
-        inlineEdit={{ version: (d) => d.version, onSave: save, onCreate: create }}
+        {...(canManage
+          ? { inlineEdit: { version: (d: Designation) => d.version, onSave: save, onCreate: create } }
+          : {})}
         toolbar={
           <select
             className="input w-[10rem]"

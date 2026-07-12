@@ -1,6 +1,21 @@
 import { describe, it, expect } from 'vitest';
-import { friendlyMasterError } from './friendlyError.js';
+import { friendlyMasterError, friendlyNameError } from './friendlyError.js';
 import { ApiError } from './sdk.js';
+
+/** Name-keyed masters (Departments/Designations): `<ENTITY>_EXISTS` → "with this name already exists". */
+describe('friendlyNameError', () => {
+  it('maps *_EXISTS to a name-based sentence', () => {
+    expect(friendlyNameError(new ApiError(409, 'DEPARTMENT_EXISTS'), 'Department')).toBe(
+      'A department with this name already exists.',
+    );
+    expect(friendlyNameError(new ApiError(409, 'DESIGNATION_EXISTS'), 'Designation')).toBe(
+      'A designation with this name already exists.',
+    );
+  });
+  it('falls through to the raw code for an unknown ApiError', () => {
+    expect(friendlyNameError(new ApiError(400, 'NOPE'), 'Department')).toBe('NOPE');
+  });
+});
 
 /**
  * CREATE_PAGE_STANDARD §5: known write codes → plain English, unknown codes fall through to the raw

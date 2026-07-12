@@ -74,7 +74,7 @@ const DESIGNATION_IMPORT_COLUMNS: ImportColumn[] = [
 const DESIGNATION_IMPORT_SAMPLE: Record<string, string> = {
   name: 'Senior Field Executive',
   description: 'Experienced field agent',
-  departmentName: 'Field Ops',
+  departmentName: 'Operations',
 };
 
 /** File-shape schema (the spreadsheet row): the FK is a department NAME, resolved to an id downstream. */
@@ -93,6 +93,27 @@ const DESIGNATION_TEMPLATE_SPEC: ImportSpec<DesignationImportFile> = {
   schema: DesignationImportFileSchema,
   uniqueKey: 'name',
   sample: DESIGNATION_IMPORT_SAMPLE,
+  // One row per shape (CREATE_PAGE_STANDARD §6): a department-linked row and an unlinked row with a
+  // blank effectiveFrom (blank = now, ADR-0017). Distinct names so the template can't self-collide on
+  // the unique name. The Department cell is a department NAME resolved to an id on import.
+  sampleRows: [
+    {
+      name: 'Senior Field Executive',
+      description: 'Experienced field agent',
+      departmentName: 'Operations',
+      effectiveFrom: '2026-01-01',
+    },
+    { name: 'Desk Verifier', description: 'KYC desk role', departmentName: '', effectiveFrom: '' },
+  ],
+  templateNotes: [
+    'HOW TO IMPORT DESIGNATIONS (Name is required on every row).',
+    'Name — the designation (job title); must be unique. A name already in the list is reported per-row and skips only that row.',
+    'Description — optional free text.',
+    'Department — the NAME of an existing department (case-insensitive); leave blank for no department. An unknown name is a per-row error.',
+    'Effective From — ISO date (e.g. 2026-01-01); leave blank for "now".',
+    'Rows fail independently: valid rows import even when others error (per-row errors list Row · Column · Error).',
+    'CSV works too: same header row, comma-separated, first sheet only.',
+  ],
 };
 
 /** Build the designation ImportSpec for ONE request: preload the department NAME→id map once and

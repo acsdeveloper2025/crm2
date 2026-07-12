@@ -2117,3 +2117,28 @@ Import/+New/actions/selectable+bulk + (de)activate toasts. (4) `VU_IMPORT_SPEC` 
 `workerRole` disabled on edit. **Deferred/by-design:** `LOCKED_CHIPS` is hand-maintained display copy of the
 frozen `profileFor()` (marked `ponytail:`; display-only, low drift). Counts: web 28→29 test files, VU api 41→42
 (+ "template sample rows re-import cleanly"). Plan: `docs/plans/2026-07-12-verification-units-create-page-standard-plan.md`.
+
+## Departments + Designations CREATE_PAGE_STANDARD retrofit (2026-07-12)
+
+Roll-out page 3. Two **bespoke inline-grid** pages (ADR-0051), **name-keyed** org sub-entities under
+**User Management** (`user.manage`/`page.users` — deliberately NOT `masterdata.manage`; audit confirmed
+the audience split is intentional, documented in the route headers). Singular → fan-out N/A. The
+*Clients* treatment (retrofit inline grid in place). **Additive: no schema, no migration (0117), no ADR
+(0094).** **BUILT + `pnpm verify` green + browser-verified on crm2_dev (Departments dup→red inline
+"already exists" + create success; Designations renders with the Department FK column + RBAC write
+controls; console clean); PUSH PENDING owner.** 6-lens review DEFERRED (owner, post-limit-reset).
+
+**Reconciliation note:** the FE half (toasts + `canManage` RBAC gating on both pages + `friendlyError`
+changes) was **already uncommitted from a prior/compacted session** (4 web files showed `M` at session
+start). This slice **completed** it (Departments toast wiring) and **added** the missing API import
+seams, then verified the whole set — no data lost.
+
+**Changes (additive):** (1) new `friendlyNameError(e, entity)` in `apps/web/src/lib/friendlyError.ts`
+(name-keyed `<ENTITY>_EXISTS` → "A <entity> with this name already exists"; unknown → raw); tested.
+(2) `DepartmentsPage`/`DesignationsPage` green/red toasts on create/save/(de)activate + `canManage =
+has('user.manage')` gating on +Add / Import / actions column / selectable+bulk / inlineEdit
+(Designations keeps its Department FK `select` cell). (3) `departments`+`designations` `service.ts`
+per-entity `sampleRows` (dated + blank-`effectiveFrom`; distinct names) + `templateNotes`; Designations'
+Department column resolves a department NAME→id and its Notes say so. **Frozen untouched:**
+name-uniqueness, the Designation→Department FK, the user-management audience split. Counts: web 28→29
+test files, dept+desig api 30. Plan: `docs/plans/2026-07-12-departments-designations-create-page-standard-plan.md`.
