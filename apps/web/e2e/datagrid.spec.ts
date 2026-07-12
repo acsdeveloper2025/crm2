@@ -134,7 +134,7 @@ test('DataGrid: Excel-style header multi-select (§7) filters by enum, persists,
 
   await workerFilter.click();
   const menu = page.getByRole('menu', { name: 'Worker options' });
-  await menu.getByRole('checkbox', { name: 'Field', exact: true }).check();
+  await menu.getByRole('checkbox', { name: 'Field agent', exact: true }).check();
   await expect(page).toHaveURL(/f_workerRole=FIELD_AGENT/);
 
   // Survives reload; the trigger reflects the selection count.
@@ -145,7 +145,7 @@ test('DataGrid: Excel-style header multi-select (§7) filters by enum, persists,
   await page.getByRole('button', { name: 'Filter Worker' }).click();
   await page
     .getByRole('menu', { name: 'Worker options' })
-    .getByRole('checkbox', { name: 'Field', exact: true })
+    .getByRole('checkbox', { name: 'Field agent', exact: true })
     .uncheck();
   await expect(page).not.toHaveURL(/f_workerRole=/);
 });
