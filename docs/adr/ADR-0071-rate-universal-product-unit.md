@@ -1,5 +1,7 @@
 # ADR-0071: Rate Management — Universal product + verification unit
 
+> **Later extension:** [ADR-0093](./ADR-0093-multi-location-bulk-and-one-slot-one-type.md) adds multi-location **bulk** entry + the **one-slot-one-type** rule — additive, **no change to this decision** (same schema, same resolution; guard is app-layer on new saves).
+
 - **Status:** Accepted
 - **Date:** 2026-06-26
 - **Extends:** ADR-0016 (the Rate model) · mirrors ADR-0050/0046 (commission Universal) + ADR-0069 (rate-type-assignment Universal).

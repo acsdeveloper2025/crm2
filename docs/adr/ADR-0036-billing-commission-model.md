@@ -1,5 +1,7 @@
 # ADR-0036: Billing & Commission model (per-case, unified)
 
+> **Later extension:** [ADR-0093](./ADR-0093-multi-location-bulk-and-one-slot-one-type.md) adds multi-location **bulk** entry + the **one-slot-one-type** rule — additive, **no change to this decision** (same schema, same resolution; guard is app-layer on new saves).
+
 > **⚠️ SUPERSEDED (commission model) → [ADR-0046](./ADR-0046-commission-location-and-tat-dimensions.md)
 > (2026-06-18).** §1–§3 (commission resolution: per-user `(user, rate_type, client)`, no location)
 > are **replaced** by ADR-0046: field-executive commission gains **location + client + product/VU +

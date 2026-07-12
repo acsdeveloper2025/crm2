@@ -1,5 +1,7 @@
 # ADR-0068: Rate-type FK conversion (Phase C)
 
+> **Later extension:** [ADR-0093](./ADR-0093-multi-location-bulk-and-one-slot-one-type.md) adds multi-location **bulk** entry + the **one-slot-one-type** rule — additive, **no change to this decision** (same schema, same resolution; guard is app-layer on new saves).
+
 - **Status:** Accepted
 - **Date:** 2026-06-25
 

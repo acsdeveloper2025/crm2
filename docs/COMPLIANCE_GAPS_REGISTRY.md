@@ -2042,4 +2042,7 @@ every finding adversarially verified. No security/BLOCKING findings.
   genericness of the shared `BulkStatusActions` copy** (already true for `SYSTEM_UNIT_LOCKED`); a
   generic rewrite touches every master-data grid → out of scope for this feature. WONTFIX here.
 
-Counts after fixes: rates api 68, web rateManagement 25, SDK smoke 149. No mig, no ADR.
+Counts after fixes: rates api 68, web rateManagement 25, SDK smoke 149. No migration. **Committed +
+pushed `main`=`34ba19d` → staging (2026-07-12); prod promotion pending owner.** Recorded
+(owner-requested) in **ADR-0093** (multi-location bulk + one-slot-one-type, rate & commission;
+additive — cross-refs on frozen ADR-0016/0018/0036/0048/0050/0068/0071). Next ADR = `0094`.

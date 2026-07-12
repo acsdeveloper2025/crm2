@@ -1,5 +1,7 @@
 # ADR-0016: Rate Management — unified VU resolution chain, effective-dated versioning, single-page workspace
 
+> **Later extension:** [ADR-0093](./ADR-0093-multi-location-bulk-and-one-slot-one-type.md) adds multi-location **bulk** entry + the **one-slot-one-type** rule — additive, **no change to this decision** (same schema, same resolution; guard is app-layer on new saves).
+
 > ⚠️ **SUPERSEDED by [ADR-0018](./ADR-0018-rate-management-flat-one-table-model.md) (2026-06-05).**
 > The owner reversed this 4-table design mid-build to a FLAT one-table model. The
 > `rate_type_eligibility` / `service_zone_rules` tables and the eligibility trigger described

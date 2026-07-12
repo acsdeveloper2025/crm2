@@ -1,5 +1,7 @@
 # ADR-0018: Rate Management — flat one-table model (supersedes ADR-0016)
 
+> **Later extension:** [ADR-0093](./ADR-0093-multi-location-bulk-and-one-slot-one-type.md) adds multi-location **bulk** entry + the **one-slot-one-type** rule — additive, **no change to this decision** (same schema, same resolution; guard is app-layer on new saves).
+
 - **Status:** Accepted
 - **Date:** 2026-06-05
 - **Supersedes:** ADR-0016 (rate-management resolution / versioning / workspace)

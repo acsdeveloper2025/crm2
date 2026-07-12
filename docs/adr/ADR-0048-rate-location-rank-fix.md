@@ -1,5 +1,7 @@
 # ADR-0048: Client-rate location ranking — the location-less default must outrank a non-matching location override
 
+> **Later extension:** [ADR-0093](./ADR-0093-multi-location-bulk-and-one-slot-one-type.md) adds multi-location **bulk** entry + the **one-slot-one-type** rule — additive, **no change to this decision** (same schema, same resolution; guard is app-layer on new saves).
+
 - **Status:** **Accepted** — owner sign-off 2026-06-19. Narrowly **supersedes the location-specificity
   `ORDER BY` ladder of ADR-0018** (`RATE_LATERAL`); the flat one-table rate model, dimensions, and
   effective-dating of ADR-0018 are **unchanged**. Supersedes a FROZEN decision — see

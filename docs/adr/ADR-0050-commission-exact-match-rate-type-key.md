@@ -1,5 +1,7 @@
 # ADR-0050: Two rate types (client vs field) + commission resolution model
 
+> **Later extension:** [ADR-0093](./ADR-0093-multi-location-bulk-and-one-slot-one-type.md) adds multi-location **bulk** entry + the **one-slot-one-type** rule — additive, **no change to this decision** (same schema, same resolution; guard is app-layer on new saves).
+
 - **Status:** **Accepted** — owner-directed 2026-06-19/20 (owner + CTO). **Supersedes the commission
   resolution model of [ADR-0046](./ADR-0046-commission-location-and-tat-dimensions.md)** and the
   interim "exact-match all dimensions / required-at-all-assignments" wording considered mid-design.
