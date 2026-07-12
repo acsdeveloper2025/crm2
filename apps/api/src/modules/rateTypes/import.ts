@@ -27,6 +27,32 @@ const RATE_TYPE_IMPORT_SAMPLE: Record<string, string> = {
   effectiveFrom: '2026-01-01',
 };
 
+// One sample row per category shape (CREATE_PAGE_STANDARD §6): a FIELD tier (dated) and an OFFICE type
+// (blank effectiveFrom = server default now(), ADR-0017). Distinct codes so the unmodified template
+// imports without self-colliding on the unique `code`.
+const RATE_TYPE_IMPORT_SAMPLE_ROWS: Record<string, string>[] = [
+  RATE_TYPE_IMPORT_SAMPLE,
+  {
+    code: 'OGL',
+    name: 'Office (green line)',
+    description: 'Office-processed verification',
+    category: 'OFFICE',
+    sortOrder: '20',
+    effectiveFrom: '',
+  },
+];
+
+const RATE_TYPE_TEMPLATE_NOTES: string[] = [
+  'HOW TO IMPORT RATE TYPES (Code and Name are required on every row).',
+  'Code — the unique UPPER_SNAKE_CASE identifier (start with a letter, then letters/digits/underscore), e.g. LOCAL6. It is the catalog key and is IMMUTABLE once created; a code already in the list is reported per-row and skips only that row.',
+  'Name — the display label (required).',
+  'Category — FIELD (a field-visit tier billing/commission resolves on) or OFFICE (an office rate type); blank defaults to FIELD.',
+  'Sort Order — a whole number controlling list order; blank = 0.',
+  'Effective From — ISO date (e.g. 2026-01-01); leave blank for "now".',
+  'Rows fail independently: valid rows import even when others error (per-row errors list Row · Column · Error).',
+  'CSV works too: same header row, comma-separated, first sheet only.',
+];
+
 // Built via a generic function (rather than a hand-typed const) so TS infers T from the schema's own
 // output — `CreateRateTypeSchema.category` has a `.default()`, so its Input/Output types diverge and a
 // direct `ImportSpec<z.infer<...>>` annotation fails the schema field's structural (Input) check.
@@ -37,6 +63,8 @@ function buildSpec<T>(schema: ZodType<T>): ImportSpec<T> {
     schema,
     uniqueKey: 'code',
     sample: RATE_TYPE_IMPORT_SAMPLE,
+    sampleRows: RATE_TYPE_IMPORT_SAMPLE_ROWS,
+    templateNotes: RATE_TYPE_TEMPLATE_NOTES,
   };
 }
 

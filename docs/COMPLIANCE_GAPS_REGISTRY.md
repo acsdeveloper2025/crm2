@@ -2162,3 +2162,21 @@ per-entity `sampleRows` (dated + blank-`effectiveFrom`; distinct names) + `templ
 Department column resolves a department NAME→id and its Notes say so. **Frozen untouched:**
 name-uniqueness, the Designation→Department FK, the user-management audience split. Counts: web 28→29
 test files, dept+desig api 30. Plan: `docs/plans/2026-07-12-departments-designations-create-page-standard-plan.md`.
+
+## Rate Types CREATE_PAGE_STANDARD retrofit (2026-07-12) — roll-out page 4 (FINAL)
+
+The *Clients* treatment for a **code-keyed singular** bespoke inline-grid page (`RateTypesPage`, ADR-0051)
+with its **own import** (`RATE_TYPE_IMPORT_SPEC`). Owner: BUILD. **Additive: no schema, no migration
+(0117), no ADR (0094).** `pnpm verify` green; browser-verified on crm2_dev (dup `LOCAL`→red inline "A rate
+type with this code already exists." + toast; create `PONYRT`→green toast + row; RBAC controls render for
+a manager). **Changes:** (1) `RateTypesPage.tsx` green/red toasts on create/save/(de)activate + new local
+`friendlyRateTypeError()` (dup code is `RATE_TYPE_EXISTS`, NOT `*_CODE_EXISTS`, so neither shared helper
+fits — kept local, exported + tested) + client RBAC gate `has('masterdata.manage')` on actions/Import/
+inline-edit; (2) `rateTypes/import.ts` `RATE_TYPE_IMPORT_SPEC` gains per-category `sampleRows` (FIELD +
+OFFICE, distinct codes) + `templateNotes`. **`effectiveFrom` honored** — `CreateRateTypeSchema` keeps it
+(unlike VU's baseShape), so NO VU-style import-discard trap (checked). **Frozen untouched:** `code`
+create-only (catalog/FK key); FIELD/OFFICE category semantics feeding rate/commission resolution. No bulk
+(page has none). e2e `rateTypes.spec` checks only inline-edit/createOnly (unaffected for a manager). web
++1 test (`friendlyRateTypeError`). **This COMPLETES the CREATE_PAGE_STANDARD roll-out — all 4 pages
+(Clients+Products · Verification Units · Departments+Designations · Rate Types) live on prod.** Plan:
+`docs/plans/2026-07-12-rate-types-create-page-standard-plan.md`.

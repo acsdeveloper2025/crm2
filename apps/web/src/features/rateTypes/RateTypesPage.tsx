@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   exportQueryToParams,
   pageQueryToParams,
@@ -10,6 +11,7 @@ import {
 } from '@crm2/sdk';
 import { api, apiExport, ApiError } from '../../lib/sdk.js';
 import { formatDateTime } from '../../lib/format.js';
+import { useAuth } from '../../lib/AuthContext.js';
 import { StatusChip } from '../../components/StatusChip.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { ImportButton } from '../../components/import/ImportModal.js';
@@ -23,12 +25,28 @@ const isStale = (e: unknown): e is ApiError =>
   e instanceof ApiError && e.status === HTTP_CONFLICT && e.code === 'STALE_UPDATE';
 
 /**
+ * Plain-English copy for the rate-type write errors (CREATE_PAGE_STANDARD §5). Rate types are code-keyed
+ * but the dup code is `RATE_TYPE_EXISTS` (not `*_CODE_EXISTS`), so neither shared helper fits — kept
+ * local. Unknown codes fall through to the raw code so nothing is swallowed.
+ */
+export function friendlyRateTypeError(e: unknown): string {
+  if (e instanceof ApiError) {
+    if (e.code === 'RATE_TYPE_EXISTS') return 'A rate type with this code already exists.';
+    if (e.code === 'STALE_UPDATE')
+      return 'This row changed since you opened it — refreshed; Save again to re-apply.';
+  }
+  return e instanceof Error ? e.message : 'Something went wrong.';
+}
+
+/**
  * Rate Types — inline-grid editing (ADR-0051): click a Name/Description/Category/Sort cell to edit it
  * in place, "+ Add row" to create; no modal form. `code` is the immutable identity (the FK key in
  * Phase C) — shown but never editable. Persistence reuses PUT/POST + `version` (server owns OCC).
  */
 export function RateTypesPage() {
   const qc = useQueryClient();
+  const { has } = useAuth();
+  const canManage = has('masterdata.manage'); // mirrors the server MASTERDATA_MANAGE guard on every write
   const [active, setActive] = useState('');
   const [toggleConflict, setToggleConflict] = useState<RateType | null>(null);
 
@@ -37,9 +55,16 @@ export function RateTypesPage() {
       api<RateType>('POST', `${BASE}/${r.id}/${r.isActive ? 'deactivate' : 'activate'}`, {
         version: r.version, // OCC: (de)activation is version-guarded (ADR-0019)
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: [QK] }),
+    onSuccess: (_res, r: RateType) => {
+      qc.invalidateQueries({ queryKey: [QK] });
+      toast.success(`Rate type “${r.code}” ${r.isActive ? 'deactivated' : 'activated'}`);
+    },
     onError: (e: unknown, r: RateType) => {
-      if (isStale(e)) setToggleConflict(r);
+      if (isStale(e)) {
+        setToggleConflict(r);
+        return;
+      }
+      toast.error(friendlyRateTypeError(e));
     },
   });
 
@@ -55,33 +80,31 @@ export function RateTypesPage() {
         version,
       });
       await qc.invalidateQueries({ queryKey: [QK] });
+      toast.success(`Rate type “${row.code}” saved`);
     } catch (e) {
-      if (isStale(e)) {
-        await qc.invalidateQueries({ queryKey: [QK] });
-        throw new Error('This row changed since you opened it — refreshed; Save again to re-apply.', {
-          cause: e,
-        });
-      }
-      if (e instanceof ApiError && e.code === 'RATE_TYPE_EXISTS')
-        throw new Error('A rate type with this code already exists.', { cause: e });
-      throw e instanceof Error ? e : new Error('Save failed');
+      if (isStale(e)) await qc.invalidateQueries({ queryKey: [QK] }); // refresh the stale row
+      const msg = friendlyRateTypeError(e);
+      toast.error(msg); // red toast …
+      throw new Error(msg, { cause: e }); // … and persist inline in the grid
     }
   };
 
   const create = async (values: Record<string, string>): Promise<void> => {
+    const code = values['code'] ?? '';
     try {
       await api<RateType>('POST', BASE, {
-        code: values['code'] ?? '',
+        code,
         name: values['name'] ?? '',
         description: values['description'] ?? '',
         category: values['category'] || 'FIELD',
         ...(values['sortOrder'] ? { sortOrder: Number(values['sortOrder']) } : {}),
       });
       await qc.invalidateQueries({ queryKey: [QK] });
+      toast.success(`Rate type “${code}” created`);
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'RATE_TYPE_EXISTS')
-        throw new Error('A rate type with this code already exists.', { cause: e });
-      throw e instanceof Error ? e : new Error('Create failed');
+      const msg = friendlyRateTypeError(e);
+      toast.error(msg);
+      throw new Error(msg, { cause: e });
     }
   };
 
@@ -153,25 +176,31 @@ export function RateTypesPage() {
         sortable: true,
         cell: (r) => <StatusChip isActive={r.isActive} effectiveFrom={r.effectiveFrom} />,
       },
-      {
-        id: 'actions',
-        header: 'Actions',
-        align: 'right',
-        editAction: true,
-        cell: (r) => (
-          <div className="flex items-center justify-end gap-2">
-            <Button
-              variant={r.isActive ? 'destructive' : 'secondary'}
-              size="sm"
-              onClick={() => toggle.mutate(r)}
-            >
-              {r.isActive ? 'Deactivate' : 'Activate'}
-            </Button>
-          </div>
-        ),
-      },
+      // Write column (Edit affordance + Activate/Deactivate) only for managers — mirrors the server
+      // MASTERDATA_MANAGE guard so a read-only user sees no dead buttons (403-on-click).
+      ...(canManage
+        ? ([
+            {
+              id: 'actions',
+              header: 'Actions',
+              align: 'right',
+              editAction: true,
+              cell: (r) => (
+                <div className="flex items-center justify-end gap-2">
+                  <Button
+                    variant={r.isActive ? 'destructive' : 'secondary'}
+                    size="sm"
+                    onClick={() => toggle.mutate(r)}
+                  >
+                    {r.isActive ? 'Deactivate' : 'Activate'}
+                  </Button>
+                </div>
+              ),
+            },
+          ] as DataGridColumn<RateType>[])
+        : []),
     ],
-    [toggle],
+    [toggle, canManage],
   );
 
   return (
@@ -184,7 +213,7 @@ export function RateTypesPage() {
             the immutable identity; click a cell to edit, use “+ Add row” to create.
           </p>
         </div>
-        <ImportButton config={{ basePath: BASE, queryKey: QK, entityLabel: 'rate type' }} />
+        {canManage && <ImportButton config={{ basePath: BASE, queryKey: QK, entityLabel: 'rate type' }} />}
       </div>
 
       <DataGrid<RateType>
@@ -198,7 +227,9 @@ export function RateTypesPage() {
           api<Paginated<RateType>>('GET', `${BASE}?${pageQueryToParams(query).toString()}`)
         }
         exportFn={(req: ExportRequest) => apiExport(`${BASE}/export?${exportQueryToParams(req).toString()}`)}
-        inlineEdit={{ version: (r) => r.version, onSave: save, onCreate: create }}
+        {...(canManage
+          ? { inlineEdit: { version: (r: RateType) => r.version, onSave: save, onCreate: create } }
+          : {})}
         toolbar={
           <select
             className="input w-[10rem]"
