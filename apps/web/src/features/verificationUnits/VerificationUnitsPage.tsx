@@ -27,8 +27,8 @@ const isStale = (e: unknown): e is ApiError =>
 
 /** Unit worker role → readable label (ADR-0070: worker_role is the unit discriminator). */
 const WORKER_ROLE_LABELS: Record<string, string> = {
-  FIELD_AGENT: 'Field',
-  KYC_VERIFIER: 'Desk/Office',
+  FIELD_AGENT: 'Field agent',
+  KYC_VERIFIER: 'KYC verifier',
 };
 const WORKER_ROLE_OPTIONS = Object.entries(WORKER_ROLE_LABELS).map(([value, label]) => ({ value, label }));
 

@@ -51,12 +51,18 @@ function profileFor(workerRole: WorkerRole) {
       };
 }
 
-// ponytail: readable display of the frozen profileFor() values (ADR-0070) — display only, mirrors the
-// locked profile so the user sees what worker role decided; kept in sync by hand (the map is frozen).
-const LOCKED_CHIPS: Record<WorkerRole, string[]> = {
-  FIELD_AGENT: ['≥5 photos', 'GPS required', 'Agent commission', 'Field narrative', 'Revisit (parent rate)'],
-  KYC_VERIFIER: ['0 photos', 'No GPS', 'Client invoice', 'No commission', 'Recheck (fresh rate)'],
-};
+// Read-only "locked profile" chips DERIVED from profileFor() (ADR-0070) so the display can't drift from
+// the frozen map — change a profile value and its chip changes with it (no hand-sync). Exported for test.
+export function lockedChips(workerRole: WorkerRole): string[] {
+  const p = profileFor(workerRole);
+  return [
+    p.requiredPhotos === 0 ? '0 photos' : `≥${p.requiredPhotos} photos`,
+    p.requiredGps ? 'GPS required' : 'No GPS',
+    p.billingProfile === 'AGENT_COMMISSION' ? 'Agent commission' : 'Client invoice',
+    p.reportTemplateType === 'FIELD_NARRATIVE' ? 'Field narrative' : 'KYC document',
+    p.reverificationRule === 'REVISIT_PARENT_RATE' ? 'Revisit (parent rate)' : 'Recheck (fresh rate)',
+  ];
+}
 
 /**
  * Verification-unit create/edit as a full record-page route (ADR-0051 — no modal). `/admin/verification-units/new`
@@ -221,7 +227,11 @@ function UnitForm({ initial }: { initial: VerificationUnit | null }) {
         <p className="text-sm text-muted-foreground">One catalog entry — a field visit or a KYC document.</p>
       </div>
 
-      <StepCard n={1} title="Identity & role">
+      <StepCard
+        n={1}
+        title="Identity & role"
+        hint="The unit's code, name and the worker role that locks its behaviour profile."
+      >
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Code" required hint="UPPER_SNAKE">
             <Input
@@ -275,6 +285,11 @@ function UnitForm({ initial }: { initial: VerificationUnit | null }) {
         n={2}
         title={isField ? 'Field profile' : 'Desk profile'}
         badge={isField ? 'Field agent' : 'KYC verifier'}
+        hint={
+          isField
+            ? 'Field-visit details — the locked profile is shown below.'
+            : 'Desk-document details — the locked profile is shown below.'
+        }
       >
         <div className="grid gap-4 sm:grid-cols-2">
           {isField && (
@@ -318,7 +333,7 @@ function UnitForm({ initial }: { initial: VerificationUnit | null }) {
         <div className="mt-3">
           <p className="mb-1.5 text-xs font-medium text-muted-foreground">Locked profile</p>
           <div className="flex flex-wrap gap-1.5">
-            {LOCKED_CHIPS[workerRole].map((c) => (
+            {lockedChips(workerRole).map((c) => (
               <span
                 key={c}
                 className="rounded-full border border-border bg-surface-muted px-2.5 py-1 text-[11px] text-muted-foreground"
@@ -378,25 +393,30 @@ function StepCard({
   n,
   title,
   badge,
+  hint,
   children,
 }: {
   n: number;
   title: string;
   badge?: string;
+  hint?: string;
   children: React.ReactNode;
 }) {
   return (
     <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
-      <div className="mb-3 flex items-center gap-2">
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
-          {n}
-        </span>
-        <h2 className="text-[15px] font-semibold">{title}</h2>
-        {badge && (
-          <span className="ml-auto rounded-full bg-primary-muted px-2 py-0.5 text-[11px] font-semibold text-primary">
-            {badge}
+      <div className="mb-3">
+        <div className="flex items-center gap-2">
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
+            {n}
           </span>
-        )}
+          <h2 className="text-[15px] font-semibold">{title}</h2>
+          {badge && (
+            <span className="ml-auto rounded-full bg-primary-muted px-2 py-0.5 text-[11px] font-semibold text-primary">
+              {badge}
+            </span>
+          )}
+        </div>
+        {hint && <p className="mt-1 pl-8 text-xs text-muted-foreground">{hint}</p>}
       </div>
       {children}
     </section>

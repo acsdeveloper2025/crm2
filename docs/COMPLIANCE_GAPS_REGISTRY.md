@@ -2004,7 +2004,7 @@ hub + single onboarding-workbook import (needs ADR). No code changed in this aud
 
 Feature: rate multi-location bulk add (clones commission; `POST /api/v2/rates/bulk`, merged
 `RateCreatePage`, one-slot-one-type guard). **BUILT + `pnpm verify` green + browser-verified,
-PUSH PENDING owner.** Six-lens adversarial review (CEO/CTO/design/security/standards/logicality),
+✅ LIVE ON PROD (`34ba19d`, 2026-07-12).** Six-lens adversarial review (CEO/CTO/design/security/standards/logicality),
 every finding adversarially verified. No security/BLOCKING findings.
 
 **✅ FIXED (7):**
@@ -2043,7 +2043,7 @@ every finding adversarially verified. No security/BLOCKING findings.
   generic rewrite touches every master-data grid → out of scope for this feature. WONTFIX here.
 
 Counts after fixes: rates api 68, web rateManagement 25, SDK smoke 149. No migration. **Committed +
-pushed `main`=`34ba19d` → staging (2026-07-12); prod promotion pending owner.** Recorded
+pushed `main`=`34ba19d` → staging + **✅ PROD LIVE (2026-07-12)**. Recorded
 (owner-requested) in **ADR-0093** (multi-location bulk + one-slot-one-type, rate & commission;
 additive — cross-refs on frozen ADR-0016/0018/0036/0048/0050/0068/0071). Next ADR = `0094`.
 
@@ -2061,7 +2061,7 @@ no schema, no migration (next mig stays 0117), no new ADR** (ADR-0093 + CREATE_P
 **Committed + pushed `main`=`ad50ffe` → staging (2026-07-12, deploy run 29182485534); `pnpm verify`
 green + browser-verified on Clients AND Products (dup→red toast+inline, create→green toast,
 deactivate→green toast, both import templates = 2 per-resource sample rows + Notes sheet); prod
-promotion pending owner.** Six-lens adversarial review (CEO/CTO/design/security/standards/logicality)
+**✅ LIVE ON PROD (`ad50ffe`, 2026-07-12).** Six-lens adversarial review (CEO/CTO/design/security/standards/logicality)
 + an independent pre-push re-verification workflow (build re-run + regression/contract/logic lenses →
 `safeToPush`, no blocking), every finding verified. **No security/BLOCKING findings.**
 
@@ -2146,7 +2146,7 @@ the audience split is intentional, documented in the route headers). Singular �
 *Clients* treatment (retrofit inline grid in place). **Additive: no schema, no migration (0117), no ADR
 (0094).** **BUILT + `pnpm verify` green + browser-verified on crm2_dev (Departments dup→red inline
 "already exists" + create success; Designations renders with the Department FK column + RBAC write
-controls; console clean); PUSH PENDING owner.** 6-lens review DEFERRED (owner, post-limit-reset).
+controls; console clean); ✅ **LIVE ON PROD (`8aef4d9`, 2026-07-12).** Independent 4-agent adversarial pre-push review PASSED (safeToPush; 1 minor finding fixed — designation import sample dept `Field Ops`→`Operations` so both templates cohere).
 
 **Reconciliation note:** the FE half (toasts + `canManage` RBAC gating on both pages + `friendlyError`
 changes) was **already uncommitted from a prior/compacted session** (4 web files showed `M` at session
