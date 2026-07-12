@@ -1,7 +1,25 @@
 import { describe, it, expect } from 'vitest';
-import { buildHistoryCsv } from './RateManagementPage.js';
+import { buildHistoryCsv, toggleFriendlyError } from './RateManagementPage.js';
 import { formatDateTime } from '../../lib/format.js';
 import type { RateHistory } from '@crm2/sdk';
+
+/**
+ * CREATE_PAGE_STANDARD §5: the list-row activate/deactivate toast maps its two known 409 codes to
+ * plain English and falls through to the raw code for anything else (STALE_UPDATE is handled by the
+ * ConflictDialog, not this map). Pins the copy + the fall-through so a rename can't silently regress
+ * the toast to a raw server code.
+ */
+describe('toggleFriendlyError (rates list-row activate/deactivate toast)', () => {
+  it('maps the two activate-blocking 409s', () => {
+    expect(toggleFriendlyError('RATE_EXISTS')).toContain('already overlaps this period');
+    expect(toggleFriendlyError('HAS_OTHER_RATE_TYPE')).toContain('different rate type');
+  });
+
+  it('falls through (null) on unknown codes so the raw code still surfaces', () => {
+    expect(toggleFriendlyError('STALE_UPDATE')).toBeNull();
+    expect(toggleFriendlyError('')).toBeNull();
+  });
+});
 
 /**
  * UX-13: HistoryDialog "Export CSV" — the rows are already loaded client-side (no new endpoint).

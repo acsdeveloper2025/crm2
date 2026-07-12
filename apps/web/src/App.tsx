@@ -16,6 +16,7 @@ import { ProductsPage } from './features/products/ProductsPage.js';
 import { CpvPage } from './features/cpv/CpvPage.js';
 import { RateManagementPage } from './features/rateManagement/RateManagementPage.js';
 import { RateRecordPage } from './features/rateManagement/RateRecordPage.js';
+import { RateCreatePage } from './features/rateManagement/RateCreatePage.js';
 import { RateTypesPage } from './features/rateTypes/RateTypesPage.js';
 import { RateTypeAssignmentsPage } from './features/rateTypeAssignments/RateTypeAssignmentsPage.js';
 import { RateTypeAssignmentRecordPage } from './features/rateTypeAssignments/RateTypeAssignmentRecordPage.js';
@@ -156,7 +157,7 @@ export function App() {
           path="/admin/rates/new"
           element={
             <RequirePerm perm="page.masterdata">
-              <RateRecordPage />
+              <RateCreatePage />
             </RequirePerm>
           }
         />

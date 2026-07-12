@@ -4,8 +4,14 @@ import type { ImportColumn, ImportSpec, ResolveResult } from '../../platform/imp
 import { parseIsoDate, parseNumber } from '../../platform/import/parsers.js';
 import { clientService } from '../clients/service.js';
 import { productService } from '../products/service.js';
+import { rateTypeService } from '../rateTypes/service.js';
 import { verificationUnitService } from '../verificationUnits/service.js';
 import { locationRepository } from '../locations/repository.js';
+
+/** ADR-0071: the EXPLICIT Universal literal for Product/Unit cells. A blank cell stays an error —
+ *  a money table must never default to Universal on an accidentally-empty cell (fail-loud). */
+const UNIVERSAL_LITERAL = 'UNIVERSAL';
+const isUniversal = (code: string): boolean => code.trim().toUpperCase() === UNIVERSAL_LITERAL;
 
 /**
  * Rates is the ONLY FK-resolving import (B-14): the file carries human CODES (client/product/unit)
@@ -51,12 +57,62 @@ export const RATE_IMPORT_SAMPLE: Record<string, string> = {
   currency: 'INR',
 };
 
-/** Template spec (no `resolve` — the template only needs the columns + sample, never FK lookups). */
+/** One sample row PER accepted value shape (CREATE_PAGE_STANDARD §6 — a single row teaches only one
+ *  form): a located field rate, a flat office/KYC rate (no geography, no rate type), and a Universal
+ *  product+unit rate (the explicit UNIVERSAL literal, ADR-0071). */
+export const RATE_IMPORT_SAMPLE_ROWS: Record<string, string | number>[] = [
+  RATE_IMPORT_SAMPLE,
+  {
+    clientCode: 'HDFC',
+    productCode: 'HOME_LOAN',
+    unitCode: 'KYC',
+    pincode: '',
+    area: '',
+    clientRateType: '',
+    amount: '300',
+    currency: 'INR',
+  },
+  {
+    clientCode: 'HDFC',
+    productCode: UNIVERSAL_LITERAL,
+    unitCode: UNIVERSAL_LITERAL,
+    pincode: '400001',
+    area: 'Fort',
+    clientRateType: 'OGL',
+    amount: '650',
+    currency: 'INR',
+  },
+];
+
+/** The template's Notes sheet — the valid rate-type codes come from the LIVE catalog (`rate_types`
+ *  is admin data; a hardcoded list would drift the moment an admin adds a code). */
+export async function buildRateTemplateNotes(): Promise<string[]> {
+  // Only FIELD-category codes belong in the Rate Type column — office rates leave it blank, so
+  // listing an OFFICE-category code here would contradict the "leave blank for office" line below.
+  const fieldCodes = (await rateTypeService.options(true))
+    .filter((rt) => rt.category !== 'OFFICE')
+    .map((rt) => rt.code);
+  return [
+    'HOW TO IMPORT RATES (Client Code, Product Code, Unit Code and Amount are required on every row)',
+    'Client Code / Product Code / Unit Code — the CODES from Clients / Products / Verification Units (never display names).',
+    `Product Code and Unit Code also accept the literal ${UNIVERSAL_LITERAL} — the rate then applies to ALL products / ALL units of the client (ADR-0071). A blank cell is an error, never Universal.`,
+    'Pincode + Area — provide BOTH (a located field rate) or NEITHER (a flat office/KYC rate). One of the two alone is an error.',
+    `Rate Type — a located field rate’s tier; must be one of the active field codes: ${fieldCodes.join(', ')}. Leave blank for office/KYC rates.`,
+    'One location holds ONE rate type per client + product + unit — a row whose location already carries a different type is rejected (the row error names the rule).',
+    'A row identical to an existing ACTIVE rate over an overlapping period is rejected as a duplicate — the existing rate keeps its amount (change amounts with Revise, not re-import).',
+    'Currency — 3-letter code; blank = INR. Effective From — ISO date (e.g. 2026-07-11); blank = now.',
+    'Rows fail independently: valid rows import even when others error (per-row errors list Row · Column · Error).',
+    'CSV works too: same header row, comma-separated, first sheet only.',
+  ];
+}
+
+/** Template spec (no `resolve` — the template only needs the columns + samples, never FK lookups). */
 export const RATE_TEMPLATE_SPEC: ImportSpec<RateImportFile> = {
   resource: 'rates',
   columns: RATE_IMPORT_COLUMNS,
   schema: RateImportFileSchema,
   sample: RATE_IMPORT_SAMPLE,
+  sampleRows: RATE_IMPORT_SAMPLE_ROWS,
 };
 
 /**
@@ -66,14 +122,16 @@ export const RATE_TEMPLATE_SPEC: ImportSpec<RateImportFile> = {
  * service feeds to `runImportPreview`/`runImportConfirm`.
  */
 export async function buildRateSpec(): Promise<ImportSpec<RateImportFile, CreateRateInput>> {
-  const [clients, products, units] = await Promise.all([
+  const [clients, products, units, rateTypes] = await Promise.all([
     clientService.options(),
     productService.options(),
     verificationUnitService.options(),
+    rateTypeService.options(true),
   ]);
   const clientMap = new Map(clients.map((c) => [c.code, c.id]));
   const productMap = new Map(products.map((p) => [p.code, p.id]));
   const unitMap = new Map(units.map((u) => [u.code, u.id]));
+  const rateTypeCodes = new Set(rateTypes.map((rt) => rt.code));
 
   const resolve = async (input: RateImportFile): Promise<ResolveResult<CreateRateInput>> => {
     const errors: { column: string; message: string }[] = [];
@@ -81,12 +139,20 @@ export async function buildRateSpec(): Promise<ImportSpec<RateImportFile, Create
     const clientId = clientMap.get(input.clientCode);
     if (clientId === undefined)
       errors.push({ column: 'Client Code', message: `unknown client code ${input.clientCode}` });
-    const productId = productMap.get(input.productCode);
+    // ADR-0071: the explicit UNIVERSAL literal → null (all products / all units of the client).
+    const productId = isUniversal(input.productCode) ? null : productMap.get(input.productCode);
     if (productId === undefined)
       errors.push({ column: 'Product Code', message: `unknown product code ${input.productCode}` });
-    const verificationUnitId = unitMap.get(input.unitCode);
+    const verificationUnitId = isUniversal(input.unitCode) ? null : unitMap.get(input.unitCode);
     if (verificationUnitId === undefined)
       errors.push({ column: 'Unit Code', message: `unknown unit code ${input.unitCode}` });
+    // A typo'd rate type must be a row error — the DB lookup would otherwise silently NULL the
+    // rate_type_id and import a typeless rate (fail-loud over silent substitution).
+    if (input.clientRateType && !rateTypeCodes.has(input.clientRateType.trim().toUpperCase()))
+      errors.push({
+        column: 'Rate Type',
+        message: `unknown rate type ${input.clientRateType} — use an active catalog code`,
+      });
 
     let locationId: number | undefined;
     const hasPincode = !!input.pincode;
@@ -111,8 +177,8 @@ export async function buildRateSpec(): Promise<ImportSpec<RateImportFile, Create
       ok: true,
       value: {
         clientId: clientId!,
-        productId: productId!,
-        verificationUnitId: verificationUnitId!,
+        productId: productId ?? null, // null = the explicit Universal literal (ADR-0071)
+        verificationUnitId: verificationUnitId ?? null,
         ...(locationId !== undefined ? { locationId } : {}),
         ...(input.clientRateType ? { clientRateType: input.clientRateType } : {}),
         amount: input.amount,
@@ -127,6 +193,7 @@ export async function buildRateSpec(): Promise<ImportSpec<RateImportFile, Create
     columns: RATE_IMPORT_COLUMNS,
     schema: RateImportFileSchema,
     sample: RATE_IMPORT_SAMPLE,
+    sampleRows: RATE_IMPORT_SAMPLE_ROWS,
     resolve,
   };
 }

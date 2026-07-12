@@ -642,6 +642,280 @@ describe.skipIf(!RUN)('rates API', () => {
     });
   });
 
+  // ── POST /bulk (multi-location bulk entry): one client bill-rate fanned across many locations ──
+  describe('POST /bulk (multi-location bulk entry)', () => {
+    const FA = authHeaderForRole('FIELD_AGENT');
+    let pincodeSeq = 500000;
+    const seedLoc = async (area: string, pincode = String(++pincodeSeq)) =>
+      (
+        await request(app)
+          .post('/api/v2/locations')
+          .set(SA)
+          .send({ pincode, area, city: 'Mumbai', state: 'MH' })
+      ).body.id as number;
+    const bulk = (body: object, auth = SA) => request(app).post('/api/v2/rates/bulk').set(auth).send(body);
+
+    it('creates one rate per location (all CREATED), grows the list, and appends per-row history', async () => {
+      const key = await seedKey('BLK1');
+      const l1 = await seedLoc('BAREA1');
+      const l2 = await seedLoc('BAREA2');
+      const l3 = await seedLoc('BAREA3');
+      const res = await bulk({ ...key, clientRateType: 'LOCAL', amount: 150, locationIds: [l1, l2, l3] });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ createdCount: 3, existsCount: 0, errorCount: 0 });
+      expect(res.body.results.every((r: { status: string }) => r.status === 'CREATED')).toBe(true);
+      const list = await request(app).get('/api/v2/rates').set(SA);
+      expect(list.body.totalCount).toBe(3);
+      // audit parity with single create: every fanned row has its own rate_history CREATE entry
+      const rateId = res.body.results[0].rateId as number;
+      const hist = await request(app).get(`/api/v2/rates/${rateId}/history`).set(SA);
+      expect(hist.status).toBe(200);
+      expect(hist.body).toHaveLength(1);
+      expect(hist.body[0].action).toBe('CREATE');
+    });
+
+    it('skips an already-existing location as EXISTS, creates the rest, never overwrites (partial success)', async () => {
+      const key = await seedKey('BLK2');
+      const l1 = await seedLoc('DAREA1');
+      const l2 = await seedLoc('DAREA2');
+      const pre = await request(app)
+        .post('/api/v2/rates')
+        .set(SA)
+        .send({ ...key, locationId: l1, clientRateType: 'LOCAL', amount: 140 });
+      expect(pre.status).toBe(201);
+      const res = await bulk({ ...key, clientRateType: 'LOCAL', amount: 150, locationIds: [l1, l2] });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ createdCount: 1, existsCount: 1, errorCount: 0 });
+      const byLoc = Object.fromEntries(
+        res.body.results.map((r: { locationId: number; status: string }) => [r.locationId, r.status]),
+      );
+      expect(byLoc[l1]).toBe('EXISTS');
+      expect(byLoc[l2]).toBe('CREATED');
+      // the pre-existing rate kept its own amount (never overwritten)
+      const list = await request(app).get('/api/v2/rates').set(SA);
+      const l1row = (list.body.items as { locationId: number; amount: number }[]).find(
+        (r) => r.locationId === l1,
+      )!;
+      expect(l1row.amount).toBe(140);
+    });
+
+    it('one slot = one rate type (owner 2026-07-11): a location holding another type errors per-row, the rest create', async () => {
+      const key = await seedKey('BLK3');
+      const l1 = await seedLoc('RAREA1');
+      const l2 = await seedLoc('RAREA2');
+      // l1 already has LOCAL at this exact slot — bulk OGL over [l1, l2] must error l1 and create l2.
+      const pre = await request(app)
+        .post('/api/v2/rates')
+        .set(SA)
+        .send({ ...key, locationId: l1, clientRateType: 'LOCAL', amount: 140 });
+      expect(pre.status).toBe(201);
+      const res = await bulk({ ...key, clientRateType: 'OGL', amount: 150, locationIds: [l1, l2] });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ createdCount: 1, existsCount: 0, errorCount: 1 });
+      const byLoc = Object.fromEntries(
+        res.body.results.map((r: { locationId: number; status: string; error: string | null }) => [
+          r.locationId,
+          r,
+        ]),
+      );
+      expect(byLoc[l1]).toMatchObject({ status: 'ERROR', error: 'HAS_OTHER_RATE_TYPE' });
+      expect(byLoc[l2]).toMatchObject({ status: 'CREATED' });
+    });
+
+    it('the one-type slot is (client, product, unit, location): a DIFFERENT product at the same location is allowed', async () => {
+      const key = await seedKey('BLK4');
+      const otherProduct = await newProduct('P_BLK4B');
+      const loc = await seedLoc('SAREA1');
+      const pre = await request(app)
+        .post('/api/v2/rates')
+        .set(SA)
+        .send({ ...key, locationId: loc, clientRateType: 'LOCAL', amount: 140 });
+      expect(pre.status).toBe(201);
+      // same client + unit + location but ANOTHER product → a distinct slot, OGL is legal there
+      const res = await bulk({
+        ...key,
+        productId: otherProduct,
+        clientRateType: 'OGL',
+        amount: 150,
+        locationIds: [loc],
+      });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ createdCount: 1, errorCount: 0 });
+    });
+
+    it('single create at a slot holding another type → 409 HAS_OTHER_RATE_TYPE (import routes here too)', async () => {
+      const key = await seedKey('BLK5');
+      const loc = await seedLoc('QAREA1');
+      const pre = await request(app)
+        .post('/api/v2/rates')
+        .set(SA)
+        .send({ ...key, locationId: loc, clientRateType: 'LOCAL', amount: 140 });
+      expect(pre.status).toBe(201);
+      const dup = await request(app)
+        .post('/api/v2/rates')
+        .set(SA)
+        .send({ ...key, locationId: loc, clientRateType: 'OGL', amount: 150 });
+      expect(dup.status).toBe(409);
+      expect(dup.body.error).toBe('HAS_OTHER_RATE_TYPE');
+    });
+
+    it('single create with an unknown rate-type code → 400 INVALID_RATE_TYPE (never a silent typeless rate)', async () => {
+      const key = await seedKey('BLK5B');
+      const loc = await seedLoc('WAREA1');
+      const res = await request(app)
+        .post('/api/v2/rates')
+        .set(SA)
+        .send({ ...key, locationId: loc, clientRateType: 'LOCLA', amount: 150 });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('INVALID_RATE_TYPE');
+      expect((await request(app).get('/api/v2/rates').set(SA)).body.totalCount).toBe(0);
+    });
+
+    it('the one-slot guard is symmetric on typeless rows: typed↔typeless at the same slot both block', async () => {
+      const key = await seedKey('BLK5C');
+      const loc = await seedLoc('YAREA1');
+      // a legitimately typeless located rate (legacy/office-less line — no rate type)
+      const typeless = await request(app)
+        .post('/api/v2/rates')
+        .set(SA)
+        .send({ ...key, locationId: loc, amount: 900 });
+      expect(typeless.status).toBe(201);
+      // a TYPED rate can't plant a second billing line at the same slot…
+      const typed = await request(app)
+        .post('/api/v2/rates')
+        .set(SA)
+        .send({ ...key, locationId: loc, clientRateType: 'LOCAL', amount: 140 });
+      expect(typed.status).toBe(409);
+      expect(typed.body.error).toBe('HAS_OTHER_RATE_TYPE');
+      // …and the reverse (typeless over a typed slot) is blocked too — the guard runs for typeless saves.
+      const key2 = await seedKey('BLK5D');
+      const loc2 = await seedLoc('YAREA2');
+      const local = await request(app)
+        .post('/api/v2/rates')
+        .set(SA)
+        .send({ ...key2, locationId: loc2, clientRateType: 'LOCAL', amount: 140 });
+      expect(local.status).toBe(201);
+      const planted = await request(app)
+        .post('/api/v2/rates')
+        .set(SA)
+        .send({ ...key2, locationId: loc2, amount: 900 }); // typeless plant
+      expect(planted.status).toBe(409);
+      expect(planted.body.error).toBe('HAS_OTHER_RATE_TYPE');
+    });
+
+    it('reactivation runs the one-type guard: Deactivate LOCAL → add OGL → Activate LOCAL → 409 (single + bulk CONFLICT)', async () => {
+      const key = await seedKey('BLK6');
+      const loc = await seedLoc('XAREA1');
+      const local = await request(app)
+        .post('/api/v2/rates')
+        .set(SA)
+        .send({ ...key, locationId: loc, clientRateType: 'LOCAL', amount: 100 });
+      expect(local.status).toBe(201);
+      const off = await request(app)
+        .post(`/api/v2/rates/${local.body.id}/deactivate`)
+        .set(SA)
+        .send({ version: 1 });
+      expect(off.status).toBe(200);
+      // LOCAL is inactive → OGL may take over the slot…
+      const ogl = await request(app)
+        .post('/api/v2/rates')
+        .set(SA)
+        .send({ ...key, locationId: loc, clientRateType: 'OGL', amount: 90 });
+      expect(ogl.status).toBe(201);
+      // …so resurrecting the old LOCAL row must be blocked (else two active types coexist).
+      const back = await request(app)
+        .post(`/api/v2/rates/${local.body.id}/activate`)
+        .set(SA)
+        .send({ version: 2 });
+      expect(back.status).toBe(409);
+      expect(back.body.error).toBe('HAS_OTHER_RATE_TYPE');
+      // bulk-activate takes the same guarded path → per-row CONFLICT, not a resurrected second type
+      const bulkBack = await request(app)
+        .post('/api/v2/rates/bulk-activate')
+        .set(SA)
+        .send({ items: [{ id: local.body.id, version: 2 }] });
+      expect(bulkBack.status).toBe(200);
+      expect(bulkBack.body).toMatchObject({ okCount: 0, conflictCount: 1 });
+    });
+
+    it('bulk-activate reports a RATE_EXISTS resurrection as per-row CONFLICT (not a whole-batch abort)', async () => {
+      const key = await seedKey('BLK6B');
+      const loc = await seedLoc('ZAREA1');
+      const ok = await createRate('BLK6B_OK'); // a plain rate that will re-activate cleanly
+      const okDeact = await request(app)
+        .post(`/api/v2/rates/${ok.id}/deactivate`)
+        .set(SA)
+        .send({ version: ok.version });
+      const okVersion = okDeact.body.version as number; // deactivate bumped the OCC token
+      const first = await request(app)
+        .post('/api/v2/rates')
+        .set(SA)
+        .send({ ...key, locationId: loc, clientRateType: 'LOCAL', amount: 100 });
+      expect(first.status).toBe(201);
+      await request(app).post(`/api/v2/rates/${first.body.id}/deactivate`).set(SA).send({ version: 1 });
+      // a NEW active LOCAL now occupies the exact slot (allowed — the old one is inactive)…
+      const second = await request(app)
+        .post('/api/v2/rates')
+        .set(SA)
+        .send({ ...key, locationId: loc, clientRateType: 'LOCAL', amount: 120 });
+      expect(second.status).toBe(201);
+      // …so re-activating the OLD LOCAL would overlap → RATE_EXISTS, reported per-row, batch survives.
+      const res = await request(app)
+        .post('/api/v2/rates/bulk-activate')
+        .set(SA)
+        .send({
+          items: [
+            { id: ok.id, version: okVersion },
+            { id: first.body.id, version: 2 },
+          ],
+        });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ okCount: 1, conflictCount: 1 });
+      const byId = Object.fromEntries(
+        (res.body.results as { id: string; status: string }[]).map((r) => [r.id, r.status]),
+      );
+      expect(byId[String(ok.id)]).toBe('OK');
+      expect(byId[String(first.body.id)]).toBe('CONFLICT');
+    });
+
+    it('rejects an unknown code (400 INVALID_RATE_TYPE) and an OFFICE-category code (400 OFFICE_NOT_BULKABLE)', async () => {
+      const key = await seedKey('BLK7');
+      const loc = await seedLoc('CAREA1');
+      const ghost = await bulk({ ...key, clientRateType: 'GHOST_TYPE', amount: 150, locationIds: [loc] });
+      expect(ghost.status).toBe(400);
+      expect(ghost.body.error).toBe('INVALID_RATE_TYPE');
+      const office = await bulk({ ...key, clientRateType: 'OFFICE', amount: 150, locationIds: [loc] });
+      expect(office.status).toBe(400);
+      expect(office.body.error).toBe('OFFICE_NOT_BULKABLE');
+    });
+
+    it('flags a nonexistent location as ERROR INVALID_REFERENCE (others still created)', async () => {
+      const key = await seedKey('BLK8');
+      const loc = await seedLoc('IAREA1');
+      const res = await bulk({ ...key, clientRateType: 'LOCAL', amount: 150, locationIds: [loc, 999999] });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ createdCount: 1, errorCount: 1 });
+      const byLoc = Object.fromEntries(
+        res.body.results.map((r: { locationId: number; status: string; error: string | null }) => [
+          r.locationId,
+          r,
+        ]),
+      );
+      expect(byLoc[999999]).toMatchObject({ status: 'ERROR', error: 'INVALID_REFERENCE' });
+    });
+
+    it('validates input: empty locationIds → 400; gated masterdata.manage (403/401)', async () => {
+      const key = await seedKey('BLK9');
+      const loc = await seedLoc('GAREA1');
+      expect((await bulk({ ...key, clientRateType: 'LOCAL', amount: 150, locationIds: [] })).status).toBe(
+        400,
+      );
+      const body = { ...key, clientRateType: 'LOCAL', amount: 150, locationIds: [loc] };
+      expect((await bulk(body, FA)).status).toBe(403);
+      expect((await request(app).post('/api/v2/rates/bulk').send(body)).status).toBe(401);
+    });
+  });
+
   // ── B-14 import (the only FK-resolving domain): file carries CODES + pincode/area → resolve → ids ──
   describe('import', () => {
     const FA = authHeaderForRole('FIELD_AGENT');
@@ -739,6 +1013,80 @@ describe.skipIf(!RUN)('rates API', () => {
       ).toBe(403);
       expect((await request(app).get('/api/v2/rates/import-template').set(FA)).status).toBe(403);
       expect((await request(app).get('/api/v2/rates/import-template')).status).toBe(401);
+    });
+
+    it('template teaches every shape: 3 sample rows + a Notes sheet naming the live rate-type codes', async () => {
+      const res = await request(app)
+        .get('/api/v2/rates/import-template')
+        .set(SA)
+        .buffer(true)
+        .parse((r, cb) => {
+          const chunks: Buffer[] = [];
+          r.on('data', (c: Buffer) => chunks.push(c));
+          r.on('end', () => cb(null, Buffer.concat(chunks)));
+        });
+      expect(res.status).toBe(200);
+      const ExcelJS = (await import('exceljs')).default;
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(res.body as unknown as Parameters<typeof wb.xlsx.load>[0]);
+      const [data, notes] = wb.worksheets;
+      // header + one sample per shape (located field / flat office-KYC / UNIVERSAL product+unit)
+      expect(data!.actualRowCount).toBe(4);
+      expect(data!.getRow(4).getCell(2).text).toBe('UNIVERSAL');
+      expect(notes?.name).toBe('Notes');
+      const notesText = JSON.stringify(notes!.getSheetValues());
+      expect(notesText).toContain('UNIVERSAL');
+      expect(notesText).toContain('LOCAL'); // live catalog codes listed
+      expect(notesText).toContain('One location holds ONE rate type');
+    });
+
+    it('the UNIVERSAL literal imports a Universal product+unit rate; a blank product stays an error', async () => {
+      await seedRefs();
+      const res = await upload(
+        'confirm',
+        await mkXlsx([
+          ['HDFC', 'UNIVERSAL', 'UNIVERSAL', '400001', 'Fort', 'Local', 650],
+          ['HDFC', '', 'RESI', '', '', '', 300], // blank product = error, never silently Universal
+        ]),
+      );
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ totalRows: 2, successRows: 1, failedRows: 1 });
+      const list = await request(app).get('/api/v2/rates').set(SA);
+      expect(list.body.totalCount).toBe(1);
+      expect(list.body.items[0].productId).toBeNull();
+      expect(list.body.items[0].verificationUnitId).toBeNull();
+    });
+
+    it('a typo’d rate type is a row error (never a silent typeless rate)', async () => {
+      await seedRefs();
+      const res = await upload(
+        'preview',
+        await mkXlsx([['HDFC', 'HOME_LOAN', 'RESI', '400001', 'Fort', 'LOCLA', 500]]),
+      );
+      expect(res.status).toBe(200);
+      expect(res.body.errorRows).toBe(1);
+      expect(res.body.errors[0]).toMatchObject({ column: 'Rate Type' });
+      expect(res.body.errors[0].message).toContain('unknown rate type');
+    });
+
+    it('import surfaces the one-type rule per row: a location holding another type fails with the rule named', async () => {
+      await seedRefs();
+      const pre = await upload(
+        'confirm',
+        await mkXlsx([['HDFC', 'HOME_LOAN', 'RESI', '400001', 'Fort', 'Local', 500]]),
+      );
+      expect(pre.body.successRows).toBe(1);
+      const res = await upload(
+        'confirm',
+        await mkXlsx([['HDFC', 'HOME_LOAN', 'RESI', '400001', 'Fort', 'OGL', 650]]),
+      );
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ totalRows: 1, successRows: 0, failedRows: 1 });
+      expect(res.body.errors[0].message).toContain('one location holds one rate type');
+      // the pre-existing LOCAL rate is untouched
+      const list = await request(app).get('/api/v2/rates').set(SA);
+      expect(list.body.totalCount).toBe(1);
+      expect(list.body.items[0].clientRateType).toBe('LOCAL');
     });
   });
 });

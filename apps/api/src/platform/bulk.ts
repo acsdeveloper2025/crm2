@@ -90,9 +90,18 @@ export async function applyBulkOcc(
       results.push({ id: String(it.id), status: 'OK' });
       okCount += 1;
     } catch (e) {
-      // A stale row (409 STALE_UPDATE) or a row the resource refuses to change (e.g. a SYSTEM_UNIT_LOCKED
-      // verification unit) → CONFLICT for that row; the rest of the batch still applies (never a 500).
-      if (e instanceof AppError && (e.code === 'STALE_UPDATE' || e.code === 'SYSTEM_UNIT_LOCKED')) {
+      // A stale row (409 STALE_UPDATE) or a row the resource refuses to change → CONFLICT for that
+      // row; the rest of the batch still applies (never a 500 or a whole-batch abort). Covers a
+      // SYSTEM_UNIT_LOCKED verification unit, and a rate re-activation the slot rejects — either its
+      // slot now holds another type (HAS_OTHER_RATE_TYPE) or an overlapping active rate already
+      // occupies it (RATE_EXISTS); both owner rule 2026-07-11.
+      if (
+        e instanceof AppError &&
+        (e.code === 'STALE_UPDATE' ||
+          e.code === 'SYSTEM_UNIT_LOCKED' ||
+          e.code === 'HAS_OTHER_RATE_TYPE' ||
+          e.code === 'RATE_EXISTS')
+      ) {
         results.push({ id: String(it.id), status: 'CONFLICT' });
         conflictCount += 1;
       } else if (e instanceof AppError && e.status === HTTP_STATUS.NOT_FOUND) {

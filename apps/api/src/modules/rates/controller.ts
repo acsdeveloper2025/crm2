@@ -86,6 +86,15 @@ export const rateController = {
     }
   },
 
+  // Batch result summary (per-row CREATED/EXISTS/ERROR) — 200, not 201: partial success is normal.
+  async bulkCreate(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json(await svc.bulkCreate(req.body, userId(req)));
+    } catch (e) {
+      next(e);
+    }
+  },
+
   async update(req: Request, res: Response, next: NextFunction) {
     try {
       res.json(await svc.update(parseId(req), req.body, userId(req)));

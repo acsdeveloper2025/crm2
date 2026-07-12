@@ -68,7 +68,7 @@ export const CreateRateSchema = z.object({
   verificationUnitId: positiveInt.nullish(),
   /** geography (a `locations` row = pincode+area); null/absent ⇒ no geography (e.g. KYC). */
   locationId: positiveInt.nullish(),
-  /** free-text tier label the user types (Local, OGL, Outstation…); null/absent ⇒ none. */
+  /** rate-type catalog code (ADR-0068 FK server-side; Local, OGL, Outstation…); null/absent ⇒ none (e.g. KYC/office). */
   clientRateType: clientRateType.nullish(),
   amount: money,
   currency: z.string().length(3).default('INR'),
@@ -88,3 +88,47 @@ export const UpdateRateSchema = z.object({ amount: money });
 export type CreateRateInput = z.input<typeof CreateRateSchema>;
 export type ReviseRateInput = z.input<typeof ReviseRateSchema>;
 export type UpdateRateInput = z.infer<typeof UpdateRateSchema>;
+
+// ── Multi-location bulk entry ──────────────────────────────────────────────────────────────────
+/** Max (pincode, area) locations per bulk save — mirrors the commission/CPV bulk caps. Exported so
+ *  the create page can gate Save client-side instead of surfacing a raw zod 400. */
+export const MAX_BULK_RATE_LOCATIONS = 500;
+
+/**
+ * Bulk rate create: ONE client bill-rate (the shared dims + amount) fanned across MANY (pincode,
+ * area) locations — the server writes one rate row per location, identical to N single creates
+ * (pure ergonomics; payout resolution unchanged, ADR-0050). Field/location-based only — an office
+ * rate is location-less (single form), so `clientRateType` is REQUIRED here (ADR-0068 catalog code;
+ * the server rejects unknown and OFFICE-category codes). `locationIds` are `locations` area ids.
+ */
+export const BulkCreateRatesSchema = z.object({
+  clientId: positiveInt,
+  /** null/absent ⇒ Universal — applies to ALL products of the client (ADR-0071). */
+  productId: positiveInt.nullish(),
+  /** null/absent ⇒ Universal — applies to ALL verification units of the client (ADR-0071). */
+  verificationUnitId: positiveInt.nullish(),
+  clientRateType: clientRateType,
+  amount: money,
+  currency: z.string().length(3).default('INR'),
+  effectiveFrom: isoDate.optional(),
+  locationIds: z.array(positiveInt).min(1).max(MAX_BULK_RATE_LOCATIONS),
+});
+export type BulkCreateRatesInput = z.input<typeof BulkCreateRatesSchema>;
+
+/** Per-location outcome. CREATED = new row; EXISTS = an active rate already overlaps (skipped, NOT
+ *  overwritten); ERROR = rejected (HAS_OTHER_RATE_TYPE | INVALID_REFERENCE). */
+export type BulkRateStatus = 'CREATED' | 'EXISTS' | 'ERROR';
+export interface BulkRateRow {
+  locationId: number;
+  status: BulkRateStatus;
+  /** the new rate id when status = CREATED, else null. */
+  rateId: number | null;
+  /** an error code when status = ERROR (HAS_OTHER_RATE_TYPE | INVALID_REFERENCE), else null. */
+  error: string | null;
+}
+export interface BulkRateResult {
+  results: BulkRateRow[];
+  createdCount: number;
+  existsCount: number;
+  errorCount: number;
+}

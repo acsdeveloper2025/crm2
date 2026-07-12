@@ -11,6 +11,7 @@ import {
   type Paginated,
   type ExportRequest,
 } from '@crm2/sdk';
+import { toast } from 'sonner';
 import { api, apiExport, ApiError } from '../../lib/sdk.js';
 import { formatDateTime, formatMoney } from '../../lib/format.js';
 import { useFocusTrap } from '../../lib/useFocusTrap.js';
@@ -26,6 +27,16 @@ import { withClientFilter, newRecordHref, type EmbeddedPageProps } from '../clie
 const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
   e instanceof ApiError && e.status === HTTP_CONFLICT && e.code === 'STALE_UPDATE';
+
+// CREATE_PAGE_STANDARD §5: list-row actions use the same friendly mapping in their toasts. The two
+// 409s an (de)activate can hit: reactivating over an overlapping active rate (RATE_EXISTS) or over a
+// slot that now holds a different rate type (HAS_OTHER_RATE_TYPE, owner rule 2026-07-11).
+export const toggleFriendlyError = (code: string): string | null =>
+  code === 'RATE_EXISTS'
+    ? 'Can’t activate — an active rate for this combination already overlaps this period.'
+    : code === 'HAS_OTHER_RATE_TYPE'
+      ? 'Can’t activate — this location now has a different rate type for this client/product/unit. Deactivate that rate first.'
+      : null;
 
 /** Leading characters a spreadsheet treats as a formula trigger (CWE-1236). */
 const FORMULA_LEAD = /^[=+\-@\t\r]/;
@@ -117,9 +128,22 @@ export function RateManagementPage({ clientId: controlledClientId }: EmbeddedPag
       api('POST', `/api/v2/rates/${r.id}/${r.isActive ? 'deactivate' : 'activate'}`, {
         version: r.version, // OCC: (de)activation is version-guarded (ADR-0019)
       }),
-    onSuccess: refresh,
+    onSuccess: (_data, r) => {
+      refresh();
+      toast.success(`Rate ${r.isActive ? 'deactivated' : 'activated'}`);
+    },
     onError: (e: unknown, r: RateView) => {
-      if (isStale(e)) setToggleConflict(r);
+      if (isStale(e)) {
+        setToggleConflict(r); // OCC keeps the ConflictDialog (CONCURRENCY_AND_EDITING_STANDARD)
+        return;
+      }
+      toast.error(
+        e instanceof ApiError
+          ? (toggleFriendlyError(e.code) ?? e.code)
+          : e instanceof Error
+            ? e.message
+            : 'Update failed',
+      );
     },
   });
 

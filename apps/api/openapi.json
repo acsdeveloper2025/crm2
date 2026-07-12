@@ -4254,6 +4254,25 @@
         ]
       }
     },
+    "/api/v2/rates/bulk": {
+      "post": {
+        "tags": [
+          "rates"
+        ],
+        "operationId": "post_api_v2_rates_bulk",
+        "summary": "POST /api/v2/rates/bulk",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v2/rates/bulk-activate": {
       "post": {
         "tags": [

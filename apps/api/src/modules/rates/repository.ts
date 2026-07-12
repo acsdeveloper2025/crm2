@@ -1,4 +1,4 @@
-import type { Rate, RateView, RateHistory, CreateRateInput, SortOrder } from '@crm2/sdk';
+import type { BulkRateRow, Rate, RateView, RateHistory, CreateRateInput, SortOrder } from '@crm2/sdk';
 import { filterClauses, likeContains, type AppliedFilter } from '../../platform/pagination.js';
 import { query, withTransaction } from '../../platform/db.js';
 import { AppError } from '../../platform/errors.js';
@@ -152,6 +152,118 @@ export const rateRepository = {
     } catch (e) {
       return mapWriteError(e);
     }
+  },
+
+  /** A rate-type catalog row by code — the bulk guard's category lookup (unknown code → undefined). */
+  async rateTypeByCode(code: string): Promise<{ id: number; category: string } | undefined> {
+    const rows = await query<{ id: number; category: string }>(
+      `SELECT id, category FROM rate_types WHERE code = UPPER($1)`,
+      [code],
+    );
+    return rows[0];
+  },
+
+  /** Owner rule (2026-07-11): one active rate per (client, product, unit, location) slot. Returns the
+   *  locations among `locationIds` that already carry a CURRENT active rate of a DIFFERENT type at
+   *  this exact slot (with the existing type's code, for the error message). `IS DISTINCT FROM` so a
+   *  typeless existing rate (rate_type_id NULL) conflicts with a typed new save AND a typeless new
+   *  save conflicts with a typed existing rate — neither slips past (a same-type/same-typeless save
+   *  is left to the DB overlap → EXISTS). `rateTypeId` is the NEW rate's type, null for a typeless
+   *  save. Product/unit COALESCE to the same -1 sentinels as `rates_no_overlap`, so a Universal dim
+   *  only conflicts with Universal. Guard on new saves + reactivation only — payout resolution
+   *  (RATE_LATERAL) is untouched and legacy multi-type rows still resolve. */
+  async otherTypeAtSlot(
+    clientId: number,
+    productId: number | null,
+    verificationUnitId: number | null,
+    locationIds: number[],
+    rateTypeId: number | null,
+  ): Promise<{ locationId: number; code: string | null }[]> {
+    return query<{ locationId: number; code: string | null }>(
+      `SELECT DISTINCT r.location_id AS location_id, rt.code
+       FROM rates r
+       LEFT JOIN rate_types rt ON rt.id = r.rate_type_id
+       WHERE r.client_id = $1
+         AND COALESCE(r.product_id, -1) = COALESCE($2::int, -1)
+         AND COALESCE(r.verification_unit_id, -1) = COALESCE($3::int, -1)
+         AND r.location_id = ANY($4::int[])
+         AND r.is_active
+         AND (r.effective_to IS NULL OR r.effective_to > now())
+         AND r.rate_type_id IS DISTINCT FROM $5::int`,
+      [clientId, productId, verificationUnitId, locationIds, rateTypeId],
+    );
+  },
+
+  /** Bulk create: one client bill-rate fanned across many locations. SAVEPOINT-per-row so a per-row
+   *  overlap (23P01 → EXISTS, skipped not overwritten) or bad FK (23503 → ERROR) is captured without
+   *  aborting the batch; a location already holding a different rate type at the slot is a per-row
+   *  HAS_OTHER_RATE_TYPE error. Each created row also appends its rate_history CREATE entry —
+   *  identical to N single creates. One wrapping transaction — mirrors the commission bulk pattern. */
+  async bulkCreate(
+    input: {
+      clientId: number;
+      productId?: number | null | undefined;
+      verificationUnitId?: number | null | undefined;
+      clientRateType: string;
+      amount: number;
+      currency: string;
+      effectiveFrom?: string | undefined;
+    },
+    locationIds: number[],
+    otherType: Set<number>,
+    actorId: string,
+  ): Promise<BulkRateRow[]> {
+    return withTransaction(async (q) => {
+      const out: BulkRateRow[] = [];
+      for (const [i, locationId] of locationIds.entries()) {
+        // Owner rule 2026-07-11: one (client, product, unit, location) = one rate type — a location
+        // that already holds a different type at this slot is a per-row error, never a second line.
+        if (otherType.has(locationId)) {
+          out.push({ locationId, status: 'ERROR', rateId: null, error: 'HAS_OTHER_RATE_TYPE' });
+          continue;
+        }
+        const sp = `sp_rate_bulk_${i}`;
+        await q(`SAVEPOINT ${sp}`);
+        try {
+          const [row] = await q<{ id: number; amount: number; effectiveFrom: string }>(
+            `INSERT INTO rates
+               (client_id, product_id, verification_unit_id, location_id, rate_type_id, amount, currency, effective_from, created_by, updated_by)
+             VALUES ($1, $2, $3, $4, (SELECT id FROM rate_types WHERE code = UPPER($5)), $6, $7, COALESCE($8::timestamptz, now()), $9, $9)
+             RETURNING id, amount::float8 AS amount, effective_from`,
+            [
+              input.clientId,
+              input.productId ?? null,
+              input.verificationUnitId ?? null,
+              locationId,
+              input.clientRateType,
+              input.amount,
+              input.currency,
+              input.effectiveFrom ?? null,
+              actorId,
+            ],
+          );
+          if (!row) throw AppError.internal('bulk insert returned no row');
+          await q(
+            `INSERT INTO rate_history (rate_id, action, new_amount, new_effective_from, changed_by)
+             VALUES ($1, 'CREATE', $2, $3, $4)`,
+            [row.id, row.amount, row.effectiveFrom, actorId],
+          );
+          await q(`RELEASE SAVEPOINT ${sp}`);
+          out.push({ locationId, status: 'CREATED', rateId: row.id, error: null });
+        } catch (e) {
+          await q(`ROLLBACK TO SAVEPOINT ${sp}`);
+          const code = pgCode(e);
+          if (code === EXCLUSION_VIOLATION) {
+            out.push({ locationId, status: 'EXISTS', rateId: null, error: null });
+          } else if (code === FK_VIOLATION) {
+            out.push({ locationId, status: 'ERROR', rateId: null, error: 'INVALID_REFERENCE' });
+          } else {
+            throw e; // unexpected → abort the whole batch
+          }
+        }
+      }
+      return out;
+    });
   },
 
   /** Effective-dated revision: end-date the current row, insert a new dated version, audit. */

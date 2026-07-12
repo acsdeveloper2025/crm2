@@ -1,17 +1,7 @@
 import { useState } from 'react';
-import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  CreateRateSchema,
-  ReviseRateSchema,
-  type Option,
-  type VerificationUnitOption,
-  type Rate,
-  type RateView,
-  type RateTypeOption,
-  type Location,
-  type Paginated,
-} from '@crm2/sdk';
+import { ReviseRateSchema, type Rate, type RateView } from '@crm2/sdk';
 import { api, ApiError } from '../../lib/sdk.js';
 import { zodFieldErrors } from '../../lib/zodForm.js';
 import { toDateInput, toIsoDate, formatMoney } from '../../lib/format.js';
@@ -19,7 +9,6 @@ import { useAuth } from '../../lib/AuthContext.js';
 import { ConflictDialog } from '../../components/ConflictDialog.js';
 import { Button } from '../../components/ui/Button.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
-import { SearchableSelect, type Opt } from '../../components/ui/SearchableSelect.js';
 import { exitPath } from '../clientSetup/index.js';
 
 const BASE = '/api/v2/rates';
@@ -29,21 +18,6 @@ const HTTP_CONFLICT = 409;
 const isStale = (e: unknown): e is ApiError =>
   e instanceof ApiError && e.status === HTTP_CONFLICT && e.code === 'STALE_UPDATE';
 
-// ADR-0071: product / verification unit can be Universal (a rate for ALL products / ALL units of a
-// client). The select carries this sentinel; the payload sends null (= Universal) for it.
-const UNIVERSAL = 'UNIVERSAL';
-const toDim = (v: string): number | null => (v === UNIVERSAL ? null : Number(v));
-
-// Owner fix 2026-07-08: the rate-type picker is assignment-gated even when product/unit is Universal —
-// a Universal dim just OMITS its query param (the API repo drops that dim's predicate entirely and
-// matches every assignment on it) rather than falling back to the full, ungated catalog.
-export const availableRateTypesPath = (clientId: string, productId: string, unitId: string): string => {
-  const params = new URLSearchParams({ clientId });
-  if (productId !== UNIVERSAL) params.set('productId', productId);
-  if (unitId !== UNIVERSAL) params.set('verificationUnitId', unitId);
-  return `/api/v2/rate-types/available?${params.toString()}`;
-};
-
 // UX-4: friendly copy for this page's known 409 code — a local map on purpose (one code per page,
 // a shared error-copy module is YAGNI). Unknown codes fall through to the raw code, unchanged.
 export const friendlyError = (code: string): string | null =>
@@ -51,64 +25,34 @@ export const friendlyError = (code: string): string | null =>
     ? 'An active rate for this combination already overlaps this period — revise or end-date it first.'
     : null;
 
-// UX-3: the Rate Type picker's two gated states — distinct copy per state, and the empty-assignments
-// one links straight to the form that fixes it.
-export const PICK_COMBO_FIRST = 'Pick client, product & unit first';
-export const NO_RATE_TYPES_FOR_COMBO = 'No rate types assigned for this combination';
-export const ASSIGN_RATE_TYPES_PATH = '/admin/rate-type-assignments/new';
-
-// UX-9: onModeChange (below) silently clears unit/pincode/area/rate type on every Field↔Office
-// switch. Rather than a confirm dialog, the toggle disables itself once any of those four is set —
-// keyboard-safe, no modal to dismiss/mis-click.
-export const hasDownstreamValues = (s: {
-  unitId: string;
-  pincode: string;
-  locationId: string;
-  clientRateType: string;
-}): boolean => !!s.unitId || !!s.pincode || !!s.locationId || !!s.clientRateType;
-export const MODE_LOCKED_HELPER = 'Clear unit/location fields to switch mode';
-// SearchableSelect has no clear affordance once a value commits, so the helper needs an inline
-// action that actually performs the clearing — otherwise the locked toggle is a dead-end.
-export const CLEAR_FIELDS_LABEL = 'Clear fields';
-
-// UX-7: a complete 6-digit pincode whose areas query comes back empty is a dead end — the Area
-// select just stays disabled with no explanation. Gate on isSuccess (not isError/isLoading) so
-// there's no message flash while the query is in flight. The in-form add-location dialog from the
-// audit is deliberately NOT built — Location Management is one click away (YAGNI).
-export const PINCODE_NOT_FOUND = 'Pincode not found — add it in Location Management first';
-export const LOCATIONS_ADMIN_PATH = '/admin/locations';
-export const isPincodeNotFound = (s: { pincode: string; isSuccess: boolean; count: number }): boolean =>
-  /^\d{6}$/.test(s.pincode) && s.isSuccess && s.count === 0;
-
 /**
- * Rate create/revise as a full record-page route (ADR-0051 Wave-4 D4 — no modal).
- * `/admin/rates/new` creates (the full client→product→unit→pincode→area cascade);
- * `/admin/rates/:id` loads that rate by id and revises it (amount + effective-from only — keys are
- * immutable, revise appends an effective-dated version). RBAC: `masterdata.manage` only; a viewer who
- * deep-links here is bounced back to the list.
+ * Rate REVISE as a full record-page route (ADR-0051 — no modal). `/admin/rates/:id` loads that rate
+ * by id and revises it (amount + effective-from only — keys are immutable, revise appends an
+ * effective-dated version; the current row is end-dated, never overwritten). Creation lives on the
+ * merged single+multi `RateCreatePage` (`/admin/rates/new`). RBAC: `masterdata.manage` only; a
+ * viewer who deep-links here is bounced back to the list.
  */
 export function RateRecordPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { has } = useAuth();
-  const isEdit = !!id;
   const exitTo = exitPath(searchParams.get('returnTo'), LIST_PATH);
   const existing = useQuery({
     queryKey: ['rate', id],
     queryFn: () => api<RateView>('GET', `${BASE}/${id}`),
-    enabled: isEdit,
+    enabled: !!id,
   });
 
-  if (!has('masterdata.manage')) return <Navigate to="/admin/rates" replace />;
-  if (isEdit && existing.isLoading) {
+  if (!has('masterdata.manage')) return <Navigate to={LIST_PATH} replace />;
+  if (existing.isLoading) {
     return (
       <div className="py-10">
         <HexagonLoader operation="Loading rate" />
       </div>
     );
   }
-  if (isEdit && (existing.isError || !existing.data)) {
+  if (existing.isError || !existing.data) {
     return (
       <div className="space-y-3">
         <Button variant="link" size="sm" onClick={() => navigate(exitTo)}>
@@ -119,138 +63,29 @@ export function RateRecordPage() {
     );
   }
   // Re-mount the form per record (key) so its state seeds cleanly from the loaded rate.
-  return (
-    <RateForm
-      key={id ?? 'new'}
-      initial={existing.data ?? null}
-      exitTo={exitTo}
-      initialClientId={searchParams.get('clientId')}
-    />
-  );
+  return <ReviseForm key={id} initial={existing.data} exitTo={exitTo} />;
 }
 
-/**
- * Asymmetric form. CREATE (initial null) renders the full cascade (client required; product + unit can be
- * Universal = all, ADR-0071; pincode→area + rate type are field-only, greyed for KYC) and POSTs.
- * REVISE (initial set) shows every dimension read-only and edits only amount + effective-from,
- * POSTing to `…/:id/revise` with the OCC version.
- */
-function RateForm({
-  initial,
-  exitTo,
-  initialClientId,
-}: {
-  initial: RateView | null;
-  exitTo: string;
-  initialClientId: string | null;
-}) {
+/** Every dimension read-only; edits only amount + effective-from, POSTing to `…/:id/revise` with the
+ *  OCC version (ADR-0019). */
+function ReviseForm({ initial, exitTo }: { initial: RateView; exitTo: string }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const isRevise = !!initial;
 
-  // Create cascade state (unused in revise — every dimension is fixed there).
-  const [clientId, setClientId] = useState(!isRevise ? (initialClientId ?? '') : '');
-  const [productId, setProductId] = useState('');
-  const [mode, setMode] = useState('FIELD');
-  const [unitId, setUnitId] = useState('');
-  const [pincode, setPincode] = useState('');
-  const [pincodeSearch, setPincodeSearch] = useState('');
-  const [locationId, setLocationId] = useState('');
-  const [clientRateType, setRateType] = useState('');
-
-  // Shared (both modes) — amount kept WYSIWYG (string), coerced at submit.
-  const [amount, setAmount] = useState(initial ? String(initial.amount) : '');
-  const [effectiveFrom, setEffectiveFrom] = useState(toDateInput(initial?.effectiveFrom));
-  const [version, setVersion] = useState(initial?.version ?? 0); // OCC token the revise started from
+  const [amount, setAmount] = useState(String(initial.amount));
+  const [effectiveFrom, setEffectiveFrom] = useState(toDateInput(initial.effectiveFrom));
+  const [version, setVersion] = useState(initial.version); // OCC token the revise started from
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [conflict, setConflict] = useState<{ updatedAt?: string; version?: number } | null>(null);
 
-  // ADR-0070: the rate's field/office is the operator's choice, not the unit's classification. OFFICE
-  // rates are flat (no geography, no rate type); FIELD rates are location-based (LOCAL/OGL).
-  const isOffice = mode === 'OFFICE';
-  const modeLocked = hasDownstreamValues({ unitId, pincode, locationId, clientRateType });
-  // One clearing path for both the mode switch and the helper's Clear-fields action.
-  const clearDownstream = () => {
-    setUnitId('');
-    setPincode('');
-    setLocationId('');
-    setRateType('');
-  };
-  const onModeChange = (m: string) => {
-    setMode(m);
-    clearDownstream();
-  };
-
-  // Create-only option sources (skipped entirely in revise — every dimension is fixed there).
-  const clients = useQuery({
-    queryKey: ['client-options'],
-    queryFn: () => api<Option[]>('GET', '/api/v2/clients/options'),
-    enabled: !isRevise,
-  });
-  const products = useQuery({
-    queryKey: ['product-options'],
-    queryFn: () => api<Option[]>('GET', '/api/v2/products/options'),
-    enabled: !isRevise,
-  });
-  // ADR-0074: with a specific client + product chosen, the unit options are the CPV-mapped units (a
-  // Universal CPV ⇒ all units); else (no product, or Universal product) all active units.
-  const unitCpvScoped = !isRevise && !!clientId && !!productId && productId !== UNIVERSAL;
-  const units = useQuery({
-    queryKey: unitCpvScoped ? ['cpv-available-units', clientId, productId] : ['verification-unit-options'],
-    queryFn: () =>
-      unitCpvScoped
-        ? api<{ id: number; code: string; name: string }[]>(
-            'GET',
-            `/api/v2/cpv-units/available?clientId=${clientId}&productId=${productId}`,
-          )
-        : api<VerificationUnitOption[]>('GET', '/api/v2/verification-units/options'),
-    enabled: !isRevise,
-  });
-  // Rate types are now assignment-gated by the (client × product × unit) combo (ADR-0067 Phase B
-  // resolver). Enabled only once all three dims are chosen — KYC units have no rate type, so the
-  // field is greyed out and this query stays idle for them too.
-  const comboReady = !isRevise && !isOffice && !!clientId && !!productId && !!unitId;
-  const clientRateTypes = useQuery({
-    queryKey: ['rate-types-available', clientId, productId, unitId],
-    queryFn: () => api<RateTypeOption[]>('GET', availableRateTypesPath(clientId, productId, unitId)),
-    enabled: comboReady,
-  });
-  const noRateTypesForCombo = comboReady && clientRateTypes.isSuccess && clientRateTypes.data.length === 0;
-  const pincodes = useQuery({
-    queryKey: ['pincodes', pincodeSearch],
-    queryFn: () => api<string[]>('GET', `/api/v2/locations/pincodes?q=${encodeURIComponent(pincodeSearch)}`),
-    enabled: !isRevise && pincodeSearch.length >= 2,
-  });
-  const areas = useQuery({
-    queryKey: ['areas', pincode],
-    queryFn: () =>
-      api<Paginated<Location>>('GET', `/api/v2/locations?pincode=${pincode}&limit=200`).then((r) => r.items),
-    enabled: !isRevise && !!pincode,
-  });
-  const pincodeNotFound = isPincodeNotFound({
-    pincode,
-    isSuccess: areas.isSuccess,
-    count: areas.data?.length ?? 0,
-  });
-
   const mut = useMutation({
     mutationFn: () =>
-      isRevise
-        ? api<Rate>('POST', `${BASE}/${initial.id}/revise`, {
-            amount: Number(amount),
-            effectiveFrom: toIsoDate(effectiveFrom),
-            version, // OCC: revise the row the user is looking at (ADR-0019)
-          })
-        : api<Rate>('POST', BASE, {
-            clientId: Number(clientId),
-            productId: toDim(productId), // null = Universal (ADR-0071)
-            verificationUnitId: toDim(unitId), // null = Universal
-            locationId: isOffice || !locationId ? null : Number(locationId),
-            clientRateType: isOffice ? null : clientRateType || null,
-            amount: Number(amount),
-            effectiveFrom: toIsoDate(effectiveFrom),
-          }),
+      api<Rate>('POST', `${BASE}/${initial.id}/revise`, {
+        amount: Number(amount),
+        effectiveFrom: toIsoDate(effectiveFrom),
+        version, // OCC: revise the row the user is looking at (ADR-0019)
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [QK] });
       navigate(exitTo);
@@ -270,178 +105,35 @@ function RateForm({
     },
   });
 
-  // Create gate: client/product/unit/amount required; field rates also need location + rate type.
-  // Revise gate: only amount (keys are fixed).
-  const valid = isRevise
-    ? amount !== ''
-    : !!clientId &&
-      !!productId &&
-      !!unitId &&
-      amount !== '' &&
-      (isOffice || (!!clientRateType && !!locationId));
-
-  const clientOpts: Opt[] = (clients.data ?? []).map((c) => ({
-    value: String(c.id),
-    label: `${c.code} — ${c.name}`,
-  }));
-  const productOpts: Opt[] = [
-    { value: UNIVERSAL, label: 'Universal (all products)' },
-    ...(products.data ?? []).map((p) => ({ value: String(p.id), label: `${p.code} — ${p.name}` })),
-  ];
-  const unitOpts: Opt[] = [
-    { value: UNIVERSAL, label: 'Universal (all units)' },
-    ...(units.data ?? []).map((u) => ({ value: String(u.id), label: u.name })),
-  ];
-  const pincodeOpts: Opt[] = (pincodes.data ?? []).map((p) => ({ value: p, label: p }));
-  const areaOpts: Opt[] = (areas.data ?? []).map((l) => ({ value: String(l.id), label: l.area }));
-  const clientRateTypeOpts: Opt[] = (clientRateTypes.data ?? []).map((rt) => ({
-    value: rt.code,
-    label: rt.code,
-  }));
-
   return (
     <div className="space-y-4">
       <Button variant="link" size="sm" onClick={() => navigate(exitTo)}>
         ← Back to rate management
       </Button>
       <div>
-        <h1 className="text-xl font-bold tracking-tight">{isRevise ? 'Revise' : 'New'} Rate</h1>
+        <h1 className="text-xl font-bold tracking-tight">Revise Rate</h1>
         <p className="text-sm text-muted-foreground">
-          {isRevise
-            ? 'Keys are immutable — revising appends a new effective-dated version (amount & effective-from only). The current row is end-dated, never overwritten.'
-            : 'One rate = client · product · verification unit · pincode/area · rate type · amount. Office rates are flat — geography & rate type are blank.'}
+          Keys are immutable — revising appends a new effective-dated version (amount &amp; effective-from
+          only). The current row is end-dated, never overwritten.
         </p>
       </div>
 
       <div className="max-w-md space-y-3 rounded-lg border border-border bg-card p-6 shadow-sm">
-        {isRevise ? (
-          <dl className="space-y-2 rounded-md border border-border p-3 text-sm">
-            <ReadOnlyRow label="Client" value={`${initial.clientCode} — ${initial.clientName}`} />
-            <ReadOnlyRow
-              label="Product"
-              value={initial.productCode ? `${initial.productCode} — ${initial.productName}` : 'Universal'}
-            />
-            <ReadOnlyRow label="Verification Unit" value={initial.unitName ?? 'Universal'} />
-            <ReadOnlyRow label="Type" value={initial.clientRateType ? 'Field' : 'Office'} />
-            <ReadOnlyRow
-              label="Location"
-              value={`${initial.pincode ?? ''} ${initial.area ?? ''}`.trim() || null}
-            />
-            <ReadOnlyRow label="Rate Type" value={initial.clientRateType} />
-            <ReadOnlyRow label="Current Rate" value={formatMoney(initial.amount)} />
-          </dl>
-        ) : (
-          <>
-            <Field label="Client">
-              <SearchableSelect value={clientId} onChange={setClientId} options={clientOpts} width="w-full" />
-              {fieldErrors['clientId'] && (
-                <span className="mt-1 block text-xs text-destructive">{fieldErrors['clientId']}</span>
-              )}
-            </Field>
-            <Field label="Product">
-              <SearchableSelect
-                value={productId}
-                onChange={setProductId}
-                options={productOpts}
-                width="w-full"
-              />
-              {fieldErrors['productId'] && (
-                <span className="mt-1 block text-xs text-destructive">{fieldErrors['productId']}</span>
-              )}
-            </Field>
-            <Field label="Field / Office">
-              {/* a fixed 2-option choice → a native select (freely switchable), not a search-first dropdown */}
-              <select
-                className="input"
-                value={mode}
-                onChange={(e) => onModeChange(e.target.value)}
-                disabled={modeLocked}
-              >
-                <option value="FIELD">Field</option>
-                <option value="OFFICE">Office</option>
-              </select>
-              {modeLocked && (
-                <span className="mt-1 block text-xs text-muted-foreground">
-                  {MODE_LOCKED_HELPER} —{' '}
-                  <button type="button" className="text-primary hover:underline" onClick={clearDownstream}>
-                    {CLEAR_FIELDS_LABEL}
-                  </button>
-                </span>
-              )}
-            </Field>
-            <Field label="Verification Unit">
-              <SearchableSelect value={unitId} onChange={setUnitId} options={unitOpts} width="w-full" />
-              {fieldErrors['verificationUnitId'] && (
-                <span className="mt-1 block text-xs text-destructive">
-                  {fieldErrors['verificationUnitId']}
-                </span>
-              )}
-            </Field>
-            {!isOffice && (
-              <>
-                <Field label="Pincode (search)">
-                  <SearchableSelect
-                    value={pincode}
-                    onChange={(v) => {
-                      setPincode(v);
-                      setLocationId('');
-                    }}
-                    options={pincodeOpts}
-                    onQueryChange={setPincodeSearch}
-                    placeholder="Type ≥2 digits…"
-                    width="w-full"
-                  />
-                </Field>
-                <Field label="Area">
-                  <SearchableSelect
-                    value={locationId}
-                    onChange={setLocationId}
-                    options={areaOpts}
-                    disabled={!pincode}
-                    placeholder={pincode ? 'Select area…' : 'Pick pincode first'}
-                    width="w-full"
-                  />
-                  {pincodeNotFound && (
-                    <span className="mt-1 block text-xs text-muted-foreground">
-                      {PINCODE_NOT_FOUND} —{' '}
-                      <Link to={LOCATIONS_ADMIN_PATH} className="text-primary hover:underline">
-                        open Location Management
-                      </Link>
-                      .
-                    </span>
-                  )}
-                  {fieldErrors['locationId'] && (
-                    <span className="mt-1 block text-xs text-destructive">{fieldErrors['locationId']}</span>
-                  )}
-                </Field>
-              </>
-            )}
-            {!isOffice && (
-              <Field label="Rate Type">
-                <SearchableSelect
-                  value={clientRateType}
-                  onChange={setRateType}
-                  options={clientRateTypeOpts}
-                  disabled={!comboReady}
-                  placeholder={comboReady ? 'Search…' : PICK_COMBO_FIRST}
-                  width="w-full"
-                />
-                {noRateTypesForCombo && (
-                  <span className="mt-1 block text-xs text-muted-foreground">
-                    {NO_RATE_TYPES_FOR_COMBO} —{' '}
-                    <Link to={ASSIGN_RATE_TYPES_PATH} className="text-primary hover:underline">
-                      assign one
-                    </Link>
-                    .
-                  </span>
-                )}
-                {fieldErrors['clientRateType'] && (
-                  <span className="mt-1 block text-xs text-destructive">{fieldErrors['clientRateType']}</span>
-                )}
-              </Field>
-            )}
-          </>
-        )}
+        <dl className="space-y-2 rounded-md border border-border p-3 text-sm">
+          <ReadOnlyRow label="Client" value={`${initial.clientCode} — ${initial.clientName}`} />
+          <ReadOnlyRow
+            label="Product"
+            value={initial.productCode ? `${initial.productCode} — ${initial.productName}` : 'Universal'}
+          />
+          <ReadOnlyRow label="Verification Unit" value={initial.unitName ?? 'Universal'} />
+          <ReadOnlyRow label="Type" value={initial.clientRateType ? 'Field' : 'Office'} />
+          <ReadOnlyRow
+            label="Location"
+            value={`${initial.pincode ?? ''} ${initial.area ?? ''}`.trim() || null}
+          />
+          <ReadOnlyRow label="Rate Type" value={initial.clientRateType} />
+          <ReadOnlyRow label="Current Rate" value={formatMoney(initial.amount)} />
+        </dl>
         <Field label="Rate (₹)">
           <input
             className="input tabular-nums"
@@ -467,7 +159,11 @@ function RateForm({
             <span className="mt-1 block text-xs text-destructive">{fieldErrors['effectiveFrom']}</span>
           )}
         </Field>
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && (
+          <p className="text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        )}
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="ghost" onClick={() => navigate(exitTo)} disabled={mut.isPending}>
             Cancel
@@ -477,20 +173,10 @@ function RateForm({
               setError(null);
               // Validate against the canonical SDK schema (the SAME payload the mutationFn POSTs).
               const effectiveFromIso = toIsoDate(effectiveFrom);
-              const errs = isRevise
-                ? zodFieldErrors(ReviseRateSchema, {
-                    amount: Number(amount),
-                    ...(effectiveFromIso ? { effectiveFrom: effectiveFromIso } : {}),
-                  })
-                : zodFieldErrors(CreateRateSchema, {
-                    clientId: Number(clientId),
-                    productId: toDim(productId),
-                    verificationUnitId: toDim(unitId),
-                    locationId: isOffice || !locationId ? null : Number(locationId),
-                    clientRateType: isOffice ? null : clientRateType || null,
-                    amount: Number(amount),
-                    ...(effectiveFromIso ? { effectiveFrom: effectiveFromIso } : {}),
-                  });
+              const errs = zodFieldErrors(ReviseRateSchema, {
+                amount: Number(amount),
+                ...(effectiveFromIso ? { effectiveFrom: effectiveFromIso } : {}),
+              });
               if (Object.keys(errs).length > 0) {
                 setFieldErrors(errs);
                 return;
@@ -498,7 +184,7 @@ function RateForm({
               setFieldErrors({});
               mut.mutate();
             }}
-            disabled={!valid}
+            disabled={amount === ''}
             loading={mut.isPending}
           >
             Save

@@ -26,6 +26,9 @@ rateRoutes.get('/:id/history', authorize(PERMISSIONS.MASTERDATA_VIEW), c.history
 // `/import-template`) so it never shadows them; the two-segment `/:id/history` is a distinct path.
 rateRoutes.get('/:id', authorize(PERMISSIONS.MASTERDATA_VIEW), c.get);
 rateRoutes.post('/', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.create);
+// Multi-location bulk create — one client bill-rate fanned across many locations. Static path
+// (single segment, no collision with `/:id/...`); per-row CREATED/EXISTS/ERROR result.
+rateRoutes.post('/bulk', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.bulkCreate);
 rateRoutes.put('/:id', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.update);
 rateRoutes.post('/:id/revise', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.revise);
 // Bulk routes are static paths (single segment) — no collision with `/:id/...` (two segments).

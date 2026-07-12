@@ -1997,3 +1997,49 @@ generic 409 overlap errors (UX-3/4); Rate Types is the only master-data page wit
 dropped in mig 0013 and nothing server-side replaced it (UX-8, decision item). Recommended sequencing
 in the report: quick-win message/parity batch (no ADR) → bulk-entry batch → strategic Client-Setup
 hub + single onboarding-workbook import (needs ADR). No code changed in this audit.
+
+---
+
+## Rate (client-bill) multi-location bulk — 6-lens review dispositions (2026-07-12)
+
+Feature: rate multi-location bulk add (clones commission; `POST /api/v2/rates/bulk`, merged
+`RateCreatePage`, one-slot-one-type guard). **BUILT + `pnpm verify` green + browser-verified,
+PUSH PENDING owner.** Six-lens adversarial review (CEO/CTO/design/security/standards/logicality),
+every finding adversarially verified. No security/BLOCKING findings.
+
+**✅ FIXED (7):**
+- **🔴→🟢 MAJOR — one-type guard blind to NULL rate_type** (`rates/repository.ts` `otherTypeAtSlot`):
+  `rate_type_id <> $5` skipped typeless rows AND the guard only ran for typed new saves → a typeless
+  located rate could plant a 2nd active billing line at a typed slot (RATE_LATERAL then tie-breaks by
+  id). **Fix:** `IS DISTINCT FROM $5::int` + run the guard for EVERY located save (typed or typeless);
+  now symmetric (typed↔typeless both block). Tested + browser-verified (409 `HAS_OTHER_RATE_TYPE`).
+- **🟢 Single `POST /rates` silently NULLed an unknown rate-type code** (`rates/service.ts`) — bypassed
+  the guard, inconsistent with bulk/import. **Fix:** `resolveRateTypeId` → 400 `INVALID_RATE_TYPE` on
+  any non-empty unknown code (blank ⇒ null typeless, legitimate). Tested + browser-verified.
+- **🟢 Bulk-activate aborted the whole batch on a `RATE_EXISTS` resurrection** (`platform/bulk.ts`) —
+  sibling of the handled `HAS_OTHER_RATE_TYPE`. **Fix:** added `RATE_EXISTS` to the per-row CONFLICT
+  set (additive; only rates throw it). Tested.
+- **🟢 Import template Notes listed the OFFICE code as a valid Rate Type** on the line that says office
+  rates leave it blank (`rates/import.ts` `buildRateTemplateNotes`). **Fix:** filter to FIELD-category
+  codes.
+- **🟢 Area chips truncated at `limit=200` while "Select all" implied full coverage**
+  (`RateCreatePage.tsx`) — a >200-area pincode would silently under-price. **Fix:** `limit=500` (the
+  bulk cap) + keep the Paginated envelope + a "showing N of M" note when the catalog has more.
+- **🟢 Dead "Select all" checkbox rendered for empty pincode groups** (loading/error/not-found). **Fix:**
+  render Select-all only when `areas.length > 0`.
+- **🟢 `toggleFriendlyError` exported but pinned by no test** (`RateManagementPage.tsx`). **Fix:** test
+  added (`RateManagementPage.test.ts`). Also added a rate-type-picker loading placeholder (matches the
+  commission reference's loading state).
+
+**⚪ WONTFIX / by-design (3, verified against the owner-approved commission precedent):**
+- Result table omits an Effective-From column and splits location into one "Location" cell — **matches
+  the owner-approved commission result shape** (`CommissionRateCreatePage`); consistency > extra column.
+- `rateTypeByCode` accepts a retired (inactive) rate-type code on bulk that import rejects — **matches
+  the commission `rateTypeByCode` precedent** (no `is_active` filter); the code is also used to resolve
+  an EXISTING rate's own (possibly-retired) type in the guard, so filtering there would weaken the
+  guard. UI only ever offers active/assigned codes. Minor; DEFERRED.
+- Bulk-activate reports a one-slot / overlap block as "changed by someone else" — **pre-existing
+  genericness of the shared `BulkStatusActions` copy** (already true for `SYSTEM_UNIT_LOCKED`); a
+  generic rewrite touches every master-data grid → out of scope for this feature. WONTFIX here.
+
+Counts after fixes: rates api 68, web rateManagement 25, SDK smoke 149. No mig, no ADR.

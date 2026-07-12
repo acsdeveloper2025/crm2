@@ -31,6 +31,8 @@ import type {
   CreateRateInput,
   UpdateRateInput,
   ReviseRateInput,
+  BulkCreateRatesInput,
+  BulkRateResult,
 } from './rates.js';
 import type { RateTypeOption } from './rateTypes.js';
 import type {
@@ -328,6 +330,8 @@ export function createSdk(opts: SdkOptions) {
         return req<Paginated<RateView>>('GET', `/api/v2/rates${qs ? `?${qs}` : ''}`);
       },
       create: (input: CreateRateInput) => req<Rate>('POST', '/api/v2/rates', input),
+      /** Multi-location bulk create — one client bill-rate fanned across many locations. */
+      bulkCreate: (input: BulkCreateRatesInput) => req<BulkRateResult>('POST', '/api/v2/rates/bulk', input),
       // OCC (ADR-0019): edit/revise/(de)activate carry the current row's `version`; 409 STALE_UPDATE on conflict.
       update: (id: number, input: UpdateRateInput & { version: number }) =>
         req<Rate>('PUT', `/api/v2/rates/${id}`, input),
