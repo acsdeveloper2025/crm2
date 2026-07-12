@@ -2102,8 +2102,28 @@ before/after mockup) matching VU to the rate/commission "new add design", both w
 **Additive: no schema, no migration (0117), no ADR (0094).** **BUILT + `pnpm verify` green +
 browser-verified on crm2_dev (both role variants; KYC create→green toast; duplicate `RESIDENCE`→red
 toast + inline "A verification unit with code …"; list deactivate→green toast + RBAC actions; console
-clean); PUSH PENDING owner.** 6-lens + logicality reviewed **inline** (no blocking; token-limit — agents
-skipped, verified from the code + browser).
+clean); ✅ **LIVE ON PROD** (retrofit `d06cf8c` + review fixes `f73f408`, 2026-07-12).
+
+**Retrospective 6-lens review (owner-requested, run after the limit reset) — 2 CONFIRMED defects FIXED
+in `f73f408` (shipped to staging + prod):**
+- 🔴 **MAJOR (silent data loss) — FIXED.** Editing any non-system unit re-sent `profileFor()`'s hardcoded
+  defaults (the form doesn't expose the profile fields), silently resetting `requiredAttachments` — an
+  imported KYC unit's `DOCUMENT,PAN:2` dropped to `DOCUMENT:1` on a name-only edit, weakening the
+  case-finalization document gate (`cases` requires `max(min)` of DOCUMENT attachments). Adversarially
+  verified end-to-end (buildPayload → PUT → service merge patch-wins → repo persists). **Fix:** on edit,
+  preserve the unit's stored locked profile from `initial` (workerRole is immutable on edit) instead of
+  re-deriving the role default. Browser-verified on crm2_dev: after a name-only edit, `DOCUMENT:1 + PAN:2`
+  preserved.
+- 🟠 **MINOR (doc-vs-behavior) — FIXED.** The template Notes promised `Effective From` accepts an ISO date,
+  but the create schema stripped `effectiveFrom` (baseShape has no such key), so every imported unit landed
+  `now()` — a future-dated row went live immediately. **Fix:** new `ImportVerificationUnitSchema` (baseShape
+  + kept `effectiveFrom`) as the import spec's schema, so `create()` reads and persists it (consistent with
+  the sibling master imports). +1 API test (`honors a future Effective From on import`). VU api 42→43.
+- ⚪ Nits (not fixed): `LOCKED_CHIPS` hand-synced to the frozen profile (already `ponytail:`-marked);
+  StepCard omits the per-step hint; worker-role list/record label wording differs (REFUTED — pre-existing,
+  cosmetic). CTO/security/standards lenses: clean, no frozen-decision violation. **Lesson: the inline-only
+  review MISSED the major silent-data-loss bug — run the full 6-lens (build + verify per finding) for
+  retrofits, not just inline reasoning.** Additive: no schema/migration/ADR.
 
 **Changes:** (1) extracted shared `friendlyMasterError` → `apps/web/src/lib/friendlyError.ts` (MasterDataCrud
 imports it; Clients/Products unchanged; tests → `friendlyError.test.ts`). (2) `VerificationUnitRecordPage`
