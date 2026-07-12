@@ -2058,10 +2058,12 @@ Clients + Products together · client-side friendly-duplicate message**. A clien
 entity** → fan-out items #1/#2/#3-as-chips are **N/A** (owner decision). Applicable = §5 toasts+inline,
 §3-reinterpreted (inline "code already exists"), §5 RBAC verify, §6 import template. **Additive —
 no schema, no migration (next mig stays 0117), no new ADR** (ADR-0093 + CREATE_PAGE_STANDARD cover it).
-**BUILT + `pnpm verify` green + browser-verified (dup→red toast+inline, create→green toast,
-deactivate→green toast, both import templates = 2 sample rows + Notes sheet), PUSH PENDING owner.**
-Six-lens adversarial review (CEO/CTO/design/security/standards/logicality), every finding verified.
-**No security/BLOCKING findings.**
+**Committed + pushed `main`=`ad50ffe` → staging (2026-07-12, deploy run 29182485534); `pnpm verify`
+green + browser-verified on Clients AND Products (dup→red toast+inline, create→green toast,
+deactivate→green toast, both import templates = 2 per-resource sample rows + Notes sheet); prod
+promotion pending owner.** Six-lens adversarial review (CEO/CTO/design/security/standards/logicality)
++ an independent pre-push re-verification workflow (build re-run + regression/contract/logic lenses →
+`safeToPush`, no blocking), every finding verified. **No security/BLOCKING findings.**
 
 **✅ FIXED (2):**
 - **🟢 MINOR — bank-named import sample bled into the PRODUCTS template** (`shared/masterDataImport.ts`):
