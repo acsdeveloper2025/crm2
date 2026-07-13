@@ -429,7 +429,7 @@ export function RateTypeAssignmentCreatePage() {
         n={2}
         title="Rate types"
         badge={count > 0 ? `${count} selected` : undefined}
-        hint="Tick every rate type this slot may use. Amber = already assigned (skipped); muted = already covered by a Universal assignment."
+        hint="Tick every rate type this slot may use. Amber = already assigned (skipped); muted = already covered by a broader assignment."
       >
         {rateTypes.isLoading ? (
           <HexagonLoader operation="Loading rate types" />
@@ -457,8 +457,7 @@ export function RateTypeAssignmentCreatePage() {
                 <span className="text-xs text-muted-foreground">Checking existing assignments…</span>
               ) : coveredByParent.size > 0 ? (
                 <span className="text-xs text-muted-foreground">
-                  Amber = already assigned here; muted = already covered by a Universal assignment
-                  (redundant).
+                  Amber = already assigned here; muted = already covered by a broader assignment (redundant).
                 </span>
               ) : (
                 <span className="text-xs text-muted-foreground">
@@ -491,7 +490,7 @@ export function RateTypeAssignmentCreatePage() {
                       isAssigned
                         ? 'Already assigned to this slot — an identical assignment will be skipped'
                         : isCovered
-                          ? 'Already available here via a Universal (broader) assignment — adding it at this slot creates a redundant row'
+                          ? 'Already available here via a broader assignment (a Universal or partially-Universal parent) — adding it at this slot creates a redundant row'
                           : undefined
                     }
                     className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs has-[:checked]:border-primary has-[:checked]:bg-primary-muted ${
@@ -512,7 +511,7 @@ export function RateTypeAssignmentCreatePage() {
                     {isAssigned ? (
                       <span className="text-[10px] font-semibold text-st-under-review">assigned</span>
                     ) : isCovered ? (
-                      <span className="text-[10px] font-medium text-muted-foreground">via Universal</span>
+                      <span className="text-[10px] font-medium text-muted-foreground">covered</span>
                     ) : null}
                   </label>
                 );
