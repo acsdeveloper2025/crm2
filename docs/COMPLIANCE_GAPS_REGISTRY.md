@@ -2228,9 +2228,12 @@ specific-slot save creates a DISTINCT legal row, not a skip) but under-reported 
 could create rows that are **redundant** (the Universal parent already covers them). **Not corruption,
 but a real UX gap.** ✅ **FIXED (additive, hint-only):** new pure `coveredRateTypeIds()` mirrors the
 resolver predicate (directional — Universal covers specifics, specifics never bubble up to Universal);
-a third chip state renders **muted "via Universal"** for rate types covered by a broader parent (still
-tickable — a deliberate slot-specific pin survives deactivating the Universal). **No change to
-submit/count/skip logic** — a "via Universal" chip still counts as a normal CREATE (it's a distinct
-row), unlike amber. web RTA tests 13→17 (4 directional `coveredRateTypeIds` cases). Browser-verified on
-crm2_dev: HDFC + HOME_LOAN (specific) → HDFC's Universal LOCAL/OGL/LOCAL1/OGL1 now show "via Universal".
-No API/schema change.
+a third chip state renders a **muted "covered"** tag ("already covered by a broader assignment
+(redundant)") for rate types covered by a broader parent (still tickable — a deliberate slot-specific pin
+survives deactivating the parent). Wording is **"broader"**, not "Universal", because the muted state
+also fires for partially-Universal parents (e.g. a `(product=X, unit=∅)` row covering a `(X, Y)` slot).
+**No change to submit/count/skip logic** — a "covered" chip still counts as a normal CREATE (it's a
+distinct row), unlike amber. web RTA tests 13→17 (4 directional `coveredRateTypeIds` cases). Adversarial
+verify → NO FINDINGS. Browser-verified on crm2_dev + staging: `(client, specific product, Universal unit)`
+→ the client's Universal-assigned rate types now show the "covered" tag. **LIVE ON PROD** (`0c9845a` hint +
+`12b7342` reword, promoted with the feature `5912021` at prod `12b7342`, 2026-07-13). No API/schema change.
