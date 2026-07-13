@@ -2237,3 +2237,36 @@ distinct row), unlike amber. web RTA tests 13→17 (4 directional `coveredRateTy
 verify → NO FINDINGS. Browser-verified on crm2_dev + staging: `(client, specific product, Universal unit)`
 → the client's Universal-assigned rate types now show the "covered" tag. **LIVE ON PROD** (`0c9845a` hint +
 `12b7342` reword, promoted with the feature `5912021` at prod `12b7342`, 2026-07-13). No API/schema change.
+
+## Universal-coverage hint gap — masterdata sweep (2026-07-13, owner-requested)
+
+After fixing Rate-Type Assignments (§RTA-2026-07-13), the owner asked to audit every masterdata page
+with the "new implement" for the same class of bug: an entity with Universal/parent dims whose RESOLVER
+**unions** Universal parents (a Universal-dim record covers every specific-dim slot) but whose picker
+shows existing-data hints on the EXACT slot only → an admin creates a REDUNDANT specific record unwarned.
+**Discriminator:** the bug applies ONLY to UNION-semantic resolvers; a RANK/override resolver (specific
+supersedes a Universal fallback) makes a specific record a legit override, not redundant → no bug.
+
+Method: 4 parallel reader agents, each verifying against the actual resolver SQL; two independent agents
+cross-checked CPV.
+
+| Page | Universal dim | Resolver | Verdict |
+|---|---|---|---|
+| **CPV Mapping** (`/admin/cpv`) | unit (`verification_unit_id IS NULL`) | **UNION** (`availableUnits`, `cpv/repository.ts:323-341` — `OR` of two `EXISTS`, no rank) | 🔴 **BUG → ✅ FIXED** |
+| Rate-Type Assignments | product/unit | UNION (`rate-types/available`) | ✅ already fixed (reference) |
+| Rate Management | product/unit | **RANK** (`RATE_LATERAL`, `billing/laterals.ts:27-46` — `ORDER BY … DESC NULLS LAST … LIMIT 1`) | ✅ NO BUG — specific overrides; a "covered" hint would be a false warning |
+| Commission Rates | product/unit/tat | **RANK** (`COMMISSION_LATERAL`, `billing/laterals.ts:61-93` — `… DESC NULLS LAST … LIMIT 1`) | ✅ NO BUG — specific overrides |
+| User Scope (ADR-0072) | none (specific entity ids; "all" = absence of a RESTRICT cap) | EXPAND/RESTRICT | ✅ N/A |
+| KYC unit access (ADR-0073) | none (specific unit ids) | exact membership | ✅ N/A |
+| Clients+Products · VU · Dept+Desig · Rate Types | none (singular, code/name-keyed) | — | ✅ N/A |
+
+**CPV fix (FE-only, mirrors RTA):** `CpvPage.tsx` — new pure `hasActiveUniversalCpv(rows, nowMs)` mirrors
+the resolver's Universal gate (`verificationUnitId === null && isActive && effectiveFrom <= now`); when an
+active in-effect Universal row exists AND the parent link is usable (`link.isActive && effectiveFrom <=
+now`, the resolver's `cp.*` gate), the unit picker shows an amber banner + mutes each specific unit with a
+"· covered" tag (still tickable — a specific pin survives deactivating the Universal). **No API/schema
+change; write path (`bulkAdd`/`activelyMapped`) untouched** — a covered unit still enables normally.
+Adversarial verify → NO FINDINGS (+ 1 LOW parent-gate note, applied). web CPV tests 5→9 (4 directional
+`hasActiveUniversalCpv` cases). Browser-verified on crm2_dev: enable Universal for AXIS·PL → specific units
+show the banner + "· covered". **Only CPV had the gap; rate/commission are rank-based (correct), the rest
+have no Universal dim.**

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { paginate, UNIT_PAGE_SIZE } from './CpvPage.js';
+import { paginate, UNIT_PAGE_SIZE, hasActiveUniversalCpv } from './CpvPage.js';
 
 /**
  * UX-6: the enabled-units sub-table paginates client-side at UNIT_PAGE_SIZE (20) — the checkbox
@@ -38,5 +38,38 @@ describe('paginate (CPV unit sub-table, UX-6)', () => {
     const { pageItems, totalPages } = paginate([], 1, 20);
     expect(pageItems).toEqual([]);
     expect(totalPages).toBe(1);
+  });
+});
+
+/**
+ * Universal-coverage hint (matches the RTA fix): an active, in-effect Universal CPV row makes every
+ * specific unit redundant, mirroring the resolver's `is_active AND effective_from <= now()` gate.
+ */
+describe('hasActiveUniversalCpv', () => {
+  const NOW = Date.parse('2026-07-13T00:00:00Z');
+  const past = '2026-01-01T00:00:00Z';
+  const future = '2026-12-31T00:00:00Z';
+
+  it('true when an active, in-effect Universal row exists', () => {
+    const rows = [
+      { verificationUnitId: null, isActive: true, effectiveFrom: past },
+      { verificationUnitId: 5, isActive: true, effectiveFrom: past },
+    ];
+    expect(hasActiveUniversalCpv(rows, NOW)).toBe(true);
+  });
+
+  it('false when there is no Universal row (only specific mappings)', () => {
+    const rows = [{ verificationUnitId: 5, isActive: true, effectiveFrom: past }];
+    expect(hasActiveUniversalCpv(rows, NOW)).toBe(false);
+  });
+
+  it('false when the Universal row is inactive', () => {
+    const rows = [{ verificationUnitId: null, isActive: false, effectiveFrom: past }];
+    expect(hasActiveUniversalCpv(rows, NOW)).toBe(false);
+  });
+
+  it('false for a future-dated Universal row (not yet in effect — must not flag)', () => {
+    const rows = [{ verificationUnitId: null, isActive: true, effectiveFrom: future }];
+    expect(hasActiveUniversalCpv(rows, NOW)).toBe(false);
   });
 });

@@ -43,6 +43,21 @@ export function paginate<T>(
   return { pageItems: items.slice(start, start + pageSize), totalPages };
 }
 
+/** Is there an active, IN-EFFECT Universal CPV row (`verificationUnitId === null`)? If so, EVERY unit is
+ *  already available for this client+product — the resolver `availableUnits` unions the Universal parent
+ *  (`verification_unit_id IS NULL`, `cpv/repository.ts`), so enabling a SPECIFIC unit here adds a
+ *  redundant row that changes nothing. Mirrors the resolver's gate exactly (`is_active AND
+ *  effective_from <= now()`); a future-dated Universal does not yet cover, so it must NOT flag. Pure so
+ *  it's unit-testable (pass `nowMs = Date.now()`). */
+export function hasActiveUniversalCpv(
+  rows: Pick<ClientProductVerificationUnitView, 'verificationUnitId' | 'isActive' | 'effectiveFrom'>[],
+  nowMs: number,
+): boolean {
+  return rows.some(
+    (r) => r.verificationUnitId === null && r.isActive && new Date(r.effectiveFrom).getTime() <= nowMs,
+  );
+}
+
 /**
  * Reschedule the effective-from of a CPV link / unit (the only mutable field — keys are
  * immutable, so to fix a wrong client/product/unit you deactivate and recreate). OCC-guarded.
@@ -523,6 +538,13 @@ function UnitManager({ link }: { link: ClientProductView }) {
       .filter((id) => id !== null),
   );
   const pickableUnits = units.data?.filter((u) => !activelyMapped.has(u.id)) ?? [];
+  // An active in-effect Universal mapping already makes every unit available (resolver unions it), so
+  // every specific pick below is redundant — flag it (still pickable: a specific row is a deliberate
+  // pin that survives deactivating the Universal, mirroring the rate-type-assignment "covered" hint).
+  // Also require the PARENT link to be usable (`is_active AND effective_from <= now()`, the resolver's
+  // `cp.*` gate): a Universal under a dormant link resolves to zero units, so the banner would over-claim.
+  const linkUsable = link.isActive && new Date(link.effectiveFrom).getTime() <= Date.now();
+  const universalCovers = linkUsable && hasActiveUniversalCpv(enabled.data ?? [], Date.now());
 
   const { pageItems, totalPages } = paginate(enabled.data ?? [], page, UNIT_PAGE_SIZE);
 
@@ -534,11 +556,25 @@ function UnitManager({ link }: { link: ClientProductView }) {
             Verification units ({checked.size} selected)
           </span>
           <div className="max-h-40 w-64 overflow-y-auto rounded border border-border p-2">
-            {pickableUnits.length === 0 && (
+            {universalCovers && (
+              <p className="mb-1 rounded bg-st-under-review-bg px-1.5 py-1 text-[11px] text-st-under-review">
+                A Universal (all units) mapping is active — every unit is already available here. Enabling a
+                specific unit is redundant.
+              </p>
+            )}
+            {pickableUnits.length === 0 && !universalCovers && (
               <p className="text-xs text-muted-foreground">All units are already enabled.</p>
             )}
             {pickableUnits.map((u) => (
-              <label key={u.id} className="flex items-center gap-2 py-0.5 text-xs">
+              <label
+                key={u.id}
+                className="flex items-center gap-2 py-0.5 text-xs"
+                title={
+                  universalCovers
+                    ? 'Already covered by the Universal (all units) mapping — enabling it here is redundant'
+                    : undefined
+                }
+              >
                 <input
                   type="checkbox"
                   checked={checked.has(u.id)}
@@ -549,8 +585,11 @@ function UnitManager({ link }: { link: ClientProductView }) {
                     setChecked(next);
                   }}
                 />
-                <span>
+                <span className={universalCovers ? 'text-muted-foreground' : undefined}>
                   {u.code} — {u.name}
+                  {universalCovers && (
+                    <span className="ml-1 text-[10px] font-medium text-muted-foreground">· covered</span>
+                  )}
                 </span>
               </label>
             ))}
