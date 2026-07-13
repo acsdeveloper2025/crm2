@@ -1,5 +1,7 @@
 import type {
   CreateRateTypeAssignmentInput,
+  BulkCreateRateTypeAssignmentsInput,
+  BulkRateTypeAssignmentRow,
   RateTypeAssignment,
   RateTypeAssignmentView,
   SortOrder,
@@ -128,6 +130,61 @@ export const rateTypeAssignmentRepository = {
     } catch (e) {
       return mapWriteError(e);
     }
+  },
+
+  /** Bulk-create over a fixed slot (ADR-0093): fan the shared `(client, product?, unit?)` slot across
+   *  N rate types. Pre-reads the slot's ALREADY-ACTIVE rate types (null-safe slot match with
+   *  `IS NOT DISTINCT FROM`, so Universal=NULL matches Universal) → an active row is reported EXISTS and
+   *  never touched; every other picked type is upserted (new OR reactivated) in its OWN SAVEPOINT, so a
+   *  single bad reference (23503) fails just that row, not the batch. Idempotent + un-audited — the same
+   *  shape as the single `create` (which import/confirm also reuses). rateTypeIds are validated + capped
+   *  by the SDK schema in the service; deduped here so a repeated pick is one row. */
+  async bulkCreate(
+    input: BulkCreateRateTypeAssignmentsInput,
+    userId: string,
+  ): Promise<BulkRateTypeAssignmentRow[]> {
+    const { clientId, productId, verificationUnitId } = input;
+    const rateTypeIds = [...new Set(input.rateTypeIds)];
+    return withTransaction(async (q) => {
+      const activeRows = await q<{ rateTypeId: number }>(
+        `SELECT rate_type_id AS "rateTypeId" FROM rate_type_assignments
+          WHERE client_id = $1
+            AND product_id IS NOT DISTINCT FROM $2
+            AND verification_unit_id IS NOT DISTINCT FROM $3
+            AND is_active AND rate_type_id = ANY($4)`,
+        [clientId, productId, verificationUnitId, rateTypeIds],
+      );
+      const active = new Set(activeRows.map((r) => r.rateTypeId));
+      const out: BulkRateTypeAssignmentRow[] = [];
+      for (const [i, rateTypeId] of rateTypeIds.entries()) {
+        if (active.has(rateTypeId)) {
+          out.push({ rateTypeId, status: 'EXISTS', assignmentId: null, error: null });
+          continue;
+        }
+        const sp = `sp_rta_bulk_${i}`;
+        await q(`SAVEPOINT ${sp}`);
+        try {
+          const [row] = await q<{ id: number }>(
+            `INSERT INTO rate_type_assignments
+               (client_id, product_id, verification_unit_id, rate_type_id, created_by, updated_by)
+             VALUES ($1, $2, $3, $4, $5, $5)
+             ON CONFLICT (client_id, product_id, verification_unit_id, rate_type_id)
+             DO UPDATE SET is_active = true, updated_by = $5, updated_at = now()
+             RETURNING id`,
+            [clientId, productId, verificationUnitId, rateTypeId, userId],
+          );
+          if (!row) throw AppError.internal('bulk insert returned no row');
+          await q(`RELEASE SAVEPOINT ${sp}`);
+          out.push({ rateTypeId, status: 'CREATED', assignmentId: row.id, error: null });
+        } catch (e) {
+          await q(`ROLLBACK TO SAVEPOINT ${sp}`);
+          if (pgCode(e) === FK_VIOLATION)
+            out.push({ rateTypeId, status: 'ERROR', assignmentId: null, error: 'INVALID_ASSIGNMENT_REF' });
+          else throw e; // unexpected → abort the whole batch
+        }
+      }
+      return out;
+    });
   },
 
   /** Deactivate by id (soft toggle; no OCC — assignments are simple active flags). 0 rows → 404.

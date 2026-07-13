@@ -254,6 +254,135 @@ describe.skipIf(!RUN)('rate-type assignments CRUD (ADR-0069)', () => {
     });
   });
 
+  // ── bulk-create (ADR-0093): set the slot once, fan across N rate types. Per-row CREATED / EXISTS
+  // (already active on the slot, skipped) / ERROR (bad ref). 200, partial success is normal.
+  describe('bulk-create', () => {
+    const someRateTypeIds = async (n: number): Promise<number[]> => {
+      const rows = await db!.pool.query<{ id: number }>(
+        `SELECT id FROM rate_types WHERE is_active AND effective_from <= now() ORDER BY sort_order LIMIT $1`,
+        [n],
+      );
+      expect(rows.rows.length).toBeGreaterThanOrEqual(n);
+      return rows.rows.map((r) => r.id);
+    };
+    const bulk = (body: object, auth = SA) =>
+      request(app).post('/api/v2/rate-type-assignments/bulk').set(auth).send(body);
+
+    it('fans a slot across N rate types → all CREATED; the list grows by N', async () => {
+      const ids = await someRateTypeIds(3);
+      const res = await bulk({ clientId, productId, verificationUnitId: unitId, rateTypeIds: ids });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ createdCount: 3, existsCount: 0, errorCount: 0 });
+      expect(res.body.results).toHaveLength(3);
+      expect((res.body.results as { status: string }[]).every((r) => r.status === 'CREATED')).toBe(true);
+      const list = await request(app).get('/api/v2/rate-type-assignments').set(SA);
+      expect(list.body.totalCount).toBe(3);
+    });
+
+    it('an already-active rate type on the slot → EXISTS (skipped, never duplicated)', async () => {
+      const [a, b] = await someRateTypeIds(2);
+      await request(app)
+        .post('/api/v2/rate-type-assignments')
+        .set(SA)
+        .send({ clientId, productId, verificationUnitId: unitId, rateTypeId: a });
+      const res = await bulk({ clientId, productId, verificationUnitId: unitId, rateTypeIds: [a, b] });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ createdCount: 1, existsCount: 1, errorCount: 0 });
+      const byType = Object.fromEntries(
+        (res.body.results as { rateTypeId: number; status: string }[]).map((r) => [r.rateTypeId, r.status]),
+      );
+      expect(byType[a!]).toBe('EXISTS');
+      expect(byType[b!]).toBe('CREATED');
+      const rows = await db!.pool.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM rate_type_assignments WHERE client_id = $1 AND rate_type_id = $2`,
+        [clientId, a],
+      );
+      expect(rows.rows[0]!.n).toBe(1); // the active one was never re-inserted
+    });
+
+    it('an INACTIVE combo in the set is reactivated → CREATED, same row (no dup)', async () => {
+      const [a] = await someRateTypeIds(1);
+      const created = await request(app)
+        .post('/api/v2/rate-type-assignments')
+        .set(SA)
+        .send({ clientId, productId, verificationUnitId: unitId, rateTypeId: a });
+      await request(app).post(`/api/v2/rate-type-assignments/${created.body.id}/deactivate`).set(SA);
+      const res = await bulk({ clientId, productId, verificationUnitId: unitId, rateTypeIds: [a] });
+      expect(res.body).toMatchObject({ createdCount: 1, existsCount: 0 });
+      expect(res.body.results[0]).toMatchObject({ status: 'CREATED', assignmentId: created.body.id });
+      const rows = await db!.pool.query<{ n: number; active: boolean }>(
+        `SELECT count(*)::int AS n, bool_and(is_active) AS active FROM rate_type_assignments WHERE id = $1`,
+        [created.body.id],
+      );
+      expect(rows.rows[0]).toMatchObject({ n: 1 }); // reactivated the same row
+      expect(rows.rows[0]!.active).toBe(true);
+    });
+
+    it('partial success: one bad rate-type ref → that row ERROR, the rest CREATED', async () => {
+      const [a] = await someRateTypeIds(1);
+      const res = await bulk({
+        clientId,
+        productId,
+        verificationUnitId: unitId,
+        rateTypeIds: [a, 999999],
+      });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ createdCount: 1, existsCount: 0, errorCount: 1 });
+      const bad = (res.body.results as { rateTypeId: number; status: string; error: string | null }[]).find(
+        (r) => r.rateTypeId === 999999,
+      );
+      expect(bad).toMatchObject({ status: 'ERROR', error: 'INVALID_ASSIGNMENT_REF' });
+    });
+
+    it('deduplicates a repeated rate type in the set (one row)', async () => {
+      const [a] = await someRateTypeIds(1);
+      const res = await bulk({ clientId, productId, verificationUnitId: unitId, rateTypeIds: [a, a] });
+      expect(res.body.results).toHaveLength(1);
+      expect(res.body).toMatchObject({ createdCount: 1 });
+    });
+
+    it('a fully pre-assigned slot → createdCount 0, all EXISTS (drives the "No new… created" screen)', async () => {
+      const ids = await someRateTypeIds(2);
+      await bulk({ clientId, productId, verificationUnitId: unitId, rateTypeIds: ids }); // seed both active
+      const res = await bulk({ clientId, productId, verificationUnitId: unitId, rateTypeIds: ids });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ createdCount: 0, existsCount: 2, errorCount: 0 });
+      expect((res.body.results as { status: string }[]).every((r) => r.status === 'EXISTS')).toBe(true);
+    });
+
+    it('null-safe slot: an active specific-slot row does NOT make the Universal slot report EXISTS', async () => {
+      const [a] = await someRateTypeIds(1);
+      // Active row at the SPECIFIC (product, unit) slot.
+      await request(app)
+        .post('/api/v2/rate-type-assignments')
+        .set(SA)
+        .send({ clientId, productId, verificationUnitId: unitId, rateTypeId: a });
+      // Same rate type at the UNIVERSAL (null, null) slot must be a distinct new row, not a skip.
+      const res = await bulk({ clientId, productId: null, verificationUnitId: null, rateTypeIds: [a] });
+      expect(res.body).toMatchObject({ createdCount: 1, existsCount: 0 });
+      const uniAssignmentId = (res.body.results as { assignmentId: number }[])[0]!.assignmentId;
+      const rows = await db!.pool.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM rate_type_assignments WHERE client_id = $1 AND rate_type_id = $2 AND is_active`,
+        [clientId, a],
+      );
+      expect(rows.rows[0]!.n).toBe(2); // the specific row + the distinct Universal row
+      expect(uniAssignmentId).toBeTypeOf('number');
+    });
+
+    it('empty rateTypeIds → 400', async () => {
+      expect((await bulk({ clientId, productId, verificationUnitId: unitId, rateTypeIds: [] })).status).toBe(
+        400,
+      );
+    });
+
+    it('requires masterdata.manage (viewer → 403)', async () => {
+      const [a] = await someRateTypeIds(1);
+      expect(
+        (await bulk({ clientId, productId: null, verificationUnitId: null, rateTypeIds: [a] }, TL)).status,
+      ).toBe(403);
+    });
+  });
+
   it('a non-existent rateTypeId → 400 INVALID_ASSIGNMENT_REF', async () => {
     const res = await request(app)
       .post('/api/v2/rate-type-assignments')

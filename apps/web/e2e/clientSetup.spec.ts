@@ -209,7 +209,8 @@ test.describe('onboarding journey A: hub', () => {
     await expect(page).toHaveURL(/[?&]step=2/);
     await page.getByRole('button', { name: '+ New Assignment' }).click();
     await expect(page).toHaveURL(/\/admin\/rate-type-assignments\/new\?/);
-    await selectByLabel(page, 'Rate Type').selectOption({ index: 1 });
+    // Client is prefilled from the hub; tick exactly one rate-type chip → the button reads "Save".
+    await page.locator('label.rounded-full').first().click();
     const assigned = page.waitForResponse(
       (r) =>
         r.url().includes('/api/v2/rate-type-assignments') &&

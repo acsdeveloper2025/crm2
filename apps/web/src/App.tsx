@@ -20,6 +20,7 @@ import { RateCreatePage } from './features/rateManagement/RateCreatePage.js';
 import { RateTypesPage } from './features/rateTypes/RateTypesPage.js';
 import { RateTypeAssignmentsPage } from './features/rateTypeAssignments/RateTypeAssignmentsPage.js';
 import { RateTypeAssignmentRecordPage } from './features/rateTypeAssignments/RateTypeAssignmentRecordPage.js';
+import { RateTypeAssignmentCreatePage } from './features/rateTypeAssignments/RateTypeAssignmentCreatePage.js';
 import { LocationsPage } from './features/locations/LocationsPage.js';
 import { UsersPage } from './features/users/UsersPage.js';
 import { UserRecordPage } from './features/users/UserRecordPage.js';
@@ -189,7 +190,7 @@ export function App() {
           path="/admin/rate-type-assignments/new"
           element={
             <RequirePerm perm="page.masterdata">
-              <RateTypeAssignmentRecordPage />
+              <RateTypeAssignmentCreatePage />
             </RequirePerm>
           }
         />

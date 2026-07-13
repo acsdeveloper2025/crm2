@@ -19,6 +19,7 @@ import { ImportButton } from '../../components/import/ImportModal.js';
 import { Button } from '../../components/ui/Button.js';
 import { toast } from 'sonner';
 import { withClientFilter, newRecordHref, type EmbeddedPageProps } from '../clientSetup/index.js';
+import { rtaFriendlyError } from './RateTypeAssignmentCreatePage.js';
 
 /**
  * Bulk "Deactivate selected" for the RTA grid (UX-11). RTA has no version column (no per-row OCC —
@@ -88,7 +89,8 @@ export function RateTypeAssignmentsPage({ clientId: controlledClientId }: Embedd
     mutationFn: (r: RateTypeAssignmentView) =>
       api<RateTypeAssignment>('POST', `/api/v2/rate-type-assignments/${r.id}/deactivate`, {}),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['rate-type-assignments'] }),
-    onError: (e: unknown) => toast.error(e instanceof ApiError ? e.code : 'Update failed'),
+    onError: (e: unknown) =>
+      toast.error(e instanceof ApiError ? (rtaFriendlyError(e.code) ?? e.code) : 'Update failed'),
   });
   const columns = useMemo<DataGridColumn<RateTypeAssignmentView>[]>(
     () => [

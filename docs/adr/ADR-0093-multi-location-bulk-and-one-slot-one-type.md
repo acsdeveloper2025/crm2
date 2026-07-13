@@ -88,6 +88,13 @@ At most **one active rate type per slot**, where the slot is the overlap key **m
 - **No migration, no schema change, no resolution change.** `/api/v2` additive; **mobile untouched**.
 - This is now **THE entry-page pattern** — `docs/CREATE_PAGE_STANDARD.md` is the UI source of truth;
   it is being rolled out to the other admin master-data pages one by one.
+- **Also applied to Rate-Type Assignments (2026-07-13):** the same additive bulk pattern powers
+  `POST /api/v2/rate-type-assignments/bulk` — Fork B "set the `(client, product?, unit?)` slot once,
+  fan across N rate types" (the fan-out axis is the rate-type set, not location). No migration, no
+  schema change; amber-only hints (no rule-blocked chips — nothing blocks a valid pick for this
+  entity). EXISTS-skip is detected by a **pre-read of the slot's active set** (RTA's `create` is an
+  idempotent `ON CONFLICT DO UPDATE` that never raises a conflict, so the 23P01-catch mechanism used
+  for rates does not apply here). Model = ADR-0067.
 - **Counters:** no migration consumed (next mig `0117`); this ADR consumes `0093` (**next ADR
   `0094`**).
 - Review dispositions + don't-regress notes live in

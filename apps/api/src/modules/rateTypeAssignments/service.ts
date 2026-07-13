@@ -1,9 +1,11 @@
 import {
   CreateRateTypeAssignmentSchema,
+  BulkCreateRateTypeAssignmentsSchema,
   type Paginated,
   type RateTypeAssignment,
   type RateTypeAssignmentView,
   type BulkResult,
+  type BulkRateTypeAssignmentResult,
 } from '@crm2/sdk';
 import { rateTypeAssignmentRepository as repo } from './repository.js';
 import { AppError } from '../../platform/errors.js';
@@ -16,7 +18,11 @@ import {
 } from '../../platform/export/index.js';
 import { parseBulkIds } from '../../platform/bulk.js';
 import { buildTemplate, runImportConfirm, runImportPreview } from '../../platform/import/index.js';
-import { buildRateTypeAssignmentSpec, RATE_TYPE_ASSIGNMENT_TEMPLATE_SPEC } from './import.js';
+import {
+  buildRateTypeAssignmentSpec,
+  buildRateTypeAssignmentTemplateNotes,
+  RATE_TYPE_ASSIGNMENT_TEMPLATE_SPEC,
+} from './import.js';
 
 /** Sortable + filterable columns (apiField → SQL column); only these reach ORDER BY / the WHERE clause.
  *  Count + items share RTA_FROM (all joins present), so joined columns are sortable + filterable. */
@@ -130,8 +136,11 @@ export const rateTypeAssignmentService = {
   /** Import (FK-resolving): the file carries client/product/unit/rate-type CODEs; `buildRateTypeAssignmentSpec`
    *  preloads the code→id maps and the engine maps each row to a numeric-id create-input. Confirm reuses
    *  the audited per-row `create`. */
-  importTemplate(): Promise<Buffer> {
-    return buildTemplate(RATE_TYPE_ASSIGNMENT_TEMPLATE_SPEC);
+  async importTemplate(): Promise<Buffer> {
+    return buildTemplate({
+      ...RATE_TYPE_ASSIGNMENT_TEMPLATE_SPEC,
+      templateNotes: await buildRateTypeAssignmentTemplateNotes(),
+    });
   },
   async importPreview(file: Buffer) {
     return runImportPreview(file, await buildRateTypeAssignmentSpec());
@@ -150,6 +159,19 @@ export const rateTypeAssignmentService = {
   create(input: unknown, userId: string): Promise<RateTypeAssignment> {
     const validated = CreateRateTypeAssignmentSchema.parse(input); // throws ZodError → 400
     return repo.create(validated, userId);
+  },
+
+  /** Bulk-create (ADR-0093): set the slot once, fan across N rate types. Per-row CREATED / EXISTS /
+   *  ERROR (see repo.bulkCreate). Validation + the fan-out cap live in the SDK schema (ZodError → 400). */
+  async bulkCreate(input: unknown, userId: string): Promise<BulkRateTypeAssignmentResult> {
+    const v = BulkCreateRateTypeAssignmentsSchema.parse(input);
+    const results = await repo.bulkCreate(v, userId);
+    return {
+      results,
+      createdCount: results.filter((r) => r.status === 'CREATED').length,
+      existsCount: results.filter((r) => r.status === 'EXISTS').length,
+      errorCount: results.filter((r) => r.status === 'ERROR').length,
+    };
   },
 
   deactivate: (id: number, userId: string): Promise<RateTypeAssignment> => repo.deactivate(id, userId),

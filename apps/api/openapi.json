@@ -3825,6 +3825,25 @@
         ]
       }
     },
+    "/api/v2/rate-type-assignments/bulk": {
+      "post": {
+        "tags": [
+          "rate-type-assignments"
+        ],
+        "operationId": "post_api_v2_rate_type_assignments_bulk",
+        "summary": "POST /api/v2/rate-type-assignments/bulk",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v2/rate-type-assignments/bulk-deactivate": {
       "post": {
         "tags": [

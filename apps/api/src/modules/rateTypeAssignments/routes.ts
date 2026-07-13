@@ -22,6 +22,8 @@ rateTypeAssignmentRoutes.post(
   c.import,
 );
 rateTypeAssignmentRoutes.post('/', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.create);
+// Bulk-create (ADR-0093): set the slot once, fan across N rate types. Static single-segment path.
+rateTypeAssignmentRoutes.post('/bulk', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.bulkCreate);
 // Static path (single segment) — no collision with `/:id/deactivate` (two segments).
 rateTypeAssignmentRoutes.post('/bulk-deactivate', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.bulkDeactivate);
 rateTypeAssignmentRoutes.post('/:id/deactivate', authorize(PERMISSIONS.MASTERDATA_MANAGE), c.deactivate);

@@ -81,6 +81,15 @@ export const rateTypeAssignmentController = {
     }
   },
 
+  // 200 (not 201): partial success is normal — the per-row result carries CREATED/EXISTS/ERROR.
+  async bulkCreate(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json(await svc.bulkCreate(req.body, userId(req)));
+    } catch (e) {
+      next(e);
+    }
+  },
+
   async deactivate(req: Request, res: Response, next: NextFunction) {
     try {
       res.json(await svc.deactivate(parseId(req), userId(req)));

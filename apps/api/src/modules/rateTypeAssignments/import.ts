@@ -37,12 +37,40 @@ export const RATE_TYPE_ASSIGNMENT_IMPORT_SAMPLE: Record<string, string> = {
   rateTypeCode: 'LOCAL',
 };
 
-/** Template spec (no `resolve` — the template only needs columns + sample, never FK lookups). */
+/** One sample row PER accepted value shape (CREATE_PAGE_STANDARD §6 — a single row teaches only one
+ *  form): a fully-specified assignment, a Universal-unit assignment (blank Unit), and a Universal
+ *  product+unit assignment (blank Product AND Unit — for RTA a BLANK cell is Universal, ADR-0071). */
+export const RATE_TYPE_ASSIGNMENT_IMPORT_SAMPLE_ROWS: Record<string, string>[] = [
+  RATE_TYPE_ASSIGNMENT_IMPORT_SAMPLE,
+  { clientCode: 'HDFC', productCode: 'HOME_LOAN', unitCode: '', rateTypeCode: 'OGL' },
+  { clientCode: 'HDFC', productCode: '', unitCode: '', rateTypeCode: 'LOCAL' },
+];
+
+/** The template's Notes sheet — the valid rate-type codes come from the LIVE catalog (`rate_types` is
+ *  admin data; a hardcoded list would drift the moment an admin adds a code). Any active rate type is
+ *  assignable (unlike the rate import, this column isn't category-restricted). */
+export async function buildRateTypeAssignmentTemplateNotes(): Promise<string[]> {
+  const codes = (await rateTypeService.options(true)).map((rt) => rt.code);
+  return [
+    'HOW TO IMPORT RATE TYPE ASSIGNMENTS (Client Code and Rate Type Code are required on every row)',
+    'Client Code / Product Code / Unit Code / Rate Type Code — the CODES from Clients / Products / Verification Units / Rate Types (never display names).',
+    'Product Code and Unit Code — leave BLANK for Universal: a blank Product applies to ALL products, a blank Unit to ALL units of the client (ADR-0071).',
+    `Rate Type Code — must be one of the active codes: ${codes.join(', ')}.`,
+    'One assignment = one rate type made available for a Client × Product × Unit slot. Add several rate types to a slot as several rows (one per rate type).',
+    'A row identical to an existing ACTIVE assignment is skipped (re-importing never duplicates); a row matching an inactive one re-activates it.',
+    'Rows fail independently: valid rows import even when others error (per-row errors list Row · Column · Error).',
+    'CSV works too: same header row, comma-separated, first sheet only.',
+  ];
+}
+
+/** Template spec (no `resolve` — the template only needs columns + samples, never FK lookups). Notes
+ *  are injected at call time by the service (they need a live catalog read). */
 export const RATE_TYPE_ASSIGNMENT_TEMPLATE_SPEC: ImportSpec<RateTypeAssignmentImportFile> = {
   resource: 'rate-type-assignments',
   columns: RATE_TYPE_ASSIGNMENT_IMPORT_COLUMNS,
   schema: RateTypeAssignmentImportFileSchema,
   sample: RATE_TYPE_ASSIGNMENT_IMPORT_SAMPLE,
+  sampleRows: RATE_TYPE_ASSIGNMENT_IMPORT_SAMPLE_ROWS,
 };
 
 /**
@@ -109,6 +137,7 @@ export async function buildRateTypeAssignmentSpec(): Promise<
     columns: RATE_TYPE_ASSIGNMENT_IMPORT_COLUMNS,
     schema: RateTypeAssignmentImportFileSchema,
     sample: RATE_TYPE_ASSIGNMENT_IMPORT_SAMPLE,
+    sampleRows: RATE_TYPE_ASSIGNMENT_IMPORT_SAMPLE_ROWS,
     resolve,
   };
 }

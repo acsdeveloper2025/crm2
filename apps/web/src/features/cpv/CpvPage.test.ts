@@ -5,7 +5,7 @@ import { paginate, UNIT_PAGE_SIZE } from './CpvPage.js';
  * UX-6: the enabled-units sub-table paginates client-side at UNIT_PAGE_SIZE (20) — the checkbox
  * multi-select + "Enable selected (n)" flow itself is exercised via the browser-verify pass (no RTL
  * in this repo); the pure slicing logic gets a direct unit test (export-style, mirrors the sibling
- * `RateManagementPage.test.ts` / `RateTypeAssignmentRecordPage.test.ts` convention).
+ * `RateManagementPage.test.ts` / `RateTypeAssignmentCreatePage.test.ts` convention).
  */
 describe('paginate (CPV unit sub-table, UX-6)', () => {
   it('page size is 20', () => {

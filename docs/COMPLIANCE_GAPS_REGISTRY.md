@@ -2180,3 +2180,38 @@ create-only (catalog/FK key); FIELD/OFFICE category semantics feeding rate/commi
 +1 test (`friendlyRateTypeError`). **This COMPLETES the CREATE_PAGE_STANDARD roll-out — all 4 pages
 (Clients+Products · Verification Units · Departments+Designations · Rate Types) live on prod.** Plan:
 `docs/plans/2026-07-12-rate-types-create-page-standard-plan.md`.
+
+## Rate-Type Assignments CREATE_PAGE_STANDARD multi-add — 6-lens + logicality dispositions (2026-07-13)
+
+**Fork B** (owner-approved): set the `(client, product?, unit?)` slot once, fan across N rate types →
+one assignment per rate type. **amber-only** (red/rule-blocked chips N/A — nothing blocks a valid pick
+for this entity; owner decision). **Additive:** new `POST /api/v2/rate-type-assignments/bulk`
+(SAVEPOINT-per-row; pre-reads the slot's active set → picked∩active = EXISTS/skip; picked−active =
+idempotent upsert = CREATED/reactivate; 23503 = ERROR) + import `sampleRows`/`templateNotes`. **No mig
+(0117), no ADR (0094)** — ADR-0093 (bulk pattern, now noted to cover RTA) + ADR-0067 (model) +
+CREATE_PAGE_STANDARD. `/api/v2` additive; mobile untouched. Plan:
+`docs/plans/2026-07-13-rate-type-assignments-multi-add-plan.md`.
+
+**Review = full multi-agent 6-lens (CEO/CTO/designer/security/coding-standard) + a dedicated
+logicality pass, all 6 in parallel, adversarially verified** (heeding the VU lesson that inline-only
+review missed a silent-data-loss bug). Security + CTO + coding-standard mechanical checks CLEAN
+(additive claim holds; SAVEPOINT name is a bounded loop index — not injectable; input capped at 200;
+no `any`/suppressions/console; raw SQL only in repo; not-auditing bulk creates is CORRECT — consistent
+with the un-audited single `create`/import). Dispositions:
+
+| Finding (lens) | Disposition |
+|---|---|
+| Single-select of an already-active (amber) type fired a false "Assignment created" no-op; all-amber multi showed an enabled "Create 0" — `valid` gated on `count` not `willCreate` (logic MAJOR; CS/CTO/designer/CEO) | ✅ **FIXED** — `valid = !!clientId && plan.mode !== 'none'` via a new pure `submitPlan()` helper (`willCreate === 0 → 'none' → Save disabled`). Inactive combos aren't amber, so legitimate re-activations still count. Browser-verified: lone-amber tick → "0 will be created", Save disabled. |
+| Changing client/product left the CPV-scoped Unit select stale → sticky echo showed a raw unit id while the dropdown read "Universal" and Save posted that hidden id (designer MAJOR; logic pre-existing) | ✅ **FIXED** — `changeClient`/`changeProduct`/`changeUnit` cascade-reset downstream slot fields + the selection. Browser-verified: client switch clears ticks + recomputes amber. (Was pre-existing in the deleted single form; fixed since the page was rewritten.) |
+| Step-1 Client/Product/Unit selects had no loading/error feedback (standard §1) (designer MAJOR) | ✅ **FIXED** — loading text in the placeholder + inline `Couldn't load …` on `isError` for all three. |
+| Amber source fails open on error/in-flight while the caption asserts "Amber chips are already assigned" (designer MAJOR) | ✅ **FIXED** — caption gated on `existing` state: warns (`role=alert`) on error, "Checking…" while loading, only claims "already assigned" once loaded. |
+| "Add more" left amber hints stale — `onSuccess` invalidated `[QK]` but not the `['rate-type-assignment-existing']` hint key (CS/CTO/designer MINOR) | ✅ **FIXED** — invalidate the hint query too. |
+| Green success toast on a wholly-failed bulk (`createdCount===0 && errorCount>0`) (logic/CEO MINOR) | ✅ **FIXED** — red toast in that case; result summary carries `role=alert` when `errorCount>0`. |
+| Headline multi-add path (single-vs-bulk branch, result table) had no automated FE coverage (CEO MAJOR) | ✅ **FIXED (robustly)** — extracted the decision to a pure `submitPlan()` + 6 unit tests (deterministic, no render-infra/DB coupling; no bulk e2e precedent exists on rate/commission, and a stateful bulk e2e would accumulate rows on the shared dev DB). API bulk suite +2 (all-EXISTS `createdCount:0`; null-slot Universal-vs-specific distinction). |
+| Amber under-reports past `limit=500` active assignments/client (logic/security MINOR) | ⚠️ **ACCEPTED + documented** — matches RateCreatePage's `limit=500` (== MAX_PAGE_SIZE); server pre-read still EXISTS-skips any true duplicate, so no corruption. `ponytail:` comment names the ceiling + the slot-scoped-fetch upgrade path. |
+| `'VALIDATION'` friendly-error branch unreachable from the UI (CTO note) | **WONTFIX** — harmless defensive fallback for a direct-API caller. |
+| StepCard/Field 3rd verbatim copy (CS/CTO note) | **DEFERRED** — `ponytail:` comment names the extraction trigger; extracting now would drag two prod-live create pages into a feature diff. Comment corrected ("adapted", `optional` prop dropped → future shared component must be the superset). |
+| Stale test-filename pointer in `CpvPage.test.ts:8` from the RTA test rename (CS aside) | ✅ **FIXED** — pointer updated. |
+
+**Injection note:** the CEO/product review agent reported injected "worm/hive" directive text in its
+own context and correctly ignored it; the orchestrator did not act on it either. No code impact.
