@@ -4,6 +4,7 @@ import {
   CPV_ADMIN_PATH,
   rtaFriendlyError,
   assignedRateTypeIds,
+  coveredRateTypeIds,
   submitPlan,
 } from './RateTypeAssignmentCreatePage.js';
 
@@ -47,6 +48,39 @@ describe('assignedRateTypeIds (amber-hint slot match)', () => {
   });
   it('does not conflate a product-only slot with a fully-specified one', () => {
     expect([...assignedRateTypeIds(rows, 10, null)]).toEqual([3]);
+  });
+});
+
+describe('coveredRateTypeIds (resolver-mirror: Universal parents cover specific slots)', () => {
+  const rows = [
+    { productId: null, verificationUnitId: null, rateTypeId: 1 }, // Universal (∅,∅)
+    { productId: 10, verificationUnitId: null, rateTypeId: 2 }, // product-only, Universal unit
+    { productId: null, verificationUnitId: 5, rateTypeId: 3 }, // unit-only, Universal product
+    { productId: 10, verificationUnitId: 5, rateTypeId: 4 }, // fully specific
+    { productId: 99, verificationUnitId: 5, rateTypeId: 5 }, // different product
+  ];
+
+  it('a specific slot inherits every broader parent (this is the reported scenario)', () => {
+    // Slot (10,5): the Universal, both partial-Universal, and the exact rows all resolve here; the
+    // (99,5) row does not. Mirrors `available()` `(product_id IS NULL OR =P) AND (unit_id IS NULL OR =U)`.
+    expect([...coveredRateTypeIds(rows, 10, 5)].sort()).toEqual([1, 2, 3, 4]);
+  });
+
+  it('is directional: a Universal slot does NOT inherit specific assignments', () => {
+    // Slot (∅,∅) resolves only rows that are themselves Universal on both dims — specifics never
+    // bubble up. So a specific (10,5) assignment is invisible at the Universal slot.
+    expect([...coveredRateTypeIds(rows, null, null)]).toEqual([1]);
+  });
+
+  it('a different specific product only inherits the Universal-on-that-dim parents', () => {
+    expect([...coveredRateTypeIds(rows, 20, 5)].sort()).toEqual([1, 3]);
+  });
+
+  it('coveredByParent = covered − exact-assigned = the "redundant here" set', () => {
+    // At (10,5): assigned (exact) = {4}; covered = {1,2,3,4}; so covered-but-not-exact = {1,2,3}.
+    const assigned = assignedRateTypeIds(rows, 10, 5);
+    const coveredByParent = [...coveredRateTypeIds(rows, 10, 5)].filter((id) => !assigned.has(id));
+    expect(coveredByParent.sort()).toEqual([1, 2, 3]);
   });
 });
 

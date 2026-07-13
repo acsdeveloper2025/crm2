@@ -50,6 +50,28 @@ export function assignedRateTypeIds(
   );
 }
 
+/** The rate types RESOLVABLE at this slot — including those inherited from a broader (Universal or
+ *  partially-Universal) parent assignment. Mirrors the server resolver `rate-types/available`
+ *  (`rateTypes/repository.ts`): `(product_id IS NULL OR = P) AND (verification_unit_id IS NULL OR = U)`.
+ *  Directional: a Universal `(∅,∅)` assignment covers every specific slot, but a specific assignment
+ *  does NOT bubble up to Universal. Superset of `assignedRateTypeIds` (which is the exact-slot subset);
+ *  the difference = "already covered here, so adding it at this slot is redundant". */
+export function coveredRateTypeIds(
+  items: Pick<RateTypeAssignmentView, 'productId' | 'verificationUnitId' | 'rateTypeId'>[],
+  slotProductId: number | null,
+  slotUnitId: number | null,
+): Set<number> {
+  return new Set(
+    items
+      .filter(
+        (a) =>
+          (a.productId === null || a.productId === slotProductId) &&
+          (a.verificationUnitId === null || a.verificationUnitId === slotUnitId),
+      )
+      .map((a) => a.rateTypeId),
+  );
+}
+
 /**
  * How a save resolves given the ticked rate types and the slot's already-assigned set. Pure so the
  * single-vs-bulk decision + the count are unit-testable (the headline path has no render-test infra).
@@ -135,6 +157,14 @@ export function RateTypeAssignmentCreatePage() {
     () => assignedRateTypeIds(existing.data ?? [], slotProductId, slotUnitId),
     [existing.data, slotProductId, slotUnitId],
   );
+  // Rate types already RESOLVABLE here via a broader (Universal) parent — assigning them at this
+  // specific slot is redundant (the resolver already unions the parent). `assigned` (exact slot) is a
+  // subset of this; the difference is what we flag "covered by Universal". Empty at a fully-Universal
+  // slot (no broader parent).
+  const coveredByParent = useMemo(() => {
+    const covered = coveredRateTypeIds(existing.data ?? [], slotProductId, slotUnitId);
+    return new Set([...covered].filter((id) => !assigned.has(id)));
+  }, [existing.data, slotProductId, slotUnitId, assigned]);
 
   const rtById = useMemo(
     () => new Map((rateTypes.data ?? []).map((rt) => [rt.id, rt.code])),
@@ -399,7 +429,7 @@ export function RateTypeAssignmentCreatePage() {
         n={2}
         title="Rate types"
         badge={count > 0 ? `${count} selected` : undefined}
-        hint="Tick every rate type this slot may use. Amber = already assigned (it will be skipped)."
+        hint="Tick every rate type this slot may use. Amber = already assigned (skipped); muted = already covered by a Universal assignment."
       >
         {rateTypes.isLoading ? (
           <HexagonLoader operation="Loading rate types" />
@@ -425,6 +455,11 @@ export function RateTypeAssignmentCreatePage() {
                 </span>
               ) : existing.isLoading ? (
                 <span className="text-xs text-muted-foreground">Checking existing assignments…</span>
+              ) : coveredByParent.size > 0 ? (
+                <span className="text-xs text-muted-foreground">
+                  Amber = already assigned here; muted = already covered by a Universal assignment
+                  (redundant).
+                </span>
               ) : (
                 <span className="text-xs text-muted-foreground">
                   Amber chips are already assigned to this slot.
@@ -446,18 +481,25 @@ export function RateTypeAssignmentCreatePage() {
             <div className="flex flex-wrap gap-2">
               {(rateTypes.data ?? []).map((rt) => {
                 const isAssigned = assigned.has(rt.id);
+                // Covered by a broader (Universal) parent → available here already; ticking it makes a
+                // redundant row. Still tickable (a deliberate slot-specific pin is legitimate).
+                const isCovered = !isAssigned && coveredByParent.has(rt.id);
                 return (
                   <label
                     key={rt.id}
                     title={
                       isAssigned
                         ? 'Already assigned to this slot — an identical assignment will be skipped'
-                        : undefined
+                        : isCovered
+                          ? 'Already available here via a Universal (broader) assignment — adding it at this slot creates a redundant row'
+                          : undefined
                     }
                     className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs has-[:checked]:border-primary has-[:checked]:bg-primary-muted ${
                       isAssigned
                         ? 'border-st-under-review bg-st-under-review-bg'
-                        : 'border-border-strong bg-card'
+                        : isCovered
+                          ? 'border-border bg-surface-muted'
+                          : 'border-border-strong bg-card'
                     }`}
                   >
                     <input
@@ -467,9 +509,11 @@ export function RateTypeAssignmentCreatePage() {
                       onChange={() => toggle(rt.id)}
                     />
                     <span className="uppercase">{rt.code}</span>
-                    {isAssigned && (
+                    {isAssigned ? (
                       <span className="text-[10px] font-semibold text-st-under-review">assigned</span>
-                    )}
+                    ) : isCovered ? (
+                      <span className="text-[10px] font-medium text-muted-foreground">via Universal</span>
+                    ) : null}
                   </label>
                 );
               })}

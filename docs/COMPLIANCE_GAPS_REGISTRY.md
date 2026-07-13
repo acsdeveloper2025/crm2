@@ -2215,3 +2215,22 @@ with the un-audited single `create`/import). Dispositions:
 
 **Injection note:** the CEO/product review agent reported injected "worm/hive" directive text in its
 own context and correctly ignored it; the orchestrator did not act on it either. No code impact.
+
+### Follow-up (2026-07-13, owner-reported) — amber hint didn't reflect Universal→specific coverage
+
+Owner asked: after assigning a rate type at `(client, Universal, Universal)`, opening a **specific**
+product/unit slot showed that rate type as a plain (un-hinted) chip, not "already assigned". Investigation
+(read `rateTypes/repository.ts` `available()`): the **resolver is directional** —
+`(product_id IS NULL OR =P) AND (verification_unit_id IS NULL OR =U)` — so a Universal assignment IS
+available at every specific slot; the owner's mental model was correct. The amber hint, however, only
+matched the **exact** slot (its contract = "would this exact save EXISTS-skip?"), which is honest (a
+specific-slot save creates a DISTINCT legal row, not a skip) but under-reported *coverage* → an admin
+could create rows that are **redundant** (the Universal parent already covers them). **Not corruption,
+but a real UX gap.** ✅ **FIXED (additive, hint-only):** new pure `coveredRateTypeIds()` mirrors the
+resolver predicate (directional — Universal covers specifics, specifics never bubble up to Universal);
+a third chip state renders **muted "via Universal"** for rate types covered by a broader parent (still
+tickable — a deliberate slot-specific pin survives deactivating the Universal). **No change to
+submit/count/skip logic** — a "via Universal" chip still counts as a normal CREATE (it's a distinct
+row), unlike amber. web RTA tests 13→17 (4 directional `coveredRateTypeIds` cases). Browser-verified on
+crm2_dev: HDFC + HOME_LOAN (specific) → HDFC's Universal LOCAL/OGL/LOCAL1/OGL1 now show "via Universal".
+No API/schema change.
