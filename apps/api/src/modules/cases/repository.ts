@@ -1820,6 +1820,26 @@ export const caseRepository = {
     return rows[0] ?? null;
   },
 
+  /** ONE of the field agent's OWN field photos on a still-OPEN task — for the device's pre-submit
+   *  "delete a bad capture". Returns the object keys to purge, or null (→ 404, IDOR-safe). Restricted
+   *  to the actor's assigned task in ASSIGNED/IN_PROGRESS: once SUBMITTED the evidence is frozen. */
+  async deletableFieldPhotoForDeviceTask(
+    taskId: string,
+    userId: string,
+    attachmentId: string,
+  ): Promise<{ storageKey: string; thumbnailKey: string | null } | null> {
+    const rows = await query<{ storageKey: string; thumbnailKey: string | null }>(
+      `SELECT ca.storage_key AS "storageKey", ca.thumbnail_key AS "thumbnailKey"
+       FROM case_attachments ca
+       JOIN case_tasks ct ON ct.id = ca.task_id
+       WHERE ca.id = $3 AND ct.id = $1 AND ct.assigned_to = $2 AND ca.deleted_at IS NULL
+         AND ca.kind = 'FIELD_PHOTO'
+         AND ct.status IN ('ASSIGNED', 'IN_PROGRESS')`,
+      [taskId, userId, attachmentId],
+    );
+    return rows[0] ?? null;
+  },
+
   /** A single attachment the actor can reach (case-level, or a task they can see) — for serve/delete.
    *  Returns the storage key + metadata, or null (→ 404, IDOR-safe). */
   async attachmentForAccess(

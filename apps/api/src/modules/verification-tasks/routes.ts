@@ -52,3 +52,10 @@ verificationTaskRoutes.get(
   authorize(PERMISSIONS.TASK_EXECUTE),
   c.attachmentContent,
 );
+// Delete ONE of the agent's OWN field photos on an open task (a bad capture, before submit) — soft-delete
+// + object purge, evidence-frozen once SUBMITTED. Same task.execute gate; the service binds ownership.
+verificationTaskRoutes.delete(
+  '/:id/attachments/:attachmentId',
+  authorize(PERMISSIONS.TASK_EXECUTE),
+  c.deleteAttachment,
+);

@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { paramStr } from '../../http/params.js';
 import { verificationTaskService as svc } from './service.js';
 import { AppError } from '../../platform/errors.js';
+import { HTTP_STATUS } from '../../platform/http.js';
 import type { Actor } from '../../platform/scope/index.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -79,6 +80,20 @@ export const verificationTaskController = {
       res.setHeader('content-disposition', `attachment; filename="${filename}"`);
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.send(bytes);
+    } catch (e) {
+      next(e);
+    }
+  },
+
+  /** DELETE /:id/attachments/:attachmentId — remove ONE of the field agent's OWN field photos on an
+   *  open task (a bad capture, before submit). 204 on success; 404 (IDOR-safe) otherwise. */
+  async deleteAttachment(req: Request, res: Response, next: NextFunction) {
+    try {
+      const attachmentId = req.params['attachmentId'];
+      if (typeof attachmentId !== 'string' || !UUID_RE.test(attachmentId))
+        throw AppError.badRequest('BAD_REQUEST', { param: 'attachmentId' });
+      await svc.deleteFieldPhoto(parseId(req), attachmentId, actor(req));
+      res.status(HTTP_STATUS.NO_CONTENT).end();
     } catch (e) {
       next(e);
     }

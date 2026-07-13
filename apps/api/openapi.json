@@ -5635,6 +5635,23 @@
       }
     },
     "/api/v2/verification-tasks/{id}/attachments/{attachmentId}": {
+      "delete": {
+        "tags": [
+          "verification-tasks"
+        ],
+        "operationId": "delete_api_v2_verification_tasks_id_attachments_attachmentId",
+        "summary": "DELETE /api/v2/verification-tasks/{id}/attachments/{attachmentId}",
+        "responses": {
+          "default": {
+            "description": "See @crm2/sdk for the typed shape (response schemas land in phase 2)."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
       "get": {
         "tags": [
           "verification-tasks"

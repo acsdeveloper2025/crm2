@@ -590,6 +590,77 @@ describe.skipIf(!RUN)('verification-tasks API (field execution, ADR-0032 slice 2
       expect(bad.body.attachments).toHaveLength(0);
       expect(bad.body.failed).toHaveLength(1);
     });
+
+    it('deletes ONE of the agent OWN field photos on an OPEN task (204, soft-delete + object purge); non-owner 404; frozen once submitted', async () => {
+      const { taskId, agent } = await seedAssignedTask('PDEL');
+      const h = hdr('FIELD_AGENT', agent);
+      const up = (op: string) =>
+        request(app)
+          .post(`/api/v2/verification-tasks/${taskId}/attachments`)
+          .set(h)
+          .set('Idempotency-Key', op)
+          .field('photoType', 'verification')
+          .attach('files', img, { filename: 'photo.jpg', contentType: 'image/jpeg' });
+      expect((await up('op-DEL-1')).status).toBe(200);
+      expect((await up('op-DEL-2')).status).toBe(200);
+
+      const rows = (
+        await db!.pool.query<{ id: string; storage_key: string; thumbnail_key: string | null }>(
+          `SELECT id, storage_key, thumbnail_key FROM case_attachments
+             WHERE task_id = $1 AND deleted_at IS NULL ORDER BY created_at`,
+          [taskId],
+        )
+      ).rows;
+      expect(rows).toHaveLength(2);
+      const victim = rows[0]!;
+      expect(stored.has(victim.storage_key)).toBe(true); // object is in the store before delete
+
+      // a FIELD_AGENT who is NOT the assignee cannot delete it → 404 (IDOR-safe)
+      const other = await createUser({ username: 'fa_pdel_other', name: 'O', role: 'FIELD_AGENT' });
+      expect(
+        (
+          await request(app)
+            .delete(`/api/v2/verification-tasks/${taskId}/attachments/${victim.id}`)
+            .set(hdr('FIELD_AGENT', other))
+        ).status,
+      ).toBe(404);
+
+      // the owner deletes → 204; row soft-deleted (audit kept), object (+ thumbnail) purged, sibling untouched
+      const del = await request(app)
+        .delete(`/api/v2/verification-tasks/${taskId}/attachments/${victim.id}`)
+        .set(h);
+      expect(del.status).toBe(204);
+      const gone = (
+        await db!.pool.query<{ deleted_at: string | null }>(
+          `SELECT deleted_at FROM case_attachments WHERE id = $1`,
+          [victim.id],
+        )
+      ).rows[0]!;
+      expect(gone.deleted_at).not.toBeNull();
+      expect(stored.has(victim.storage_key)).toBe(false);
+      if (victim.thumbnail_key) expect(stored.has(victim.thumbnail_key)).toBe(false);
+      const live = (
+        await db!.pool.query<{ n: number }>(
+          `SELECT count(*)::int AS n FROM case_attachments WHERE task_id = $1 AND deleted_at IS NULL`,
+          [taskId],
+        )
+      ).rows[0]!.n;
+      expect(live).toBe(1);
+
+      // deleting the same (now-deleted) id again → 404
+      expect(
+        (await request(app).delete(`/api/v2/verification-tasks/${taskId}/attachments/${victim.id}`).set(h))
+          .status,
+      ).toBe(404);
+
+      // once the task is SUBMITTED, remaining evidence is frozen → 404 (task-status guard)
+      const survivor = rows[1]!;
+      await db!.pool.query(`UPDATE case_tasks SET status = 'SUBMITTED' WHERE id = $1`, [taskId]);
+      expect(
+        (await request(app).delete(`/api/v2/verification-tasks/${taskId}/attachments/${survivor.id}`).set(h))
+          .status,
+      ).toBe(404);
+    });
   });
 
   // ── reads: office-reference attachments list + form-template stub (mobile parity, Phase 1C) ──

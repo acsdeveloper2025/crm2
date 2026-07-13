@@ -326,4 +326,18 @@ export const verificationTaskService = {
 
     return uploadResult(stored, failed, caseId, taskId, verificationType, submissionId);
   },
+
+  /** Delete ONE of the field agent's OWN field photos before submission — the device lets the agent
+   *  drop a bad capture. Soft-delete (deleted_at, DPDP-erasure parity with the admin path) + best-effort
+   *  object + thumbnail purge. 404 (IDOR-safe) unless it's a FIELD_PHOTO on the actor's own OPEN task;
+   *  submitted evidence is frozen (the row's task must be ASSIGNED/IN_PROGRESS). */
+  async deleteFieldPhoto(taskId: string, attachmentId: string, actor: Actor): Promise<void> {
+    await ownedCaseId(taskId, actor); // 404 unless the task is assigned to the actor
+    const found = await repo.deletableFieldPhotoForDeviceTask(taskId, actor.userId, attachmentId);
+    if (!found) throw AppError.notFound('ATTACHMENT_NOT_FOUND');
+    await repo.softDeleteAttachment(attachmentId);
+    const storage = getStorage();
+    await storage.remove(found.storageKey); // no-op-safe
+    if (found.thumbnailKey) await storage.remove(found.thumbnailKey);
+  },
 };
