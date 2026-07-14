@@ -323,23 +323,23 @@ export function RateCreatePage() {
   });
 
   // The slot's existing ACTIVE rates — surfaced on the area chips so the admin sees which rate type
-  // + amount a location already has BEFORE saving a duplicate. 500 = the server page cap; a client
-  // beyond it still saves fine — the server skip-check is authoritative.
+  // + amount a location already has BEFORE saving a duplicate. 500 = MAX_PAGE_SIZE, the server's hard
+  // ceiling. Keep the envelope: a client past it means the hints are INCOMPLETE, and a group
+  // multiplies the rows that matter by |pairs|, so say so (hintsTruncated) rather than state a count
+  // we can't substantiate. The server's per-row check stays authoritative either way.
   const slotReady = !!clientId && pairs.length > 0;
   const existing = useQuery({
     queryKey: ['rate-existing', clientId],
-    queryFn: () =>
-      api<Paginated<RateView>>('GET', `${BASE}?clientId=${clientId}&active=true&limit=500`).then(
-        (r) => r.items,
-      ),
+    queryFn: () => api<Paginated<RateView>>('GET', `${BASE}?clientId=${clientId}&active=true&limit=500`),
     enabled: slotReady,
   });
+  const hintsTruncated = (existing.data?.totalCount ?? 0) > (existing.data?.items.length ?? 0);
 
   // Inline for the same reason as cpvUnitsByProduct (Step 5): memoising on `pairs` would need a lint
   // escape hatch the gate forbids.
   const enteredAmount = amount === '' ? null : Number(amount);
   const groupStates = locationGroupStates(
-    slotReady ? (existing.data ?? []) : [],
+    slotReady ? (existing.data?.items ?? []) : [],
     pairs,
     clientRateType,
     enteredAmount,
@@ -451,7 +451,9 @@ export function RateCreatePage() {
     // switch to Office FIRST and tick a group after — the lock then holds them IN Office with N
     // pairs, and the save would write pairs[0] and silently drop the rest (spec §5.1, the exact
     // defect this feature exists to fix). The state is what's unsafe, so gate the SAVE on it.
-    (isOffice ? pairs.length === 1 : !!clientRateType && count > 0 && !overCap && outcome.created > 0);
+    (isOffice
+      ? pairs.length === 1
+      : !!clientRateType && count > 0 && !overCap && (hintsTruncated || outcome.created > 0));
 
   const shared = () => ({
     clientId: Number(clientId),
@@ -982,7 +984,7 @@ export function RateCreatePage() {
           const only = pairs[0];
           if (!only) return null;
           // Office rows are location-less, so they live outside groupStates by construction.
-          const office = (existing.data ?? []).filter(
+          const office = (existing.data?.items ?? []).filter(
             (r) =>
               r.locationId === null && r.productId === only.productId && r.verificationUnitId === only.unitId,
           );
@@ -1018,14 +1020,23 @@ export function RateCreatePage() {
               {clientLabel} · {pairs.length} pair{pairs.length === 1 ? '' : 's'}
               {!isOffice && clientRateType ? ` · ${clientRateType}` : ''} ·{' '}
               <span className="tabular-nums">₹{amount === '' ? '—' : amount}</span>
-              {!isOffice && outcome.skipped > 0 && (
-                <span className="tabular-nums"> · {outcome.skipped} skipped (already priced)</span>
-              )}
-              {!isOffice && outcome.blocked > 0 && (
-                <span className="tabular-nums text-st-under-review">
+              {!isOffice && hintsTruncated ? (
+                <span className="text-st-under-review">
                   {' '}
-                  · {outcome.blocked} blocked (different rate type)
+                  · existing-rate check is incomplete for this client — duplicates are still skipped on save
                 </span>
+              ) : (
+                <>
+                  {!isOffice && outcome.skipped > 0 && (
+                    <span className="tabular-nums"> · {outcome.skipped} skipped (already priced)</span>
+                  )}
+                  {!isOffice && outcome.blocked > 0 && (
+                    <span className="tabular-nums text-st-under-review">
+                      {' '}
+                      · {outcome.blocked} blocked (different rate type)
+                    </span>
+                  )}
+                </>
               )}
             </p>
           )}
