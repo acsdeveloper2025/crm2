@@ -444,6 +444,10 @@ export function RateCreatePage() {
     setAddedPincodes([]);
     setSelected(new Set());
     setPincodeSearch('');
+    // A group (>1 pair) also locks the toggle, so the recovery must clear the picks too — else
+    // "Clear fields" visibly no-ops while the pairs keep it disabled.
+    setProducts([]);
+    setUnits([]);
   };
 
   const count = selected.size;
