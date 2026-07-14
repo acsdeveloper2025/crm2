@@ -20,6 +20,7 @@ import { Button } from '../../components/ui/Button.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
 import { SearchableSelect, type Opt } from '../../components/ui/SearchableSelect.js';
 import { exitPath } from '../clientSetup/index.js';
+import { type Pair, pairKey } from '../cpvGroup/pairs.js';
 import { friendlyError } from './RateRecordPage.js';
 
 const BASE = '/api/v2/rates';
@@ -125,6 +126,115 @@ export function blockedLocations(
   }
   return out;
 }
+
+/** An existing-rate hit at one pair of the group. */
+export interface PairHit {
+  pair: Pair;
+  hints: ExistingRateHint[];
+}
+/** What a location already holds across EVERY pair of the group, for the chosen rate type. */
+export interface LocationGroupState {
+  totalPairs: number;
+  /** pairs whose slot here holds a DIFFERENT type — the server rejects each as HAS_OTHER_RATE_TYPE. */
+  blocked: PairHit[];
+  /** pairs whose slot here already holds the SAME type — the server EXISTS-skips each. */
+  exists: PairHit[];
+  /**
+   * SUBSET of `exists` whose existing amount differs from the one being entered. `amount` is NOT in
+   * the `rates_no_overlap` key (mig 0098:44-51), so these skip like any other duplicate — meaning
+   * the admin's new price is silently discarded and the old one stands. Same outcome as a benign
+   * re-save, opposite intent: this one is someone repricing and being ignored.
+   */
+  repriced: PairHit[];
+}
+
+/**
+ * Fold the client's existing ACTIVE rates into locationId → per-pair state.
+ *
+ * The slot is `(client, product, unit, location)` — so state MUST be keyed by pair AND location, not
+ * by location alone: a LOCAL rate at (P1,U1,L5) says nothing about (P2,U1,L5), which is a different,
+ * legal slot. (Folding by bare locationId is exactly the over-block the design rejected — spec §2.2.)
+ * Null-aware, mirroring the DB key's COALESCE sentinels: a Universal pair matches only Universal rows.
+ * Office (null-location) rows are ignored — a group only ever fans across real locations.
+ */
+export function locationGroupStates(
+  items: Pick<RateView, 'productId' | 'verificationUnitId' | 'locationId' | 'clientRateType' | 'amount'>[],
+  pairs: Pair[],
+  chosenType: string,
+  /** the amount being entered; null while the field is empty (nothing to compare, nothing claimed). */
+  enteredAmount: number | null,
+): Map<number, LocationGroupState> {
+  const byPair = new Map(pairs.map((p) => [pairKey(p), p]));
+  const out = new Map<number, LocationGroupState>();
+  for (const r of items) {
+    if (r.locationId === null) continue;
+    const pair = byPair.get(pairKey({ productId: r.productId, unitId: r.verificationUnitId }));
+    if (!pair) continue; // a rate at a slot outside this group is irrelevant
+    const st = out.get(r.locationId) ?? {
+      totalPairs: pairs.length,
+      blocked: [],
+      exists: [],
+      repriced: [],
+    };
+    const bucket =
+      chosenType && r.clientRateType && r.clientRateType !== chosenType
+        ? st.blocked
+        : chosenType && r.clientRateType === chosenType
+          ? st.exists
+          : null; // typeless rows never block; nothing decides before a type is chosen
+    if (bucket) {
+      const hint = { clientRateType: r.clientRateType, amount: r.amount };
+      const hit = bucket.find((h) => h.pair === pair);
+      if (hit) hit.hints.push(hint);
+      else bucket.push({ pair, hints: [hint] });
+      // An EXISTS whose amount differs = a discarded price change (see the type's doc comment).
+      // Grandfathered legacy rows can put >1 rate at a slot, so ANY differing amount counts.
+      if (bucket === st.exists && enteredAmount !== null && r.amount !== enteredAmount) {
+        const already = st.repriced.find((h) => h.pair === pair);
+        if (already) already.hints.push(hint);
+        else st.repriced.push({ pair, hints: [hint] });
+      }
+    }
+    out.set(r.locationId, st);
+  }
+  return out;
+}
+
+/**
+ * A chip is red + untickable only when EVERY pair of the group is blocked here — otherwise the pick
+ * is legal for the rest and the blocked pairs surface as per-row errors in the result grid. Blocking
+ * a whole location because 1 of 12 pairs clashes would make a group unusable.
+ * A one-pair group therefore reproduces the single-slot behaviour exactly — one code path, not two.
+ */
+export const isHardBlocked = (st: LocationGroupState | undefined): boolean =>
+  !!st && st.totalPairs > 0 && st.blocked.length === st.totalPairs;
+
+/**
+ * The honest pre-save counts across pairs × selected locations — CREATE_PAGE_STANDARD's commit
+ * surface. `created` is what the save will ACTUALLY write: today's page shows `selected.size`, which
+ * counts every will-skip area as a creation, so ticking 5 already-priced areas reads "Create 5
+ * rates" and creates zero. `repriced` is a subset of `skipped`, never of `created`.
+ */
+export const groupOutcome = (
+  states: Map<number, LocationGroupState>,
+  selectedLocationIds: number[],
+  totalPairs: number,
+): { created: number; skipped: number; blocked: number; repriced: number } => {
+  let created = 0;
+  let skipped = 0;
+  let blocked = 0;
+  let repriced = 0;
+  for (const id of selectedLocationIds) {
+    const st = states.get(id);
+    const b = st?.blocked.length ?? 0;
+    const e = st?.exists.length ?? 0;
+    created += totalPairs - b - e;
+    skipped += e;
+    blocked += b;
+    repriced += st?.repriced.length ?? 0;
+  }
+  return { created, skipped, blocked, repriced };
+};
 
 /**
  * THE rate create page (owner 2026-07-11: same one-entry upgrade as commission rates). Set the rate
