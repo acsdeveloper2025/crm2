@@ -16,6 +16,7 @@ import { useAuth } from '../../lib/AuthContext.js';
 import { Button } from '../../components/ui/Button.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
 import { exitPath } from '../clientSetup/index.js';
+import type { Pair } from '../cpvGroup/pairs.js';
 
 const BASE = '/api/v2/rate-type-assignments';
 const QK = 'rate-type-assignments';
@@ -90,6 +91,55 @@ export function submitPlan(
   const mode: SubmitMode = willCreate === 0 ? 'none' : ids.length === 1 ? 'single' : 'bulk';
   return { mode, ids, willCreate };
 }
+
+/** One pair's share of a group save — one existing `/bulk` call each. */
+export interface PairPlan {
+  pair: Pair;
+  /** every ticked type (amber ones included, so the result grid can report them as Skipped). */
+  ids: number[];
+  willCreate: number;
+}
+
+/**
+ * How a GROUP save resolves: `/rate-type-assignments/bulk` already takes ONE (client, product?,
+ * unit?) slot + N rate types, so a group is N of those calls — one per pair, with the same ticked
+ * set. `willCreate` is counted PER PAIR against that pair's own assignments (a type already assigned
+ * at pair A says nothing about pair B).
+ *
+ * `mode` is 'single' only when there is exactly ONE pair AND one ticked type. Gating it on
+ * `ids.length === 1` alone routes an N-pair group to the SINGULAR endpoint, which writes one row and
+ * reports success — a silent loss of the rest of the group.
+ */
+export function groupSubmitPlan(
+  pairs: Pair[],
+  selected: number[],
+  existing: Pick<RateTypeAssignmentView, 'productId' | 'verificationUnitId' | 'rateTypeId'>[],
+): { mode: SubmitMode; perPair: PairPlan[]; willCreate: number } {
+  const ids = [...new Set(selected)];
+  const perPair = pairs.map((pair) => {
+    const assigned = assignedRateTypeIds(existing, pair.productId, pair.unitId);
+    return { pair, ids, willCreate: ids.filter((id) => !assigned.has(id)).length };
+  });
+  const willCreate = perPair.reduce((n, p) => n + p.willCreate, 0);
+  const mode: SubmitMode =
+    willCreate === 0 ? 'none' : pairs.length === 1 && ids.length === 1 ? 'single' : 'bulk';
+  return { mode, perPair, willCreate };
+}
+
+/** How many of the group's pairs already carry this type at their EXACT slot (amber = would skip). */
+export const assignedPairCount = (
+  existing: Pick<RateTypeAssignmentView, 'productId' | 'verificationUnitId' | 'rateTypeId'>[],
+  pairs: Pair[],
+  rateTypeId: number,
+): number => pairs.filter((p) => assignedRateTypeIds(existing, p.productId, p.unitId).has(rateTypeId)).length;
+
+/** How many of the group's pairs already RESOLVE this type via a broader Universal parent (muted =
+ *  redundant). Superset of `assignedPairCount` — the UNION resolver, ADR-0067. */
+export const coveredPairCount = (
+  existing: Pick<RateTypeAssignmentView, 'productId' | 'verificationUnitId' | 'rateTypeId'>[],
+  pairs: Pair[],
+  rateTypeId: number,
+): number => pairs.filter((p) => coveredRateTypeIds(existing, p.productId, p.unitId).has(rateTypeId)).length;
 
 /**
  * Merged single+multi create page (ADR-0093 / CREATE_PAGE_STANDARD, Fork B): set the

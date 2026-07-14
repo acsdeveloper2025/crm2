@@ -6,6 +6,9 @@ import {
   assignedRateTypeIds,
   coveredRateTypeIds,
   submitPlan,
+  groupSubmitPlan,
+  assignedPairCount,
+  coveredPairCount,
 } from './RateTypeAssignmentCreatePage.js';
 
 /**
@@ -103,5 +106,83 @@ describe('submitPlan (single-vs-bulk decision + willCreate)', () => {
   });
   it('dedupes a repeated id', () => {
     expect(submitPlan([1, 1], new Set())).toEqual({ mode: 'single', ids: [1], willCreate: 1 });
+  });
+});
+
+describe('groupSubmitPlan (a group is N slots)', () => {
+  const P1U1 = { productId: 1, unitId: 10 };
+  const P2U1 = { productId: 2, unitId: 10 };
+  const a = (productId: number | null, unitId: number | null, rateTypeId: number) => ({
+    productId,
+    verificationUnitId: unitId,
+    rateTypeId,
+  });
+
+  it('plans one call per pair, each with the ticked types', () => {
+    const plan = groupSubmitPlan([P1U1, P2U1], [100, 200], []);
+    expect(plan.mode).toBe('bulk');
+    expect(plan.willCreate).toBe(4); // 2 pairs x 2 types
+    expect(plan.perPair).toEqual([
+      { pair: P1U1, ids: [100, 200], willCreate: 2 },
+      { pair: P2U1, ids: [100, 200], willCreate: 2 },
+    ]);
+  });
+
+  it('counts willCreate PER PAIR — an existing assignment at one pair doesn’t mask another', () => {
+    const plan = groupSubmitPlan([P1U1, P2U1], [100], [a(1, 10, 100)]);
+    expect(plan.willCreate).toBe(1); // only (P2,U1) is new
+    expect(plan.perPair[0]?.willCreate).toBe(0);
+    expect(plan.perPair[1]?.willCreate).toBe(1);
+    expect(plan.perPair[0]?.ids).toEqual([100]); // amber ids still submit → reported as Skipped
+  });
+
+  it('a GROUP with one ticked type is NOT single — the singular endpoint writes ONE row', () => {
+    // Regression: mode === 'single' on ids.length === 1 alone silently wrote 1 row for an N-pair group.
+    const plan = groupSubmitPlan([P1U1, P2U1], [100], []);
+    expect(plan.mode).toBe('bulk');
+  });
+
+  it('exactly one pair AND one type stays single (today’s behaviour)', () => {
+    expect(groupSubmitPlan([P1U1], [100], []).mode).toBe('single');
+  });
+
+  it('is none when nothing new would be created anywhere', () => {
+    expect(groupSubmitPlan([P1U1, P2U1], [100], [a(1, 10, 100), a(2, 10, 100)]).mode).toBe('none');
+    expect(groupSubmitPlan([], [100], []).mode).toBe('none');
+    expect(groupSubmitPlan([P1U1], [], []).mode).toBe('none');
+  });
+
+  it('dedupes ticked ids', () => {
+    expect(groupSubmitPlan([P1U1], [100, 100], []).perPair[0]?.ids).toEqual([100]);
+  });
+
+  it('a Universal pair matches only Universal assignments', () => {
+    const uni = { productId: null, unitId: null };
+    expect(groupSubmitPlan([uni], [100], [a(null, null, 100)]).mode).toBe('none');
+    expect(groupSubmitPlan([uni], [100], [a(1, 10, 100)]).willCreate).toBe(1);
+  });
+});
+
+describe('coveredPairCount / assignedPairCount (group chip hints)', () => {
+  const P1U1 = { productId: 1, unitId: 10 };
+  const P2U1 = { productId: 2, unitId: 10 };
+  const a = (productId: number | null, unitId: number | null, rateTypeId: number) => ({
+    productId,
+    verificationUnitId: unitId,
+    rateTypeId,
+  });
+
+  it('counts pairs already carrying the type at their exact slot', () => {
+    expect(assignedPairCount([a(1, 10, 100)], [P1U1, P2U1], 100)).toBe(1);
+  });
+  it('counts pairs where a broader Universal parent already covers the type', () => {
+    // A Universal (null, null) assignment resolves at every pair (UNION resolver, ADR-0067).
+    expect(coveredPairCount([a(null, null, 100)], [P1U1, P2U1], 100)).toBe(2);
+  });
+  it('a specific assignment does not bubble up to a Universal pair', () => {
+    expect(coveredPairCount([a(1, 10, 100)], [{ productId: null, unitId: null }], 100)).toBe(0);
+  });
+  it('is zero for an unrelated rate type', () => {
+    expect(coveredPairCount([a(null, null, 100)], [P1U1], 999)).toBe(0);
   });
 });
