@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -20,7 +20,8 @@ import { Button } from '../../components/ui/Button.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
 import { SearchableSelect, type Opt } from '../../components/ui/SearchableSelect.js';
 import { exitPath } from '../clientSetup/index.js';
-import { type Pair, pairKey } from '../cpvGroup/pairs.js';
+import { type Pair, pairKey, resolvePairs, unitOptionIds, retainUnits } from '../cpvGroup/pairs.js';
+import { PairPicker } from '../cpvGroup/PairPicker.js';
 import { friendlyError } from './RateRecordPage.js';
 
 const BASE = '/api/v2/rates';
@@ -31,7 +32,8 @@ const LIST_PATH = '/admin/rates';
 // client) — but the choice is EXPLICIT (a money table never defaults to Universal). The select
 // carries this sentinel; the payload sends null (= Universal) for it.
 export const UNIVERSAL = 'UNIVERSAL';
-export const toDim = (v: string): number | null => (v === UNIVERSAL ? null : Number(v));
+/** A dim → its `availableRateTypesPath` query value; null (Universal) omits the param (ADR-0071). */
+export const dimParam = (v: number | null): string => (v === null ? UNIVERSAL : String(v));
 
 // Owner fix 2026-07-08 (moved here with the create branch): the rate-type picker is assignment-gated
 // even when product/unit is Universal — a Universal dim just OMITS its query param (the API repo
@@ -63,7 +65,11 @@ export const modeHasDownstream = (s: {
   clientRateType: string;
   pincodeCount: number;
   selectedCount: number;
-}): boolean => !!s.clientRateType || s.pincodeCount > 0 || s.selectedCount > 0;
+  /** resolved CPV pairs; >1 = a group. OFFICE saves ONE flat rate with no product/unit fan, so a
+   *  group must not be able to reach it — flipping the toggle would silently write a single rate
+   *  and report success. Mirrors the shipped commission precedent (FIELD only; OFFICE single). */
+  pairCount: number;
+}): boolean => !!s.clientRateType || s.pincodeCount > 0 || s.selectedCount > 0 || s.pairCount > 1;
 export const MODE_LOCKED_HELPER = 'Clear rate-type/location fields to switch mode';
 export const CLEAR_FIELDS_LABEL = 'Clear fields';
 
@@ -84,48 +90,9 @@ export interface ExistingRateHint {
   clientRateType: string | null;
   amount: number;
 }
-/** The existing ACTIVE rates that live at THIS slot — same client + product + unit (null-aware:
- *  Universal only matches Universal, mirroring the DB key's COALESCE sentinels). The one-type rule
- *  and the EXISTS skip are both slot-scoped, so rates at other products/units are irrelevant here. */
-export function slotRates(
-  items: Pick<RateView, 'productId' | 'verificationUnitId' | 'locationId' | 'clientRateType' | 'amount'>[],
-  productId: number | null,
-  unitId: number | null,
-): Pick<RateView, 'productId' | 'verificationUnitId' | 'locationId' | 'clientRateType' | 'amount'>[] {
-  return items.filter((r) => r.productId === productId && r.verificationUnitId === unitId);
-}
-/** Fold the slot's existing ACTIVE rates into locationId → hints (null key = location-less OFFICE
- *  rows), so the picker can show what's already priced before the admin saves a duplicate. */
-export function existingByLocation(
-  items: Pick<RateView, 'locationId' | 'clientRateType' | 'amount'>[],
-): Map<number | null, ExistingRateHint[]> {
-  const map = new Map<number | null, ExistingRateHint[]>();
-  for (const r of items) {
-    const list = map.get(r.locationId) ?? [];
-    list.push({ clientRateType: r.clientRateType, amount: r.amount });
-    map.set(r.locationId, list);
-  }
-  return map;
-}
 /** Compact "LOCAL ₹500 · OGL ₹650" label for an area chip's existing rates. */
 export const existingRateLabel = (entries: ExistingRateHint[]): string =>
   entries.map((e) => `${e.clientRateType ?? '—'} ₹${e.amount}`).join(' · ');
-
-/** Owner rule (2026-07-11): one (client, product, unit, location) slot holds ONE rate type.
- *  Locations whose existing slot rates carry a DIFFERENT type than the chosen one can't be ticked
- *  (the server rejects them per-row). */
-export function blockedLocations(
-  existing: Map<number | null, ExistingRateHint[]>,
-  chosenType: string,
-): Set<number> {
-  const out = new Set<number>();
-  if (!chosenType) return out;
-  for (const [locationId, hints] of existing) {
-    if (locationId !== null && hints.some((h) => h.clientRateType && h.clientRateType !== chosenType))
-      out.add(locationId);
-  }
-  return out;
-}
 
 /** An existing-rate hit at one pair of the group. */
 export interface PairHit {
@@ -253,8 +220,8 @@ export function RateCreatePage() {
   const exitTo = exitPath(searchParams.get('returnTo'), LIST_PATH);
 
   const [clientId, setClientId] = useState(searchParams.get('clientId') ?? '');
-  const [productId, setProductId] = useState('');
-  const [unitId, setUnitId] = useState('');
+  const [products, setProducts] = useState<(number | null)[]>([]);
+  const [units, setUnits] = useState<(number | null)[]>([]);
   const [mode, setMode] = useState('FIELD');
   const [clientRateType, setRateType] = useState('');
   const [amount, setAmount] = useState('');
@@ -263,39 +230,80 @@ export function RateCreatePage() {
   const [addedPincodes, setAddedPincodes] = useState<string[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<BulkRateResult | null>(null);
+  const [result, setResult] = useState<{ pair: Pair; res: BulkRateResult }[] | null>(null);
 
   const clients = useQuery({
     queryKey: ['client-options'],
     queryFn: () => api<Option[]>('GET', '/api/v2/clients/options'),
   });
-  const products = useQuery({
+  const productCatalog = useQuery({
     queryKey: ['product-options'],
     queryFn: () => api<Option[]>('GET', '/api/v2/products/options'),
   });
-  // ADR-0074: with a specific client + product chosen, the unit options are the CPV-mapped units (a
-  // Universal CPV ⇒ all units); else (no product, or Universal product) all active units.
-  const unitCpvScoped = !!clientId && !!productId && productId !== UNIVERSAL;
-  const units = useQuery({
-    queryKey: unitCpvScoped ? ['cpv-available-units', clientId, productId] : ['verification-unit-options'],
-    queryFn: () =>
-      unitCpvScoped
-        ? api<{ id: number; code: string; name: string }[]>(
-            'GET',
-            `/api/v2/cpv-units/available?clientId=${clientId}&productId=${productId}`,
-          )
-        : api<VerificationUnitOption[]>('GET', '/api/v2/verification-units/options'),
+  // Every active unit — the option pool a Universal product draws from, and the ordering (sort_order)
+  // every narrowed list preserves.
+  const allUnits = useQuery({
+    queryKey: ['verification-unit-options'],
+    queryFn: () => api<VerificationUnitOption[]>('GET', '/api/v2/verification-units/options'),
   });
-  // Rate types are assignment-gated by the (client × product × unit) combo (ADR-0067 Phase B) —
-  // enabled only once all three dims are chosen; office rates carry no rate type at all.
+  // ADR-0074: CPV is per (client, product) — one query per PICKED concrete product, cached under the
+  // key the single-select page already used. A Universal product has no mapping to consult.
+  const concreteProducts = products.filter((p): p is number => p !== null);
+  const cpvQueries = useQueries({
+    queries: concreteProducts.map((p) => ({
+      queryKey: ['cpv-available-units', clientId, String(p)],
+      queryFn: () =>
+        api<{ id: number; code: string; name: string }[]>(
+          'GET',
+          `/api/v2/cpv-units/available?clientId=${clientId}&productId=${p}`,
+        ),
+      enabled: !!clientId,
+    })),
+  });
+  // Gate the pair resolution on a settled CPV read: an in-flight product contributes an EMPTY unit
+  // set, which would transiently drop its pairs and flash a wrong count on the commit surface.
+  const cpvLoading = cpvQueries.some((q) => q.isLoading);
+  // Computed inline, not memoised: memoising a value derived from a fresh-every-render query array
+  // needs a lint escape hatch, and the no-suppressions gate forbids those outright. The map holds a
+  // handful of entries and resolvePairs is O(products × units) — the render cost is noise next to
+  // the round trips it describes.
+  const cpvUnitsByProduct = new Map(
+    concreteProducts.map((p, i) => [p, new Set((cpvQueries[i]?.data ?? []).map((u) => u.id))]),
+  );
+
+  const allUnitIds = (allUnits.data ?? []).map((u) => u.id);
+  const offerableUnitIds = unitOptionIds(products, cpvUnitsByProduct, allUnitIds);
+  const { pairs, dropped } = resolvePairs(products, units, cpvUnitsByProduct);
+  const isGroup = pairs.length > 1;
+
+  // Rate types are assignment-gated by the (client × product × unit) combo (ADR-0067 Phase B).
   const isOffice = mode === 'OFFICE';
-  const comboReady = !isOffice && !!clientId && !!productId && !!unitId;
-  const rateTypes = useQuery({
-    queryKey: ['rate-types-available', clientId, productId, unitId],
-    queryFn: () => api<RateTypeOption[]>('GET', availableRateTypesPath(clientId, productId, unitId)),
-    enabled: comboReady,
+  // One resolved pair = a concrete slot; for a group the rate-type picker shows the union (below).
+  const comboReady = !isOffice && !!clientId && pairs.length > 0;
+  // The rate types offerable for the group = the UNION across its pairs. Same query key as the
+  // single-select page, so a one-pair group shares cache and behaves identically.
+  // ponytail: UX policy, not an invariant — the server validates catalog existence + category only
+  // (rates/service.ts), so a type unassigned at some pair still saves and still bills. We surface
+  // that below rather than block a save the server accepts.
+  const rateTypeQueries = useQueries({
+    queries: pairs.map((p) => ({
+      queryKey: ['rate-types-available', clientId, dimParam(p.productId), dimParam(p.unitId)],
+      queryFn: () =>
+        api<RateTypeOption[]>(
+          'GET',
+          availableRateTypesPath(clientId, dimParam(p.productId), dimParam(p.unitId)),
+        ),
+      enabled: comboReady,
+    })),
   });
-  const noRateTypesForCombo = comboReady && rateTypes.isSuccess && rateTypes.data.length === 0;
+  const rateTypesLoading = rateTypeQueries.some((q) => q.isLoading);
+  const rateTypeUnion = new Map<string, RateTypeOption>();
+  for (const q of rateTypeQueries) for (const rt of q.data ?? []) rateTypeUnion.set(rt.code, rt);
+  // Pairs where the CHOSEN type isn't assigned — named, never blocking (see the ponytail note above).
+  const unassignedPairs = clientRateType
+    ? pairs.filter((_, i) => !(rateTypeQueries[i]?.data ?? []).some((rt) => rt.code === clientRateType))
+    : [];
+  const noRateTypesForCombo = comboReady && !rateTypesLoading && rateTypeUnion.size === 0;
   const pincodes = useQuery({
     queryKey: ['pincodes', pincodeSearch],
     queryFn: () => api<string[]>('GET', `/api/v2/locations/pincodes?q=${encodeURIComponent(pincodeSearch)}`),
@@ -317,7 +325,7 @@ export function RateCreatePage() {
   // The slot's existing ACTIVE rates — surfaced on the area chips so the admin sees which rate type
   // + amount a location already has BEFORE saving a duplicate. 500 = the server page cap; a client
   // beyond it still saves fine — the server skip-check is authoritative.
-  const slotReady = !!clientId && !!productId && !!unitId;
+  const slotReady = !!clientId && pairs.length > 0;
   const existing = useQuery({
     queryKey: ['rate-existing', clientId],
     queryFn: () =>
@@ -327,16 +335,16 @@ export function RateCreatePage() {
     enabled: slotReady,
   });
 
-  const existingByLoc = useMemo(
-    () =>
-      existingByLocation(slotReady ? slotRates(existing.data ?? [], toDim(productId), toDim(unitId)) : []),
-    [existing.data, slotReady, productId, unitId],
+  // Inline for the same reason as cpvUnitsByProduct (Step 5): memoising on `pairs` would need a lint
+  // escape hatch the gate forbids.
+  const enteredAmount = amount === '' ? null : Number(amount);
+  const groupStates = locationGroupStates(
+    slotReady ? (existing.data ?? []) : [],
+    pairs,
+    clientRateType,
+    enteredAmount,
   );
-  // One slot = one rate type (owner 2026-07-11): areas holding a DIFFERENT type are untickable.
-  const blocked = useMemo(
-    () => blockedLocations(existingByLoc, clientRateType),
-    [existingByLoc, clientRateType],
-  );
+  const outcome = groupOutcome(groupStates, [...selected], pairs.length);
 
   interface PincodeGroup {
     pincode: string;
@@ -388,7 +396,7 @@ export function RateCreatePage() {
     setSelected((s) => {
       const n = new Set(s);
       // Select-all only ever toggles the tickable areas — blocked ones (different rate type) stay out.
-      const selectable = g.areas.filter((a) => !blocked.has(a.id));
+      const selectable = g.areas.filter((a) => !isHardBlocked(groupStates.get(a.id)));
       const all = selectable.length > 0 && selectable.every((a) => n.has(a.id));
       for (const a of selectable) {
         if (all) n.delete(a.id);
@@ -396,30 +404,34 @@ export function RateCreatePage() {
       }
       return n;
     });
-  // Changing any slot dimension re-scopes the CPV unit list (ADR-0074), the assignment-gated rate
-  // types (ADR-0067) AND the existing-rate hints/blocked chips — clear everything downstream so a
-  // stale value or a now-blocked area can't ride along (UX-9 Clear-fields pattern).
+  // Changing the CLIENT redefines everything downstream (the CPV mapping, the assignable rate types,
+  // the existing-rate hints) — wipe it all, as before.
   const changeClient = (id: string) => {
     setClientId(id);
-    setUnitId('');
+    setProducts([]);
+    setUnits([]);
     setRateType('');
     setSelected(new Set());
   };
-  const changeProduct = (id: string) => {
-    setProductId(id);
-    setUnitId('');
-    setRateType('');
-    setSelected(new Set());
+  // Changing a product/unit TICK re-resolves the pairs, so a rate type that is no longer offered
+  // anywhere must go. Locations are ORTHOGONAL to the CPV axes and are never cleared: ticking a 2nd
+  // product used to erase every hand-ticked area (correct for a single-select, catastrophic here).
+  const changeProducts = (next: (number | null)[]) => {
+    setProducts(next);
+    setUnits((u) => retainUnits(next, u, cpvUnitsByProduct, allUnitIds));
   };
-  const changeUnit = (id: string) => {
-    setUnitId(id);
-    setRateType('');
-    setSelected(new Set());
-  };
+  const changeUnits = (next: (number | null)[]) => setUnits(next);
+  // A type that no pair offers any more can't stay picked — but only decide once the union has
+  // actually loaded, or an in-flight query would clear the user's pick.
+  useEffect(() => {
+    if (clientRateType && comboReady && !rateTypesLoading && !rateTypeUnion.has(clientRateType))
+      setRateType('');
+  }, [clientRateType, comboReady, rateTypesLoading, rateTypeUnion]);
   const modeLocked = modeHasDownstream({
     clientRateType,
     pincodeCount: addedPincodes.length,
     selectedCount: selected.size,
+    pairCount: pairs.length,
   });
   const clearModeDownstream = () => {
     setRateType('');
@@ -430,48 +442,70 @@ export function RateCreatePage() {
 
   const count = selected.size;
   const overCap = !isOffice && count > MAX_BULK_RATE_LOCATIONS;
-  // Client/product/unit/amount are required (product & unit may be the explicit Universal choice);
-  // FIELD also needs a rate type + ≥1 location (≤ the bulk cap); OFFICE is flat.
   const valid =
     !!clientId &&
-    !!productId &&
-    !!unitId &&
+    pairs.length > 0 &&
     amount !== '' &&
-    (isOffice || (!!clientRateType && count > 0 && !overCap));
+    // OFFICE writes ONE flat rate with no product/unit fan, so it must carry exactly ONE pair.
+    // Locking the toggle is NOT enough: the toggle is free while nothing is picked, so an admin can
+    // switch to Office FIRST and tick a group after — the lock then holds them IN Office with N
+    // pairs, and the save would write pairs[0] and silently drop the rest (spec §5.1, the exact
+    // defect this feature exists to fix). The state is what's unsafe, so gate the SAVE on it.
+    (isOffice ? pairs.length === 1 : !!clientRateType && count > 0 && !overCap && outcome.created > 0);
 
   const shared = () => ({
     clientId: Number(clientId),
-    productId: toDim(productId), // null = Universal (ADR-0071)
-    verificationUnitId: toDim(unitId), // null = Universal
     amount: Number(amount),
     effectiveFrom: toIsoDate(effectiveFrom),
   });
-  // OFFICE → one plain create (flat: no geography, no rate type); FIELD → the bulk endpoint.
   const mut = useMutation({
     mutationFn: async () => {
       if (isOffice) {
-        await api<Rate>('POST', BASE, { ...shared(), locationId: null, clientRateType: null });
+        const only = pairs[0];
+        // Refuse, never truncate: a flat office rate carries no product/unit fan, so N pairs here
+        // would mean writing one and dropping N-1 under a success toast.
+        if (!only || pairs.length !== 1)
+          throw new Error('An office rate applies to one product & unit — narrow the selection.');
+        await api<Rate>('POST', BASE, {
+          ...shared(),
+          productId: only.productId,
+          verificationUnitId: only.unitId,
+          locationId: null,
+          clientRateType: null,
+        });
         return null;
       }
-      return api<BulkRateResult>('POST', `${BASE}/bulk`, {
-        ...shared(),
-        clientRateType,
-        locationIds: [...selected],
-      });
+      // A CPV group is N single-slot saves: /rates/bulk already takes ONE (product, unit) slot + N
+      // locations, so each pair is byte-identical to today's save — the ADR-0093 guard, the sorted
+      // deadlock order and the per-row EXISTS-skip all stay untouched server-side. Sequential: the
+      // rows are small, and re-submitting is safe because EXISTS-skip is idempotent.
+      const out: { pair: Pair; res: BulkRateResult }[] = [];
+      for (const pair of pairs) {
+        const res = await api<BulkRateResult>('POST', `${BASE}/bulk`, {
+          ...shared(),
+          productId: pair.productId,
+          verificationUnitId: pair.unitId,
+          clientRateType,
+          locationIds: [...selected],
+        });
+        out.push({ pair, res });
+      }
+      return out;
     },
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: [QK] });
       qc.invalidateQueries({ queryKey: ['rate-existing'] }); // refresh the area-chip hints
       if (r) {
-        // FIELD bulk: the result panel is the primary confirmation; the toast is the recap.
         setResult(r);
+        const created = r.reduce((n, x) => n + x.res.createdCount, 0);
+        const exists = r.reduce((n, x) => n + x.res.existsCount, 0);
+        const errors = r.reduce((n, x) => n + x.res.errorCount, 0);
         toast.success(
-          `${r.createdCount} rate${r.createdCount === 1 ? '' : 's'} created` +
-            (r.existsCount > 0 ? ` · ${r.existsCount} skipped (already exist)` : '') +
-            (r.errorCount > 0 ? ` · ${r.errorCount} errored` : ''),
+          `${created} rate${created === 1 ? '' : 's'} created` +
+            (exists > 0 ? ` · ${exists} skipped (already exist)` : '') +
+            (errors > 0 ? ` · ${errors} errored` : ''),
         );
       } else {
-        // OFFICE single create navigates straight back to the list — the toast is its confirmation.
         toast.success('Rate created');
         navigate(exitTo);
       }
@@ -494,59 +528,50 @@ export function RateCreatePage() {
     value: String(c.id),
     label: `${c.code} — ${c.name}`,
   }));
-  const productOpts: Opt[] = [
-    { value: UNIVERSAL, label: 'Universal (all products)' },
-    ...(products.data ?? []).map((p) => ({ value: String(p.id), label: `${p.code} — ${p.name}` })),
-  ];
-  const unitOpts: Opt[] = [
-    { value: UNIVERSAL, label: 'Universal (all units)' },
-    ...(units.data ?? []).map((u) => ({ value: String(u.id), label: u.name })),
-  ];
-  const rateTypeOpts: Opt[] = (rateTypes.data ?? []).map((rt) => ({ value: rt.code, label: rt.code }));
+  const rateTypeOpts: Opt[] = [...rateTypeUnion.values()].map((rt) => ({ value: rt.code, label: rt.code }));
   const pincodeOpts: Opt[] = (pincodes.data ?? []).map((p) => ({ value: p, label: p }));
 
   const clientLabel = clientId
     ? ((clients.data ?? []).find((c) => String(c.id) === clientId)?.name ?? '…')
     : '—';
-  const productLabel =
-    productId === UNIVERSAL
-      ? 'Universal'
-      : productId
-        ? ((products.data ?? []).find((p) => String(p.id) === productId)?.name ?? '…')
-        : '—';
-  const unitLabel =
-    unitId === UNIVERSAL
-      ? 'Universal'
-      : unitId
-        ? ((units.data ?? []).find((u) => String(u.id) === unitId)?.name ?? '…')
-        : '—';
+  const productName = (id: number) =>
+    (productCatalog.data ?? []).find((p) => p.id === id)?.name ?? String(id);
+  const unitName = (id: number) => (allUnits.data ?? []).find((u) => u.id === id)?.name ?? String(id);
+  const pairLabelOf = (p: Pair) =>
+    `${p.productId === null ? 'Universal' : productName(p.productId)} · ${p.unitId === null ? 'Universal' : unitName(p.unitId)}`;
 
   // ── Result summary — one row per submitted location, styled like the Rate Management list
   //    (owner 2026-07-11: show the created rates as rows, not a blank panel) ─────────────────────
   if (result) {
-    const rows = [...result.results].sort((a, b) =>
-      (locLabel.get(a.locationId) ?? '').localeCompare(locLabel.get(b.locationId) ?? ''),
-    );
+    const rows = result
+      .flatMap(({ pair, res }) => res.results.map((r) => ({ pair, r })))
+      .sort(
+        (a, b) =>
+          pairLabelOf(a.pair).localeCompare(pairLabelOf(b.pair)) ||
+          (locLabel.get(a.r.locationId) ?? '').localeCompare(locLabel.get(b.r.locationId) ?? ''),
+      );
+    const createdCount = result.reduce((n, x) => n + x.res.createdCount, 0);
+    const existsCount = result.reduce((n, x) => n + x.res.existsCount, 0);
+    const errorCount = result.reduce((n, x) => n + x.res.errorCount, 0);
     return (
       <div className="max-w-4xl space-y-4">
         <div>
           <h1 className="text-xl font-bold tracking-tight">
-            {result.createdCount > 0 ? 'Rates created' : 'No new rates created'}
+            {createdCount > 0 ? 'Rates created' : 'No new rates created'}
           </h1>
           <p className="text-sm text-muted-foreground">
-            {clientLabel} — <strong className="tabular-nums text-foreground">{result.createdCount}</strong>{' '}
-            created
-            {result.existsCount > 0 && (
+            {clientLabel} — <strong className="tabular-nums text-foreground">{createdCount}</strong> created
+            {existsCount > 0 && (
               <>
                 {' · '}
-                <strong className="tabular-nums text-foreground">{result.existsCount}</strong> skipped
-                (already exist)
+                <strong className="tabular-nums text-foreground">{existsCount}</strong> skipped (already
+                exist)
               </>
             )}
-            {result.errorCount > 0 && (
+            {errorCount > 0 && (
               <>
                 {' · '}
-                <strong className="tabular-nums text-destructive">{result.errorCount}</strong> errored
+                <strong className="tabular-nums text-destructive">{errorCount}</strong> errored
               </>
             )}
           </p>
@@ -565,11 +590,16 @@ export function RateCreatePage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
-                <tr key={r.locationId} className="border-b border-border last:border-b-0">
+              {rows.map(({ pair, r }) => (
+                <tr
+                  key={`${pairKey(pair)}:${r.locationId}`}
+                  className="border-b border-border last:border-b-0"
+                >
                   <td className="px-3 py-2">{clientLabel}</td>
-                  <td className="px-3 py-2">{productLabel}</td>
-                  <td className="px-3 py-2">{unitLabel}</td>
+                  <td className="px-3 py-2">
+                    {pair.productId === null ? 'Universal' : productName(pair.productId)}
+                  </td>
+                  <td className="px-3 py-2">{pair.unitId === null ? 'Universal' : unitName(pair.unitId)}</td>
                   <td className="px-3 py-2 tabular-nums">{locLabel.get(r.locationId) ?? r.locationId}</td>
                   <td className="px-3 py-2 text-xs uppercase">{clientRateType}</td>
                   <td className="px-3 py-2 text-right tabular-nums">
@@ -597,7 +627,7 @@ export function RateCreatePage() {
             </tbody>
           </table>
         </div>
-        {result.existsCount > 0 && (
+        {existsCount > 0 && (
           <p className="text-xs text-muted-foreground">
             Skipped rows already had an active rate for this combination — they kept their existing amount and
             weren’t touched. Change one with Revise on the list.
@@ -647,23 +677,6 @@ export function RateCreatePage() {
               <span className="mt-1 block text-xs text-destructive">Couldn’t load clients.</span>
             )}
           </Field>
-          <Field label="Product" required hint="Universal = all products">
-            <SearchableSelect
-              value={productId}
-              onChange={changeProduct}
-              options={productOpts}
-              width="w-full"
-            />
-            {products.isError && (
-              <span className="mt-1 block text-xs text-destructive">Couldn’t load products.</span>
-            )}
-          </Field>
-          <Field label="Verification Unit" required hint="Universal = all units">
-            <SearchableSelect value={unitId} onChange={changeUnit} options={unitOpts} width="w-full" />
-            {units.isError && (
-              <span className="mt-1 block text-xs text-destructive">Couldn’t load units.</span>
-            )}
-          </Field>
           <Field label="Field / Office" required>
             {/* a fixed 2-option choice → a native select (freely switchable), not a search-first dropdown */}
             <select
@@ -695,9 +708,9 @@ export function RateCreatePage() {
                   setSelected(new Set());
                 }}
                 options={rateTypeOpts}
-                disabled={!comboReady || rateTypes.isLoading}
+                disabled={!comboReady || rateTypesLoading}
                 placeholder={
-                  !comboReady ? PICK_COMBO_FIRST : rateTypes.isLoading ? 'Loading rate types…' : 'Search…'
+                  !comboReady ? PICK_COMBO_FIRST : rateTypesLoading ? 'Loading rate types…' : 'Search…'
                 }
                 width="w-full"
               />
@@ -710,7 +723,17 @@ export function RateCreatePage() {
                   .
                 </span>
               )}
-              {rateTypes.isError && (
+              {unassignedPairs.length > 0 && (
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  {clientRateType} isn’t assigned for {unassignedPairs.length} of {pairs.length} pairs (
+                  {unassignedPairs.map(pairLabelOf).join(', ')}) — the rates still save.{' '}
+                  <Link to={ASSIGN_RATE_TYPES_PATH} className="text-primary hover:underline">
+                    assign it
+                  </Link>
+                  .
+                </span>
+              )}
+              {rateTypeQueries.some((q) => q.isError) && (
                 <span className="mt-1 block text-xs text-destructive">Couldn’t load rate types.</span>
               )}
             </Field>
@@ -749,10 +772,36 @@ export function RateCreatePage() {
         </div>
       </StepCard>
 
-      {/* Step 2 — pincode search + accumulated area groups (hidden for flat OFFICE rates) */}
+      {/* Step 2 — the CPV group: tick many products × many units; the resolved pairs are the fan-out */}
+      <StepCard
+        n={2}
+        title="Products & verification units"
+        badge={pairs.length > 0 ? `${pairs.length} pair${pairs.length === 1 ? '' : 's'}` : undefined}
+        hint="Tick every product and unit this rate applies to. Each resolved pair below becomes one slot; only pairs in this client’s CPV mapping are offered."
+      >
+        <PairPicker
+          products={products}
+          units={units}
+          productOptions={(productCatalog.data ?? []).map((p) => ({
+            id: p.id,
+            label: `${p.code} — ${p.name}`,
+          }))}
+          unitOptions={(allUnits.data ?? [])
+            .filter((u) => offerableUnitIds.includes(u.id))
+            .map((u) => ({ id: u.id, label: u.name }))}
+          pairs={pairs}
+          dropped={dropped}
+          labelFor={pairLabelOf}
+          onProductsChange={changeProducts}
+          onUnitsChange={changeUnits}
+          isLoading={cpvLoading}
+        />
+      </StepCard>
+
+      {/* Step 3 — pincode search + accumulated area groups (hidden for flat OFFICE rates) */}
       {!isOffice && (
         <StepCard
-          n={2}
+          n={3}
           title="Locations"
           badge={
             addedPincodes.length > 0
@@ -781,7 +830,7 @@ export function RateCreatePage() {
             <div className="space-y-3">
               {groups.map((g) => {
                 const on = g.areas.filter((a) => selected.has(a.id)).length;
-                const selectable = g.areas.filter((a) => !blocked.has(a.id));
+                const selectable = g.areas.filter((a) => !isHardBlocked(groupStates.get(a.id)));
                 const allOn = selectable.length > 0 && on === selectable.length;
                 const notFound = isPincodeNotFound({
                   pincode: g.pincode,
@@ -852,26 +901,37 @@ export function RateCreatePage() {
                         </p>
                       ) : (
                         g.areas.map((a) => {
-                          // What this slot already bills here — visible BEFORE saving a duplicate.
-                          const have = existingByLoc.get(a.id) ?? [];
-                          const clash =
-                            !!clientRateType && have.some((h) => h.clientRateType === clientRateType);
-                          // One slot = one rate type: a different existing type makes the area untickable.
-                          const isBlocked = blocked.has(a.id);
+                          const st = groupStates.get(a.id);
+                          const isBlocked = isHardBlocked(st);
+                          // Amber = some pairs would skip or error here, but the pick is still legal
+                          // for the rest — the result grid reports each pair's own outcome.
+                          const isAmber = !isBlocked && !!st && st.blocked.length + st.exists.length > 0;
+                          const repriced = st?.repriced.length ?? 0;
+                          const detail = [...(st?.blocked ?? []), ...(st?.exists ?? [])]
+                            .map((h) => `${pairLabelOf(h.pair)} — ${existingRateLabel(h.hints)}`)
+                            .join('\n');
+                          // The existing rate(s) at this area, always on the chip face — a group is
+                          // exactly when an admin most needs to see WHAT is already priced, not just
+                          // how many. CREATE_PAGE_STANDARD §2 requires the concrete hint.
+                          const faceLabel = existingRateLabel(
+                            [...(st?.blocked ?? []), ...(st?.exists ?? [])].flatMap((h) => h.hints),
+                          );
                           return (
                             <label
                               key={a.id}
                               title={
                                 isBlocked
-                                  ? `Has a different rate type here (${existingRateLabel(have)}) — one location holds one rate type; revise or deactivate the existing rate first`
-                                  : clash
-                                    ? `Already has a ${clientRateType} rate here — an identical combination will be skipped (revise the existing rate to change its amount)`
-                                    : undefined
+                                  ? `Every picked pair already has a different rate type here:\n${detail}\nOne location holds one rate type — revise or deactivate the existing rates first.`
+                                  : repriced > 0
+                                    ? `Already priced here at a DIFFERENT amount:\n${detail}\nYour ₹${amount} will NOT be applied — the save skips an existing rate, it never overwrites it. Use Revise on the list to change the amount.`
+                                    : isAmber
+                                      ? `Already priced for part of this group:\n${detail}\nThe rest will be created; these are skipped or reported per row.`
+                                      : undefined
                               }
                               className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs has-[:checked]:border-primary has-[:checked]:bg-primary-muted ${
                                 isBlocked
                                   ? 'cursor-not-allowed border-st-rejected bg-st-rejected-bg opacity-80'
-                                  : clash
+                                  : isAmber
                                     ? 'cursor-pointer border-st-under-review bg-st-under-review-bg'
                                     : 'cursor-pointer border-border-strong bg-card'
                               }`}
@@ -884,17 +944,22 @@ export function RateCreatePage() {
                                 onChange={() => toggleArea(a.id)}
                               />
                               {a.area}
-                              {have.length > 0 && (
+                              {faceLabel && (
+                                // The concrete existing rate ("LOCAL ₹175") — shown for a single pair
+                                // AND for a group. A group only adds the ratio; it never replaces the
+                                // amount, which is the fact the admin actually decides on.
                                 <span
-                                  className={`text-[10px] tabular-nums ${
-                                    isBlocked
-                                      ? 'font-semibold text-st-rejected'
-                                      : clash
-                                        ? 'font-semibold text-st-under-review'
-                                        : 'text-muted-foreground'
-                                  }`}
+                                  className={`text-[10px] tabular-nums ${isBlocked ? 'font-semibold text-st-rejected' : isAmber ? 'font-semibold text-st-under-review' : 'text-muted-foreground'}`}
                                 >
-                                  {existingRateLabel(have)}
+                                  {faceLabel}
+                                  {isGroup &&
+                                    ` (${(st?.blocked.length ?? 0) + (st?.exists.length ?? 0)}/${pairs.length})`}
+                                </span>
+                              )}
+                              {repriced > 0 && (
+                                // Distinct from a benign skip: the admin's new amount is being dropped.
+                                <span className="text-[10px] font-semibold text-st-under-review">
+                                  ≠ ₹{amount}
                                 </span>
                               )}
                             </label>
@@ -914,12 +979,18 @@ export function RateCreatePage() {
       {isOffice &&
         slotReady &&
         (() => {
-          const office = existingByLoc.get(null) ?? [];
+          const only = pairs[0];
+          if (!only) return null;
+          // Office rows are location-less, so they live outside groupStates by construction.
+          const office = (existing.data ?? []).filter(
+            (r) =>
+              r.locationId === null && r.productId === only.productId && r.verificationUnitId === only.unitId,
+          );
           if (office.length === 0) return null;
           return (
             <div className="rounded-lg border border-st-under-review bg-st-under-review-bg px-4 py-3 text-xs text-st-under-review">
               <b className="font-semibold">
-                {clientLabel} · {productLabel} · {unitLabel} already has office rates:
+                {clientLabel} · {pairLabelOf(only)} already has office rates:
               </b>{' '}
               {office.map((r) => `₹${r.amount}`).join(' · ')} — an identical combination will be rejected; use
               Revise on the list to change an amount.
@@ -939,14 +1010,37 @@ export function RateCreatePage() {
       <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-border-strong bg-card px-4 py-3 shadow-md">
         <div>
           <p className="text-sm font-semibold">
-            <span className="text-lg tabular-nums">{isOffice ? 1 : count}</span> rate
-            {!isOffice && count !== 1 ? 's' : ''} will be created
+            <span className="text-lg tabular-nums">{isOffice ? 1 : outcome.created}</span> rate
+            {!isOffice && outcome.created !== 1 ? 's' : ''} will be created
           </p>
           {clientId && (
             <p className="text-xs text-muted-foreground">
-              {clientLabel} · {productLabel}
+              {clientLabel} · {pairs.length} pair{pairs.length === 1 ? '' : 's'}
               {!isOffice && clientRateType ? ` · ${clientRateType}` : ''} ·{' '}
               <span className="tabular-nums">₹{amount === '' ? '—' : amount}</span>
+              {!isOffice && outcome.skipped > 0 && (
+                <span className="tabular-nums"> · {outcome.skipped} skipped (already priced)</span>
+              )}
+              {!isOffice && outcome.blocked > 0 && (
+                <span className="tabular-nums text-st-under-review">
+                  {' '}
+                  · {outcome.blocked} blocked (different rate type)
+                </span>
+              )}
+            </p>
+          )}
+          {/* A skip whose amount differs is NOT benign: the save never overwrites, so the admin's new
+              price is dropped and the old one stands. Loud, and it names the way out. */}
+          {!isOffice && outcome.repriced > 0 && (
+            <p className="mt-1 text-xs font-medium text-st-under-review" role="alert">
+              <span className="tabular-nums">{outcome.repriced}</span> already{' '}
+              {outcome.repriced === 1 ? 'has' : 'have'} a {clientRateType} rate at a different amount —{' '}
+              <span className="tabular-nums">₹{amount}</span> will not be applied there. A save skips existing
+              rates, it never overwrites them: use{' '}
+              <Link to={LIST_PATH} className="underline">
+                Revise
+              </Link>{' '}
+              to change an amount.
             </p>
           )}
         </div>
@@ -983,7 +1077,11 @@ export function RateCreatePage() {
             disabled={!valid}
             loading={mut.isPending}
           >
-            {isOffice ? 'Save' : count > 0 ? `Create ${count} rate${count === 1 ? '' : 's'}` : 'Create rates'}
+            {isOffice
+              ? 'Save'
+              : outcome.created > 0
+                ? `Create ${outcome.created} rate${outcome.created === 1 ? '' : 's'}`
+                : 'Create rates'}
           </Button>
         </div>
       </div>

@@ -1,17 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import {
   availableRateTypesPath,
-  blockedLocations,
   createFriendlyError,
-  existingByLocation,
   existingRateLabel,
   groupOutcome,
   isHardBlocked,
   isPincodeNotFound,
   locationGroupStates,
   modeHasDownstream,
-  slotRates,
-  toDim,
+  dimParam,
   ASSIGN_RATE_TYPES_PATH,
   CLEAR_FIELDS_LABEL,
   LOCATIONS_ADMIN_PATH,
@@ -31,42 +28,14 @@ const row = (
   amount: number,
 ) => ({ productId, verificationUnitId: unitId, locationId, clientRateType, amount });
 
-describe('toDim (explicit Universal sentinel, ADR-0071)', () => {
-  it('maps the UNIVERSAL sentinel to null and ids to numbers', () => {
-    expect(toDim(UNIVERSAL)).toBeNull();
-    expect(toDim('7')).toBe(7);
+describe('dimParam (explicit Universal sentinel, ADR-0071)', () => {
+  it('maps null to the UNIVERSAL sentinel and ids to strings', () => {
+    expect(dimParam(null)).toBe(UNIVERSAL);
+    expect(dimParam(7)).toBe('7');
   });
 });
 
-/**
- * The one-type rule and the EXISTS skip are SLOT-scoped: same client + product + unit, null-aware
- * (Universal only matches Universal — mirroring the DB key's COALESCE sentinels). Rates at other
- * products/units must not block or hint.
- */
-describe('slotRates (slot-scoped existing rates)', () => {
-  const items = [
-    row(3, 9, 101, 'LOCAL', 500), // the slot
-    row(4, 9, 101, 'OGL', 650), // other product — NOT the slot
-    row(null, 9, 101, 'OGL', 700), // Universal product — NOT the slot (specific ≠ Universal)
-    row(3, null, 101, 'OGL', 800), // Universal unit — NOT the slot
-  ];
-
-  it('matches only the exact product+unit pair', () => {
-    expect(slotRates(items, 3, 9)).toEqual([items[0]]);
-  });
-
-  it('a Universal dim only matches Universal (null === null)', () => {
-    expect(slotRates(items, null, 9)).toEqual([items[2]]);
-  });
-});
-
-describe('existingByLocation + existingRateLabel (chip hints)', () => {
-  it('folds slot rates into locationId → hints (null key = office rows)', () => {
-    const map = existingByLocation([row(3, 9, 101, 'LOCAL', 500), row(3, 9, null, null, 900)]);
-    expect(map.get(101)).toEqual([{ clientRateType: 'LOCAL', amount: 500 }]);
-    expect(map.get(null)).toEqual([{ clientRateType: null, amount: 900 }]);
-  });
-
+describe('existingRateLabel (compact chip label)', () => {
   it('labels compactly, null type as —', () => {
     expect(
       existingRateLabel([
@@ -74,32 +43,6 @@ describe('existingByLocation + existingRateLabel (chip hints)', () => {
         { clientRateType: null, amount: 900 },
       ]),
     ).toBe('LOCAL ₹500 · — ₹900');
-  });
-});
-
-/**
- * Owner rule (2026-07-11): one (client, product, unit, location) slot holds ONE rate type — a
- * location whose slot already carries a DIFFERENT type is untickable (the server rejects per-row).
- * A same-type location stays tickable (it would be an EXISTS skip, amber). Typeless (office/legacy)
- * rows never block.
- */
-describe('blockedLocations (one slot = one rate type)', () => {
-  const map = existingByLocation([
-    row(3, 9, 101, 'LOCAL', 500),
-    row(3, 9, 102, 'OGL', 650),
-    row(3, 9, 103, null, 700),
-    row(3, 9, null, null, 900),
-  ]);
-
-  it('blocks locations holding a different type; same type stays tickable', () => {
-    const blocked = blockedLocations(map, 'LOCAL');
-    expect(blocked.has(102)).toBe(true); // OGL there, adding LOCAL → blocked
-    expect(blocked.has(101)).toBe(false); // LOCAL there → amber skip, not blocked
-  });
-
-  it('never blocks typeless rows, null (office) keys, or when no type is chosen yet', () => {
-    expect(blockedLocations(map, 'LOCAL').has(103)).toBe(false);
-    expect(blockedLocations(map, '').size).toBe(0);
   });
 });
 
@@ -174,18 +117,22 @@ describe('isPincodeNotFound (rates create page)', () => {
  * once any of them is set — with the inline Clear action as the recovery path.
  */
 describe('modeHasDownstream (Field/Office toggle guard)', () => {
-  const empty = { clientRateType: '', pincodeCount: 0, selectedCount: 0 };
+  const base = { clientRateType: '', pincodeCount: 0, selectedCount: 0, pairCount: 0 };
 
   it('is false when nothing downstream is set', () => {
-    expect(modeHasDownstream(empty)).toBe(false);
+    expect(modeHasDownstream(base)).toBe(false);
   });
-
   it('is true when a rate type, a pincode group, or a selection exists', () => {
-    expect(modeHasDownstream({ ...empty, clientRateType: 'LOCAL' })).toBe(true);
-    expect(modeHasDownstream({ ...empty, pincodeCount: 1 })).toBe(true);
-    expect(modeHasDownstream({ ...empty, selectedCount: 2 })).toBe(true);
+    expect(modeHasDownstream({ ...base, clientRateType: 'LOCAL' })).toBe(true);
+    expect(modeHasDownstream({ ...base, pincodeCount: 1 })).toBe(true);
+    expect(modeHasDownstream({ ...base, selectedCount: 1 })).toBe(true);
   });
-
+  it('a single pair leaves the toggle free — office rates are single-slot too', () => {
+    expect(modeHasDownstream({ ...base, pairCount: 1 })).toBe(false);
+  });
+  it('a GROUP locks the toggle: office does one flat create and would silently drop the group', () => {
+    expect(modeHasDownstream({ ...base, pairCount: 2 })).toBe(true);
+  });
   it('pins the helper + action copy', () => {
     expect(MODE_LOCKED_HELPER).toBe('Clear rate-type/location fields to switch mode');
     expect(CLEAR_FIELDS_LABEL).toBe('Clear fields');
