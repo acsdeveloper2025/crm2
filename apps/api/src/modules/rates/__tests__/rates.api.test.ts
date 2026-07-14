@@ -917,6 +917,37 @@ describe.skipIf(!RUN)('rates API', () => {
       expect((await bulk(body, FA)).status).toBe(403);
       expect((await request(app).post('/api/v2/rates/bulk').send(body)).status).toBe(401);
     });
+
+    // ADR-0093 guard × ADR-0071 Universal: the one-slot-one-type rule must hold when the product/unit
+    // dims are Universal (NULL) exactly as it does for concrete dims — the slot is still one slot.
+    // Characterization test: it PASSES on today's code (the scalar guard predicate is null-aware via
+    // COALESCE(...,-1)). It exists to pin that behaviour, because a plausible "widen the guard to
+    // productIds[]" refactor silently breaks it: `= ANY(ARRAY[NULL]::int[])` evaluates to NULL, the row
+    // is dropped by WHERE, the guard finds no conflict and two differently-typed active rates land at
+    // one slot. rates_no_overlap does NOT catch that (rate_type_id is part of the EXCLUDE key).
+    it('a Universal-product LOCAL rate blocks a Universal-product OGL rate at the same location', async () => {
+      const key = await seedKey('UGRD'); // only clientId is used — the dims are deliberately Universal
+      const locationId = await seedLoc('UGRD_AREA');
+      const body = {
+        clientId: key.clientId,
+        productId: null, // Universal (ADR-0071)
+        verificationUnitId: null, // Universal
+        clientRateType: 'LOCAL',
+        amount: 175,
+        locationIds: [locationId],
+      };
+      const first = await bulk(body);
+      expect(first.status).toBe(200);
+      expect(first.body.createdCount).toBe(1);
+
+      // Same Universal slot, same location, DIFFERENT rate type ⇒ one slot may hold only one type.
+      const second = await bulk({ ...body, clientRateType: 'OGL', amount: 220 });
+      expect(second.status).toBe(200);
+      expect(second.body.createdCount).toBe(0);
+      expect(second.body.errorCount).toBe(1);
+      expect(second.body.results[0].status).toBe('ERROR');
+      expect(second.body.results[0].error).toBe('HAS_OTHER_RATE_TYPE');
+    });
   });
 
   // ── B-14 import (the only FK-resolving domain): file carries CODES + pincode/area → resolve → ids ──
