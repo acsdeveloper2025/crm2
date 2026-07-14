@@ -845,4 +845,70 @@ describe.skipIf(!RUN)('commission rebuild §E (ADR-0046)', () => {
     const { items: summary } = await billingRepository.commissionSummary(sumOpts({}));
     expect(summary.find((r) => r.agentName === 'SB FA')!.commissionTotal).toBe(100);
   });
+  /*
+   * Regression (audit 2026-07-14): the billing/commission reads are TASK-grain but used a local
+   * CASE-grain predicate whose EXISTS subquery declared its own `ct`, SHADOWING the outer one. It
+   * therefore only asked "does this CASE hold any in-scope task" and never constrained the RETURNED
+   * row — so a case shared by two agents leaked the out-of-scope agent's name + commission. Every
+   * other commission test passes `scope: {}` (SUPER_ADMIN, no filter), so nothing caught it.
+   *
+   * One case, two COMPLETED tasks, two different agents; scope = agent A only (what a leader's
+   * hierarchy leg resolves to). Restore caseScopePredicate and B's row reappears in all three reads.
+   */
+  it("scope: a case shared by two agents does not leak the out-of-scope agent's commission", async () => {
+    const agentA = await createUser({ username: 'sc_cm_a', name: 'SCOPE CM A', role: 'FIELD_AGENT' });
+    const agentB = await createUser({ username: 'sc_cm_b', name: 'SCOPE CM B', role: 'FIELD_AGENT' });
+    const key = {
+      clientId: ctxShared.clientId,
+      productId: ctxShared.productId,
+      verificationUnitId: ctxShared.unitId,
+      locationId: l1Id,
+    };
+    await seedCommissionRate({ ...key, userId: agentA, amount: 50 });
+    await seedCommissionRate({ ...key, userId: agentB, amount: 70 });
+
+    const created = seeded<{ id: string }>(
+      await request(app)
+        .post('/api/v2/cases')
+        .set(SA)
+        .send({
+          clientId: ctxShared.clientId,
+          productId: ctxShared.productId,
+          backendContactNumber: BC,
+          applicants: [
+            { name: 'SHARED ONE', mobile: '9000022345' },
+            { name: 'SHARED TWO', mobile: '9000022346' },
+          ],
+          dedupeDecision: 'NO_DUPLICATES_FOUND',
+        }),
+    );
+    const aps = seeded<{ applicants: { id: string }[] }>(
+      await request(app).get(`/api/v2/cases/${created.id}`).set(SA),
+    ).applicants;
+    const taskMap = await addTasks(created.id, ctxShared.unitId, [
+      { applicantId: aps[0]!.id, address: '1 SHARED ROAD' },
+      { applicantId: aps[1]!.id, address: '2 SHARED ROAD' },
+    ]);
+    const taskA = taskMap.get(aps[0]!.id)!;
+    const taskB = taskMap.get(aps[1]!.id)!;
+    await driveToCompleted(created.id, taskA, agentA, l1Id);
+    await driveToCompleted(created.id, taskB, agentB, l1Id);
+
+    // Scope = agent A only. B's task rides the SAME case — the shadowed EXISTS used to let it through.
+    const scope = { userIds: [agentA] };
+
+    const { items: detail } = await billingRepository.commissionDetail({ scope, limit: 50, offset: 0 });
+    const detailForCase = detail.filter((r) => r.taskId === taskA || r.taskId === taskB);
+    expect(detailForCase.map((r) => r.taskId)).toEqual([taskA]);
+    expect(detailForCase.some((r) => r.agentName === 'SCOPE CM B')).toBe(false);
+
+    const { items: summary } = await billingRepository.commissionSummary(sumOpts({ scope }));
+    expect(summary.some((r) => r.agentName === 'SCOPE CM B')).toBe(false);
+    expect(summary.some((r) => r.agentName === 'SCOPE CM A')).toBe(true);
+
+    // Same shadowing bug affected the billing lines read (also TASK-grain).
+    const { items: lines } = await billingRepository.listLines({ ...baseOpts, scope });
+    const lineIds = lines.filter((l) => l.caseId === created.id).map((l) => l.taskId);
+    expect(lineIds).toEqual([taskA]);
+  });
 });

@@ -8,23 +8,21 @@ import type {
 } from '@crm2/sdk';
 import { filterClauses, likeContains, type AppliedFilter } from '../../platform/pagination.js';
 import { query } from '../../platform/db.js';
-import { composeScopePredicate, type Scope } from '../../platform/scope/index.js';
+import { taskScopePredicate, type Scope } from '../../platform/scope/index.js';
 import { RATE_LATERAL, COMMISSION_LATERAL } from '../../platform/billing/laterals.js';
 
-/**
- * CASE-grain visibility predicate (mirrors the cases/dashboard leg; kept local to respect module
- * boundaries): a case is visible when the actor created it OR an in-scope user holds one of its
- * tasks. `''` = no filter (SUPER_ADMIN / hierarchy ALL). FROM contract: `cases cs`.
+/*
+ * Visibility: every read below is TASK-grain (`FROM case_tasks ct JOIN cases cs`), so they all use the
+ * shared TASK-grain predicate — the same one Pipeline (tasks/) and MIS use, so the three surfaces can
+ * never disagree about which task rows an actor may see.
+ *
+ * They previously used a local CASE-grain copy whose hierarchy leg read
+ *   `cs.created_by = ANY(ph) OR EXISTS (SELECT 1 FROM case_tasks ct WHERE ct.case_id = cs.id AND ...)`
+ * — correct over `FROM cases cs` (cases/dashboard), but wrong here: the subquery's own `ct` SHADOWS the
+ * outer `ct`, so the EXISTS only asked "does this CASE hold any in-scope task" and never constrained the
+ * returned row. A case with task A -> an in-scope agent and task B -> an out-of-scope agent leaked B's
+ * row — including `agent_name` + `commission_amount` on /commission-summary and /commission-detail.
  */
-function caseScopePredicate(params: unknown[], scope: Scope): string {
-  return composeScopePredicate(
-    params,
-    scope,
-    (ph) =>
-      `cs.created_by = ANY(${ph}) OR EXISTS (SELECT 1 FROM case_tasks ct WHERE ct.case_id = cs.id AND ct.assigned_to = ANY(${ph}))`,
-    'CASE',
-  );
-}
 
 // Flat billing-lines list (ADR-0086 redesign): one row per COMPLETED billable task, all detail columns +
 // the resolved CLIENT bill. ADR-0086 made the billing surface bill-only — COMMISSION_LATERAL is NOT joined
@@ -104,7 +102,7 @@ function buildLinesWhere(o: BillingLineFilterOptions, params: unknown[]): string
     params.push(o.ids);
     where.push(`ct.id = ANY($${params.length})`);
   }
-  const scopePred = caseScopePredicate(params, o.scope);
+  const scopePred = taskScopePredicate(params, o.scope);
   if (scopePred) where.push(scopePred);
   return `WHERE ${where.join(' AND ')}`;
 }
@@ -187,7 +185,7 @@ function buildCommissionSummaryWhere(o: CommissionSummaryOptions, params: unknow
     const n = params.length;
     where.push(`(au.name ILIKE $${n} OR cl.name ILIKE $${n} OR p.name ILIKE $${n})`);
   }
-  const scopePred = caseScopePredicate(params, o.scope);
+  const scopePred = taskScopePredicate(params, o.scope);
   if (scopePred) where.push(scopePred);
   return `WHERE ${where.join(' AND ')}`;
 }
@@ -234,7 +232,7 @@ function buildCommissionDetailWhere(o: CommissionDetailOptions, params: unknown[
       `(au.name ILIKE $${n} OR cl.name ILIKE $${n} OR p.name ILIKE $${n} OR cs.case_number ILIKE $${n} OR ct.task_number ILIKE $${n})`,
     );
   }
-  const scopePred = caseScopePredicate(params, o.scope);
+  const scopePred = taskScopePredicate(params, o.scope);
   if (scopePred) where.push(scopePred);
   return `WHERE ${where.join(' AND ')}`;
 }
