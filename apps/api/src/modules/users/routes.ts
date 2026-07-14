@@ -2,6 +2,9 @@ import { Router, raw } from 'express';
 import multer from 'multer';
 import { authorize, PERMISSIONS } from '@crm2/access';
 import { userController as c } from './controller.js';
+// AUTHORIZATION-04: a non-admin actor may not MUTATE an admin (grants_all) target — see guards.ts.
+// Applied to every mutating `/:id…` route below, incl. the handlers owned by other modules.
+import { denyElevatedTarget } from './guards.js';
 import { MAX_IMAGE_BYTES } from '../../platform/image.js';
 // Session data lives in the auth domain (auth_refresh_tokens); the admin view/revoke endpoints are
 // mounted here under /users/:id but delegate to the auth controller (slice 6).
@@ -66,17 +69,23 @@ userRoutes.post(
 // none of them is ever captured as `:id`; the `/:id/<subresource>` routes below are distinct two-segment
 // paths (Express matches `/:id` and `/:id/sessions` independently — no shadowing).
 userRoutes.get('/:id', authorize(PERMISSIONS.USER_VIEW), c.getById);
-userRoutes.put('/:id', authorize(PERMISSIONS.USER_MANAGE), c.update);
-userRoutes.post('/:id/password', authorize(PERMISSIONS.USER_MANAGE), c.setPassword);
+userRoutes.put('/:id', authorize(PERMISSIONS.USER_MANAGE), denyElevatedTarget(), c.update);
+userRoutes.post('/:id/password', authorize(PERMISSIONS.USER_MANAGE), denyElevatedTarget(), c.setPassword);
 // Admin "generate one-time password" (plaintext returned once) + "unlock" (clear a lockout).
-userRoutes.post('/:id/generate-temp-password', authorize(PERMISSIONS.USER_MANAGE), c.generateTempPassword);
-userRoutes.post('/:id/unlock', authorize(PERMISSIONS.USER_MANAGE), c.unlock);
+userRoutes.post(
+  '/:id/generate-temp-password',
+  authorize(PERMISSIONS.USER_MANAGE),
+  denyElevatedTarget(),
+  c.generateTempPassword,
+);
+userRoutes.post('/:id/unlock', authorize(PERMISSIONS.USER_MANAGE), denyElevatedTarget(), c.unlock);
 // Profile photo (slice 7): upload an image as multipart `photo` (mobile) OR raw bytes (web/admin) —
 // see `photoUpload` above — + read a signed URL. USER_MANAGE — editing a user's profile is the same
 // authority as POST /.
 userRoutes.post(
   '/:id/photo',
   authorize(PERMISSIONS.USER_MANAGE),
+  denyElevatedTarget(),
   photoUpload.single('photo'),
   raw({ type: () => true, limit: '6mb' }),
   c.uploadPhoto,
@@ -87,6 +96,7 @@ userRoutes.get('/:id/sessions', authorize(PERMISSIONS.USER_MANAGE), authControll
 userRoutes.post(
   '/:id/sessions/:jti/revoke',
   authorize(PERMISSIONS.USER_MANAGE),
+  denyElevatedTarget(),
   authController.adminRevokeSession,
 );
 // Generic scope assignment (ADR-0022 slice 3): one surface for every dimension (territory,
@@ -94,12 +104,22 @@ userRoutes.post(
 // ACCESS_SCOPE_ASSIGN = SUPER_ADMIN ONLY — only an admin sets a user's data-access scope.
 const T = PERMISSIONS.ACCESS_SCOPE_ASSIGN;
 userRoutes.get('/:id/scope-assignments', authorize(T), scopeAssignmentController.get);
-userRoutes.post('/:id/scope-assignments', authorize(T), scopeAssignmentController.add);
-userRoutes.delete('/:id/scope-assignments/:assignmentId', authorize(T), scopeAssignmentController.remove);
+userRoutes.post('/:id/scope-assignments', authorize(T), denyElevatedTarget(), scopeAssignmentController.add);
+userRoutes.delete(
+  '/:id/scope-assignments/:assignmentId',
+  authorize(T),
+  denyElevatedTarget(),
+  scopeAssignmentController.remove,
+);
 // KYC-unit assignment eligibility (ADR-0073): per-user grants narrowing the OFFICE assignee pool (NOT data
 // scope). Read = USER_VIEW (same audience as the user record page); write = USER_MANAGE.
 userRoutes.get('/:id/kyc-units', authorize(PERMISSIONS.USER_VIEW), userKycUnitsController.get);
-userRoutes.put('/:id/kyc-units', authorize(PERMISSIONS.USER_MANAGE), userKycUnitsController.set);
+userRoutes.put(
+  '/:id/kyc-units',
+  authorize(PERMISSIONS.USER_MANAGE),
+  denyElevatedTarget(),
+  userKycUnitsController.set,
+);
 // Bulk assignment (IMPORT_EXPORT_STANDARD): spreadsheet import + all-assignments export. Static
 // two-segment paths — no collision with the `/:id/...` patterns above.
 userRoutes.get('/scope/import-template', authorize(T), scopeAssignmentController.importTemplate);
@@ -126,5 +146,5 @@ userRoutes.get('/scope/export', authorize(T), scopeAssignmentController.export);
 // Bulk routes are static paths (single segment) — no collision with `/:id/...` (two segments).
 userRoutes.post('/bulk-activate', authorize(PERMISSIONS.USER_MANAGE), c.bulkActivate);
 userRoutes.post('/bulk-deactivate', authorize(PERMISSIONS.USER_MANAGE), c.bulkDeactivate);
-userRoutes.post('/:id/activate', authorize(PERMISSIONS.USER_MANAGE), c.activate);
-userRoutes.post('/:id/deactivate', authorize(PERMISSIONS.USER_MANAGE), c.deactivate);
+userRoutes.post('/:id/activate', authorize(PERMISSIONS.USER_MANAGE), denyElevatedTarget(), c.activate);
+userRoutes.post('/:id/deactivate', authorize(PERMISSIONS.USER_MANAGE), denyElevatedTarget(), c.deactivate);

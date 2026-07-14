@@ -6,6 +6,7 @@ import { createApp } from '../../../http/app.js';
 import { setPool } from '../../../platform/db.js';
 import { setStorage, type StorageProvider } from '../../../platform/storage/index.js';
 import { setMailer } from '../../../platform/mail/index.js';
+import { invalidateRoleCache } from '../../../platform/access/index.js';
 
 const RUN = !!process.env['DATABASE_URL'];
 const db = RUN ? createTestDb() : null;
@@ -1143,6 +1144,108 @@ describe.skipIf(!RUN)('users API', () => {
       expect((await request(app).get('/api/v2/users').set(asSelf(me.id))).status).toBe(403);
       // …but the self route resolves to meProfile, not /:id with id="me".
       expect((await request(app).get('/api/v2/users/me/profile').set(asSelf(me.id))).status).toBe(200);
+    });
+  });
+  /*
+   * AUTHORIZATION-04, second half (audit 2026-07-14). `assertCanAssignRole` stops a non-admin GRANTING
+   * a grantsAll role; nothing stopped one MUTATING a user who already holds it. `user.manage` and
+   * `access_scope.assign` are documented SUPER_ADMIN-only, so every /users/:id handler took the target
+   * on trust — but the RBAC editor offers both checkboxes for any role and warns only about
+   * "ROLES — MANAGE". Ticking "USER MANAGEMENT — MANAGE" for MANAGER on production (2026-07-14) made
+   * this live: the admin one-time-password reset route RETURNS the new plaintext, and the admin's id
+   * is a well-known seed constant — a full takeover. Reverted the same day; this is the net.
+   *
+   * Modelled with a bespoke user.manage-holding, non-admin role (no seeded role reproduces it, since
+   * user.manage is SA-only). Remove denyElevatedTarget and every 403 below becomes a 200.
+   */
+  describe('AUTHORIZATION-04: a non-admin with user.manage cannot take over an admin', () => {
+    const ROGUE = { 'x-test-auth': 'USER_ADMIN_NO_SA:33333333-3333-3333-3333-333333333333' };
+    // `users` is truncated per test, so mint the elevated target here rather than lean on a seed id.
+    let ADMIN_ID: string;
+    beforeEach(async () => {
+      ADMIN_ID = (await newUser({ username: 'the_admin', role: 'SUPER_ADMIN' })).id as string;
+    });
+
+    beforeAll(async () => {
+      await db!.pool.query(
+        `INSERT INTO roles (code, name, hierarchy_mode) VALUES ('USER_ADMIN_NO_SA', 'User admin (not SA)', 'SELF')
+         ON CONFLICT (code) DO NOTHING`,
+      );
+      await db!.pool.query(
+        `INSERT INTO role_permissions (role_code, permission_code) VALUES
+           ('USER_ADMIN_NO_SA', 'user.manage'), ('USER_ADMIN_NO_SA', 'page.users'),
+           ('USER_ADMIN_NO_SA', 'access_scope.assign')
+         ON CONFLICT (role_code, permission_code) DO NOTHING`,
+      );
+      invalidateRoleCache();
+    });
+
+    it('cannot reset the admin password (the takeover path) — 403 on both reset routes', async () => {
+      const reset = await request(app)
+        .post(`/api/v2/users/${ADMIN_ID}/generate-temp-password`)
+        .set(ROGUE)
+        .send({ deliver: 'view' });
+      expect(reset.status).toBe(403);
+      expect(reset.body.error).toBe('CANNOT_MODIFY_ELEVATED_USER');
+      expect(reset.body.temporaryPassword).toBeUndefined(); // never mint a plaintext for an admin
+
+      const setPw = await request(app)
+        .post(`/api/v2/users/${ADMIN_ID}/password`)
+        .set(ROGUE)
+        .send({ password: 'Pwned#12345', mustChange: false });
+      expect(setPw.status).toBe(403);
+    });
+
+    it('cannot edit, deactivate, unlock or bulk-deactivate the admin', async () => {
+      const admin = await request(app).get(`/api/v2/users/${ADMIN_ID}`).set(SA);
+      expect(admin.status).toBe(200);
+      const v = admin.body.version as number;
+
+      // edit (an email change would redirect a password-reset mail to the attacker)
+      expect(
+        (
+          await request(app)
+            .put(`/api/v2/users/${ADMIN_ID}`)
+            .set(ROGUE)
+            .send({ ...admin.body, email: 'attacker@evil.test', version: v })
+        ).status,
+      ).toBe(403);
+      expect((await request(app).post(`/api/v2/users/${ADMIN_ID}/unlock`).set(ROGUE)).status).toBe(403);
+      expect(
+        (await request(app).post(`/api/v2/users/${ADMIN_ID}/deactivate`).set(ROGUE).send({ version: v }))
+          .status,
+      ).toBe(403);
+
+      // the bulk array route carries no :id — guarded per row inside the service
+      const bulk = await request(app)
+        .post('/api/v2/users/bulk-deactivate')
+        .set(ROGUE)
+        .send({ items: [{ id: ADMIN_ID, version: v }] });
+      expect(bulk.body.results?.[0]?.status).not.toBe('OK');
+
+      // the admin is untouched
+      const after = await request(app).get(`/api/v2/users/${ADMIN_ID}`).set(SA);
+      expect(after.body.isActive).toBe(true);
+      expect(after.body.email).toBe(admin.body.email);
+    });
+
+    it("cannot widen the admin's scope, but CAN still manage a normal user (guard is targeted)", async () => {
+      expect(
+        (
+          await request(app)
+            .post(`/api/v2/users/${ADMIN_ID}/scope-assignments`)
+            .set(ROGUE)
+            .send({ dimension: 'CLIENT', entityIds: [1] })
+        ).status,
+      ).toBe(403);
+
+      // Not a blanket denial: a non-elevated target is still manageable with the same token.
+      const victim = await newUser({ username: 'rogue_target', role: 'BACKEND_USER' });
+      expect((await request(app).post(`/api/v2/users/${victim.id}/unlock`).set(ROGUE)).status).toBe(200);
+    });
+
+    it('an admin can still manage another admin (the guard only binds non-admins)', async () => {
+      expect((await request(app).post(`/api/v2/users/${ADMIN_ID}/unlock`).set(SA)).status).toBe(200);
     });
   });
 });

@@ -12,6 +12,7 @@ import {
   type Paginated,
 } from '@crm2/sdk';
 import { userRepository as repo } from './repository.js';
+import { assertNotElevatedTarget } from './guards.js';
 import { revokeUserAccessTokens } from '../../platform/tokenRevocation/index.js';
 import { getRealtime } from '../../platform/realtime/index.js';
 import { departmentService } from '../departments/service.js';
@@ -475,11 +476,16 @@ export const userService = {
    *  the same version-guarded `repo.setActive`; a row changed since selection comes back CONFLICT.
    *  id is a uuid (string) — passed through as a string, never Number()'d. On deactivation each
    *  successfully-updated user also has its access tokens killed + sockets dropped (ADR-0076 Phase 2). */
-  async bulkSetActive(body: unknown, isActive: boolean, userId: string) {
+  /** `actorGrantsAll` gates the elevated-target rule per row: the bulk routes carry no `:id`, so the
+   *  `denyElevatedTarget` route guard cannot see these ids — without this, bulk-deactivate would be the
+   *  one way a non-admin could still lock out the admin (AUTHORIZATION-04). A rejected row surfaces as
+   *  a normal per-row error; the rest of the batch still applies. */
+  async bulkSetActive(body: unknown, isActive: boolean, userId: string, actorGrantsAll: boolean) {
     const items = parseBulkItems(body, 'uuid');
-    const result = await applyBulkOcc(items, (id, version) =>
-      repo.setActive(String(id), isActive, userId, version),
-    );
+    const result = await applyBulkOcc(items, async (id, version) => {
+      await assertNotElevatedTarget(actorGrantsAll, String(id));
+      return repo.setActive(String(id), isActive, userId, version);
+    });
     if (!isActive) {
       const rt = getRealtime();
       await Promise.all(

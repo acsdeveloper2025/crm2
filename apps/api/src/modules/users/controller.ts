@@ -223,7 +223,7 @@ export const userController = {
 
   async bulkActivate(req: Request, res: Response, next: NextFunction) {
     try {
-      res.json(await svc.bulkSetActive(req.body, true, userId(req)));
+      res.json(await svc.bulkSetActive(req.body, true, userId(req), req.auth?.grantsAll === true));
     } catch (e) {
       next(e);
     }
@@ -231,7 +231,7 @@ export const userController = {
 
   async bulkDeactivate(req: Request, res: Response, next: NextFunction) {
     try {
-      res.json(await svc.bulkSetActive(req.body, false, userId(req)));
+      res.json(await svc.bulkSetActive(req.body, false, userId(req), req.auth?.grantsAll === true));
     } catch (e) {
       next(e);
     }
