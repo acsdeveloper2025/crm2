@@ -4,7 +4,7 @@ import { notificationService } from '../notifications/service.js';
 import { resolvePage, buildPage, type PageSpec } from '../../platform/pagination.js';
 import { assertExportable, exportThreshold, type ResolvedExport } from '../../platform/export/index.js';
 import type { ExportColumn } from '../../platform/export/index.js';
-import { getScopedUserIds, type Actor } from '../../platform/scope/index.js';
+import { getScopedUserIds, resolveScope, type Actor } from '../../platform/scope/index.js';
 import { AppError } from '../../platform/errors.js';
 import { istMidnightUtcMs } from '../../platform/istTime.js';
 
@@ -56,16 +56,17 @@ function windows(): { startOfToday: string; overdueCutoff: string } {
 
 /**
  * Field Monitoring service (ADR-0026). The roster is the FIELD visit-pool population, filtered to
- * the actor's hierarchy scope (getScopedUserIds — a TL sees only their team). Truthful data only:
+ * the actor's hierarchy scope (a TL sees only their team), and the per-agent counts are capped by the
+ * actor's CLIENT/PRODUCT scope as well (audit 2026-07-14). Truthful data only:
  * workload / throughput / aging / last-activity from case_tasks; last-known GPS null until ingest.
  */
 export const fieldMonitoringService = {
   async list(rawQuery: Record<string, unknown>, actor: Actor): Promise<Paginated<FieldAgentView>> {
     const r = resolvePage(rawQuery, FM_PAGE_SPEC);
-    const scopeUserIds = await getScopedUserIds(actor);
+    const scope = await resolveScope(actor);
     const w = windows();
     const { items, totalCount } = await repo.list({
-      ...(scopeUserIds !== undefined ? { scopeUserIds } : {}),
+      scope,
       ...(r.search !== undefined ? { search: r.search } : {}),
       startOfToday: w.startOfToday,
       overdueCutoff: w.overdueCutoff,
@@ -81,10 +82,10 @@ export const fieldMonitoringService = {
 
   async stats(rawQuery: Record<string, unknown>, actor: Actor): Promise<FieldMonitoringStats> {
     const r = resolvePage(rawQuery, FM_PAGE_SPEC);
-    const scopeUserIds = await getScopedUserIds(actor);
+    const scope = await resolveScope(actor);
     const w = windows();
     return repo.stats({
-      ...(scopeUserIds !== undefined ? { scopeUserIds } : {}),
+      scope,
       ...(r.search !== undefined ? { search: r.search } : {}),
       startOfToday: w.startOfToday,
       overdueCutoff: w.overdueCutoff,
@@ -96,10 +97,10 @@ export const fieldMonitoringService = {
     const selectedIds = ex.mode === 'selected' ? ex.ids.filter((id) => UUID_RE.test(id)) : undefined;
     if (ex.mode === 'selected' && (!selectedIds || selectedIds.length === 0))
       return { rows: [], columns: FM_EXPORT_COLUMNS };
-    const scopeUserIds = await getScopedUserIds(actor);
+    const scope = await resolveScope(actor);
     const w = windows();
     const { items, totalCount } = await repo.list({
-      ...(scopeUserIds !== undefined ? { scopeUserIds } : {}),
+      scope,
       ...(r.search !== undefined ? { search: r.search } : {}),
       startOfToday: w.startOfToday,
       overdueCutoff: w.overdueCutoff,

@@ -1,5 +1,6 @@
 import type { FieldAgentView, FieldMonitoringStats, SortOrder } from '@crm2/sdk';
 import { query } from '../../platform/db.js';
+import { taskScopePredicate, type Scope } from '../../platform/scope/index.js';
 import { likeContains } from '../../platform/pagination.js';
 
 /**
@@ -18,7 +19,22 @@ const OPEN_STATUSES = "('PENDING','ASSIGNED','IN_PROGRESS','SUBMITTED')";
 // agent already holds counts toward their aging.
 const OVERDUE_STATUSES = "('ASSIGNED','IN_PROGRESS','SUBMITTED')";
 
-const TASK_AGG = `
+/**
+ * Per-agent workload aggregate. TWO different scope legs apply to this page and they are NOT the same
+ * question:
+ *  - WHICH AGENTS appear (the roster) = the hierarchy leg, applied in `buildWhere` on `u.id`.
+ *  - WHICH TASKS COUNT toward each agent = the full task-grain predicate, applied HERE.
+ *
+ * Audit 2026-07-14: only the first existed, so the counts were computed over EVERY client and product.
+ * A TEAM_LEADER capped to one client (and holding page.field_monitoring) saw each report's
+ * open/in-progress/completed-today/overdue/aging computed across work they cannot open — and the tiles
+ * disagreed with Pipeline ("Agent X: 40 open" vs 5 rows). Sharpest for a leader with ZERO client grants:
+ * fail-closed everywhere else, yet non-zero counts here.
+ *
+ * `cases cs` is joined because every dimension leg is expressed over the case (`cs.client_id` etc.).
+ * `$1`/`$2` are the caller's fixed window params; `scopePred` allocates from `$3` up.
+ */
+const taskAgg = (scopePred: string): string => `
   LEFT JOIN (
     SELECT ct.assigned_to AS user_id,
       count(*) FILTER (WHERE ct.status IN ${OPEN_STATUSES}) AS open_tasks,
@@ -28,7 +44,8 @@ const TASK_AGG = `
       min(ct.assigned_at) FILTER (WHERE ct.status IN ${OPEN_STATUSES}) AS oldest_open_assigned_at,
       max(GREATEST(ct.assigned_at, ct.completed_at, ct.updated_at)) AS last_activity_at
     FROM case_tasks ct
-    WHERE ct.assigned_to IS NOT NULL
+    JOIN cases cs ON cs.id = ct.case_id
+    WHERE ct.assigned_to IS NOT NULL${scopePred ? `\n      AND (${scopePred})` : ''}
     GROUP BY ct.assigned_to
   ) t ON t.user_id = u.id`;
 
@@ -40,13 +57,13 @@ const TERRITORY_AGG = `
     FROM user_scope_assignments WHERE is_active GROUP BY user_id
   ) terr ON terr.user_id = u.id`;
 
-const FM_FROM = `
+const fmFrom = (scopePred: string): string => `
   FROM users u
-  ${TASK_AGG}
+  ${taskAgg(scopePred)}
   ${TERRITORY_AGG}
   LEFT JOIN latest_device_location ll ON ll.user_id = u.id`;
 
-const FM_SELECT = `
+const fmSelect = (scopePred: string): string => `
   SELECT u.id, u.name, u.username, u.employee_id, u.phone, u.is_active,
          u.created_at, u.updated_at,
          COALESCE(t.open_tasks, 0)::int AS open_tasks,
@@ -58,11 +75,15 @@ const FM_SELECT = `
          COALESCE(terr.territory_areas, 0)::int AS territory_areas,
          ll.latitude::float8 AS last_lat, ll.longitude::float8 AS last_lng,
          ll.recorded_at AS last_location_at, ll.source AS last_location_source
-  ${FM_FROM}`;
+  ${fmFrom(scopePred)}`;
 
 export interface AgentListOptions {
-  /** hierarchy-scoped user ids; undefined = no filter (SUPER_ADMIN). */
-  scopeUserIds?: string[];
+  /**
+   * The actor's FULL resolved scope. `scope.userIds` (hierarchy) filters the ROSTER — which agents are
+   * listed; the dimension legs cap the per-agent COUNTS (see `taskAgg`). An empty scope `{}` =
+   * SUPER_ADMIN / hierarchy ALL = no filter on either.
+   */
+  scope: Scope;
   search?: string;
   /** start-of-today (ISO) for the completed-today window. */
   startOfToday: string;
@@ -75,13 +96,14 @@ export interface AgentListOptions {
   ids?: string[];
 }
 
-/** Shared WHERE: the FIELD visit-pool role (data-driven, no role literal) + scope + search. */
-function buildWhere(o: Pick<AgentListOptions, 'scopeUserIds' | 'search' | 'ids'>, params: unknown[]): string {
+/** Shared WHERE: the FIELD visit-pool role (data-driven, no role literal) + the ROSTER (hierarchy) +
+ *  search. The dimension legs are NOT applied here — they cap the per-agent counts, not the roster. */
+function buildWhere(o: Pick<AgentListOptions, 'scope' | 'search' | 'ids'>, params: unknown[]): string {
   const where: string[] = [
     `u.role = (SELECT role_code FROM assignment_pool_roles WHERE visit_type = 'FIELD')`,
   ];
-  if (o.scopeUserIds !== undefined) {
-    params.push(o.scopeUserIds);
+  if (o.scope.userIds !== undefined) {
+    params.push(o.scope.userIds);
     where.push(`u.id = ANY($${params.length}::uuid[])`);
   }
   if (o.search) {
@@ -100,8 +122,12 @@ function buildWhere(o: Pick<AgentListOptions, 'scopeUserIds' | 'search' | 'ids'>
 export const fieldMonitoringRepository = {
   async list(o: AgentListOptions): Promise<{ items: FieldAgentView[]; totalCount: number }> {
     const params: unknown[] = [o.startOfToday, o.overdueCutoff];
+    // Order is load-bearing: taskAgg's SQL sits in the FROM and reads $1/$2, so the dimension legs must
+    // allocate next (from $3) — BEFORE buildWhere pushes the roster/search binds.
+    const scopePred = taskScopePredicate(params, o.scope);
     const clause = buildWhere(o, params);
-    // COUNT: own param set (the aggregate-window params $1/$2 aren't referenced in a bare users count).
+    // COUNT counts AGENTS (the roster), so it needs neither the $1/$2 window nor the dimension legs —
+    // the counts the predicate caps live inside taskAgg, which a bare users count doesn't join.
     const countParams: unknown[] = [];
     const countClause = buildWhere(o, countParams);
     const [countRow] = await query<{ count: number }>(
@@ -110,7 +136,7 @@ export const fieldMonitoringRepository = {
     );
     const totalCount = countRow?.count ?? 0;
     const items = await query<FieldAgentView>(
-      `${FM_SELECT} ${clause}
+      `${fmSelect(scopePred)} ${clause}
        ORDER BY ${o.sortColumn} ${o.sortOrder}, u.id ${o.sortOrder}
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, o.limit, o.offset],
@@ -119,9 +145,10 @@ export const fieldMonitoringRepository = {
   },
 
   async stats(
-    o: Pick<AgentListOptions, 'scopeUserIds' | 'search' | 'startOfToday' | 'overdueCutoff'>,
+    o: Pick<AgentListOptions, 'scope' | 'search' | 'startOfToday' | 'overdueCutoff'>,
   ): Promise<FieldMonitoringStats> {
     const params: unknown[] = [o.startOfToday, o.overdueCutoff];
+    const scopePred = taskScopePredicate(params, o.scope);
     const clause = buildWhere(o, params);
     const [row] = await query<FieldMonitoringStats>(
       `SELECT count(*)::int AS agents,
@@ -129,7 +156,7 @@ export const fieldMonitoringRepository = {
               COALESCE(sum(t.open_tasks), 0)::int AS open_tasks,
               COALESCE(sum(t.completed_today), 0)::int AS completed_today,
               COALESCE(sum(t.overdue), 0)::int AS overdue
-       FROM users u ${TASK_AGG} ${clause}`,
+       FROM users u ${taskAgg(scopePred)} ${clause}`,
       params,
     );
     return row ?? { agents: 0, withOpenWork: 0, openTasks: 0, completedToday: 0, overdue: 0 };

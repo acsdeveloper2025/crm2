@@ -25,7 +25,12 @@ function seeded<T>(res: request.Response): T {
   return res.body as T;
 }
 
-async function createUser(o: { username: string; name: string; role: string }): Promise<string> {
+async function createUser(o: {
+  username: string;
+  name: string;
+  role: string;
+  reportsTo?: string;
+}): Promise<string> {
   const res = await request(app)
     .post('/api/v2/users')
     .set(SA)
@@ -66,6 +71,15 @@ async function seedCpvUnit(tag: string): Promise<{ clientId: number; productId: 
       .send({ clientProductId: cpId, verificationUnitId: unitId, effectiveFrom: PAST }),
   );
   return { clientId, productId, unitId };
+}
+
+/** Grant a user a portfolio slice on one scope dimension (ADR-0072). */
+async function assignScope(userId: string, dimension: string, entityIds: number[]): Promise<void> {
+  const r = await request(app)
+    .post(`/api/v2/users/${userId}/scope-assignments`)
+    .set(SA)
+    .send({ dimension, entityIds });
+  expect(r.status).toBe(200);
 }
 
 /** A case with one unlocated task (no territory gate → assignable to any FIELD agent). */
@@ -145,6 +159,40 @@ describe.skipIf(!RUN)('Field Monitoring console (ADR-0026)', () => {
     expect(res.body.items.some((a: { id: string }) => a.id === agentId)).toBe(false);
     const stats = await request(app).get('/api/v2/field-monitoring/stats').set(hdr('TEAM_LEADER', tlId));
     expect(stats.body.agents).toBe(0);
+  });
+
+  /*
+   * Regression (audit 2026-07-14): the roster was hierarchy-filtered but the per-agent AGGREGATES were
+   * not scoped at all — `taskAgg` counted every task of every client. A leader capped to one client saw
+   * their report's open/overdue/aging computed over work they cannot open, and the tiles disagreed with
+   * Pipeline. Remove the dimension leg from taskAgg and this expects 2 instead of 1.
+   */
+  it("dimension scope: a leader capped to one client sees only that client in an agent's counts", async () => {
+    const lead = await createUser({ username: 'fm_tl_sc', name: 'FM TL SCOPED', role: 'TEAM_LEADER' });
+    const ag = await createUser({
+      username: 'fm_ag_sc',
+      name: 'FM AG SCOPED',
+      role: 'FIELD_AGENT',
+      reportsTo: lead,
+    });
+    const ctxA = await seedCpvUnit('SCOPEA');
+    const ctxB = await seedCpvUnit('SCOPEB');
+    await seedAssignedTask(ctxA, ag); // client A — inside the leader's portfolio
+    await seedAssignedTask(ctxB, ag); // client B — outside it
+    // TEAM_LEADER caps CLIENT+PRODUCT as RESTRICT (mig 0118): grant client A only.
+    await assignScope(lead, 'CLIENT', [ctxA.clientId]);
+    await assignScope(lead, 'PRODUCT', [ctxA.productId]);
+
+    const res = await request(app)
+      .get('/api/v2/field-monitoring/agents?limit=100')
+      .set(hdr('TEAM_LEADER', lead));
+    expect(res.status).toBe(200);
+    const row = res.body.items.find((a: { id: string }) => a.id === ag);
+    expect(row).toBeDefined(); // roster: the agent reports to this leader
+    expect(row.openTasks).toBe(1); // ONLY client A's task — B is outside the cap
+
+    const stats = await request(app).get('/api/v2/field-monitoring/stats').set(hdr('TEAM_LEADER', lead));
+    expect(stats.body.openTasks).toBe(1);
   });
 
   it('RBAC: a role without page.field_monitoring is forbidden', async () => {
