@@ -644,19 +644,29 @@ as read-only chips, and dropped pairs are named with the link that fixes them."
   export interface PairHit { pair: Pair; hints: ExistingRateHint[] }
   export interface LocationGroupState {
     totalPairs: number;
-    blocked: PairHit[]; // pairs where a DIFFERENT type sits here → per-row HAS_OTHER_RATE_TYPE
-    exists: PairHit[];  // pairs where the SAME type sits here → per-row EXISTS (skipped)
+    blocked: PairHit[];  // pairs where a DIFFERENT type sits here → per-row HAS_OTHER_RATE_TYPE
+    exists: PairHit[];   // pairs where the SAME type sits here → per-row EXISTS (skipped)
+    repriced: PairHit[]; // SUBSET of exists whose existing amount ≠ the one being entered
   }
   export function locationGroupStates(
     items: Pick<RateView, 'productId'|'verificationUnitId'|'locationId'|'clientRateType'|'amount'>[],
     pairs: Pair[],
     chosenType: string,
+    enteredAmount: number | null,
   ): Map<number, LocationGroupState>
   export const isHardBlocked: (st: LocationGroupState | undefined) => boolean
   export const groupOutcome: (
     states: Map<number, LocationGroupState>, selectedLocationIds: number[], totalPairs: number,
-  ) => { created: number; skipped: number; blocked: number }
+  ) => { created: number; skipped: number; blocked: number; repriced: number }
   ```
+
+**Why `repriced` exists (owner, 2026-07-15).** `amount` is **not** part of the overlap key —
+`rates_no_overlap` is `(client, product, unit, location, rate_type, time)` (mig 0098:44-51). So
+entering **LOCAL ₹500** where **LOCAL ₹175** already sits raises `23P01` → `EXISTS` → **skipped, ₹175
+kept, the ₹500 silently discarded**. Today's UI renders that identically to a harmless re-save of the
+same amount — and calls it "skipped", which reassures the admin at exactly the moment their repricing
+is being thrown away. A group multiplies it across every pair. `repriced` separates the two so the
+page can say which one is happening.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -671,7 +681,7 @@ describe('locationGroupStates (per-location state across a CPV group)', () => {
   const items = [row(1, 10, 5, 'LOCAL', 175), row(2, 10, 5, 'OGL', 220)];
 
   it('scopes each pair to its OWN slot — a different product at the same location is a different slot', () => {
-    const st = locationGroupStates(items, pairs, 'LOCAL');
+    const st = locationGroupStates(items, pairs, 'LOCAL', 175);
     // (P1,U1,L5) already has LOCAL → EXISTS-skip. (P2,U1,L5) has OGL → blocked for a LOCAL save.
     expect(st.get(5)?.exists.map((h) => h.pair)).toEqual([P1U1]);
     expect(st.get(5)?.blocked.map((h) => h.pair)).toEqual([P2U1]);
@@ -680,33 +690,75 @@ describe('locationGroupStates (per-location state across a CPV group)', () => {
 
   it('does not leak a rate from one pair into another pair’s state', () => {
     // Regression: folding by bare locationId would merge P1's LOCAL into P2's state and vice-versa.
-    const st = locationGroupStates(items, [P2U1], 'OGL');
+    const st = locationGroupStates(items, [P2U1], 'OGL', 220);
     expect(st.get(5)?.exists.map((h) => h.pair)).toEqual([P2U1]);
     expect(st.get(5)?.blocked).toEqual([]);
   });
 
   it('ignores rates at locations and pairs outside the group', () => {
     const other = [row(9, 99, 5, 'OGL', 1), row(1, 10, 6, 'OGL', 1)];
-    const st = locationGroupStates(other, [P1U1], 'LOCAL');
+    const st = locationGroupStates(other, [P1U1], 'LOCAL', 500);
     expect(st.get(5)).toBeUndefined(); // pair (9,99) is not in the group
     expect(st.get(6)?.blocked.map((h) => h.pair)).toEqual([P1U1]); // location 6 is
   });
 
   it('a Universal pair matches only Universal rates (null === null)', () => {
     const uni = [row(null, null, 5, 'OGL', 300)];
-    const st = locationGroupStates(uni, [{ productId: null, unitId: null }], 'LOCAL');
+    const st = locationGroupStates(uni, [{ productId: null, unitId: null }], 'LOCAL', 500);
     expect(st.get(5)?.blocked).toHaveLength(1);
-    expect(locationGroupStates(uni, [P1U1], 'LOCAL').get(5)).toBeUndefined();
+    expect(locationGroupStates(uni, [P1U1], 'LOCAL', 500).get(5)).toBeUndefined();
   });
 
   it('never blocks on a typeless row, and never before a type is chosen', () => {
     const typeless = [row(1, 10, 5, null, 100)];
-    expect(locationGroupStates(typeless, [P1U1], 'LOCAL').get(5)?.blocked).toEqual([]);
-    expect(locationGroupStates(items, pairs, '').get(5)?.blocked).toEqual([]);
+    expect(locationGroupStates(typeless, [P1U1], 'LOCAL', 500).get(5)?.blocked).toEqual([]);
+    expect(locationGroupStates(items, pairs, '', 500).get(5)?.blocked).toEqual([]);
   });
 
   it('ignores office (null location) rows — a group only fans over real locations', () => {
-    expect(locationGroupStates([row(1, 10, null, 'OGL', 1)], [P1U1], 'LOCAL').size).toBe(0);
+    expect(locationGroupStates([row(1, 10, null, 'OGL', 1)], [P1U1], 'LOCAL', 1).size).toBe(0);
+  });
+});
+
+describe('locationGroupStates — repriced (the skip that silently discards a price change)', () => {
+  const P1U1 = { productId: 1, unitId: 10 };
+  const P2U1 = { productId: 2, unitId: 10 };
+  const pairs = [P1U1, P2U1];
+  // Both pairs already carry LOCAL at location 5, at DIFFERENT amounts.
+  const items = [row(1, 10, 5, 'LOCAL', 175), row(2, 10, 5, 'LOCAL', 175)];
+
+  it('re-saving the SAME amount is a benign skip — not repriced', () => {
+    const st = locationGroupStates(items, pairs, 'LOCAL', 175);
+    expect(st.get(5)?.exists).toHaveLength(2);
+    expect(st.get(5)?.repriced).toEqual([]);
+  });
+
+  it('a DIFFERENT amount is repriced — amount is not in the overlap key, so ₹500 is discarded', () => {
+    const st = locationGroupStates(items, pairs, 'LOCAL', 500);
+    expect(st.get(5)?.exists).toHaveLength(2); // still skipped…
+    expect(st.get(5)?.repriced.map((h) => h.pair)).toEqual([P1U1, P2U1]); // …and the ₹500 is lost
+  });
+
+  it('repriced is a SUBSET of exists — never blocked, never a new row', () => {
+    const mixed = [row(1, 10, 5, 'LOCAL', 175), row(2, 10, 5, 'LOCAL', 500)];
+    const st = locationGroupStates(mixed, pairs, 'LOCAL', 500);
+    expect(st.get(5)?.exists).toHaveLength(2);
+    expect(st.get(5)?.repriced.map((h) => h.pair)).toEqual([P1U1]); // only the ₹175 one
+  });
+
+  it('carries the existing amount so the page can name it ("already LOCAL ₹175")', () => {
+    const st = locationGroupStates(items, [P1U1], 'LOCAL', 500);
+    expect(st.get(5)?.repriced[0]?.hints).toEqual([{ clientRateType: 'LOCAL', amount: 175 }]);
+  });
+
+  it('claims nothing before an amount is entered', () => {
+    expect(locationGroupStates(items, pairs, 'LOCAL', null).get(5)?.repriced).toEqual([]);
+  });
+
+  it('a blocked (different-type) pair is never repriced — it errors, it does not skip', () => {
+    const st = locationGroupStates([row(1, 10, 5, 'OGL', 175)], [P1U1], 'LOCAL', 500);
+    expect(st.get(5)?.blocked).toHaveLength(1);
+    expect(st.get(5)?.repriced).toEqual([]);
   });
 });
 
@@ -734,20 +786,37 @@ describe('groupOutcome (the honest pre-save strip)', () => {
 
   it('counts created / skipped / blocked across pairs × locations', () => {
     const states = new Map([
-      [5, { totalPairs: 3, blocked: [hit(1)], exists: [hit(2)] }], // 3 pairs: 1 blocked, 1 skip, 1 new
-      [6, { totalPairs: 3, blocked: [], exists: [] }], // untouched: 3 new
+      // 3 pairs at L5: 1 blocked, 1 skip, 1 new.
+      [5, { totalPairs: 3, blocked: [hit(1)], exists: [hit(2)], repriced: [] }],
+      [6, { totalPairs: 3, blocked: [], exists: [], repriced: [] }], // untouched: 3 new
     ]);
-    expect(groupOutcome(states, [5, 6], 3)).toEqual({ created: 4, skipped: 1, blocked: 1 });
+    expect(groupOutcome(states, [5, 6], 3)).toEqual({ created: 4, skipped: 1, blocked: 1, repriced: 0 });
   });
   it('a location with no existing rates contributes one row per pair', () => {
-    expect(groupOutcome(new Map(), [5, 6], 4)).toEqual({ created: 8, skipped: 0, blocked: 0 });
+    expect(groupOutcome(new Map(), [5, 6], 4)).toEqual({ created: 8, skipped: 0, blocked: 0, repriced: 0 });
   });
   it('counts only the SELECTED locations', () => {
-    const states = new Map([[5, { totalPairs: 1, blocked: [hit(1)], exists: [] }]]);
-    expect(groupOutcome(states, [6], 1)).toEqual({ created: 1, skipped: 0, blocked: 0 });
+    const states = new Map([[5, { totalPairs: 1, blocked: [hit(1)], exists: [], repriced: [] }]]);
+    expect(groupOutcome(states, [6], 1)).toEqual({ created: 1, skipped: 0, blocked: 0, repriced: 0 });
   });
   it('is zero across the board with nothing selected', () => {
-    expect(groupOutcome(new Map(), [], 3)).toEqual({ created: 0, skipped: 0, blocked: 0 });
+    expect(groupOutcome(new Map(), [], 3)).toEqual({ created: 0, skipped: 0, blocked: 0, repriced: 0 });
+  });
+
+  // THE LIVE PROD BUG this fixes. Today the page uses `count = selected.size` for the sticky bar and
+  // the Save label, so ticking 5 already-priced areas reads "Create 5 rates" and creates ZERO.
+  it('an all-skip selection reports 0 created, never the tick count', () => {
+    const states = new Map([
+      [5, { totalPairs: 1, blocked: [], exists: [hit(1)], repriced: [] }],
+      [6, { totalPairs: 1, blocked: [], exists: [hit(1)], repriced: [] }],
+    ]);
+    expect(groupOutcome(states, [5, 6], 1)).toEqual({ created: 0, skipped: 2, blocked: 0, repriced: 0 });
+  });
+  it('surfaces repriced separately — it is a subset of skipped, never of created', () => {
+    const states = new Map([
+      [5, { totalPairs: 2, blocked: [], exists: [hit(1), hit(2)], repriced: [hit(1)] }],
+    ]);
+    expect(groupOutcome(states, [5], 2)).toEqual({ created: 0, skipped: 2, blocked: 0, repriced: 1 });
   });
 });
 ```
@@ -783,6 +852,13 @@ export interface LocationGroupState {
   blocked: PairHit[];
   /** pairs whose slot here already holds the SAME type — the server EXISTS-skips each. */
   exists: PairHit[];
+  /**
+   * SUBSET of `exists` whose existing amount differs from the one being entered. `amount` is NOT in
+   * the `rates_no_overlap` key (mig 0098:44-51), so these skip like any other duplicate — meaning
+   * the admin's new price is silently discarded and the old one stands. Same outcome as a benign
+   * re-save, opposite intent: this one is someone repricing and being ignored.
+   */
+  repriced: PairHit[];
 }
 
 /**
@@ -798,6 +874,8 @@ export function locationGroupStates(
   items: Pick<RateView, 'productId' | 'verificationUnitId' | 'locationId' | 'clientRateType' | 'amount'>[],
   pairs: Pair[],
   chosenType: string,
+  /** the amount being entered; null while the field is empty (nothing to compare, nothing claimed). */
+  enteredAmount: number | null,
 ): Map<number, LocationGroupState> {
   const byPair = new Map(pairs.map((p) => [pairKey(p), p]));
   const out = new Map<number, LocationGroupState>();
@@ -805,7 +883,12 @@ export function locationGroupStates(
     if (r.locationId === null) continue;
     const pair = byPair.get(pairKey({ productId: r.productId, unitId: r.verificationUnitId }));
     if (!pair) continue; // a rate at a slot outside this group is irrelevant
-    const st = out.get(r.locationId) ?? { totalPairs: pairs.length, blocked: [], exists: [] };
+    const st = out.get(r.locationId) ?? {
+      totalPairs: pairs.length,
+      blocked: [],
+      exists: [],
+      repriced: [],
+    };
     const bucket =
       chosenType && r.clientRateType && r.clientRateType !== chosenType
         ? st.blocked
@@ -813,9 +896,17 @@ export function locationGroupStates(
           ? st.exists
           : null; // typeless rows never block; nothing decides before a type is chosen
     if (bucket) {
+      const hint = { clientRateType: r.clientRateType, amount: r.amount };
       const hit = bucket.find((h) => h.pair === pair);
-      if (hit) hit.hints.push({ clientRateType: r.clientRateType, amount: r.amount });
-      else bucket.push({ pair, hints: [{ clientRateType: r.clientRateType, amount: r.amount }] });
+      if (hit) hit.hints.push(hint);
+      else bucket.push({ pair, hints: [hint] });
+      // An EXISTS whose amount differs = a discarded price change (see the type's doc comment).
+      // Grandfathered legacy rows can put >1 rate at a slot, so ANY differing amount counts.
+      if (bucket === st.exists && enteredAmount !== null && r.amount !== enteredAmount) {
+        const already = st.repriced.find((h) => h.pair === pair);
+        if (already) already.hints.push(hint);
+        else st.repriced.push({ pair, hints: [hint] });
+      }
     }
     out.set(r.locationId, st);
   }
@@ -831,15 +922,21 @@ export function locationGroupStates(
 export const isHardBlocked = (st: LocationGroupState | undefined): boolean =>
   !!st && st.totalPairs > 0 && st.blocked.length === st.totalPairs;
 
-/** The honest pre-save counts across pairs × selected locations (CREATE_PAGE_STANDARD's commit surface). */
+/**
+ * The honest pre-save counts across pairs × selected locations — CREATE_PAGE_STANDARD's commit
+ * surface. `created` is what the save will ACTUALLY write: today's page shows `selected.size`, which
+ * counts every will-skip area as a creation, so ticking 5 already-priced areas reads "Create 5
+ * rates" and creates zero. `repriced` is a subset of `skipped`, never of `created`.
+ */
 export const groupOutcome = (
   states: Map<number, LocationGroupState>,
   selectedLocationIds: number[],
   totalPairs: number,
-): { created: number; skipped: number; blocked: number } => {
+): { created: number; skipped: number; blocked: number; repriced: number } => {
   let created = 0;
   let skipped = 0;
   let blocked = 0;
+  let repriced = 0;
   for (const id of selectedLocationIds) {
     const st = states.get(id);
     const b = st?.blocked.length ?? 0;
@@ -847,8 +944,9 @@ export const groupOutcome = (
     created += totalPairs - b - e;
     skipped += e;
     blocked += b;
+    repriced += st?.repriced.length ?? 0;
   }
-  return { created, skipped, blocked };
+  return { created, skipped, blocked, repriced };
 };
 ```
 
@@ -1123,7 +1221,13 @@ Replace the `existingByLoc` / `blocked` memos (lines 220-229) with:
 ```ts
   // Inline for the same reason as cpvUnitsByProduct (Step 5): memoising on `pairs` would need a lint
   // escape hatch the gate forbids.
-  const groupStates = locationGroupStates(slotReady ? (existing.data ?? []) : [], pairs, clientRateType);
+  const enteredAmount = amount === '' ? null : Number(amount);
+  const groupStates = locationGroupStates(
+    slotReady ? (existing.data ?? []) : [],
+    pairs,
+    clientRateType,
+    enteredAmount,
+  );
   const outcome = groupOutcome(groupStates, [...selected], pairs.length);
 ```
 
@@ -1182,18 +1286,27 @@ The chip's three states become:
                           // Amber = some pairs would skip or error here, but the pick is still legal
                           // for the rest — the result grid reports each pair's own outcome.
                           const isAmber = !isBlocked && !!st && st.blocked.length + st.exists.length > 0;
+                          const repriced = st?.repriced.length ?? 0;
                           const detail = [...(st?.blocked ?? []), ...(st?.exists ?? [])]
                             .map((h) => `${pairLabelOf(h.pair)} — ${existingRateLabel(h.hints)}`)
                             .join('\n');
+                          // The existing rate(s) at this area, always on the chip face — a group is
+                          // exactly when an admin most needs to see WHAT is already priced, not just
+                          // how many. CREATE_PAGE_STANDARD §2 requires the concrete hint.
+                          const faceLabel = existingRateLabel(
+                            [...(st?.blocked ?? []), ...(st?.exists ?? [])].flatMap((h) => h.hints),
+                          );
                           return (
                             <label
                               key={a.id}
                               title={
                                 isBlocked
                                   ? `Every picked pair already has a different rate type here:\n${detail}\nOne location holds one rate type — revise or deactivate the existing rates first.`
-                                  : isAmber
-                                    ? `Already priced for part of this group:\n${detail}\nThe rest will be created; these are skipped or reported per row.`
-                                    : undefined
+                                  : repriced > 0
+                                    ? `Already priced here at a DIFFERENT amount:\n${detail}\nYour ₹${amount} will NOT be applied — the save skips an existing rate, it never overwrites it. Use Revise on the list to change the amount.`
+                                    : isAmber
+                                      ? `Already priced for part of this group:\n${detail}\nThe rest will be created; these are skipped or reported per row.`
+                                      : undefined
                               }
                               className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs has-[:checked]:border-primary has-[:checked]:bg-primary-muted ${
                                 isBlocked
@@ -1211,24 +1324,22 @@ The chip's three states become:
                                 onChange={() => toggleArea(a.id)}
                               />
                               {a.area}
-                              {isGroup ? (
-                                (st?.blocked.length ?? 0) + (st?.exists.length ?? 0) > 0 && (
-                                  <span
-                                    className={`text-[10px] tabular-nums ${isBlocked ? 'font-semibold text-st-rejected' : 'font-semibold text-st-under-review'}`}
-                                  >
-                                    priced for {(st?.blocked.length ?? 0) + (st?.exists.length ?? 0)} of{' '}
-                                    {pairs.length}
-                                  </span>
-                                )
-                              ) : (
-                                // One pair → the concrete hint the standard requires ("LOCAL ₹175").
+                              {faceLabel && (
+                                // The concrete existing rate ("LOCAL ₹175") — shown for a single pair
+                                // AND for a group. A group only adds the ratio; it never replaces the
+                                // amount, which is the fact the admin actually decides on.
                                 <span
                                   className={`text-[10px] tabular-nums ${isBlocked ? 'font-semibold text-st-rejected' : isAmber ? 'font-semibold text-st-under-review' : 'text-muted-foreground'}`}
                                 >
-                                  {existingRateLabel([
-                                    ...(st?.blocked ?? []),
-                                    ...(st?.exists ?? []),
-                                  ].flatMap((h) => h.hints))}
+                                  {faceLabel}
+                                  {isGroup &&
+                                    ` (${(st?.blocked.length ?? 0) + (st?.exists.length ?? 0)}/${pairs.length})`}
+                                </span>
+                              )}
+                              {repriced > 0 && (
+                                // Distinct from a benign skip: the admin's new amount is being dropped.
+                                <span className="text-[10px] font-semibold text-st-under-review">
+                                  ≠ ₹{amount}
                                 </span>
                               )}
                             </label>
@@ -1434,6 +1545,12 @@ Replace **every** `result.createdCount` / `result.existsCount` / `result.errorCo
 
 - [ ] **Step 12: Update the sticky bar to the honest counts**
 
+> **This step fixes a live prod bug, not just the group case.** Today the bar and the Save label both
+> read `count = selected.size` (lines 321, 832, 876) — which counts every will-be-skipped area as a
+> creation. Tick 5 already-priced areas and it says **"Create 5 rates"**; the save creates **zero**.
+> `outcome.created` is what the save will actually write. Record this in Task 9 Step 5 as a fixed
+> defect in its own right.
+
 Replace the sticky bar's count paragraph (lines 831-834) and add the pre-save strip:
 
 ```tsx
@@ -1456,6 +1573,20 @@ Replace the sticky bar's count paragraph (lines 831-834) and add the pre-save st
                   · {outcome.blocked} blocked (different rate type)
                 </span>
               )}
+            </p>
+          )}
+          {/* A skip whose amount differs is NOT benign: the save never overwrites, so the admin's new
+              price is dropped and the old one stands. Loud, and it names the way out. */}
+          {!isOffice && outcome.repriced > 0 && (
+            <p className="mt-1 text-xs font-medium text-st-under-review" role="alert">
+              <span className="tabular-nums">{outcome.repriced}</span> already{' '}
+              {outcome.repriced === 1 ? 'has' : 'have'} a {clientRateType} rate at a different amount —{' '}
+              <span className="tabular-nums">₹{amount}</span> will not be applied there. A save skips
+              existing rates, it never overwrites them: use{' '}
+              <Link to={LIST_PATH} className="underline">
+                Revise
+              </Link>{' '}
+              to change an amount.
             </p>
           )}
         </div>
@@ -1582,6 +1713,10 @@ In the sticky bar, replace the skipped/blocked spans added in Task 5 Step 12 wit
                 </>
               )}
 ```
+
+The `repriced` alert (Step 12) stays **outside** this branch and keeps rendering when
+`hintsTruncated`: a truncated read under-reports it but never invents one, so every `repriced` it
+does find is real and worth saying. The truncation note already warns the check is incomplete.
 
 - [ ] **Step 3: Do not gate Save on a truncated count**
 
@@ -2233,6 +2368,11 @@ Per `feedback_browser_verify_perform_actions`, tests are not enough — perform 
 6. Save. Confirm the result grid shows one row per **pair × location** with real Product and Verification Unit values.
 7. Open `/admin/rates` and confirm the rows **persisted** with the right product/unit dims.
 8. Re-save the identical group → confirm every row reports **Skipped — already exists** (idempotent retry).
+9. **The repricing trap (owner, 2026-07-15).** Still on the saved group, change only the amount (e.g. ₹500 → ₹650) and re-tick the same areas. Confirm:
+   - the sticky bar reads **"0 rates will be created"** and the button is **not** offering to create N (today it says "Create N" and creates zero — the live bug);
+   - the amber alert names it: *"N already have a LOCAL rate at a different amount — ₹650 will not be applied there"*, with the Revise link;
+   - each chip still shows the concrete existing amount (`LOCAL ₹500`) plus `≠ ₹650`.
+   Then save anyway and confirm the list still shows **₹500** — the save skipped, it did not overwrite. This is the behaviour the alert is warning about; the point is that it is now *stated* before the click, not discovered after.
 
 - [ ] **Step 4: Browser-verify the assignment page**
 
