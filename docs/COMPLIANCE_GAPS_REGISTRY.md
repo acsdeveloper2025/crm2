@@ -2270,3 +2270,60 @@ Adversarial verify → NO FINDINGS (+ 1 LOW parent-gate note, applied). web CPV 
 `hasActiveUniversalCpv` cases). Browser-verified on crm2_dev: enable Universal for AXIS·PL → specific units
 show the banner + "· covered". **Only CPV had the gap; rate/commission are rank-based (correct), the rest
 have no Universal dim.**
+
+## Rate + Rate-Type Assignment → CPV group (multi product × unit) — dispositions (2026-07-15)
+
+**Feature:** for one client, multi-select *these products × these units* (a CPV group) on both create pages,
+between one exact `(product,unit)` slot and Universal=ALL. **FE-only, no mig/ADR/API/SDK change** — both
+`/bulk` endpoints already take one `(product,unit)` slot, so the page fans the CPV-resolved pairs client-side
+(one existing `/bulk` per pair). Server diff = only a Task-1 characterization test. Spec:
+`docs/specs/2026-07-15-rate-cpv-group-multi-select-design.md`. Status: BUILT + `pnpm verify` green +
+browser-verified on crm2_dev; **NOT pushed (awaiting owner OK)**.
+
+**3 live FE defects — FIXED** (existed on prod, surfaced by the multi-select work):
+- **Location work-loss** — `changeProduct`/`changeUnit` called `setSelected(new Set())`, so ticking a 2nd
+  product erased every ticked area. FIXED: `retainUnits` narrows only units; `selected` (locations) is never
+  cleared by a product/unit toggle (orthogonal axes).
+- **Silent group collapse (RTA)** — `submitPlan` routed to the singular endpoint on `ids.length===1` alone, so
+  a group + one rate type wrote ONE row with a success toast. FIXED: `groupSubmitPlan` mode=`single` only for
+  `pairs.length===1 && ids.length===1`; a group always fans `/bulk`.
+- **OFFICE + group (rates)** — OFFICE does one flat `POST /rates`; ticking a group then flipping to Office would
+  write `pairs[0]` and drop the rest. FIXED: `valid` gates OFFICE on `pairs.length===1` AND the mutation throws
+  (never truncates). Locking the toggle alone is insufficient (switch-to-Office-first race).
+
+**Prod count bug — FIXED:** the rates sticky bar + Save label used `count = selected.size`, counting every
+will-skip area as a creation ("Create 5" then creates 0). FIXED: `groupOutcome.created` (pairs − blocked −
+exists) is the commit-surface number. Fixes the single-slot case too.
+
+**Repriced money path — SURFACED (new):** `amount` is not in the `rates_no_overlap` key, so a new amount at an
+already-priced slot skips (23P01) and silently keeps the old price. Previously indistinguishable from a benign
+same-amount re-save, both labelled "skipped". FIXED: `locationGroupStates.repriced` splits it out; surfaced as
+a per-chip `≠ ₹x`, a `role=alert` strip, and a tooltip. (A DB-level overwrite is out of scope — ADR-0093 is
+skip-never-overwrite; Revise is the amount-change path.)
+
+**Coverage backfill — DONE (Task 1):** the ADR-0093 one-slot-one-type guard's Universal × located path had
+zero tests. Added a characterization test (Universal-product LOCAL blocks Universal-product OGL at a location →
+`HAS_OTHER_RATE_TYPE`); it passes today and was verified to FAIL against the rejected `ANY(ARRAY[...])` widening.
+
+**REJECTED designs (recorded so they are not re-proposed) — spec §2.2/§6:**
+- **`productIds[]`/`verificationUnitIds[]` on the wire → WONTFIX.** `COALESCE(product_id,-1) = ANY(ARRAY[NULL]::int[])`
+  evaluates to NULL → the row is dropped by WHERE → the guard fails OPEN on five live paths = double-billing,
+  with CI green (Universal × located × guard had zero coverage). Verified in psql. Client-side fan avoids it.
+- **Rate-type intersection across a group → WONTFIX.** Omitting a dim returns the client-wide UNION (widest set),
+  not the intersection; the gate is UI-only (`rateTypeByCode` checks catalog+category only, the 0013 trigger is
+  gone, `RATE_LATERAL` never joins `rate_type_assignments`); and an empty intersection dead-ends the flagship
+  case. Union + a muted "not assigned for N pairs" note instead.
+- **Per-row `NOT_IN_CPV` server skip → WONTFIX.** No CPV check exists on any rate/RTA write path; adding one only
+  to `/bulk` is a new rule on 1 of 3 doors and breaks ~14 existing tests. The picker-only CPV gate is the whole
+  feature. A real gate belongs in `service.create` (all callers) and is its own ADR.
+
+**DEFERRED (Minor, from the whole-branch review — for a future copy/UX pass, non-blocking):**
+- `PairPicker` `CPV_DROPPED_NOTE` uses a straight apostrophe where surrounding admin copy uses curly (cosmetic).
+- Rates `noRateTypesForCombo` can co-render with the load-error note on an all-errored rate-type fetch (cosmetic).
+- The "add/remove product doesn't clear `selected`" invariant is browser-verified, not unit-tested (`changeProducts`
+  is an unexported closure; no render-test infra). `retainUnits` (the pure part) IS tested; the no-wipe guarantee
+  is spec §7 invariant 4 + Task-9 browser step.
+
+**Build:** 9-task subagent-driven; whole-branch review MERGE-READY (all 9 invariants held). The gate caught a plan
+gap — shared `cpvGroup/` under `features/` violated `no-cross-feature-internals`; fixed with a public `index.ts`
+barrel. Next mig `0119`, next ADR `0095`.
