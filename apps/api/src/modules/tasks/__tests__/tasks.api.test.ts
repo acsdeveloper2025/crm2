@@ -260,6 +260,21 @@ describe.skipIf(!RUN)('tasks API (Pipeline)', () => {
         reportsTo: tl,
       });
       const fa2 = await createUser({ username: 'tsc_fa2', name: 'TSC FA2', role: 'FIELD_AGENT' });
+      // TEAM_LEADER caps CLIENT+PRODUCT as RESTRICT (mig 0118), so the leader needs the portfolio for
+      // this test to measure the hierarchy leg rather than a missing grant. FIELD_AGENT wires neither
+      // dimension, so the agents below need no assignment.
+      seeded(
+        await request(app)
+          .post(`/api/v2/users/${tl}/scope-assignments`)
+          .set(SA)
+          .send({ dimension: 'CLIENT', entityIds: [ctx.clientId] }),
+      );
+      seeded(
+        await request(app)
+          .post(`/api/v2/users/${tl}/scope-assignments`)
+          .set(SA)
+          .send({ dimension: 'PRODUCT', entityIds: [ctx.productId] }),
+      );
       const c = await seedCaseTasks(ctx, { name: 'TSC APP', unitIds: [ctx.unitAId, ctx.unitBId] });
       expect((await assign(c.caseId, c.taskIds[0]!, fa1)).status).toBe(200);
 

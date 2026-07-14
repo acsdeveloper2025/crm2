@@ -87,6 +87,24 @@ function seeded<T>(res: request.Response): T {
   return res.body as T;
 }
 
+/** Grant a user a portfolio slice on one scope dimension (ADR-0072).
+ *  MANAGER/TEAM_LEADER wire CLIENT+PRODUCT as RESTRICT caps (mig 0118), so an office actor with no
+ *  assignment on a dimension is capped to NOTHING — every test that needs such an actor to SEE or
+ *  CREATE anything must grant the portfolio first. */
+async function assignScope(userId: string, dimension: string, entityIds: number[]): Promise<void> {
+  const r = await request(app)
+    .post(`/api/v2/users/${userId}/scope-assignments`)
+    .set(SA)
+    .send({ dimension, entityIds });
+  expect(r.status).toBe(200);
+}
+
+/** Grant a user BOTH capped dimensions for one client+product pair. */
+async function scopeTo(userId: string, clientId: number, productId: number): Promise<void> {
+  await assignScope(userId, 'CLIENT', [clientId]);
+  await assignScope(userId, 'PRODUCT', [productId]);
+}
+
 /** Seed a client+product with one CPV-enabled unit and one un-enabled unit. */
 async function seedCpv(
   tag: string,
@@ -729,7 +747,7 @@ describe.skipIf(!RUN)('cases API', () => {
   async function seedCaseWithTask(
     tag: string,
     opts: { workerRole?: 'FIELD_AGENT' | 'KYC_VERIFIER'; withDoc?: boolean } = {},
-  ): Promise<{ caseId: string; taskId: string }> {
+  ): Promise<{ caseId: string; taskId: string; clientId: number; productId: number }> {
     const ctx = await seedCpv(tag, opts.workerRole ? { workerRole: opts.workerRole } : {});
     const caseId = seeded<{ id: string }>(
       await request(app)
@@ -748,7 +766,7 @@ describe.skipIf(!RUN)('cases API', () => {
     if (!task) throw new Error(`seedCaseWithTask(${tag}): add-tasks returned no rows`);
     // KYC desk tasks require document evidence before completion (A2026-0623-16).
     if (opts.withDoc) await attachDoc(caseId, task.id);
-    return { caseId, taskId: task.id };
+    return { caseId, taskId: task.id, clientId: ctx.clientId, productId: ctx.productId };
   }
 
   // ── unified KYC document fields (ADR-0085, mig 0110) ───────────────────────
@@ -817,19 +835,11 @@ describe.skipIf(!RUN)('cases API', () => {
 
   // ── case-create RBAC + portfolio scope (ADR-0065; audit SR-1..6) ───────────
   describe('case-create RBAC + portfolio scope (ADR-0065)', () => {
-    async function assignScope(userId: string, dimension: string, entityIds: number[]): Promise<void> {
-      const r = await request(app)
-        .post(`/api/v2/users/${userId}/scope-assignments`)
-        .set(SA)
-        .send({ dimension, entityIds });
-      expect(r.status).toBe(200);
-    }
     /** A BACKEND_USER scoped to exactly (clientId, productId). BOTH are required: CLIENT is EXPAND but
      *  PRODUCT is a RESTRICT cap (mig 0049), so a missing product assignment caps creation to nothing. */
     async function backendScoped(tag: string, clientId: number, productId: number): Promise<string> {
       const be = await createUser({ username: `be_sc_${tag}`, name: 'BE SCOPE', role: 'BACKEND_USER' });
-      await assignScope(be, 'CLIENT', [clientId]);
-      await assignScope(be, 'PRODUCT', [productId]);
+      await scopeTo(be, clientId, productId);
       return be;
     }
     const newCase = (clientId: number, productId: number, name: string) => ({
@@ -920,14 +930,46 @@ describe.skipIf(!RUN)('cases API', () => {
       expect(r.status).toBe(400);
     });
 
-    it('TEAM_LEADER can also create a case (case.create granted; unscoped by dimension)', async () => {
+    it('TEAM_LEADER creates a case for its assigned client+product (case.create granted)', async () => {
       const { clientId, productId } = await seedCpv('TLOK');
       const tl = await createUser({ username: 'tl_create', name: 'TEAM LEAD', role: 'TEAM_LEADER' });
+      await scopeTo(tl, clientId, productId);
       const res = await request(app)
         .post('/api/v2/cases')
         .set(hdr('TEAM_LEADER', tl))
         .send(newCase(clientId, productId, 'TL CASE'));
       expect(res.status).toBe(201);
+    });
+
+    /* Regression (owner-reported 2026-07-14): MANAGER/TEAM_LEADER saw the ENTIRE client catalogue in
+     * the case-create picker and could create a case for any client. Root cause was config, not code —
+     * scope is opt-in per role and neither role was ever wired (the 0034 seed covers FIELD_AGENT /
+     * KYC_VERIFIER / BACKEND_USER only), and an unwired dimension resolves to "unrestricted". mig 0118
+     * wires both RESTRICT. These two lock the cap in: revert 0118 and they go 400 -> 201. */
+    it('TEAM_LEADER cannot create a case for a client outside its portfolio (400 CLIENT_OUT_OF_SCOPE)', async () => {
+      const inScope = await seedCpv('TLIN');
+      const out = await seedCpv('TLOUT');
+      const tl = await createUser({ username: 'tl_oos_cl', name: 'TEAM LEAD OOS', role: 'TEAM_LEADER' });
+      await scopeTo(tl, inScope.clientId, inScope.productId);
+      const res = await request(app)
+        .post('/api/v2/cases')
+        .set(hdr('TEAM_LEADER', tl))
+        .send(newCase(out.clientId, out.productId, 'TL OUT'));
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('CLIENT_OUT_OF_SCOPE');
+    });
+
+    it('MANAGER cannot create a case for a client outside its portfolio (400 CLIENT_OUT_OF_SCOPE)', async () => {
+      const inScope = await seedCpv('MGIN');
+      const out = await seedCpv('MGOUT');
+      const mgr = await createUser({ username: 'mgr_oos_cl', name: 'MGR OOS', role: 'MANAGER' });
+      await scopeTo(mgr, inScope.clientId, inScope.productId);
+      const res = await request(app)
+        .post('/api/v2/cases')
+        .set(hdr('MANAGER', mgr))
+        .send(newCase(out.clientId, out.productId, 'MGR OUT'));
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('CLIENT_OUT_OF_SCOPE');
     });
   });
 
@@ -1545,11 +1587,14 @@ describe.skipIf(!RUN)('cases API', () => {
     });
 
     it('ADR-0050: a MANAGER can close (complete) a desk task — granted field_review.complete (owner 2026-06-20)', async () => {
-      const { caseId, taskId } = await seedCaseWithTask('MGRC', {
+      const { caseId, taskId, clientId, productId } = await seedCaseWithTask('MGRC', {
         workerRole: 'KYC_VERIFIER',
         withDoc: true,
       });
       const manager = await createUser({ username: 'mgr_mgrc', name: 'MGR C', role: 'MANAGER' });
+      // MANAGER caps CLIENT+PRODUCT as RESTRICT (mig 0118) — grant the portfolio so this test
+      // isolates the permission+hierarchy question it is actually about.
+      await scopeTo(manager, clientId, productId);
       // the office exec reports to the manager → the case is in the manager's SUBTREE scope.
       const officeExec = await createUser({
         username: 'kyc_mgrc',
@@ -2480,7 +2525,12 @@ describe.skipIf(!RUN)('cases API', () => {
         reportsTo: tl,
       });
       const fa2 = await createUser({ username: 'sc_fa2', name: 'SCOPE FA2', role: 'FIELD_AGENT' }); // unrelated
-      const { caseId, taskId } = await seedCaseWithTask('SCOPE');
+      const { caseId, taskId, clientId, productId } = await seedCaseWithTask('SCOPE');
+      // The office roles cap CLIENT+PRODUCT as RESTRICT (mig 0118); grant both leaders the portfolio
+      // so what this test measures is purely the hierarchy leg. FIELD_AGENT wires no CLIENT/PRODUCT
+      // dimension, so the agents need no grant.
+      await scopeTo(mgr, clientId, productId);
+      await scopeTo(tl, clientId, productId);
       const asg = await request(app)
         .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
         .set(SA)
@@ -2508,7 +2558,10 @@ describe.skipIf(!RUN)('cases API', () => {
         reportsTo: tl,
       });
       const fa2 = await createUser({ username: 'sd_fa2', name: 'SD FA2', role: 'FIELD_AGENT' }); // unrelated
-      const { caseId, taskId } = await seedCaseWithTask('DETAIL');
+      const { caseId, taskId, clientId, productId } = await seedCaseWithTask('DETAIL');
+      // TEAM_LEADER caps CLIENT+PRODUCT as RESTRICT (mig 0118) — grant the portfolio so the 404 below
+      // proves the IDOR/hierarchy guard rather than a missing scope grant.
+      await scopeTo(tl, clientId, productId);
       await request(app)
         .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
         .set(SA)
