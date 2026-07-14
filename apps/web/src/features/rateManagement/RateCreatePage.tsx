@@ -20,8 +20,14 @@ import { Button } from '../../components/ui/Button.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
 import { SearchableSelect, type Opt } from '../../components/ui/SearchableSelect.js';
 import { exitPath } from '../clientSetup/index.js';
-import { type Pair, pairKey, resolvePairs, unitOptionIds, retainUnits } from '../cpvGroup/pairs.js';
-import { PairPicker } from '../cpvGroup/PairPicker.js';
+import {
+  type Pair,
+  pairKey,
+  resolvePairs,
+  unitOptionIds,
+  retainUnits,
+  PairPicker,
+} from '../cpvGroup/index.js';
 import { friendlyError } from './RateRecordPage.js';
 
 const BASE = '/api/v2/rates';

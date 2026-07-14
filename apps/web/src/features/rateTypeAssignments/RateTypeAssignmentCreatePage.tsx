@@ -16,8 +16,14 @@ import { useAuth } from '../../lib/AuthContext.js';
 import { Button } from '../../components/ui/Button.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
 import { exitPath } from '../clientSetup/index.js';
-import { type Pair, pairKey, resolvePairs, unitOptionIds, retainUnits } from '../cpvGroup/pairs.js';
-import { PairPicker } from '../cpvGroup/PairPicker.js';
+import {
+  type Pair,
+  pairKey,
+  resolvePairs,
+  unitOptionIds,
+  retainUnits,
+  PairPicker,
+} from '../cpvGroup/index.js';
 
 const BASE = '/api/v2/rate-type-assignments';
 const QK = 'rate-type-assignments';
