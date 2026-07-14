@@ -10,7 +10,12 @@ import { clientProductController as cp, cpvUnitController as cpv } from './contr
 export const clientProductRoutes: Router = Router();
 clientProductRoutes.get('/', authorize(PERMISSIONS.MASTERDATA_VIEW), cp.list);
 // `/export` + `/import` declared before the `/:id` param routes (IMPORT_EXPORT_STANDARD route order).
-clientProductRoutes.get('/export', authorize(PERMISSIONS.DATA_EXPORT), cp.export);
+// Gated MASTERDATA_VIEW (NOT data.export) — an export carries the SAME rows as its list, so it must
+// share the list's audience (same rule as `/billing/lines/export`). `data.export` is held by roles
+// without `page.masterdata` (BACKEND_USER / TEAM_LEADER / FIELD_TEAM_LEADER), which would let them
+// exfiltrate the whole catalogue they cannot open. Every MASTERDATA_VIEW holder also holds
+// data.export, so no legitimate access is lost.
+clientProductRoutes.get('/export', authorize(PERMISSIONS.MASTERDATA_VIEW), cp.export);
 // Import (B-14): template download + preview/confirm upload. Gated by MASTERDATA_MANAGE — import
 // CREATES links, so it needs the same authority as `POST /`. The file is raw bytes; `raw()` is
 // route-scoped so the global json() parser is untouched.
@@ -32,10 +37,10 @@ cpvUnitRoutes.get('/', authorize(PERMISSIONS.MASTERDATA_VIEW), cpv.list);
 // unit pickers (rate-type-assignment / commission / rate-management). Static path, before `/:id`.
 cpvUnitRoutes.get('/available', authorize(PERMISSIONS.MASTERDATA_VIEW), cpv.available);
 // `/export` + `/import` declared before the `/:id` param routes (IMPORT_EXPORT_STANDARD route order).
-// Gates IDENTICAL to the clientProduct leg: export=DATA_EXPORT, import=MASTERDATA_MANAGE (import
+// Gates IDENTICAL to the clientProduct leg: export=MASTERDATA_VIEW, import=MASTERDATA_MANAGE (import
 // CREATES enablements, so it needs the same authority as `POST /`). The file is raw bytes; `raw()`
 // is route-scoped so the global json() parser is untouched.
-cpvUnitRoutes.get('/export', authorize(PERMISSIONS.DATA_EXPORT), cpv.export);
+cpvUnitRoutes.get('/export', authorize(PERMISSIONS.MASTERDATA_VIEW), cpv.export);
 cpvUnitRoutes.get('/import-template', authorize(PERMISSIONS.MASTERDATA_MANAGE), cpv.importTemplate);
 cpvUnitRoutes.post(
   '/import',

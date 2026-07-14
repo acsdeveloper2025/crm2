@@ -409,7 +409,7 @@ describe.skipIf(!RUN)('rate-type assignments CRUD (ADR-0069)', () => {
         .set(FA)
         .send({ clientId, productId: null, verificationUnitId: null, rateTypeId: rtA });
       expect(denied.status).toBe(403);
-      // TEAM_LEADER holds page.masterdata (can list) + data.export (can export) but NOT manage → create 403
+      // TEAM_LEADER holds page.masterdata (can list + export) but NOT masterdata.manage → create 403
       expect((await request(app).get('/api/v2/rate-type-assignments').set(TL)).status).toBe(200);
       const tlDenied = await request(app)
         .post('/api/v2/rate-type-assignments')
@@ -437,7 +437,11 @@ describe.skipIf(!RUN)('rate-type assignments CRUD (ADR-0069)', () => {
         .set('x-filename', 'rate-type-assignments.xlsx')
         .send(buf);
 
-    it('export is gated data.export (TEAM_LEADER ok, FIELD_AGENT 403)', async () => {
+    // Gate is page.masterdata (the list's audience), NOT data.export — see routes.ts. TEAM_LEADER
+    // passes here because the day-0 seed grants it page.masterdata; FIELD_AGENT holds neither.
+    // The discriminating case (data.export WITHOUT page.masterdata) is covered centrally in
+    // src/__tests__/exportGates.api.test.ts.
+    it('export is gated page.masterdata (TEAM_LEADER ok, FIELD_AGENT 403)', async () => {
       await request(app)
         .post('/api/v2/rate-type-assignments')
         .set(SA)

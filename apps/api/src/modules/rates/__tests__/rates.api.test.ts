@@ -574,7 +574,10 @@ describe.skipIf(!RUN)('rates API', () => {
       expect((await request(app).get('/api/v2/rates/export')).status).toBe(401);
     });
 
-    it('BACKEND_USER (has data.export) can export (200)', async () => {
+    // BACKEND_USER holds page.masterdata in the day-0 seed (0033_roles.sql) — so this is the
+    // "a masterdata viewer keeps its export" leg. (On PRODUCTION the same role has had
+    // page.masterdata stripped by ADR-0077, which is exactly why the gate matters there.)
+    it('BACKEND_USER (holds page.masterdata) can still export (200)', async () => {
       expect((await request(app).get('/api/v2/rates/export?format=csv').set(BE)).status).toBe(200);
     });
   });

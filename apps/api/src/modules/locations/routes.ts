@@ -10,7 +10,12 @@ export const locationRoutes: Router = Router();
 
 locationRoutes.get('/pincodes', authorize(PERMISSIONS.MASTERDATA_VIEW), c.pincodes);
 // `/export` must precede `/:id` or it'd be captured as id="export".
-locationRoutes.get('/export', authorize(PERMISSIONS.DATA_EXPORT), c.export);
+// Gated MASTERDATA_VIEW (NOT data.export) — an export carries the SAME rows as its list, so it must
+// share the list's audience (same rule as `/billing/lines/export`). `data.export` is held by roles
+// without `page.masterdata` (BACKEND_USER / TEAM_LEADER / FIELD_TEAM_LEADER), which would let them
+// exfiltrate the whole catalogue they cannot open. Every MASTERDATA_VIEW holder also holds
+// data.export, so no legitimate access is lost.
+locationRoutes.get('/export', authorize(PERMISSIONS.MASTERDATA_VIEW), c.export);
 // Import (B-14): template download + preview/confirm upload. Gated by MASTERDATA_MANAGE — import
 // CREATES master data, so it needs the same authority as `POST /` (never a weaker generic perm).
 // The file is sent as raw bytes (no multipart dep); `raw()` runs only on this route (global json()

@@ -10,7 +10,13 @@ export const rateRoutes: Router = Router();
 
 rateRoutes.get('/', authorize(PERMISSIONS.MASTERDATA_VIEW), c.list);
 // `/export` is a literal segment — it must precede `/:id/history` so it isn't captured as id="export".
-rateRoutes.get('/export', authorize(PERMISSIONS.DATA_EXPORT), c.export);
+// Gated MASTERDATA_VIEW (NOT data.export), same rule as `/billing/lines/export`: an export carries the
+// SAME rows as its list, so it must share the list's audience. This one is the sharpest case — the rate
+// card is per-client pricing, and `data.export` is held by BACKEND_USER / TEAM_LEADER / FIELD_TEAM_LEADER,
+// none of which hold `page.masterdata`; they could export every client's pricing without being able to
+// open the page (TEAM_LEADER doesn't even hold `billing.view`). Every MASTERDATA_VIEW holder also holds
+// data.export, so no legitimate access is lost.
+rateRoutes.get('/export', authorize(PERMISSIONS.MASTERDATA_VIEW), c.export);
 // Import (B-14): template download + preview/confirm upload. Gated by MASTERDATA_MANAGE — import
 // CREATES rates, so it needs the same authority as `POST /`. The file is sent as raw bytes; `raw()`
 // runs only on this route. Static single-segment paths, declared before `/:id/history`.

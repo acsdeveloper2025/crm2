@@ -11,7 +11,12 @@ export const verificationUnitRoutes: Router = Router();
 verificationUnitRoutes.get('/', authorize(PERMISSIONS.MASTERDATA_VIEW), c.list);
 // `/options` + `/export` must precede `/:id` or they'd be captured as id="options"/"export".
 verificationUnitRoutes.get('/options', authorize(PERMISSIONS.MASTERDATA_VIEW), c.options);
-verificationUnitRoutes.get('/export', authorize(PERMISSIONS.DATA_EXPORT), c.export);
+// Gated MASTERDATA_VIEW (NOT data.export) — an export carries the SAME rows as its list, so it must
+// share the list's audience (same rule as `/billing/lines/export`). `data.export` is held by roles
+// without `page.masterdata` (BACKEND_USER / TEAM_LEADER / FIELD_TEAM_LEADER), which would let them
+// exfiltrate the whole catalogue they cannot open. Every MASTERDATA_VIEW holder also holds
+// data.export, so no legitimate access is lost.
+verificationUnitRoutes.get('/export', authorize(PERMISSIONS.MASTERDATA_VIEW), c.export);
 // Import (B-14): template download + preview/confirm upload. Gated by VERIFICATION_UNIT_MANAGE —
 // import CREATES units, so it needs the same authority as `POST /`. The file is sent as raw bytes;
 // `raw()` runs only on this route. Static single-segment paths, declared before `/:id`.
