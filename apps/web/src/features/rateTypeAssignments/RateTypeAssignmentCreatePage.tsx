@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   MAX_BULK_RATE_TYPE_ASSIGNMENTS,
   type Option,
@@ -16,7 +16,8 @@ import { useAuth } from '../../lib/AuthContext.js';
 import { Button } from '../../components/ui/Button.js';
 import { HexagonLoader } from '../../components/ui/HexagonLoader.js';
 import { exitPath } from '../clientSetup/index.js';
-import type { Pair } from '../cpvGroup/pairs.js';
+import { type Pair, pairKey, resolvePairs, unitOptionIds, retainUnits } from '../cpvGroup/pairs.js';
+import { PairPicker } from '../cpvGroup/PairPicker.js';
 
 const BASE = '/api/v2/rate-type-assignments';
 const QK = 'rate-type-assignments';
@@ -73,24 +74,9 @@ export function coveredRateTypeIds(
   );
 }
 
-/**
- * How a save resolves given the ticked rate types and the slot's already-assigned set. Pure so the
- * single-vs-bulk decision + the count are unit-testable (the headline path has no render-test infra).
- *  - `willCreate` = ticked types that aren't already assigned (amber ones EXISTS-skip server-side).
- *  - `mode`: 'none' when nothing new would be created (submit is blocked); 'single' for exactly one
- *    ticked type (→ POST /, navigate back); 'bulk' for two or more (→ POST /bulk, result screen).
- * `ids` always includes amber types so the bulk result screen can report them as "Skipped".
- */
+/** The single-vs-bulk save mode: 'none' blocks submit, 'single' → one POST + navigate, 'bulk' → the
+ *  bulk endpoint + a row-result screen. */
 export type SubmitMode = 'none' | 'single' | 'bulk';
-export function submitPlan(
-  selected: number[],
-  assigned: Set<number>,
-): { mode: SubmitMode; ids: number[]; willCreate: number } {
-  const ids = [...new Set(selected)];
-  const willCreate = ids.filter((id) => !assigned.has(id)).length;
-  const mode: SubmitMode = willCreate === 0 ? 'none' : ids.length === 1 ? 'single' : 'bulk';
-  return { mode, ids, willCreate };
-}
 
 /** One pair's share of a group save — one existing `/bulk` call each. */
 export interface PairPlan {
@@ -142,10 +128,12 @@ export const coveredPairCount = (
 ): number => pairs.filter((p) => coveredRateTypeIds(existing, p.productId, p.unitId).has(rateTypeId)).length;
 
 /**
- * Merged single+multi create page (ADR-0093 / CREATE_PAGE_STANDARD, Fork B): set the
- * `(client, product?, unit?)` slot once, then tick MANY rate types → one assignment row per rate type.
- * One ticked type → a single POST + navigate back; two or more → the bulk endpoint + a row-result
- * screen. `masterdata.manage` only (the server enforces it too); a viewer is bounced to the list.
+ * CPV-group create page (ADR-0093 / CREATE_PAGE_STANDARD, Fork B + the 2026-07-15 multi-select
+ * design): pick a client, tick MANY products × MANY units (the resolved CPV pairs are the fan-out),
+ * then tick MANY rate types → one assignment row per (pair × rate type). Exactly one pair + one type
+ * keeps the shipped single-POST path (navigate back); anything larger fans the existing `/bulk`
+ * endpoint once per pair and shows a row-result screen. `masterdata.manage` only (the server enforces
+ * it too); a viewer is bounced to the list.
  */
 export function RateTypeAssignmentCreatePage() {
   const navigate = useNavigate();
@@ -155,32 +143,54 @@ export function RateTypeAssignmentCreatePage() {
   const exitTo = exitPath(searchParams.get('returnTo'), LIST_PATH);
 
   const [clientId, setClientId] = useState(searchParams.get('clientId') ?? '');
-  const [productId, setProductId] = useState('');
-  const [unitId, setUnitId] = useState('');
+  // Universal is ticked by default — the shipped default for this page (ADR-0069: "pick client, then
+  // optionally Universal product + Universal unit"). It is now an explicit chip rather than a blank.
+  const [products, setProducts] = useState<(number | null)[]>([null]);
+  const [units, setUnits] = useState<(number | null)[]>([null]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<BulkRateTypeAssignmentResult | null>(null);
+  const [result, setResult] = useState<{ pair: Pair; res: BulkRateTypeAssignmentResult }[] | null>(null);
 
   const clients = useQuery({
     queryKey: ['client-options'],
     queryFn: () => api<Option[]>('GET', '/api/v2/clients/options'),
   });
-  const products = useQuery({
+  const productCatalog = useQuery({
     queryKey: ['product-options'],
     queryFn: () => api<Option[]>('GET', '/api/v2/products/options'),
   });
-  // ADR-0074: a concrete client + product ⇒ the CPV-mapped units (Universal CPV ⇒ all units); else all.
-  const unitCpvScoped = !!clientId && !!productId;
-  const units = useQuery({
-    queryKey: unitCpvScoped ? ['cpv-available-units', clientId, productId] : ['verification-unit-options'],
-    queryFn: () =>
-      unitCpvScoped
-        ? api<{ id: number; code: string; name: string }[]>(
-            'GET',
-            `/api/v2/cpv-units/available?clientId=${clientId}&productId=${productId}`,
-          )
-        : api<VerificationUnitOption[]>('GET', '/api/v2/verification-units/options'),
+  // Every active unit — the option pool a Universal product draws from, and the ordering (sort_order)
+  // every narrowed list preserves.
+  const allUnits = useQuery({
+    queryKey: ['verification-unit-options'],
+    queryFn: () => api<VerificationUnitOption[]>('GET', '/api/v2/verification-units/options'),
   });
+  // ADR-0074: CPV is per (client, product) — one query per PICKED concrete product, cached under the
+  // key the single-select page already used. A Universal product has no mapping to consult.
+  const concreteProducts = products.filter((p): p is number => p !== null);
+  const cpvQueries = useQueries({
+    queries: concreteProducts.map((p) => ({
+      queryKey: ['cpv-available-units', clientId, String(p)],
+      queryFn: () =>
+        api<{ id: number; code: string; name: string }[]>(
+          'GET',
+          `/api/v2/cpv-units/available?clientId=${clientId}&productId=${p}`,
+        ),
+      enabled: !!clientId,
+    })),
+  });
+  // Gate the pair resolution on a settled CPV read: an in-flight product contributes an EMPTY unit
+  // set, which would transiently drop its pairs and flash a wrong count on the commit surface.
+  const cpvLoading = cpvQueries.some((q) => q.isLoading);
+  // Computed inline, not memoised: memoising a value derived from a fresh-every-render query array
+  // needs a lint escape hatch, and the no-suppressions gate forbids those outright.
+  const cpvUnitsByProduct = new Map(
+    concreteProducts.map((p, i) => [p, new Set((cpvQueries[i]?.data ?? []).map((u) => u.id))]),
+  );
+  const allUnitIds = (allUnits.data ?? []).map((u) => u.id);
+  const offerableUnitIds = unitOptionIds(products, cpvUnitsByProduct, allUnitIds);
+  const { pairs, dropped } = resolvePairs(products, units, cpvUnitsByProduct);
+
   const rateTypes = useQuery({
     queryKey: ['rate-types', 'options'],
     queryFn: () => api<RateTypeOption[]>('GET', '/api/v2/rate-types/options?active=true'),
@@ -199,61 +209,46 @@ export function RateTypeAssignmentCreatePage() {
       ).then((r) => r.items),
     enabled: !!clientId,
   });
-  const noCpvMapping = unitCpvScoped && units.isSuccess && units.data.length === 0;
+  // A concrete product with no CPV mapping contributes no pairs; PairPicker names the drops + links CPV.
+  const noCpvMapping = concreteProducts.length > 0 && !cpvLoading && offerableUnitIds.length === 0;
 
-  const slotProductId = productId ? Number(productId) : null;
-  const slotUnitId = unitId ? Number(unitId) : null;
-  const assigned = useMemo(
-    () => assignedRateTypeIds(existing.data ?? [], slotProductId, slotUnitId),
-    [existing.data, slotProductId, slotUnitId],
-  );
-  // Rate types already RESOLVABLE here via a broader (Universal) parent — assigning them at this
-  // specific slot is redundant (the resolver already unions the parent). `assigned` (exact slot) is a
-  // subset of this; the difference is what we flag "covered by Universal". Empty at a fully-Universal
-  // slot (no broader parent).
-  const coveredByParent = useMemo(() => {
-    const covered = coveredRateTypeIds(existing.data ?? [], slotProductId, slotUnitId);
-    return new Set([...covered].filter((id) => !assigned.has(id)));
-  }, [existing.data, slotProductId, slotUnitId, assigned]);
+  const existingItems = existing.data ?? [];
+  const plan = groupSubmitPlan(pairs, [...selected], existingItems);
+  const willCreate = plan.willCreate;
+  // Ticked types already assigned at SOME pair — they EXISTS-skip there, never an error.
+  const skipCount = [...selected].reduce((n, id) => n + assignedPairCount(existingItems, pairs, id), 0);
 
   const rtById = useMemo(
     () => new Map((rateTypes.data ?? []).map((rt) => [rt.id, rt.code])),
     [rateTypes.data],
   );
   const clientLabel = clients.data?.find((c) => String(c.id) === clientId)?.name ?? clientId;
-  const productLabel = productId
-    ? (products.data?.find((p) => String(p.id) === productId)?.name ?? productId)
-    : 'Universal';
-  const unitLabel = unitId ? (units.data?.find((u) => String(u.id) === unitId)?.name ?? unitId) : 'Universal';
+  const productName = (id: number) => productCatalog.data?.find((p) => p.id === id)?.name ?? String(id);
+  const unitName = (id: number) => allUnits.data?.find((u) => u.id === id)?.name ?? String(id);
+  const pairLabelOf = (p: Pair) =>
+    `${p.productId === null ? 'Universal' : productName(p.productId)} · ${p.unitId === null ? 'Universal' : unitName(p.unitId)}`;
 
   const count = selected.size;
-  const skipCount = [...selected].filter((id) => assigned.has(id)).length;
-  const plan = submitPlan([...selected], assigned);
-  const willCreate = plan.willCreate;
-  // Gate on willCreate (not count): an all-amber selection creates nothing, so a pure no-op save (a
-  // single idempotent re-activate reported as "created", or a "Create 0" batch) is blocked. Inactive
-  // combos aren't amber (existing is active=true-filtered), so legitimate re-activations still count.
-  const valid = !!clientId && plan.mode !== 'none';
+  // Gate on willCreate (not count): an all-amber selection creates nothing across every pair, so a
+  // pure no-op save is blocked. Inactive combos aren't amber (existing is active=true-filtered), so
+  // legitimate re-activations still count.
+  const valid = !!clientId && pairs.length > 0 && plan.mode !== 'none';
 
-  // Any slot-field change redefines the (client, product?, unit?) slot the ticks fan across, and the
-  // unit list is CPV-scoped by client+product — so clear downstream fields + the selection, else the
-  // amber hints / willCreate recompute under a slot the user didn't intend (or Save posts a hidden
-  // stale unit id no longer in the re-scoped dropdown).
+  // Changing the CLIENT redefines everything downstream (the CPV mapping, the existing-assignment
+  // hints) — reset the axes to their Universal default and wipe the selection.
   const changeClient = (v: string) => {
     setClientId(v);
-    setProductId('');
-    setUnitId('');
+    setProducts([null]);
+    setUnits([null]);
     setSelected(new Set());
   };
-  const changeProduct = (v: string) => {
-    setProductId(v);
-    setUnitId('');
-    setSelected(new Set());
+  // Ticks re-resolve the pairs; the rate-type selection is ORTHOGONAL to the CPV axes and is never
+  // cleared (the amber/covered hints simply recompute against the new pairs).
+  const changeProducts = (next: (number | null)[]) => {
+    setProducts(next);
+    setUnits((u) => retainUnits(next, u, cpvUnitsByProduct, allUnitIds));
   };
-  const changeUnit = (v: string) => {
-    setUnitId(v);
-    setSelected(new Set());
-  };
+  const changeUnits = (next: (number | null)[]) => setUnits(next);
 
   const toggle = (id: number) =>
     setSelected((prev) => {
@@ -267,13 +262,32 @@ export function RateTypeAssignmentCreatePage() {
   const toggleAll = () => setSelected(allOn ? new Set() : new Set(allRateTypeIds));
 
   const mut = useMutation({
-    mutationFn: async (): Promise<BulkRateTypeAssignmentResult | null> => {
-      const slot = { clientId: Number(clientId), productId: slotProductId, verificationUnitId: slotUnitId };
+    mutationFn: async (): Promise<{ pair: Pair; res: BulkRateTypeAssignmentResult }[] | null> => {
+      // Exactly one pair + one type keeps the shipped single-POST path (navigate back, no result panel).
       if (plan.mode === 'single') {
-        await api('POST', BASE, { ...slot, rateTypeId: plan.ids[0] });
-        return null; // single → navigate back (no result panel)
+        const only = plan.perPair[0];
+        if (!only) return null;
+        await api('POST', BASE, {
+          clientId: Number(clientId),
+          productId: only.pair.productId,
+          verificationUnitId: only.pair.unitId,
+          rateTypeId: only.ids[0],
+        });
+        return null;
       }
-      return api<BulkRateTypeAssignmentResult>('POST', `${BASE}/bulk`, { ...slot, rateTypeIds: plan.ids });
+      // A group is N single-slot saves — /bulk already takes ONE slot + N rate types, so each pair is
+      // byte-identical to today's save. Re-submitting is safe: the server pre-read EXISTS-skips.
+      const out: { pair: Pair; res: BulkRateTypeAssignmentResult }[] = [];
+      for (const { pair, ids } of plan.perPair) {
+        const res = await api<BulkRateTypeAssignmentResult>('POST', `${BASE}/bulk`, {
+          clientId: Number(clientId),
+          productId: pair.productId,
+          verificationUnitId: pair.unitId,
+          rateTypeIds: ids,
+        });
+        out.push({ pair, res });
+      }
+      return out;
     },
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: [QK] });
@@ -285,11 +299,13 @@ export function RateTypeAssignmentCreatePage() {
         navigate(exitTo);
         return;
       }
-      const parts = [`${res.createdCount} created`];
-      if (res.existsCount) parts.push(`${res.existsCount} skipped (already assigned)`);
-      if (res.errorCount) parts.push(`${res.errorCount} errored`);
-      // Red toast when the batch produced only errors (nothing created); otherwise green.
-      const notify = res.createdCount === 0 && res.errorCount > 0 ? toast.error : toast.success;
+      const created = res.reduce((n, x) => n + x.res.createdCount, 0);
+      const exists = res.reduce((n, x) => n + x.res.existsCount, 0);
+      const errors = res.reduce((n, x) => n + x.res.errorCount, 0);
+      const parts = [`${created} created`];
+      if (exists) parts.push(`${exists} skipped (already assigned)`);
+      if (errors) parts.push(`${errors} errored`);
+      const notify = created === 0 && errors > 0 ? toast.error : toast.success;
       notify(parts.join(' · '));
       setResult(res);
     },
@@ -307,34 +323,41 @@ export function RateTypeAssignmentCreatePage() {
 
   if (!has('masterdata.manage')) return <Navigate to={LIST_PATH} replace />;
 
-  // ── Result screen (batch save) — one row per submitted rate type, styled like the list.
+  // ── Result screen (group save) — one row per (pair × rate type), styled like the list.
   if (result) {
-    const rows = [...result.results].sort((a, b) =>
-      (rtById.get(a.rateTypeId) ?? '').localeCompare(rtById.get(b.rateTypeId) ?? ''),
-    );
+    const rows = result
+      .flatMap(({ pair, res }) => res.results.map((r) => ({ pair, r })))
+      .sort(
+        (a, b) =>
+          pairLabelOf(a.pair).localeCompare(pairLabelOf(b.pair)) ||
+          (rtById.get(a.r.rateTypeId) ?? '').localeCompare(rtById.get(b.r.rateTypeId) ?? ''),
+      );
+    const createdCount = result.reduce((n, x) => n + x.res.createdCount, 0);
+    const existsCount = result.reduce((n, x) => n + x.res.existsCount, 0);
+    const errorCount = result.reduce((n, x) => n + x.res.errorCount, 0);
     return (
       <div className="max-w-4xl space-y-4">
         <div>
           <h1 className="text-xl font-bold tracking-tight">
-            {result.createdCount > 0 ? 'Rate type assignments created' : 'No new assignments created'}
+            {createdCount > 0 ? 'Rate type assignments created' : 'No new assignments created'}
           </h1>
           <p
             className="text-sm text-muted-foreground"
-            {...(result.errorCount > 0 ? { role: 'alert' as const } : {})}
+            {...(errorCount > 0 ? { role: 'alert' as const } : {})}
           >
-            {clientLabel} · {productLabel} · {unitLabel} —{' '}
-            <strong className="tabular-nums text-foreground">{result.createdCount}</strong> created
-            {result.existsCount > 0 && (
+            {clientLabel} · {result.length} pair{result.length === 1 ? '' : 's'} —{' '}
+            <strong className="tabular-nums text-foreground">{createdCount}</strong> created
+            {existsCount > 0 && (
               <>
                 {' · '}
-                <strong className="tabular-nums text-foreground">{result.existsCount}</strong> skipped
-                (already assigned)
+                <strong className="tabular-nums text-foreground">{existsCount}</strong> skipped (already
+                assigned)
               </>
             )}
-            {result.errorCount > 0 && (
+            {errorCount > 0 && (
               <>
                 {' · '}
-                <strong className="tabular-nums text-destructive">{result.errorCount}</strong> errored
+                <strong className="tabular-nums text-destructive">{errorCount}</strong> errored
               </>
             )}
           </p>
@@ -343,13 +366,22 @@ export function RateTypeAssignmentCreatePage() {
           <table className="w-full border-collapse whitespace-nowrap text-sm">
             <thead>
               <tr className="border-b border-border bg-surface-muted text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <th className="px-3 py-2">Product</th>
+                <th className="px-3 py-2">Verification Unit</th>
                 <th className="px-3 py-2">Rate Type</th>
                 <th className="px-3 py-2">Status</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
-                <tr key={r.rateTypeId} className="border-b border-border last:border-b-0">
+              {rows.map(({ pair, r }) => (
+                <tr
+                  key={`${pairKey(pair)}:${r.rateTypeId}`}
+                  className="border-b border-border last:border-b-0"
+                >
+                  <td className="px-3 py-2">
+                    {pair.productId === null ? 'Universal' : productName(pair.productId)}
+                  </td>
+                  <td className="px-3 py-2">{pair.unitId === null ? 'Universal' : unitName(pair.unitId)}</td>
                   <td className="px-3 py-2 text-xs uppercase">{rtById.get(r.rateTypeId) ?? r.rateTypeId}</td>
                   <td className="px-3 py-2">
                     {r.status === 'CREATED' ? (
@@ -369,7 +401,7 @@ export function RateTypeAssignmentCreatePage() {
             </tbody>
           </table>
         </div>
-        {result.existsCount > 0 && (
+        {existsCount > 0 && (
           <p className="text-xs text-muted-foreground">
             Skipped rate types were already assigned to this combination — they weren’t touched.
           </p>
@@ -398,15 +430,15 @@ export function RateTypeAssignmentCreatePage() {
       <div>
         <h1 className="text-xl font-bold tracking-tight">New Rate Type Assignment</h1>
         <p className="text-sm text-muted-foreground">
-          Set the Client × Product × Verification Unit slot once, then choose which rate types it may use —
-          one assignment is created per rate type.
+          Pick a client, tick the products &amp; verification units it covers, then choose which rate types
+          apply — one assignment is created per resolved pair × rate type.
         </p>
       </div>
 
       <StepCard
         n={1}
-        title="The slot"
-        hint="These apply to every rate type ticked below. Product and unit can be Universal (matches any)."
+        title="Client"
+        hint="The rate types ticked below apply to this client, across every resolved pair."
       >
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Client" required>
@@ -427,59 +459,48 @@ export function RateTypeAssignmentCreatePage() {
               <span className="mt-1 block text-xs text-destructive">Couldn’t load clients.</span>
             )}
           </Field>
-          <Field label="Product" hint="blank = Universal">
-            <select
-              className="input"
-              value={productId}
-              disabled={products.isLoading}
-              onChange={(e) => changeProduct(e.target.value)}
-            >
-              <option value="">Universal (all products)</option>
-              {(products.data ?? []).map((p) => (
-                <option key={p.id} value={String(p.id)}>
-                  {p.code} — {p.name}
-                </option>
-              ))}
-            </select>
-            {products.isError && (
-              <span className="mt-1 block text-xs text-destructive">Couldn’t load products.</span>
-            )}
-          </Field>
-          <Field label="Verification Unit" hint="blank = Universal">
-            <select
-              className="input"
-              value={unitId}
-              disabled={units.isLoading}
-              onChange={(e) => changeUnit(e.target.value)}
-            >
-              <option value="">Universal (all units)</option>
-              {(units.data ?? []).map((u) => (
-                <option key={u.id} value={String(u.id)}>
-                  {u.code} — {u.name}
-                </option>
-              ))}
-            </select>
-            {units.isError && (
-              <span className="mt-1 block text-xs text-destructive">Couldn’t load units.</span>
-            )}
-            {noCpvMapping && (
-              <span className="mt-1 block text-xs text-muted-foreground">
-                {NO_CPV_MAPPING} —{' '}
-                <Link to={CPV_ADMIN_PATH} className="text-primary hover:underline">
-                  map it in CPV
-                </Link>
-                .
-              </span>
-            )}
-          </Field>
         </div>
       </StepCard>
 
       <StepCard
         n={2}
+        title="Products & verification units"
+        badge={pairs.length > 0 ? `${pairs.length} pair${pairs.length === 1 ? '' : 's'}` : undefined}
+        hint="Tick every product and unit this applies to. Each resolved pair below gets its own assignment per ticked rate type."
+      >
+        <PairPicker
+          products={products}
+          units={units}
+          productOptions={(productCatalog.data ?? []).map((p) => ({
+            id: p.id,
+            label: `${p.code} — ${p.name}`,
+          }))}
+          unitOptions={(allUnits.data ?? [])
+            .filter((u) => offerableUnitIds.includes(u.id))
+            .map((u) => ({ id: u.id, label: `${u.code} — ${u.name}` }))}
+          pairs={pairs}
+          dropped={dropped}
+          labelFor={pairLabelOf}
+          onProductsChange={changeProducts}
+          onUnitsChange={changeUnits}
+          isLoading={cpvLoading}
+        />
+        {noCpvMapping && (
+          <p className="text-xs text-muted-foreground">
+            {NO_CPV_MAPPING} —{' '}
+            <Link to={CPV_ADMIN_PATH} className="text-primary hover:underline">
+              map it in CPV
+            </Link>
+            .
+          </p>
+        )}
+      </StepCard>
+
+      <StepCard
+        n={3}
         title="Rate types"
         badge={count > 0 ? `${count} selected` : undefined}
-        hint="Tick every rate type this slot may use. Amber = already assigned (skipped); muted = already covered by a broader assignment."
+        hint="Tick every rate type these pairs may use. Amber = already assigned (skipped); muted = already covered by a broader assignment."
       >
         {rateTypes.isLoading ? (
           <HexagonLoader operation="Loading rate types" />
@@ -505,13 +526,17 @@ export function RateTypeAssignmentCreatePage() {
                 </span>
               ) : existing.isLoading ? (
                 <span className="text-xs text-muted-foreground">Checking existing assignments…</span>
-              ) : coveredByParent.size > 0 ? (
+              ) : (rateTypes.data ?? []).some(
+                  (rt) =>
+                    coveredPairCount(existingItems, pairs, rt.id) >
+                    assignedPairCount(existingItems, pairs, rt.id),
+                ) ? (
                 <span className="text-xs text-muted-foreground">
                   Amber = already assigned here; muted = already covered by a broader assignment (redundant).
                 </span>
               ) : (
                 <span className="text-xs text-muted-foreground">
-                  Amber chips are already assigned to this slot.
+                  Amber chips are already assigned to these pairs.
                 </span>
               )}
               <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
@@ -529,18 +554,19 @@ export function RateTypeAssignmentCreatePage() {
             </div>
             <div className="flex flex-wrap gap-2">
               {(rateTypes.data ?? []).map((rt) => {
-                const isAssigned = assigned.has(rt.id);
-                // Covered by a broader (Universal) parent → available here already; ticking it makes a
-                // redundant row. Still tickable (a deliberate slot-specific pin is legitimate).
-                const isCovered = !isAssigned && coveredByParent.has(rt.id);
+                const assignedAt = assignedPairCount(existingItems, pairs, rt.id);
+                const coveredAt = coveredPairCount(existingItems, pairs, rt.id) - assignedAt;
+                const isAssigned = assignedAt > 0;
+                const isCovered = !isAssigned && coveredAt > 0;
+                const all = pairs.length;
                 return (
                   <label
                     key={rt.id}
                     title={
                       isAssigned
-                        ? 'Already assigned to this slot — an identical assignment will be skipped'
+                        ? `Already assigned at ${assignedAt} of ${all} pair${all === 1 ? '' : 's'} — those are skipped; the rest are created`
                         : isCovered
-                          ? 'Already available here via a broader assignment (a Universal or partially-Universal parent) — adding it at this slot creates a redundant row'
+                          ? `Already available at ${coveredAt} of ${all} pair${all === 1 ? '' : 's'} via a broader (Universal) assignment — adding it there creates a redundant row`
                           : undefined
                     }
                     className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs has-[:checked]:border-primary has-[:checked]:bg-primary-muted ${
@@ -559,9 +585,13 @@ export function RateTypeAssignmentCreatePage() {
                     />
                     <span className="uppercase">{rt.code}</span>
                     {isAssigned ? (
-                      <span className="text-[10px] font-semibold text-st-under-review">assigned</span>
+                      <span className="text-[10px] font-semibold tabular-nums text-st-under-review">
+                        {all === 1 ? 'assigned' : `assigned ${assignedAt}/${all}`}
+                      </span>
                     ) : isCovered ? (
-                      <span className="text-[10px] font-medium text-muted-foreground">covered</span>
+                      <span className="text-[10px] font-medium tabular-nums text-muted-foreground">
+                        {all === 1 ? 'covered' : `covered ${coveredAt}/${all}`}
+                      </span>
                     ) : null}
                   </label>
                 );
@@ -586,7 +616,7 @@ export function RateTypeAssignmentCreatePage() {
           </p>
           {clientId && (
             <p className="text-xs text-muted-foreground">
-              {clientLabel} · {productLabel} · {unitLabel}
+              {clientLabel} · {pairs.length} pair{pairs.length === 1 ? '' : 's'}
               {skipCount > 0 && (
                 <span className="tabular-nums"> · {skipCount} already assigned (skipped)</span>
               )}
@@ -612,7 +642,7 @@ export function RateTypeAssignmentCreatePage() {
             disabled={!valid}
             loading={mut.isPending}
           >
-            {count <= 1 ? 'Save' : willCreate > 0 ? `Create ${willCreate}` : 'Create'}
+            {pairs.length === 1 && count <= 1 ? 'Save' : willCreate > 0 ? `Create ${willCreate}` : 'Create'}
           </Button>
         </div>
       </div>

@@ -5,7 +5,6 @@ import {
   rtaFriendlyError,
   assignedRateTypeIds,
   coveredRateTypeIds,
-  submitPlan,
   groupSubmitPlan,
   assignedPairCount,
   coveredPairCount,
@@ -84,28 +83,6 @@ describe('coveredRateTypeIds (resolver-mirror: Universal parents cover specific 
     const assigned = assignedRateTypeIds(rows, 10, 5);
     const coveredByParent = [...coveredRateTypeIds(rows, 10, 5)].filter((id) => !assigned.has(id));
     expect(coveredByParent.sort()).toEqual([1, 2, 3]);
-  });
-});
-
-describe('submitPlan (single-vs-bulk decision + willCreate)', () => {
-  it('one new type → single (POST /, navigate back)', () => {
-    expect(submitPlan([1], new Set())).toEqual({ mode: 'single', ids: [1], willCreate: 1 });
-  });
-  it('two+ types → bulk, and amber ids stay in the payload so the result can report them Skipped', () => {
-    expect(submitPlan([1, 2], new Set([2]))).toEqual({ mode: 'bulk', ids: [1, 2], willCreate: 1 });
-  });
-  it('a lone already-assigned type → none (submit blocked; no false "created")', () => {
-    expect(submitPlan([2], new Set([2]))).toEqual({ mode: 'none', ids: [2], willCreate: 0 });
-  });
-  it('all-amber multi → none (no empty "Create 0" round-trip)', () => {
-    expect(submitPlan([1, 2], new Set([1, 2]))).toMatchObject({ mode: 'none', willCreate: 0 });
-  });
-  it('an inactive combo is NOT amber, so it still counts toward a real create', () => {
-    // rate type 9 not in the (active-only) assigned set → willCreate counts it.
-    expect(submitPlan([9], new Set([1, 2]))).toEqual({ mode: 'single', ids: [9], willCreate: 1 });
-  });
-  it('dedupes a repeated id', () => {
-    expect(submitPlan([1, 1], new Set())).toEqual({ mode: 'single', ids: [1], willCreate: 1 });
   });
 });
 
