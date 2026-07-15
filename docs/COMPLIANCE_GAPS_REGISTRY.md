@@ -2327,3 +2327,17 @@ zero tests. Added a characterization test (Universal-product LOCAL blocks Univer
 **Build:** 9-task subagent-driven; whole-branch review MERGE-READY (all 9 invariants held). The gate caught a plan
 gap — shared `cpvGroup/` under `features/` violated `no-cross-feature-internals`; fixed with a public `index.ts`
 barrel. Next mig `0119`, next ADR `0095`.
+
+### Addendum (2026-07-15, owner-reported from the live page) — FIXED same day (`7379e60`)
+
+- **Pickers offered the full catalog, not the client's CPV mapping.** AXIS has 2 CPV products; the
+  product tick-list showed all 12 (pre-existing — the single-select pages did the same). FIXED both
+  pages: products = the client's usable `client_products`; unit pool = the union of those products'
+  CPV units in every picker shape (never the full catalog); no-mapping note + CPV link. ADR-0074
+  untouched (a Universal CPV row still means all units for that product). Browser-verified: AXIS
+  offers exactly NEW_TEST_PRODUCT + PL; ticking only NEW_TEST_PRODUCT collapses units to its 2 CPV
+  units.
+- **Existing coverage invisible until pincode-hunted.** FIXED (rates page): `coverageRows` lists the
+  group's already-priced locations up front — pincode · area · pair · rate type · amount, display-cap
+  30, truncation-honest. Browser-verified: PL × Office shows "Already priced for this group — 5
+  rates" (400080 areas, OGL ₹150). Spec §4.7a; +5 unit tests (web 253 → 258 total incl. both pages).

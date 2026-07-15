@@ -173,6 +173,21 @@ would be confidently wrong on a money page.
   pattern** — it already exists twice ("showing N of M" :689-698; RTA's "Couldn't check existing
   assignments — any duplicates will be skipped on save").
 
+### 4.7a Owner amendments (2026-07-15, from the live page — built same day)
+
+1. **The pickers are CPV-scoped end to end.** The product tick-list offers ONLY the client's usable
+   `client_products` (`GET /client-products?clientId=&active=true`, ADR-0017 effective-gate applied
+   client-side), and the unit pool is the **union of those products' CPV units** — never the full
+   catalog, in any picker shape (no product picked, Universal picked, concrete picked). A client with
+   no usable mapping gets a note + the `/admin/cpv` link. ADR-0074 unchanged: a Universal CPV row
+   still yields all units *for that product*. Rationale: a rate or assignment at an unmapped combo is
+   a dead row no case can reach.
+2. **Existing coverage up front (rates page).** When pairs are picked, the page lists the group's
+   already-priced locations — pincode, area, pair, **rate type and amount** (`coverageRows`, same
+   pair-scoping as `locationGroupStates`, office rows excluded, display-capped at `COVERAGE_DISPLAY_CAP
+   = 30` with "and N more", honest note when the hint read is truncated) — so coverage is visible
+   without hunting pincode by pincode. Display-only; the Step-3 chips stay the interaction surface.
+
 ### 4.7 Submit
 
 ```
