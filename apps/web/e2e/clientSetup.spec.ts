@@ -209,8 +209,15 @@ test.describe('onboarding journey A: hub', () => {
     await expect(page).toHaveURL(/[?&]step=2/);
     await page.getByRole('button', { name: '+ New Assignment' }).click();
     await expect(page).toHaveURL(/\/admin\/rate-type-assignments\/new\?/);
-    // Client is prefilled from the hub; tick exactly one rate-type chip → the button reads "Save".
-    await page.locator('label.rounded-full').first().click();
+    // Client is prefilled from the hub; the pair picker keeps its Universal × Universal default (one
+    // pair). Its product/unit chips are labels too, so scope to the "Rate types" card and tick exactly
+    // one rate-type chip → the button reads "Save".
+    await page
+      .locator('section')
+      .filter({ has: page.getByRole('heading', { name: 'Rate types' }) })
+      .locator('label.rounded-full')
+      .first()
+      .click();
     const assigned = page.waitForResponse(
       (r) =>
         r.url().includes('/api/v2/rate-type-assignments') &&

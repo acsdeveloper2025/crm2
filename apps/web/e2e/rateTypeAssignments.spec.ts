@@ -22,16 +22,21 @@ test('Rate Type Assignments: + New → slot + one rate type → it appears on th
   await expect(page.getByRole('heading', { name: 'New Rate Type Assignment' })).toBeVisible();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 
-  // Step 1: Client (required) — first real option; Product/Unit left Universal (default). Step 2: tick
-  // exactly one rate-type chip → the button reads "Save" and does a single POST. Wait for the amber
-  // "already assigned" hint query to settle, then tick the first UNASSIGNED chip (an amber one would
-  // make willCreate=0 and disable Save), so the test is robust across runs on a persistent DB.
+  // Step 1: Client (required) — first real option. Step 2 (Products & verification units) stays on
+  // its default: Universal (all products) × Universal (all units) = ONE pair — the CPV-group picker's
+  // chips are labels too, so every rate-type locator below is scoped to the "Rate types" card. Step 3:
+  // tick exactly one rate-type chip → the button reads "Save" and does a single POST. Wait for the
+  // amber "already assigned" hint query to settle, then tick the first UNASSIGNED chip (an amber one
+  // would make willCreate=0 and disable Save), so the test is robust across runs on a persistent DB.
   const amberQuery = page.waitForResponse(
     (r) => r.url().includes('/api/v2/rate-type-assignments?') && r.url().includes('active=true'),
   );
   await select(page, 'Client').selectOption({ index: 1 });
   await amberQuery;
-  await page
+  const rateTypesCard = page
+    .locator('section')
+    .filter({ has: page.getByRole('heading', { name: 'Rate types' }) });
+  await rateTypesCard
     .locator('label.rounded-full')
     .filter({ hasNot: page.getByText('assigned', { exact: true }) })
     .first()
