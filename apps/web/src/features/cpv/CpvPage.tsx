@@ -529,8 +529,12 @@ function UnitManager({ link }: { link: ClientProductView }) {
     },
   });
 
-  // Only units with a currently-ACTIVE row are excluded from the picker — a deactivated one is still
-  // offered, since the bulk endpoint's ON CONFLICT DO UPDATE re-activates it (REACTIVATED status).
+  // Units with a currently-ACTIVE row show TICKED + read-only in the picker (owner, 2026-07-15: the
+  // list must show what is already enabled, not hide it — "3 units" in the row header with an empty
+  // picker read as a bug). A deactivated one is a plain untickable-off row again, since the bulk
+  // endpoint's ON CONFLICT DO UPDATE re-activates it (REACTIVATED status). Managing an enabled row
+  // (deactivate / reschedule) stays in the table below — unticking here would ambiguously mean
+  // "disable" under a button that says Enable.
   const activelyMapped = new Set(
     enabled.data
       ?.filter((u) => u.isActive)
@@ -538,6 +542,10 @@ function UnitManager({ link }: { link: ClientProductView }) {
       .filter((id) => id !== null),
   );
   const pickableUnits = units.data?.filter((u) => !activelyMapped.has(u.id)) ?? [];
+  // Display-state, not resolver semantics (no effective-from gate): is a Universal row switched on?
+  const universalRowActive = (enabled.data ?? []).some((u) => u.isActive && u.verificationUnitId === null);
+  // What the row header's "N units" counts: every active mapping, the Universal row included.
+  const enabledCount = (enabled.data ?? []).filter((u) => u.isActive).length;
   // An active in-effect Universal mapping already makes every unit available (resolver unions it), so
   // every specific pick below is redundant — flag it (still pickable: a specific row is a deliberate
   // pin that survives deactivating the Universal, mirroring the rate-type-assignment "covered" hint).
@@ -553,7 +561,8 @@ function UnitManager({ link }: { link: ClientProductView }) {
       <div className="flex flex-wrap items-start gap-4 border-b border-border p-3">
         <div className="block">
           <span className="mb-1 block text-xs font-medium text-foreground">
-            Verification units ({checked.size} selected)
+            Verification units ({enabledCount} enabled
+            {checked.size > 0 ? ` · ${checked.size} selected` : ''})
           </span>
           <div className="max-h-40 w-64 overflow-y-auto rounded border border-border p-2">
             {universalCovers && (
@@ -562,6 +571,28 @@ function UnitManager({ link }: { link: ClientProductView }) {
                 specific unit is redundant.
               </p>
             )}
+            {/* Already-enabled mappings render TICKED + read-only, so the picker shows the link's
+                actual state (deactivate/reschedule stays in the table below). */}
+            {universalRowActive && (
+              <label className="flex items-center gap-2 py-0.5 text-xs">
+                <input type="checkbox" checked disabled />
+                <span>
+                  Universal (all units)
+                  <span className="ml-1 text-[10px] font-semibold text-st-approved">· enabled</span>
+                </span>
+              </label>
+            )}
+            {(units.data ?? [])
+              .filter((u) => activelyMapped.has(u.id))
+              .map((u) => (
+                <label key={u.id} className="flex items-center gap-2 py-0.5 text-xs">
+                  <input type="checkbox" checked disabled />
+                  <span>
+                    {u.code} — {u.name}
+                    <span className="ml-1 text-[10px] font-semibold text-st-approved">· enabled</span>
+                  </span>
+                </label>
+              ))}
             {pickableUnits.length === 0 && !universalCovers && (
               <p className="text-xs text-muted-foreground">All units are already enabled.</p>
             )}
