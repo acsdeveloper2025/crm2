@@ -2394,3 +2394,61 @@ Lock / Shifted / Untraceable / NSP / Negative × every verification type) are **
 scopes it: `docs/plans/2026-07-16-field-report-ert-staying-status-kickoff.md`.
 
 **Test-gap note:** `defaults.render.test.ts` had **zero ERT coverage** — that is how this shipped. Now 4 tests.
+
+## §TAT-OVERDUE-2026-07-15 — Field Monitoring called a delivered task "late". FIXED, live prod `8419b47`
+
+**Owner-reported (live, from the screen):** Field Monitoring showed **FIELD MAYUR "Overdue 1"** for a task
+he had already **SUBMITTED**, while Pipeline showed **0** out-of-TAT for the same task. Two screens
+disagreed on one question.
+
+- **FIXED — the rule had FOUR hand-typed copies; two had drifted.** Field Monitoring counted
+  `SUBMITTED` against the agent (contradicting its own comment: *"only work the agent already holds"*) and
+  measured against a **hard-coded 24h** instead of each task's own `tat_hours`. Extracted the single
+  definition to `platform/tat/overdue.ts` (`TASK_OVERDUE_SQL`); Pipeline, tasks, field-monitoring and
+  dashboard all import it, so the screens agree by construction. ADR-0044 amended.
+  **Verified on live prod: overdue total = 1 (CASE-000001-1, genuinely late); Mayur = 0.**
+  *Nikhil is the tell:* his task was in the identical SUBMITTED state and read 0 only because it was
+  ~23.8h old — it would have flipped within minutes. Not agent-specific; it hit every submitted task past 24h.
+- **FIXED — the 4th copy.** I claimed the first commit left ONE definition; it left two. Dashboard kept a
+  local copy "to respect module boundaries" — but `platform/` is an allowed import (`pnpm boundaries`
+  confirms). Byte-identical at the time, so no numbers moved; removed as a drift hazard (`2a3f3b7`).
+- **FIXED — re-work was permanently invisible to Out-of-TAT.** Both lineage INSERTs (revisit,
+  reassign-after-revoke) omitted `tat_hours`; the column has no DEFAULT (mig 0078) ⇒ born NULL ⇒ never
+  overdue, forever. Now `REWORK_TAT_HOURS = 24` (owner: "fresh 24h"). Latent on prod (0 NULL-tat, all 7
+  tasks ORIGINAL) — but CASE-000004-1 is already REVOKED, so the next reassign would have hit it.
+- **FIXED — a revoke erased the first agent's stretch.** A REVOKED task is never `overdue` (nobody holds
+  it), so no TAT badge rendered and his time vanished. **mig 0119** adds `case_tasks.revoked_at`
+  (sibling of started_at/submitted_at/completed_at), stamped on revoke, backfilled from the append-only
+  audit trail. Pipeline shows `held 6h 13m / 24h`, red only if he had already breached. Prod backfill:
+  CASE-000004-1 → **373 min (6h13m) / 24h — he did NOT breach**, correcting my earlier claim that he had.
+- **FIXED (my own bug, caught by running the migration against real data, not by reasoning).** One dev row
+  rendered a **negative** hold (−8 min): its audit trail holds two REVOKED events with the assignment
+  between them, and my backfill took `min()` — the revoke from *before* the current assignment. Now takes
+  the last event at/after `assigned_at` (that row: 94 min, matching the timestamps by hand). The read also
+  guards `revoked_at >= assigned_at` → NULL, since a money-adjacent screen must not print nonsense.
+- **RETRACTED (my own overreach).** I claimed `assignTask` has no status guard and wrote code + a test on
+  that premise. Both wrong — `service.assignTask` requires `PENDING` (409 `TASK_NOT_ASSIGNABLE`), so a
+  REVOKED row can never be re-assigned in place and is revoked at most once. Dead line removed; the test
+  now pins the real guard. The dev row's negative was inconsistent **seed data**, not a reachable path.
+
+**Test gap that let all of this ship:** the overdue count had **ZERO** test coverage — same root cause as
+the ERT defect the same day. Now 5 field-monitoring + 4 cases regression tests, each failing before the fix.
+
+### DEFERRED (owner-visible, not fixed)
+- **Re-assignment silently clears a breach.** `assignTask` sets `assigned_at = now()` unconditionally, so
+  moving an overdue task to another agent erases the breach with no trace (overdue is derived, never
+  stored; the client's total wait is unaccounted). Correct for judging the *new* agent — misleading for
+  judging the client's wait. **DEFERRED** — needs an owner decision on whether a client-facing clock
+  should run from the FIRST assignment.
+- **No "did this COMPLETED task meet its TAT?" anywhere.** The completed-in band buckets actual elapsed
+  against the shared `tat_policies` list and never reads the task's own `tat_hours`; a task promised 4h and
+  finished in 20h renders a plain "24h". **DEFERRED.**
+- **Case `CANCELLED`/`REVOKED` are dead statuses** — the DB CHECK allows them, the SDK exports them, the UI
+  labels + filters them, but **no endpoint can set them**. There is no way to cancel a case in the CRM.
+  Surfaced when the owner asked to remove test cases; ADR-0032 §8 specifies a `case.revoke` permission that
+  does not exist in the repo. **DEFERRED.**
+- **Test cases CASE-000003/000005 could not be deleted from prod.** The DB refused: the cascade hits
+  `task_assignment_history`, which is append-only (`trg_task_assignment_history_immutable`). Nothing was
+  deleted; a full restorable backup of all 25 rows sits at `~/crm2-prod-backups/`. **DEFERRED** — the only
+  paths are bypassing an audit control (declined without explicit owner authorisation) or a soft-delete
+  status that does not exist (see above).
