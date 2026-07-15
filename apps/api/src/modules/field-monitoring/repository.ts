@@ -2,6 +2,7 @@ import type { FieldAgentView, FieldMonitoringStats, SortOrder } from '@crm2/sdk'
 import { query } from '../../platform/db.js';
 import { taskScopePredicate, type Scope } from '../../platform/scope/index.js';
 import { likeContains } from '../../platform/pagination.js';
+import { TASK_OVERDUE_SQL } from '../../platform/tat/overdue.js';
 
 /**
  * Field Monitoring repository (ADR-0026) — one row per field executive in the supervisor's
@@ -10,14 +11,11 @@ import { likeContains } from '../../platform/pagination.js';
  * Per-agent aggregates from case_tasks; territory from user_scope_assignments; last-known GPS
  * from latest_device_location (null until the device rebases onto /api/v2 — forward-prep).
  *
- * Param contract: $1 = start-of-today (completed-today window), $2 = overdue cutoff. These feed
- * the aggregate JOIN (which appears in the SQL before the WHERE), so the list/stats callers push
- * them FIRST; `buildWhere` appends scope/search/role params after.
+ * Param contract: $1 = start-of-today (completed-today window). It feeds the aggregate JOIN (which
+ * appears in the SQL before the WHERE), so the list/stats callers push it FIRST; `buildWhere` appends
+ * scope/search/role params after.
  */
 const OPEN_STATUSES = "('PENDING','ASSIGNED','IN_PROGRESS','SUBMITTED')";
-// 'open & overdue' excludes PENDING (an unassigned task has no agent to be late) — only work the
-// agent already holds counts toward their aging.
-const OVERDUE_STATUSES = "('ASSIGNED','IN_PROGRESS','SUBMITTED')";
 
 /**
  * Per-agent workload aggregate. TWO different scope legs apply to this page and they are NOT the same
@@ -32,7 +30,7 @@ const OVERDUE_STATUSES = "('ASSIGNED','IN_PROGRESS','SUBMITTED')";
  * fail-closed everywhere else, yet non-zero counts here.
  *
  * `cases cs` is joined because every dimension leg is expressed over the case (`cs.client_id` etc.).
- * `$1`/`$2` are the caller's fixed window params; `scopePred` allocates from `$3` up.
+ * `$1` is the caller's fixed window param; `scopePred` allocates from `$2` up.
  */
 const taskAgg = (scopePred: string): string => `
   LEFT JOIN (
@@ -40,7 +38,7 @@ const taskAgg = (scopePred: string): string => `
       count(*) FILTER (WHERE ct.status IN ${OPEN_STATUSES}) AS open_tasks,
       count(*) FILTER (WHERE ct.status = 'IN_PROGRESS') AS in_progress,
       count(*) FILTER (WHERE ct.status = 'COMPLETED' AND ct.completed_at >= $1) AS completed_today,
-      count(*) FILTER (WHERE ct.status IN ${OVERDUE_STATUSES} AND ct.assigned_at < $2) AS overdue,
+      count(*) FILTER (WHERE ${TASK_OVERDUE_SQL}) AS overdue,
       min(ct.assigned_at) FILTER (WHERE ct.status IN ${OPEN_STATUSES}) AS oldest_open_assigned_at,
       max(GREATEST(ct.assigned_at, ct.completed_at, ct.updated_at)) AS last_activity_at
     FROM case_tasks ct
@@ -87,8 +85,6 @@ export interface AgentListOptions {
   search?: string;
   /** start-of-today (ISO) for the completed-today window. */
   startOfToday: string;
-  /** overdue cutoff (ISO) — open work assigned before this is "overdue". */
-  overdueCutoff: string;
   sortColumn: string;
   sortOrder: SortOrder;
   limit: number;
@@ -121,12 +117,12 @@ function buildWhere(o: Pick<AgentListOptions, 'scope' | 'search' | 'ids'>, param
 
 export const fieldMonitoringRepository = {
   async list(o: AgentListOptions): Promise<{ items: FieldAgentView[]; totalCount: number }> {
-    const params: unknown[] = [o.startOfToday, o.overdueCutoff];
-    // Order is load-bearing: taskAgg's SQL sits in the FROM and reads $1/$2, so the dimension legs must
-    // allocate next (from $3) — BEFORE buildWhere pushes the roster/search binds.
+    const params: unknown[] = [o.startOfToday];
+    // Order is load-bearing: taskAgg's SQL sits in the FROM and reads $1, so the dimension legs must
+    // allocate next (from $2) — BEFORE buildWhere pushes the roster/search binds.
     const scopePred = taskScopePredicate(params, o.scope);
     const clause = buildWhere(o, params);
-    // COUNT counts AGENTS (the roster), so it needs neither the $1/$2 window nor the dimension legs —
+    // COUNT counts AGENTS (the roster), so it needs neither the $1 window nor the dimension legs —
     // the counts the predicate caps live inside taskAgg, which a bare users count doesn't join.
     const countParams: unknown[] = [];
     const countClause = buildWhere(o, countParams);
@@ -144,10 +140,8 @@ export const fieldMonitoringRepository = {
     return { items, totalCount };
   },
 
-  async stats(
-    o: Pick<AgentListOptions, 'scope' | 'search' | 'startOfToday' | 'overdueCutoff'>,
-  ): Promise<FieldMonitoringStats> {
-    const params: unknown[] = [o.startOfToday, o.overdueCutoff];
+  async stats(o: Pick<AgentListOptions, 'scope' | 'search' | 'startOfToday'>): Promise<FieldMonitoringStats> {
+    const params: unknown[] = [o.startOfToday];
     const scopePred = taskScopePredicate(params, o.scope);
     const clause = buildWhere(o, params);
     const [row] = await query<FieldMonitoringStats>(

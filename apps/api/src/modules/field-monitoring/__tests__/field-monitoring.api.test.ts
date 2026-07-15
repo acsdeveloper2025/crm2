@@ -143,6 +143,64 @@ describe.skipIf(!RUN)('Field Monitoring console (ADR-0026)', () => {
     expect(row.territoryPincodes).toBe(0);
   });
 
+  /*
+   * Owner-reported 2026-07-15 (live prod): Field Monitoring showed FIELD MAYUR "Overdue 1" for a task he
+   * had already SUBMITTED, while Pipeline showed him 0 out-of-TAT. Two definitions had drifted:
+   *   pipeline/tasks: status IN (PENDING,ASSIGNED,IN_PROGRESS) AND now() > assigned_at + tat_hours
+   *   field-monitoring: status IN (ASSIGNED,IN_PROGRESS,SUBMITTED) AND assigned_at < now()-24h  ← wrong
+   * Owner decision: "overdue" here means TAT-BREACH — one definition, shared with pipeline.
+   */
+  describe('overdue = TAT breach (must agree with Pipeline)', () => {
+    /** Backdate assignment + set this task's own TAT, bypassing the API (no endpoint sets these). */
+    const ageTask = async (agent: string, hoursAgo: number, tatHours: number, status: string) => {
+      await db!.pool.query(
+        `UPDATE case_tasks SET assigned_at = now() - ($1 * interval '1 hour'), tat_hours = $2, status = $3
+         WHERE id = (SELECT id FROM case_tasks WHERE assigned_to = $4 ORDER BY created_at DESC LIMIT 1)`,
+        [hoursAgo, tatHours, status, agent],
+      );
+    };
+    const overdueOf = async (agent: string): Promise<number> => {
+      const res = await request(app).get('/api/v2/field-monitoring/agents?limit=100').set(SA);
+      return res.body.items.find((a: { id: string }) => a.id === agent).overdue;
+    };
+
+    let solo: string;
+    beforeAll(async () => {
+      solo = await createUser({ username: 'fm_tat', name: 'FM TAT Agent', role: 'FIELD_AGENT' });
+      await seedAssignedTask(await seedCpvUnit('TATCASE'), solo);
+    });
+
+    it('a SUBMITTED task past TAT is NOT the agent overdue — they already delivered', async () => {
+      await ageTask(solo, 40, 24, 'SUBMITTED'); // 40h old, 24h TAT, but submitted
+      expect(await overdueOf(solo)).toBe(0);
+    });
+
+    it('an IN_PROGRESS task past its OWN tat_hours IS overdue', async () => {
+      await ageTask(solo, 40, 24, 'IN_PROGRESS');
+      expect(await overdueOf(solo)).toBe(1);
+    });
+
+    it("uses the task's own tat_hours, not a flat 24h", async () => {
+      // 30h old but a 48h TAT ⇒ not breached. The old flat-24h rule called this overdue.
+      await ageTask(solo, 30, 48, 'IN_PROGRESS');
+      expect(await overdueOf(solo)).toBe(0);
+    });
+
+    it('a COMPLETED task past TAT is not overdue', async () => {
+      await ageTask(solo, 40, 24, 'COMPLETED');
+      expect(await overdueOf(solo)).toBe(0);
+    });
+
+    it('a task with no tat_hours is never overdue (nothing to breach)', async () => {
+      await db!.pool.query(
+        `UPDATE case_tasks SET assigned_at = now() - interval '99 hour', tat_hours = NULL, status = 'IN_PROGRESS'
+         WHERE id = (SELECT id FROM case_tasks WHERE assigned_to = $1 ORDER BY created_at DESC LIMIT 1)`,
+        [solo],
+      );
+      expect(await overdueOf(solo)).toBe(0);
+    });
+  });
+
   it('stats reflect the scoped population', async () => {
     const res = await request(app).get('/api/v2/field-monitoring/stats').set(SA);
     expect(res.status).toBe(200);

@@ -33,6 +33,7 @@ import {
   type Scope,
 } from '../../platform/scope/index.js';
 import { COMMISSION_LATERAL } from '../../platform/billing/laterals.js';
+import { TASK_OVERDUE_SQL } from '../../platform/tat/overdue.js';
 
 /** A field photo as a downloadable file (ADR-0060) — storage key + the inputs the server uses to build
  *  the canonical `<caseNumber>_<taskNumber>_<NN>[_<photoType>].<ext>` filename. `seq` is the stable
@@ -294,9 +295,7 @@ const TASK_VIEW_COLS = `ct.id, ct.case_id, cs.case_number, ct.verification_unit_
             CASE WHEN ct.completed_elapsed_minutes IS NULL THEN NULL ELSE -1 END) AS completed_tat_band,
          ct.tat_hours AS tat_hours,
          (ct.assigned_at + (ct.tat_hours * interval '1 hour')) AS due_at,
-         (ct.status IN ('PENDING','ASSIGNED','IN_PROGRESS')
-            AND ct.tat_hours IS NOT NULL AND ct.assigned_at IS NOT NULL
-            AND now() > ct.assigned_at + (ct.tat_hours * interval '1 hour')) AS overdue,
+         ${TASK_OVERDUE_SQL} AS overdue,
          ct.version, ct.created_at, ct.updated_at,
          -- ADR-0085: derived export state (the verifier's relay), ops-visible on the case page.
          -- At most one first-export row exists (partial unique) — plain subqueries, no fan-out.

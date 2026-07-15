@@ -3,6 +3,7 @@ import { filterClauses, likeContains, type AppliedFilter } from '../../platform/
 import { query } from '../../platform/db.js';
 import { taskScopePredicate, type Scope } from '../../platform/scope/index.js';
 import { RATE_LATERAL, COMMISSION_LATERAL } from '../../platform/billing/laterals.js';
+import { TASK_OVERDUE_SQL } from '../../platform/tat/overdue.js';
 
 /**
  * Out-of-TAT (overdue) predicate (ADR-0044): an OPEN task whose explicit per-task target (`tat_hours`)
@@ -10,9 +11,7 @@ import { RATE_LATERAL, COMMISSION_LATERAL } from '../../platform/billing/lateral
  * assigned can't be overdue (fail-open: NULL → not overdue). Pure SQL, no params (references only
  * `ct`) → safe to inline as both a list filter and the computed `overdue` column / ORDER BY key.
  */
-const OVERDUE_SQL = `(ct.status IN ('PENDING','ASSIGNED','IN_PROGRESS')
-  AND ct.tat_hours IS NOT NULL AND ct.assigned_at IS NOT NULL
-  AND now() > ct.assigned_at + (ct.tat_hours * interval '1 hour'))`;
+const OVERDUE_SQL = TASK_OVERDUE_SQL;
 
 /**
  * Pipeline repository — the operational task queue: every `case_task` across all cases, with its

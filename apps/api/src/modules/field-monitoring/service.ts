@@ -43,15 +43,15 @@ const FM_EXPORT_COLUMNS: ExportColumn<FieldAgentView>[] = [
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// Aging window: open work an agent has held longer than this is "overdue".
-const OVERDUE_WINDOW_HOURS = 24;
-const MS_PER_HOUR = 3_600_000;
-
-/** The completed-today + overdue time windows (IST day boundary), as ISO strings for the query. */
-function windows(): { startOfToday: string; overdueCutoff: string } {
-  const now = Date.now();
-  const overdueCutoff = new Date(now - OVERDUE_WINDOW_HOURS * MS_PER_HOUR).toISOString();
-  return { startOfToday: new Date(istMidnightUtcMs(now)).toISOString(), overdueCutoff };
+/**
+ * The completed-today window (IST day boundary) as an ISO string for the query.
+ *
+ * Overdue needs no window param: it is a TAT breach against each task's OWN `tat_hours`
+ * (`TASK_OVERDUE_SQL`), computed in SQL from `now()`. It used to be a flat 24h cutoff passed as $2,
+ * which disagreed with Pipeline on both legs — see platform/tat/overdue.ts.
+ */
+function windows(): { startOfToday: string } {
+  return { startOfToday: new Date(istMidnightUtcMs(Date.now())).toISOString() };
 }
 
 /**
@@ -69,7 +69,6 @@ export const fieldMonitoringService = {
       scope,
       ...(r.search !== undefined ? { search: r.search } : {}),
       startOfToday: w.startOfToday,
-      overdueCutoff: w.overdueCutoff,
       sortColumn: r.sortColumn,
       sortOrder: r.sortOrder,
       limit: r.limit,
@@ -88,7 +87,6 @@ export const fieldMonitoringService = {
       scope,
       ...(r.search !== undefined ? { search: r.search } : {}),
       startOfToday: w.startOfToday,
-      overdueCutoff: w.overdueCutoff,
     });
   },
 
@@ -103,7 +101,6 @@ export const fieldMonitoringService = {
       scope,
       ...(r.search !== undefined ? { search: r.search } : {}),
       startOfToday: w.startOfToday,
-      overdueCutoff: w.overdueCutoff,
       ...(selectedIds ? { ids: selectedIds } : {}),
       sortColumn: r.sortColumn,
       sortOrder: r.sortOrder,
