@@ -1,4 +1,36 @@
-# Kickoff — LIVE BUG: the Residence ERT report contradicts the field data (`applicant_staying_status` dropped)
+# Kickoff — Residence ERT report contradicts the field data
+
+> ## ✅ RESOLVED 2026-07-15 — FIXED AND LIVE ON PROD (`4cb7eb1`). This kickoff is now a RECORD, not a task.
+>
+> **Do not act on the diagnosis below without reading this box — parts of it were WRONG and are superseded.**
+>
+> **What shipped:** the Residence ERT template no longer welds `metPersonConfirmation`'s verb to a hard-coded
+> object. It mirrors the device form's own conditional, so the confirmation attaches to the *staying status* —
+> which is what the met person actually confirmed. 4 render tests cover every device branch.
+>
+> **Prod data fix:** CASE-000002-1's frozen snapshot was regenerated via `fieldReportService.snapshot()` inside
+> the prod api container (prod's own code + data; `rendered_by` preserved; original narrative backed up first).
+> It now reads *"SECURITY confirmed that the applicant has shifted from the given address"* — agreeing with the
+> agent's own observation ("APP SOLD THE FLAT AND SHIFTED FROM GIVEN ADDRESS LAST ONE YEAR AGO"), which the old
+> report flatly contradicted.
+>
+> **Prod sweep (all ERT snapshots, n=3):** CASE-000002-1 fixed · CASE-000005-1 same defect but a **test case**
+> (owner: leave it) · CASE-000003-1 **not wrong** — its status was "Applicant is Staying At", so the old sentence
+> was accurate. Left frozen per ADR-0080 (don't churn correct client documents).
+>
+> ### Corrections to the diagnosis below (kept for the record, retracted as guidance)
+> - ❌ **"metPersonConfirmation defaults to 'confirmed' on blank" — RETRACTED.** Device fields are mandatory.
+> - ❌ **"⚠️ B2 latent risk" — CLOSED, NOT A BUG.** The form has exactly two options (`Confirmed`/`Not Confirmed`);
+>   both are handled, so the helper's catch-all is unreachable from the device.
+> - ❌ **The proposed fix "SECURITY confirmed the residence existence…" — WRONG, never shipped.** Meaningless for a
+>   residence (of course the flat exists); it was copied from the *office* templates. Owner caught it.
+> - ✅ **The real cause**, proven by the device form (`crm-mobile-native` `LegacyFormTemplateBuilders.ts`):
+>   `applicantStayingStatus` is `conditional` on `metPersonConfirmation != 'Not Confirmed'` ⇒ **the staying status
+>   IS the object of the confirmation**, and is only collected when they confirmed.
+> - ✅ **§2a's 9-template ERT audit stands** — Residence was the only defect; DSA/NOC omissions are correct.
+>
+> **Still open:** the non-ERT outcomes audit (§5) — Bug A/B are *classes*; only the ERT row is proven.
+
 
 **Date:** 2026-07-16 · **Repo:** crm2 · **Severity:** 🔴 **HIGH — the report asserts the OPPOSITE of what the agent recorded, on a live client-facing document.**
 **Status at handoff:** `main` == `prod` == `29dbde8` (+ local docs commits), staging + prod green, working tree clean. Nothing about this bug is fixed yet.

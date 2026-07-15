@@ -2341,3 +2341,56 @@ barrel. Next mig `0119`, next ADR `0095`.
   group's already-priced locations up front — pincode · area · pair · rate type · amount, display-cap
   30, truncation-honest. Browser-verified: PL × Office shows "Already priced for this group — 5
   rates" (400080 areas, OGL ₹150). Spec §4.7a; +5 unit tests (web 253 → 258 total incl. both pages).
+
+## Residence ERT narrative inverted the field truth — FIXED + prod data corrected (2026-07-15)
+
+**Owner-reported (live):** CASE-000002-1 (TAFSEER AHMED …, agent jayant.panchal). The agent recorded
+`Applicant Staying Status = "Applicant is Shifted From"`; the report printed *"SECURITY confirmed
+`<name>`'s stay at the given address"* — the opposite of the field truth, on a client-facing document. The
+same report's own CONCLUSION read *"APP SOLD THE FLAT AND SHIFTED FROM GIVEN ADDRESS LAST ONE YEAR AGO"*, so
+the document contradicted itself. Fix `4cb7eb1`, **live on prod**.
+
+**Cause — FIXED.** The Residence ERT template welded `metPersonConfirmation`'s **verb** to a hard-coded
+**object**: `{{metPersonConfirmation met_person_confirmation}} {{customer_name}}'s stay at the given address`.
+The helper only ever yields `confirmed`/`did not confirm`; the object was always fixed text. A legitimate
+"Confirmed" (the guard confirming the applicant had **shifted**) got attached to a stay nobody claimed.
+**Verified on live prod data:** `met_person_confirmation = "Confirmed"`, `applicant_staying_status =
+"Applicant is Shifted From"` — the agent did nothing wrong.
+
+**The device form is the SoT and settles the semantics** (`crm-mobile-native`
+`LegacyFormTemplateBuilders.ts`): `metPersonConfirmation: ['Confirmed','Not Confirmed']`;
+`applicantStayingStatus: ['Applicant is Staying At','Applicant is Shifted From','No Such Person Staying At']`,
+declared `conditional` on `metPersonConfirmation != 'Not Confirmed'` ⇒ **the staying status IS the object of
+the confirmation, collected only when they confirmed.** The template now mirrors that conditional, so it
+cannot assert a status the device never captured. 4 render tests cover every device branch.
+
+**ERT audit — all 9 templates (owner-requested): Residence was the ONLY defect.** Root cause in one line:
+Residence ERT was the only template whose confirmation object was a **person-fact**; the other 8 confirm an
+**existence-fact** ("the office/business/property existence"), which a staying status cannot contradict.
+**DSA + NOC are NOT bugs** — they don't render `applicant_working_status` because their forms never capture it
+(no `FD('dsa'/'noc', …)`); capture and render agree. **Left alone** (an audit sweep would otherwise "fix" them
+into a regression).
+
+**Prod data correction (owner-directed).** ADR-0080 freezes the narrative at submission, so a template fix
+alone could not repair the reported document. Method: `fieldReportService.snapshot(caseId, taskId, renderedBy)`
+re-run inside the prod api container **after** the fix was live — prod's own code, prod's own data, the
+existing `upsertSnapshot` (`ON CONFLICT DO UPDATE`), `rendered_by` preserved, original narrative backed up
+first. **ADR-0080 is unchanged** (no new re-snapshot endpoint; a one-off correction, not a mechanism).
+CASE-000002-1 now reads *"SECURITY confirmed that the applicant has shifted from the given address"*.
+
+**Prod sweep (every ERT snapshot, n=3):** CASE-000002-1 **FIXED** · CASE-000005-1 same defect but a **test
+case** → **WONTFIX** (owner) · CASE-000003-1 **NOT wrong** — its status was "Applicant is Staying At", so the
+old sentence was accurate → **left frozen** (ADR-0080: don't churn a correct client document for wording).
+
+**Retracted claims from the first diagnosis** (recorded so they are not re-chased): the helper's blank →
+"confirmed" default was **NOT** the cause (device fields are mandatory — owner); the "latent B2" catch-all is
+**NOT a bug** (the form has exactly two options, both handled, so it is unreachable from the device); and the
+first proposed fix ("…confirmed the residence existence…") was **wrong and never shipped** — meaningless for a
+residence, copied from the office templates, caught by the owner.
+
+**DEFERRED — the non-ERT audit.** Bug A (captured-but-never-rendered) and Bug B (verb welded to a hard-coded
+object) are **classes**; this sweep only proves the ERT row. The other outcomes (Positive & Door Open / Door
+Lock / Shifted / Untraceable / NSP / Negative × every verification type) are **not yet audited**. Kickoff §5
+scopes it: `docs/plans/2026-07-16-field-report-ert-staying-status-kickoff.md`.
+
+**Test-gap note:** `defaults.render.test.ts` had **zero ERT coverage** — that is how this shipped. Now 4 tests.
