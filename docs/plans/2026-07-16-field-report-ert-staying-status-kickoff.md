@@ -64,7 +64,30 @@ $ grep -n "applicant_staying_status" packages/sdk/src/fieldReportDefaults.ts
 877:  …{{sentenceClause (stayingStatus applicant_staying_status) …}}   ← Business ERT ONLY
 ```
 
-### 🔴 BUG B — `metPersonConfirmation` is **fail-DANGEROUS**: it defaults to "confirmed"
+### 🔴 BUG B (the real one) — the template **welds the confirmation to "stay"**, whatever the agent said
+
+This is Bug A's deeper form, and it is what actually produced the owner's sentence.
+
+`fieldReportDefaults.ts:276` hard-codes the **object** of the confirmation:
+
+```
+{{met_person_name}} {{metPersonConfirmation met_person_confirmation}} {{customer_name}}'s stay at the given address.
+                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                                          welded — regardless of applicant_staying_status
+```
+
+`metPersonConfirmation` only ever yields **"confirmed"** or **"did not confirm"** — it supplies the *verb*, never
+the *object*. The template then asserts the object is **"'s stay at the given address"**. So when the guard
+confirmed *the applicant had shifted*, the report renders **"SECURITY confirmed …'s stay at the given address"** —
+the exact inversion the owner caught. The agent's `met_person_confirmation` was almost certainly a legitimate
+"Confirmed"; the template attached it to the wrong fact.
+
+> **OWNER CORRECTION (2026-07-15): a field can never be blank — the device form makes every field mandatory.**
+> An earlier draft of this kickoff claimed `metPersonConfirmation`'s `else → 'confirmed'` default was itself
+> causing this. **That was wrong** and is retracted: with all fields populated, the blank path never fires in
+> production. See ⚠️ B2 below for the residual, *latent* risk — do not confuse it with the live bug.
+
+### ⚠️ B2 — latent, NOT the live bug: the helper's catch-all still resolves to "confirmed"
 
 `apps/api/src/modules/fieldReports/helpers.ts:185-188`:
 
@@ -75,17 +98,15 @@ const metPersonConfirmation = (raw: unknown): string => {
 };
 ```
 
-**Anything that is not the exact string `not confirmed`/`did not confirm` renders as "confirmed"** — including
-**empty**, **null**, **"N/A"**, or any unanticipated device value. On an **ERT** visit the met person is a
-*security guard who would not let the agent in*; "confirmed the applicant's stay" is frequently a fact **nobody
-ever stated**. This is how a blank field becomes a positive assertion on a client-facing report.
+The match is **exact** (after lowercase+trim). Two device options (`Confirmed` / `Not Confirmed`) map correctly.
+But **any third or reworded option silently becomes "confirmed"** — a positive assertion from an unrecognised
+value. Mandatory fields prevent the *empty* case, not the *unanticipated-value* case.
 
-**Blast radius: 19 occurrences** of `metPersonConfirmation` across the templates (`grep -c` in
-`fieldReportDefaults.ts`), incl. Residence ERT (276), Office ERT (468), Business ERT (877). **This is NOT an
-ERT-only bug** — it is a money/liability-grade default across the whole field-report surface.
-
-> Whether CASE-000002's `met_person_confirmation` was blank or truthy is **the first thing to check on the live
-> DB** (read-only). It decides whether Bug B caused this specific report or merely could.
+**This is unverifiable from this repo — the form's option list lives in `crm-mobile-native` (separate repo) and
+IS the source of truth** (file-memory `project_mobile_form_source_of_truth.md`, INVARIANT). **Read the device
+form's actual option list before deciding whether B2 is real.** If the options are exactly two, B2 is a
+defensive hardening (fail-loud on an unknown value), not a bug — disposition it honestly either way.
+Blast radius if real: **19 occurrences** of `metPersonConfirmation` across the templates.
 
 ## 3. First actions (in order)
 
@@ -95,6 +116,9 @@ ERT-only bug** — it is a money/liability-grade default across the whole field-
    `applicant_staying_status`, `met_person_confirmation`, `met_person_name`, `outcome`.
    **This is the source of truth — the report conforms to the device, never the reverse**
    (file-memory `project_mobile_form_source_of_truth.md`, an INVARIANT).
+   **Expect `met_person_confirmation` to be populated** (owner: every device field is mandatory) — the question
+   is *what the guard confirmed*, which is the whole of Bug B. Also read the **device form's option list** for
+   `met_person_confirmation` in `crm-mobile-native` to settle ⚠️ B2.
 2. **Confirm which template actually rendered.** Reports are effective-dated/snapshotted (ADR-0079/0080) — the
    live report may come from a **stored snapshot or a DB-side template**, not the SDK default you are reading.
    Find the render path before editing anything, or you will fix a file prod does not use.
@@ -104,15 +128,29 @@ ERT-only bug** — it is a money/liability-grade default across the whole field-
    confirmed stay. It must FAIL on today's code.
 4. **Then fix**, smallest diff first (Bug A is a one-line template edit reusing line 877's proven clause).
 
+## 3a. Two facts that narrow the fix (verified 2026-07-15)
+
+- **The data is NOT lost — only the narrative drops it.** `apps/api/src/modules/fieldReports/sectionMap.ts:52`
+  already lists `{ ref: 'applicantStayingStatus', label: 'Applicant Staying Status' }` in the **"Met Person &
+  Occupancy"** section (and again at :330 for the office/business shape). So the structured section of the report
+  shows the value; **only the generated narrative paragraph omits it.** Check what the owner is actually looking
+  at — the narrative, the section table, or both — before deciding scope.
+- **`SHIFTED` is its own outcome** (`verification_unit_outcomes`: `ENTRY_RESTRICTED`, `SHIFTED`, `POSITIVE`,
+  `NEGATIVE`, `NSP`, `UNTRACEABLE` — per verification type). The agent chose **ENTRY_RESTRICTED** *and* recorded
+  "Applicant is Shifted From", which is coherent (entry was refused; the guard volunteered that the applicant
+  moved out) — **do not "fix" this by pushing the agent to pick SHIFTED.** The ERT narrative must be able to
+  carry a shifted applicant. Worth confirming with the owner that this combination is intended.
+
 ## 4. Design questions to settle (owner input likely needed)
 
-1. **Bug B's correct default.** Options: (a) render nothing when the value is blank/unknown (safest — a report
-   should never assert what wasn't recorded); (b) render "did not confirm"; (c) render the raw device value.
-   **Recommendation: (a)** — `sentenceClause` already exists to drop a clause entirely when empty (see line 877's
-   usage), so the pattern is there. **This changes existing report wording**, so it is an owner call.
-2. **Does the ERT sentence still belong at all** when the staying status says *shifted*? "SECURITY did not confirm
-   X's stay. The met person also informed that the applicant has shifted from the given address." reads correctly —
-   but confirm the phrasing with the owner; this is client-facing copy.
+1. **The ERT sentence's correct shape** when the staying status contradicts a "confirmed". The template welds
+   `metPersonConfirmation` to *"'s stay at the given address"*. Options: (a) make the object conditional on
+   `applicant_staying_status` (guard confirmed *the shift*, not *the stay*); (b) keep the verb clause but drop the
+   welded object and append the staying-status clause exactly as Business ERT (line 877) does; (c) rewrite the ERT
+   paragraph. **Recommendation: (b)** — it reuses a proven, shipped clause and is the smallest honest diff.
+   **This is client-facing copy → owner call on the exact wording.**
+2. **⚠️ B2's disposition** — only after reading the device form's option list (see §3 step 1). If exactly two
+   options exist, B2 is defensive hardening (fail-loud on an unknown value), not a bug. **Don't fix a phantom.**
 3. **Retro-fix scope.** Existing generated reports carry the wrong sentence. Are historical reports regenerated,
    or is the fix forward-only? (Snapshot semantics per ADR-0079/0080 make this a real decision, not a detail.)
 4. **The audit the owner asked for** (see §5) — how wide? Recommendation: every outcome × every helper with a
@@ -126,11 +164,16 @@ ERT-only bug** — it is a money/liability-grade default across the whole field-
 one instance of a *class*: a catalogued field that no template prints. The audit must answer, for each outcome
 (RESI positive / Shifted / Untraceable / **ERT** / Office variants / Business variants / KYC…):
 
-- Which device fields are **captured but never rendered**? (silent data loss — Bug A's class)
-- Which helpers have a **defaulting branch that asserts a positive fact** on empty/unknown input? (Bug B's class
-  — `metPersonConfirmation` is one; check `callConfirmation`, `nameplate`, `dominatedArea`, `workingStatus`,
-  `stayingStatus`, `existsClause`, `setup`, … in `helpers.ts`)
-- Where does a template **assert** something the form never asked, or contradict a captured field?
+- Which device fields are **captured but never rendered in the narrative**? (Bug A's class. Note: `sectionMap.ts`
+  may still table the value — so this is "the narrative contradicts/omits", not necessarily "data lost".)
+- Where does a template **weld a helper's verb to a hard-coded object** that the form's own fields can contradict?
+  (Bug B's class — this is the one that produced the live inversion. `{{metPersonConfirmation …}} X's stay at the
+  given address` is the proven instance; look for the same shape elsewhere.)
+- Which helpers have a **catch-all branch that asserts a positive fact** on an unrecognised value? (⚠️ B2's class —
+  `metPersonConfirmation` is one; check `callConfirmation`, `nameplate`, `dominatedArea`, `workingStatus`,
+  `stayingStatus`, `existsClause`, `setup`, … in `helpers.ts`.) **Judge each against the device form's real option
+  list in `crm-mobile-native`, not against imagination.**
+- Where does a template **assert** something the form never asked?
 
 Use parallel readers (one per outcome family) — this is exactly the shape the CPV-group session used, and the
 2026-07-12 lesson applies: **a retrofit/inline-only review misses silent-data-loss bugs — run the full lens.**
