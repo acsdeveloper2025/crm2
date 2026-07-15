@@ -9,6 +9,7 @@ import {
   authHeaderForRole,
 } from '@crm2/test-utils';
 import { createApp } from '../../../http/app.js';
+import { REWORK_TAT_HOURS } from '../../../platform/tat/overdue.js';
 import { setPool } from '../../../platform/db.js';
 import { setStorage, type StorageProvider } from '../../../platform/storage/index.js';
 import { setGeocoder } from '../../../platform/geocode/index.js';
@@ -1683,6 +1684,56 @@ describe.skipIf(!RUN)('cases API', () => {
       expect(child.documentDetails).toEqual({ 'BANK NAME': 'HDFC' });
       expect(parent.status).toBe('COMPLETED');
       expect(parent.taskOrigin).toBe('ORIGINAL');
+    });
+
+    /*
+     * Owner-reported 2026-07-15: both lineage INSERTs omitted tat_hours, and the column has no DEFAULT
+     * (mig 0078:5), so every REVISIT / REASSIGN-AFTER-REVOKE task was born with tat_hours = NULL. Since
+     * TASK_OVERDUE_SQL requires `tat_hours IS NOT NULL`, re-work was PERMANENTLY invisible to Out-of-TAT
+     * and showed no due date — no matter how long an agent held it. Owner decision: a re-work task gets a
+     * fresh full TAT window, same default as a new task.
+     */
+    it('a REVISIT task is born with a fresh TAT (not NULL) — else it can never be flagged late', async () => {
+      const { caseId, taskId } = await seedCaseWithTask('RVTAT', {
+        workerRole: 'KYC_VERIFIER',
+        withDoc: true,
+      });
+      await settle(caseId, taskId, 'RVTAT');
+      const res = await request(app)
+        .post(`/api/v2/cases/${caseId}/tasks/${taskId}/revisit`)
+        .set(SA)
+        .send({ reason: 'needs a recheck' });
+      expect(res.status).toBe(201);
+      const { rows } = await db!.pool.query<{ tat_hours: number | null }>(
+        `SELECT tat_hours FROM case_tasks WHERE id = $1`,
+        [res.body.id],
+      );
+      expect(rows[0]!.tat_hours).toBe(REWORK_TAT_HOURS);
+    });
+
+    it('a REASSIGNED-after-revoke task is born with a fresh TAT (not NULL)', async () => {
+      const { caseId, taskId } = await seedCaseWithTask('RATAT');
+      const agent = await createUser({ username: 'ra_tat_a', name: 'RA TAT Agent', role: 'FIELD_AGENT' });
+      await request(app)
+        .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
+        .set(SA)
+        .send({ assignedTo: agent, visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 1, version: 1 });
+      const rev = await request(app)
+        .post(`/api/v2/cases/${caseId}/tasks/${taskId}/revoke`)
+        .set(SA)
+        .send({ reason: 'agent unavailable', version: 2 });
+      expect(rev.status).toBe(200);
+      const agent2 = await createUser({ username: 'ra_tat_b', name: 'RA TAT Agent 2', role: 'FIELD_AGENT' });
+      const res = await request(app)
+        .post(`/api/v2/cases/${caseId}/tasks/${taskId}/reassign`)
+        .set(SA)
+        .send({ assignedTo: agent2, visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 1 });
+      expect(res.status).toBe(201);
+      const { rows } = await db!.pool.query<{ tat_hours: number | null }>(
+        `SELECT tat_hours FROM case_tasks WHERE id = $1`,
+        [res.body.id],
+      );
+      expect(rows[0]!.tat_hours).toBe(REWORK_TAT_HOURS);
     });
 
     it('revisit guards: live parent → 409; REVOKED parent → 409 (use reassign); a 2nd open revisit → 409; verifier 403; out-of-scope 404', async () => {

@@ -33,7 +33,7 @@ import {
   type Scope,
 } from '../../platform/scope/index.js';
 import { COMMISSION_LATERAL } from '../../platform/billing/laterals.js';
-import { TASK_OVERDUE_SQL } from '../../platform/tat/overdue.js';
+import { REWORK_TAT_HOURS, TASK_OVERDUE_SQL } from '../../platform/tat/overdue.js';
 
 /** A field photo as a downloadable file (ADR-0060) — storage key + the inputs the server uses to build
  *  the canonical `<caseNumber>_<taskNumber>_<NN>[_<photoType>].<ext>` filename. `seq` is the stable
@@ -1223,11 +1223,13 @@ export const caseRepository = {
         const [inserted] = await q<{ id: string }>(
           `INSERT INTO case_tasks
              (case_id, verification_unit_id, applicant_id, address, trigger, priority,
-              visit_type, pincode_id, area_id, status,
+              visit_type, pincode_id, area_id, status, tat_hours,
               task_number, parent_task_id, task_origin, created_by, updated_by,
               document_number, document_holder_name, document_details)
+           -- Re-work gets a FRESH full TAT window (owner 2026-07-15). Omitting tat_hours here left it
+           -- NULL (no column DEFAULT), which made every revisit invisible to Out-of-TAT forever.
            SELECT p.case_id, p.verification_unit_id, p.applicant_id, p.address, p.trigger, p.priority,
-                  p.visit_type, p.pincode_id, p.area_id, 'PENDING',
+                  p.visit_type, p.pincode_id, p.area_id, 'PENDING', ${REWORK_TAT_HOURS},
                   (SELECT case_number FROM cases WHERE id = $1) || '-' || $3::text,
                   p.id, 'REVISIT', $4, $4,
                   p.document_number, p.document_holder_name, p.document_details
@@ -1301,7 +1303,7 @@ export const caseRepository = {
           `INSERT INTO case_tasks
              (case_id, verification_unit_id, applicant_id, address, trigger, priority,
               visit_type, pincode_id, area_id, rate_type_id, bill_count, assigned_to,
-              assigned_by, assigned_at, status,
+              assigned_by, assigned_at, status, tat_hours,
               task_number, parent_task_id, task_origin, created_by, updated_by,
               document_number, document_holder_name, document_details)
            SELECT p.case_id, p.verification_unit_id, p.applicant_id, p.address, p.trigger, p.priority,
@@ -1309,7 +1311,8 @@ export const caseRepository = {
                   -- commission can't resolve); the code resolves to rate_types.id (NULL code → NULL id).
                   -- $3::varchar guards the SELECT-list/compare reuse.
                   $3, p.pincode_id, p.area_id, (SELECT id FROM rate_types WHERE code = CASE WHEN $3::varchar = 'OFFICE' THEN 'OFFICE' ELSE $4 END), $5, $6,
-                  $7, now(), 'ASSIGNED',
+                  -- Fresh full TAT window on the replacement (owner 2026-07-15); the clock starts now().
+                  $7, now(), 'ASSIGNED', ${REWORK_TAT_HOURS},
                   (SELECT case_number FROM cases WHERE id = $1) || '-' || $8::text,
                   p.id, p.task_origin, $7, $7,
                   p.document_number, p.document_holder_name, p.document_details

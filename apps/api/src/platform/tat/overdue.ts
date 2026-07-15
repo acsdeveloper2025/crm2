@@ -24,3 +24,15 @@ export const TASK_OVERDUE_SQL = `(ct.status IN ('PENDING','ASSIGNED','IN_PROGRES
 
 /** The task's due instant (`assigned_at + tat_hours`); NULL when either input is NULL. Aliased `ct`. */
 export const TASK_DUE_AT_SQL = `(ct.assigned_at + (ct.tat_hours * interval '1 hour'))`;
+
+/**
+ * The TAT a RE-WORK task is born with — a revisit (of a COMPLETED task) or a replacement for a REVOKED
+ * one. Owner decision 2026-07-15: a fresh full window, matching the default the web sends for a new task
+ * (AddTasksForm's 24h).
+ *
+ * Both lineage INSERTs used to omit `tat_hours` entirely, and the column has no DEFAULT (mig 0078), so
+ * every re-work task was born NULL — and `TASK_OVERDUE_SQL` requires a non-NULL target. Re-work was
+ * therefore invisible to Out-of-TAT forever, however long an agent held it. A named constant so the two
+ * INSERTs cannot drift apart the way the overdue rule did.
+ */
+export const REWORK_TAT_HOURS = 24;
