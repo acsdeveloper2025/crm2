@@ -1,5 +1,6 @@
 import type { DashboardStats, PortfolioRow } from '@crm2/sdk';
 import { query } from '../../platform/db.js';
+import { TASK_OVERDUE_SQL } from '../../platform/tat/overdue.js';
 import {
   composeScopePredicate,
   resolveScope,
@@ -20,15 +21,7 @@ import {
  * predicate → no filter).
  */
 
-/**
- * Out-of-TAT (overdue) predicate (ADR-0044) — kept local to respect module boundaries (mirrors the
- * Pipeline's OVERDUE_SQL). An OPEN task (PENDING/ASSIGNED/IN_PROGRESS) past its explicit per-task
- * target (`tat_hours`) since its clock start `assigned_at` (NOT created_at). No target / not yet
- * assigned ⇒ never overdue (fail-open). Pure SQL over `ct`.
- */
-const OVERDUE_SQL = `(ct.status IN ('PENDING','ASSIGNED','IN_PROGRESS')
-  AND ct.tat_hours IS NOT NULL AND ct.assigned_at IS NOT NULL
-  AND now() > ct.assigned_at + (ct.tat_hours * interval '1 hour'))`;
+const OVERDUE_SQL = TASK_OVERDUE_SQL;
 
 /**
  * CASE-grain visibility predicate (mirrors the cases module's leg, kept local to respect module
