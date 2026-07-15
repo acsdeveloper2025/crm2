@@ -79,6 +79,17 @@ const TASK_SELECT_BASE = `
          ct.tat_hours AS tat_hours,
          (ct.assigned_at + (ct.tat_hours * interval '1 hour')) AS due_at,
          ${OVERDUE_SQL} AS overdue,
+         -- How long the agent actually HELD a revoked task (mig 0119). Backward-looking, NOT a live
+         -- breach: a REVOKED task is never "out of TAT" (nobody holds it). Lets the row show
+         -- "held 6h / 24h" against the agent already named in the assignee column, so a revoke no
+         -- longer erases the first agent's stretch. NULL unless revoked + assigned (nothing to measure).
+         -- MINUTES, not hours: pre-rounding to hours lies either way (CEIL renders an exact 6h hold as
+         -- "7h"; FLOOR renders a 24h55m breach as a clean "24h"). The caller formats for display and
+         -- compares against tat_hours*60, so the breach is decided on the real duration.
+         -- ROUND, unlike completed_elapsed_minutes' CEIL: that one CEILs because it feeds a BAND lookup
+         -- (any overspill belongs in the next band). This is a measured duration shown to a human, so
+         -- 6h+0.4s must read "6h", not "6h 1m". A sub-30s overrun of the target is immaterial.
+         ROUND(EXTRACT(EPOCH FROM (ct.revoked_at - ct.assigned_at)) / 60.0)::int AS held_minutes,
          ct.completed_elapsed_minutes AS completed_elapsed_minutes,
          COALESCE((SELECT tp.tat_hours FROM tat_policies tp
             WHERE tp.is_active AND tp.effective_from <= now()

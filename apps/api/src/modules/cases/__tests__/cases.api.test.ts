@@ -1736,6 +1736,53 @@ describe.skipIf(!RUN)('cases API', () => {
       expect(rows[0]!.tat_hours).toBe(REWORK_TAT_HOURS);
     });
 
+    /*
+     * Owner 2026-07-15: "show both TATs — the first field user with his name, and the 2nd user's TAT."
+     * A revoked task is never `overdue` (nobody holds it), so the first agent's stretch used to vanish on
+     * revoke. revoked_at (mig 0119) + heldHours make it visible without touching the overdue rule.
+     */
+    it('REVOKE stamps revoked_at → the row reports how long the agent held it (heldHours)', async () => {
+      const { caseId, taskId } = await seedCaseWithTask('HELD');
+      const agent = await createUser({ username: 'held_a', name: 'HELD Agent', role: 'FIELD_AGENT' });
+      await request(app)
+        .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
+        .set(SA)
+        .send({ assignedTo: agent, visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 1, version: 1 });
+      // Backdate the assignment so the hold is a known 6h against the default 24h target.
+      await db!.pool.query(
+        `UPDATE case_tasks SET assigned_at = now() - interval '6 hour', tat_hours = 24 WHERE id = $1`,
+        [taskId],
+      );
+      const rev = await request(app)
+        .post(`/api/v2/cases/${caseId}/tasks/${taskId}/revoke`)
+        .set(SA)
+        .send({ reason: 'agent unavailable', version: 2 });
+      expect(rev.status).toBe(200);
+
+      const { rows } = await db!.pool.query<{ revoked_at: Date | null }>(
+        `SELECT revoked_at FROM case_tasks WHERE id = $1`,
+        [taskId],
+      );
+      expect(rows[0]!.revoked_at).not.toBeNull();
+
+      const list = await request(app).get(`/api/v2/tasks?limit=100`).set(SA);
+      const row = list.body.items.find((t: { id: string }) => t.id === taskId);
+      expect(row.heldMinutes).toBe(6 * 60); // exactly 6h — minutes, so no rounding lies
+      expect(row.overdue).toBe(false); // a revoked task is NEVER out of TAT — nobody holds it
+    });
+
+    it('a live (non-revoked) task reports no heldHours — nothing has ended', async () => {
+      const { caseId, taskId } = await seedCaseWithTask('HELD2');
+      const agent = await createUser({ username: 'held_b', name: 'HELD Agent 2', role: 'FIELD_AGENT' });
+      await request(app)
+        .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
+        .set(SA)
+        .send({ assignedTo: agent, visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 1, version: 1 });
+      const list = await request(app).get(`/api/v2/tasks?limit=100`).set(SA);
+      const row = list.body.items.find((t: { id: string }) => t.id === taskId);
+      expect(row.heldMinutes).toBeNull();
+    });
+
     it('revisit guards: live parent → 409; REVOKED parent → 409 (use reassign); a 2nd open revisit → 409; verifier 403; out-of-scope 404', async () => {
       const { caseId, taskId } = await seedCaseWithTask('RG1'); // task is PENDING (live)
       const url = `/api/v2/cases/${caseId}/tasks/${taskId}/revisit`;

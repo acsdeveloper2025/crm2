@@ -27,6 +27,19 @@ import { WorkStatusChip } from '../../components/WorkStatusChip.js';
 const BASE = '/api/v2/tasks';
 const QK = 'tasks';
 
+const MINUTES_PER_HOUR = 60;
+/**
+ * How long an agent held a revoked task, for the row badge. Under an hour reads in minutes (a 20-minute
+ * hold is not "0h"); an exact hour drops the minutes ("6h", not "6h 0m"). The breach decision is made on
+ * the raw minutes by the caller — this only formats, so rounding here can never hide an overrun.
+ */
+export function heldLabel(minutes: number): string {
+  if (minutes < MINUTES_PER_HOUR) return `${minutes}m`;
+  const h = Math.floor(minutes / MINUTES_PER_HOUR);
+  const m = minutes % MINUTES_PER_HOUR;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
 /** The Zion-style work buckets. Status buckets set the `status` domain filter; the Out-of-TAT bucket
  *  sets `overdue` (a cross-status derived filter, ADR-0044). All buckets are mutually exclusive.
  *  Money (bill/commission) lives only on the Billing & Commission page (ADR-0046 §6) — there is no
@@ -153,6 +166,33 @@ export function PipelinePage() {
                 {t.tatHours ? ` / ${t.tatHours}h` : ''}
               </span>
             )}
+            {/* A revoked task is never `overdue` (nobody holds it), so without this the first agent's
+                stretch vanished the moment you revoked. Show what he actually held against his target —
+                red only if he had already breached BEFORE the revoke, else neutral. The assignee column
+                already names him, so the row reads "JAYANT · held 6h / 24h". */}
+            {t.heldMinutes !== null &&
+              (() => {
+                // Compare in MINUTES so a 24h05m hold reads as a breach; only the LABEL is rounded.
+                const breached = t.tatHours !== null && t.heldMinutes > t.tatHours * 60;
+                const label = heldLabel(t.heldMinutes);
+                return (
+                  <span
+                    className={`rounded px-1.5 py-0.5 text-xs font-medium tabular-nums ${
+                      breached
+                        ? 'bg-st-rejected-bg text-st-rejected'
+                        : 'bg-surface-muted text-muted-foreground'
+                    }`}
+                    title={
+                      breached
+                        ? `Held ${label} against a ${t.tatHours}h target — already out of TAT when it was revoked`
+                        : `Held ${label} before it was revoked${t.tatHours !== null ? ` (target ${t.tatHours}h)` : ''}`
+                    }
+                  >
+                    held {label}
+                    {t.tatHours !== null ? ` / ${t.tatHours}h` : ''}
+                  </span>
+                );
+              })()}
           </span>
         ),
       },

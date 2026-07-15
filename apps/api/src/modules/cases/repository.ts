@@ -1478,8 +1478,12 @@ export const caseRepository = {
   ): Promise<CaseTaskView> {
     return withTransaction(async (q) => {
       const [updated] = await q<{ id: string }>(
+        // revoked_at (mig 0119) ends the agent's hold — with assigned_at it yields how long he actually
+        // held the task. COALESCE keeps the first revoke's stamp if this ever re-runs (the guard above
+        // makes a real re-revoke idempotent, so this is belt-and-braces on a money-adjacent audit fact).
         `UPDATE case_tasks
-           SET status = 'REVOKED', remark = $4, version = version + 1, updated_by = $3, updated_at = now()
+           SET status = 'REVOKED', remark = $4, version = version + 1, updated_by = $3, updated_at = now(),
+               revoked_at = COALESCE(revoked_at, now())
          WHERE id = $1 AND case_id = $2 AND status IN ('ASSIGNED', 'IN_PROGRESS')
          RETURNING id`,
         [taskId, caseId, actorId, reason],

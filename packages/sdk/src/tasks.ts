@@ -43,6 +43,19 @@ export interface TaskView {
   dueAt: string | null;
   /** Out of TAT (ADR-0044): an OPEN task past its `tat_hours` target since `assigned_at`. Derived. */
   overdue: boolean;
+  /**
+   * How long the agent HELD a revoked task, in MINUTES (`revoked_at - assigned_at`, mig 0119). Null
+   * unless the task is REVOKED and was assigned.
+   *
+   * Minutes, like `completedElapsedMinutes` — pre-rounding to hours lies either way (CEIL renders an
+   * exact 6h hold as "7h"; ROUND/FLOOR render a 24h05m breach as a clean "24h"). Format for display,
+   * and compare against `tatHours * 60` for the breach.
+   *
+   * Backward-looking, and deliberately NOT `overdue`: a revoked task is never out of TAT, because
+   * nobody is holding it any more. This is the first agent's stretch, so a revoke+reassign shows both
+   * agents' time (his hold vs his target, and the replacement's own live TAT) instead of erasing it.
+   */
+  heldMinutes: number | null;
   /** Measured elapsed minutes assigned→completed (ADR-0044), immutable once set; null until completed. */
   completedElapsedMinutes: number | null;
   /** The TAT band the task was completed within (ADR-0044): the smallest active `tat_policies` band ≥
