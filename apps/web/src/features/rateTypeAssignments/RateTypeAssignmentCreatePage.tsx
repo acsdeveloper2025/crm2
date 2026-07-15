@@ -4,6 +4,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import {
   MAX_BULK_RATE_TYPE_ASSIGNMENTS,
   type Option,
+  type ClientProductView,
   type VerificationUnitOption,
   type RateTypeOption,
   type RateTypeAssignmentView,
@@ -161,21 +162,33 @@ export function RateTypeAssignmentCreatePage() {
     queryKey: ['client-options'],
     queryFn: () => api<Option[]>('GET', '/api/v2/clients/options'),
   });
-  const productCatalog = useQuery({
-    queryKey: ['product-options'],
-    queryFn: () => api<Option[]>('GET', '/api/v2/products/options'),
-  });
-  // Every active unit — the option pool a Universal product draws from, and the ordering (sort_order)
-  // every narrowed list preserves.
+  // Every active unit — the label + ordering (sort_order) source; the option POOL is CPV-scoped below.
   const allUnits = useQuery({
     queryKey: ['verification-unit-options'],
     queryFn: () => api<VerificationUnitOption[]>('GET', '/api/v2/verification-units/options'),
   });
-  // ADR-0074: CPV is per (client, product) — one query per PICKED concrete product, cached under the
-  // key the single-select page already used. A Universal product has no mapping to consult.
-  const concreteProducts = products.filter((p): p is number => p !== null);
+  // Owner (2026-07-15): the pickers offer ONLY what is in the client's CPV mapping — products = the
+  // client's usable client_products, units = the union of those products' CPV units. Same rule as the
+  // rate create page (an assignment at an unmapped combo is unreachable by any case).
+  const clientProducts = useQuery({
+    queryKey: ['client-products', clientId],
+    queryFn: () =>
+      api<Paginated<ClientProductView>>(
+        'GET',
+        `/api/v2/client-products?clientId=${clientId}&active=true&limit=500`,
+      ),
+    enabled: !!clientId,
+  });
+  // Usable = active AND in effect (ADR-0017) — mirrors the availableUnits SQL's effective_from gate.
+  const cpvProducts = (clientProducts.data?.items ?? []).filter(
+    (cp) => new Date(cp.effectiveFrom).getTime() <= Date.now(),
+  );
+  const cpvProductIds = cpvProducts.map((cp) => cp.productId);
+  // ADR-0074: CPV is per (client, product) — fan one query per CLIENT product (picked or not), so the
+  // client-wide unit pool below is computable in every picker shape. Cached under the key the
+  // single-select page already used; a typical client has a handful of products.
   const cpvQueries = useQueries({
-    queries: concreteProducts.map((p) => ({
+    queries: cpvProductIds.map((p) => ({
       queryKey: ['cpv-available-units', clientId, String(p)],
       queryFn: () =>
         api<{ id: number; code: string; name: string }[]>(
@@ -187,14 +200,18 @@ export function RateTypeAssignmentCreatePage() {
   });
   // Gate the pair resolution on a settled CPV read: an in-flight product contributes an EMPTY unit
   // set, which would transiently drop its pairs and flash a wrong count on the commit surface.
-  const cpvLoading = cpvQueries.some((q) => q.isLoading);
+  const cpvLoading = clientProducts.isLoading || cpvQueries.some((q) => q.isLoading);
   // Computed inline, not memoised: memoising a value derived from a fresh-every-render query array
   // needs a lint escape hatch, and the no-suppressions gate forbids those outright.
   const cpvUnitsByProduct = new Map(
-    concreteProducts.map((p, i) => [p, new Set((cpvQueries[i]?.data ?? []).map((u) => u.id))]),
+    cpvProductIds.map((p, i) => [p, new Set((cpvQueries[i]?.data ?? []).map((u) => u.id))]),
   );
   const allUnitIds = (allUnits.data ?? []).map((u) => u.id);
-  const offerableUnitIds = unitOptionIds(products, cpvUnitsByProduct, allUnitIds);
+  // The client-wide unit pool: the union of every CPV product's units, catalog-ordered — never the
+  // full catalog (unitOptionIds on an empty product list would fall back to its pool argument).
+  const clientUnitPool =
+    cpvProductIds.length > 0 ? unitOptionIds(cpvProductIds, cpvUnitsByProduct, allUnitIds) : [];
+  const offerableUnitIds = unitOptionIds(products, cpvUnitsByProduct, clientUnitPool);
   const { pairs, dropped } = resolvePairs(products, units, cpvUnitsByProduct);
 
   const rateTypes = useQuery({
@@ -216,7 +233,8 @@ export function RateTypeAssignmentCreatePage() {
     enabled: !!clientId,
   });
   // A concrete product with no CPV mapping contributes no pairs; PairPicker names the drops + links CPV.
-  const noCpvMapping = concreteProducts.length > 0 && !cpvLoading && offerableUnitIds.length === 0;
+  // The picker is CPV-scoped, so a client with no usable mapping offers nothing — say why + link the fix.
+  const noCpvMapping = !!clientId && !cpvLoading && cpvProductIds.length === 0;
 
   const existingItems = existing.data ?? [];
   const plan = groupSubmitPlan(pairs, [...selected], existingItems);
@@ -229,7 +247,8 @@ export function RateTypeAssignmentCreatePage() {
     [rateTypes.data],
   );
   const clientLabel = clients.data?.find((c) => String(c.id) === clientId)?.name ?? clientId;
-  const productName = (id: number) => productCatalog.data?.find((p) => p.id === id)?.name ?? String(id);
+  const productName = (id: number) =>
+    cpvProducts.find((cp) => cp.productId === id)?.productName ?? String(id);
   const unitName = (id: number) => allUnits.data?.find((u) => u.id === id)?.name ?? String(id);
   const pairLabelOf = (p: Pair) =>
     `${p.productId === null ? 'Universal' : productName(p.productId)} · ${p.unitId === null ? 'Universal' : unitName(p.unitId)}`;
@@ -252,7 +271,7 @@ export function RateTypeAssignmentCreatePage() {
   // cleared (the amber/covered hints simply recompute against the new pairs).
   const changeProducts = (next: (number | null)[]) => {
     setProducts(next);
-    setUnits((u) => retainUnits(next, u, cpvUnitsByProduct, allUnitIds));
+    setUnits((u) => retainUnits(next, u, cpvUnitsByProduct, clientUnitPool));
   };
   const changeUnits = (next: (number | null)[]) => setUnits(next);
 
@@ -477,9 +496,9 @@ export function RateTypeAssignmentCreatePage() {
         <PairPicker
           products={products}
           units={units}
-          productOptions={(productCatalog.data ?? []).map((p) => ({
-            id: p.id,
-            label: `${p.code} — ${p.name}`,
+          productOptions={cpvProducts.map((cp) => ({
+            id: cp.productId,
+            label: `${cp.productCode} — ${cp.productName}`,
           }))}
           unitOptions={(allUnits.data ?? [])
             .filter((u) => offerableUnitIds.includes(u.id))

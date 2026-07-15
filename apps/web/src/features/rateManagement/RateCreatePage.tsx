@@ -4,6 +4,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import {
   MAX_BULK_RATE_LOCATIONS,
   type Option,
+  type ClientProductView,
   type VerificationUnitOption,
   type RateTypeOption,
   type Rate,
@@ -209,6 +210,50 @@ export const groupOutcome = (
   return { created, skipped, blocked, repriced };
 };
 
+/** One already-priced location of the group — the coverage view's row. */
+export interface CoverageRow {
+  locationId: number;
+  pincode: string;
+  area: string;
+  pair: Pair;
+  clientRateType: string | null;
+  amount: number;
+}
+/** Coverage rows shown at most before "and N more" — a display cap, not a data cap. */
+export const COVERAGE_DISPLAY_CAP = 30;
+
+/**
+ * The group's EXISTING priced locations (owner, 2026-07-15): every active rate at a picked pair,
+ * with its geography, rate type and amount — so the combo's current coverage is visible up front,
+ * without hunting for it pincode by pincode. Same pair-scoping rule as `locationGroupStates`
+ * (a rate at an unpicked pair is not this group's coverage); office (null-location) rows have no
+ * geography and are excluded.
+ */
+export function coverageRows(
+  items: Pick<
+    RateView,
+    'productId' | 'verificationUnitId' | 'locationId' | 'clientRateType' | 'amount' | 'pincode' | 'area'
+  >[],
+  pairs: Pair[],
+): CoverageRow[] {
+  const byPair = new Map(pairs.map((p) => [pairKey(p), p]));
+  const out: CoverageRow[] = [];
+  for (const r of items) {
+    if (r.locationId === null) continue;
+    const pair = byPair.get(pairKey({ productId: r.productId, unitId: r.verificationUnitId }));
+    if (!pair) continue;
+    out.push({
+      locationId: r.locationId,
+      pincode: r.pincode ?? '',
+      area: r.area ?? '',
+      pair,
+      clientRateType: r.clientRateType,
+      amount: r.amount,
+    });
+  }
+  return out.sort((a, b) => a.pincode.localeCompare(b.pincode) || a.area.localeCompare(b.area));
+}
+
 /**
  * THE rate create page (owner 2026-07-11: same one-entry upgrade as commission rates). Set the rate
  * once — client / product / unit / rate type / amount / effective-from — then:
@@ -242,21 +287,34 @@ export function RateCreatePage() {
     queryKey: ['client-options'],
     queryFn: () => api<Option[]>('GET', '/api/v2/clients/options'),
   });
-  const productCatalog = useQuery({
-    queryKey: ['product-options'],
-    queryFn: () => api<Option[]>('GET', '/api/v2/products/options'),
-  });
-  // Every active unit — the option pool a Universal product draws from, and the ordering (sort_order)
-  // every narrowed list preserves.
+  // ── Option sources ─────────────────────────────────────────────────────────────────────────────
+  // Every active unit — the label + ordering (sort_order) source; the option POOL is CPV-scoped below.
   const allUnits = useQuery({
     queryKey: ['verification-unit-options'],
     queryFn: () => api<VerificationUnitOption[]>('GET', '/api/v2/verification-units/options'),
   });
-  // ADR-0074: CPV is per (client, product) — one query per PICKED concrete product, cached under the
-  // key the single-select page already used. A Universal product has no mapping to consult.
-  const concreteProducts = products.filter((p): p is number => p !== null);
+  // Owner (2026-07-15): the pickers offer ONLY what is in the client's CPV mapping — products = the
+  // client's usable client_products, units = the union of those products' CPV units. The full
+  // catalogs are never offered (a rate at an unmapped combo is a dead row no case can reach).
+  const clientProducts = useQuery({
+    queryKey: ['client-products', clientId],
+    queryFn: () =>
+      api<Paginated<ClientProductView>>(
+        'GET',
+        `/api/v2/client-products?clientId=${clientId}&active=true&limit=500`,
+      ),
+    enabled: !!clientId,
+  });
+  // Usable = active AND in effect (ADR-0017) — mirrors the availableUnits SQL's effective_from gate.
+  const cpvProducts = (clientProducts.data?.items ?? []).filter(
+    (cp) => new Date(cp.effectiveFrom).getTime() <= Date.now(),
+  );
+  const cpvProductIds = cpvProducts.map((cp) => cp.productId);
+  // ADR-0074: CPV is per (client, product) — fan one query per CLIENT product (picked or not), so the
+  // client-wide unit pool below is computable in every picker shape. Cached under the key the
+  // single-select page already used; a typical client has a handful of products.
   const cpvQueries = useQueries({
-    queries: concreteProducts.map((p) => ({
+    queries: cpvProductIds.map((p) => ({
       queryKey: ['cpv-available-units', clientId, String(p)],
       queryFn: () =>
         api<{ id: number; code: string; name: string }[]>(
@@ -268,17 +326,22 @@ export function RateCreatePage() {
   });
   // Gate the pair resolution on a settled CPV read: an in-flight product contributes an EMPTY unit
   // set, which would transiently drop its pairs and flash a wrong count on the commit surface.
-  const cpvLoading = cpvQueries.some((q) => q.isLoading);
+  const cpvLoading = clientProducts.isLoading || cpvQueries.some((q) => q.isLoading);
   // Computed inline, not memoised: memoising a value derived from a fresh-every-render query array
   // needs a lint escape hatch, and the no-suppressions gate forbids those outright. The map holds a
   // handful of entries and resolvePairs is O(products × units) — the render cost is noise next to
   // the round trips it describes.
   const cpvUnitsByProduct = new Map(
-    concreteProducts.map((p, i) => [p, new Set((cpvQueries[i]?.data ?? []).map((u) => u.id))]),
+    cpvProductIds.map((p, i) => [p, new Set((cpvQueries[i]?.data ?? []).map((u) => u.id))]),
   );
 
   const allUnitIds = (allUnits.data ?? []).map((u) => u.id);
-  const offerableUnitIds = unitOptionIds(products, cpvUnitsByProduct, allUnitIds);
+  // The client-wide unit pool: the union of every CPV product's units, catalog-ordered. Empty when
+  // the client has no usable mapping — never the full catalog (guard: unitOptionIds on an empty
+  // product list would fall back to its pool argument).
+  const clientUnitPool =
+    cpvProductIds.length > 0 ? unitOptionIds(cpvProductIds, cpvUnitsByProduct, allUnitIds) : [];
+  const offerableUnitIds = unitOptionIds(products, cpvUnitsByProduct, clientUnitPool);
   const { pairs, dropped } = resolvePairs(products, units, cpvUnitsByProduct);
   const isGroup = pairs.length > 1;
 
@@ -351,6 +414,8 @@ export function RateCreatePage() {
     enteredAmount,
   );
   const outcome = groupOutcome(groupStates, [...selected], pairs.length);
+  // The group's existing coverage — shown up front (owner, 2026-07-15), same data as the chip hints.
+  const coverage = coverageRows(slotReady ? (existing.data?.items ?? []) : [], pairs);
 
   interface PincodeGroup {
     pincode: string;
@@ -424,7 +489,7 @@ export function RateCreatePage() {
   // product used to erase every hand-ticked area (correct for a single-select, catastrophic here).
   const changeProducts = (next: (number | null)[]) => {
     setProducts(next);
-    setUnits((u) => retainUnits(next, u, cpvUnitsByProduct, allUnitIds));
+    setUnits((u) => retainUnits(next, u, cpvUnitsByProduct, clientUnitPool));
   };
   const changeUnits = (next: (number | null)[]) => setUnits(next);
   // A type that no pair offers any more can't stay picked — but only decide once the union has
@@ -547,7 +612,7 @@ export function RateCreatePage() {
     ? ((clients.data ?? []).find((c) => String(c.id) === clientId)?.name ?? '…')
     : '—';
   const productName = (id: number) =>
-    (productCatalog.data ?? []).find((p) => p.id === id)?.name ?? String(id);
+    cpvProducts.find((cp) => cp.productId === id)?.productName ?? String(id);
   const unitName = (id: number) => (allUnits.data ?? []).find((u) => u.id === id)?.name ?? String(id);
   const pairLabelOf = (p: Pair) =>
     `${p.productId === null ? 'Universal' : productName(p.productId)} · ${p.unitId === null ? 'Universal' : unitName(p.unitId)}`;
@@ -794,9 +859,9 @@ export function RateCreatePage() {
         <PairPicker
           products={products}
           units={units}
-          productOptions={(productCatalog.data ?? []).map((p) => ({
-            id: p.id,
-            label: `${p.code} — ${p.name}`,
+          productOptions={cpvProducts.map((cp) => ({
+            id: cp.productId,
+            label: `${cp.productCode} — ${cp.productName}`,
           }))}
           unitOptions={(allUnits.data ?? [])
             .filter((u) => offerableUnitIds.includes(u.id))
@@ -808,7 +873,56 @@ export function RateCreatePage() {
           onUnitsChange={changeUnits}
           isLoading={cpvLoading}
         />
+        {!!clientId && !cpvLoading && cpvProductIds.length === 0 && (
+          <p className="text-xs text-muted-foreground">
+            This client has no CPV mapping yet — the pickers only offer mapped products &amp; units.{' '}
+            <Link to="/admin/cpv" className="text-primary hover:underline">
+              map it in CPV
+            </Link>
+            .
+          </p>
+        )}
       </StepCard>
+
+      {/* The group's EXISTING coverage (owner, 2026-07-15): where these pairs are already priced, at
+          what rate type + amount — visible before any pincode is searched. Display-only; the chips
+          in Step 3 stay the interaction surface. */}
+      {!isOffice && slotReady && coverage.length > 0 && (
+        <div className="rounded-lg border border-border bg-card px-4 py-3 shadow-sm">
+          <p className="text-xs font-semibold text-foreground">
+            Already priced for this group — <span className="tabular-nums">{coverage.length}</span> rate
+            {coverage.length === 1 ? '' : 's'}
+            {hintsTruncated && (
+              <span className="font-normal text-st-under-review">
+                {' '}
+                (list incomplete — this client has more rates than one page; the save still skips any
+                duplicate)
+              </span>
+            )}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {coverage.slice(0, COVERAGE_DISPLAY_CAP).map((c, i) => (
+              <span
+                key={`${pairKey(c.pair)}:${c.locationId}:${i}`}
+                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-muted px-3 py-1.5 text-xs"
+              >
+                <span className="tabular-nums">
+                  {c.pincode} {c.area}
+                </span>
+                <span className="text-muted-foreground">· {pairLabelOf(c.pair)} ·</span>
+                <span className="text-[10px] font-semibold uppercase">
+                  {c.clientRateType ?? '—'} <span className="tabular-nums">₹{c.amount}</span>
+                </span>
+              </span>
+            ))}
+            {coverage.length > COVERAGE_DISPLAY_CAP && (
+              <span className="self-center text-xs text-muted-foreground">
+                and <span className="tabular-nums">{coverage.length - COVERAGE_DISPLAY_CAP}</span> more
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Step 3 — pincode search + accumulated area groups (hidden for flat OFFICE rates) */}
       {!isOffice && (

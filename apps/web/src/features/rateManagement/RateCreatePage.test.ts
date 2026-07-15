@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   availableRateTypesPath,
+  coverageRows,
   createFriendlyError,
   existingRateLabel,
   groupOutcome,
@@ -283,5 +284,56 @@ describe('groupOutcome (the honest pre-save strip)', () => {
       [5, { totalPairs: 2, blocked: [], exists: [hit(1), hit(2)], repriced: [hit(1)] }],
     ]);
     expect(groupOutcome(states, [5], 2)).toEqual({ created: 0, skipped: 2, blocked: 0, repriced: 1 });
+  });
+});
+
+describe('coverageRows (the group’s existing coverage, shown up front)', () => {
+  const P1U1 = { productId: 1, unitId: 10 };
+  const P2U1 = { productId: 2, unitId: 10 };
+  const crow = (
+    productId: number | null,
+    unitId: number | null,
+    locationId: number | null,
+    clientRateType: string | null,
+    amount: number,
+    pincode: string | null,
+    area: string | null,
+  ) => ({ productId, verificationUnitId: unitId, locationId, clientRateType, amount, pincode, area });
+
+  it('lists only rates at the PICKED pairs, with geography + rate type + amount', () => {
+    const items = [
+      crow(1, 10, 5, 'LOCAL', 175, '400001', 'Fort'),
+      crow(9, 99, 6, 'OGL', 220, '400002', 'Kalbadevi'), // pair outside the group
+    ];
+    expect(coverageRows(items, [P1U1, P2U1])).toEqual([
+      { locationId: 5, pincode: '400001', area: 'Fort', pair: P1U1, clientRateType: 'LOCAL', amount: 175 },
+    ]);
+  });
+
+  it('excludes office (null-location) rows — no geography to show', () => {
+    expect(coverageRows([crow(1, 10, null, 'LOCAL', 175, null, null)], [P1U1])).toEqual([]);
+  });
+
+  it('sorts by pincode then area', () => {
+    const items = [
+      crow(1, 10, 5, 'LOCAL', 175, '400002', 'Kalbadevi'),
+      crow(1, 10, 6, 'LOCAL', 175, '400001', 'Fort'),
+      crow(1, 10, 7, 'LOCAL', 175, '400001', 'Ballard Estate'),
+    ];
+    expect(coverageRows(items, [P1U1]).map((c) => `${c.pincode} ${c.area}`)).toEqual([
+      '400001 Ballard Estate',
+      '400001 Fort',
+      '400002 Kalbadevi',
+    ]);
+  });
+
+  it('a Universal pair matches only Universal rates (null === null)', () => {
+    const uni = [crow(null, null, 5, 'OGL', 300, '400001', 'Fort')];
+    expect(coverageRows(uni, [{ productId: null, unitId: null }])).toHaveLength(1);
+    expect(coverageRows(uni, [P1U1])).toEqual([]);
+  });
+
+  it('no pairs picked ⇒ no coverage claimed', () => {
+    expect(coverageRows([crow(1, 10, 5, 'LOCAL', 175, '400001', 'Fort')], [])).toEqual([]);
   });
 });
