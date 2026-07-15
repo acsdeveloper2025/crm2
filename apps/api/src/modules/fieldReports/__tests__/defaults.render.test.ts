@@ -133,3 +133,88 @@ describe('RESIDENCE default template renders v1-faithful narratives', () => {
     expect(out).toContain('Hence the profile is marked as Untraceable.');
   });
 });
+
+/*
+ * ERT (Entry Restricted) — LIVE BUG 2026-07-15, CASE-000002-1 (TAFSEER AHMED …, agent jayant.panchal).
+ * The agent recorded `Applicant Staying Status = "Applicant is Shifted From"`, and the report printed
+ * "SECURITY confirmed <name>'s stay at the given address" — the OPPOSITE of the field truth, on a
+ * client-facing document.
+ *
+ * Cause: the template welded `metPersonConfirmation`'s VERB to a hard-coded person-fact OBJECT
+ * ("{{customer_name}}'s stay at the given address") and never rendered `applicant_staying_status`.
+ * The guard's legitimate "Confirmed" (confirming the applicant had SHIFTED) got attached to the stay.
+ * Residence was the only ERT template whose object was a person-fact — the other 8 confirm an
+ * *existence* fact, which a staying status cannot contradict. Fix mirrors the shipped
+ * Residence-cum-Office ERT clause. Owner decision 2026-07-15: drop the weld.
+ */
+describe('RESIDENCE ERT — the narrative must say what the met person actually confirmed', () => {
+  // Device form (crm-mobile-native LegacyFormTemplateBuilders.ts) is the SOURCE OF TRUTH:
+  //   metPersonConfirmation: ['Confirmed', 'Not Confirmed']
+  //   applicantStayingStatus: ['Applicant is Staying At','Applicant is Shifted From','No Such Person Staying At']
+  //   applicantStayingStatus is conditional on metPersonConfirmation notEquals 'Not Confirmed'
+  // => the staying status IS the object of the confirmation. It is only collected when they confirmed.
+  const ertForm = (extra: Record<string, unknown>) => ({
+    addressRating: 'Average',
+    metPersonName: 'SECURITY',
+    metPersonType: 'Security',
+    societyNamePlateStatus: 'Sighted',
+    nameOnSocietyBoard: 'TAFSEER',
+    locality: 'Residential Society',
+    addressStructure: '7',
+    addressStructureColor: 'Cream',
+    landmark1: 'D-MART',
+    landmark2: 'PETROL PUMP',
+    dominatedArea: 'Not Dominated',
+    feedbackFromNeighbour: 'No Adverse',
+    callRemark: 'Call Received',
+    callConfirmation: 'Confirmed',
+    otherObservation: 'Entry not allowed by security',
+    ...extra,
+  });
+
+  it('CASE-000002-1: shifted — never claims a confirmed stay', () => {
+    const out = renderNarrative(
+      body,
+      cols,
+      ctx(
+        ertForm({ metPersonConfirmation: 'Confirmed', applicantStayingStatus: 'Applicant is Shifted From' }),
+        'ERT',
+      ),
+    );
+    expect(out).not.toMatch(/confirmed RAJESH KUMAR's stay/i);
+    expect(out).not.toContain("RAJESH KUMAR's stay at the given address");
+    expect(out).toContain('SECURITY confirmed that the applicant has shifted from the given address.');
+  });
+
+  it('staying — the confirmation attaches to the staying status', () => {
+    const out = renderNarrative(
+      body,
+      cols,
+      ctx(
+        ertForm({ metPersonConfirmation: 'Confirmed', applicantStayingStatus: 'Applicant is Staying At' }),
+        'ERT',
+      ),
+    );
+    expect(out).toContain('SECURITY confirmed that the applicant is staying at the given address.');
+  });
+
+  it('no such person — the third device option renders truthfully', () => {
+    const out = renderNarrative(
+      body,
+      cols,
+      ctx(
+        ertForm({ metPersonConfirmation: 'Confirmed', applicantStayingStatus: 'No Such Person Staying At' }),
+        'ERT',
+      ),
+    );
+    expect(out).toContain('SECURITY confirmed that no such person is staying at the given address.');
+  });
+
+  it('Not Confirmed — no staying status is collected, so none is invented', () => {
+    // The device hides applicantStayingStatus entirely in this branch.
+    const out = renderNarrative(body, cols, ctx(ertForm({ metPersonConfirmation: 'Not Confirmed' }), 'ERT'));
+    expect(out).toContain("SECURITY did not confirm RAJESH KUMAR's residency at the given address.");
+    expect(out).not.toContain('staying status is not specified');
+    expect(out).not.toMatch(/confirmed that the applicant/i);
+  });
+});

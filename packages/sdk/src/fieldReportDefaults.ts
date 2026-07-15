@@ -273,7 +273,7 @@ VERIFICATION DETAILS:
 Visited at the given address ({{customer_address}}) for {{customer_name}} ({{applicant_type}}). The given address is locatable and rated as {{address_rating}}. At the time of visit, met with {{met_person_name}} ({{met_person_type}}), who informed that entry to the given premises is not allowed. A telephonic attempt was also made and {{callRemark call_remark call_confirmation}}.
 
 ENTRY RESTRICTION DETAILS:
-{{met_person_name}} {{metPersonConfirmation met_person_confirmation}} {{customer_name}}'s stay at the given address. Society board {{nameplate society_nameplate_status name_on_society_board "displays"}}.
+{{#eq met_person_confirmation "Not Confirmed"}}{{met_person_name}} did not confirm {{customer_name}}'s residency at the given address.{{else}}{{met_person_name}} confirmed that {{stayingStatus applicant_staying_status}}.{{/eq}} Society board {{nameplate society_nameplate_status name_on_society_board "displays"}}.
 
 LOCALITY INFORMATION:
 The locality is {{locality}} with an address structure of G+{{address_structure}}. The Structure color is {{address_structure_color}}.
