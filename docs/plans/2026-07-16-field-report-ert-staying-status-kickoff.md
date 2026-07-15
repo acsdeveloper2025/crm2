@@ -128,6 +128,44 @@ Blast radius if real: **19 occurrences** of `metPersonConfirmation` across the t
    confirmed stay. It must FAIL on today's code.
 4. **Then fix**, smallest diff first (Bug A is a one-line template edit reusing line 877's proven clause).
 
+## 2a. ✅ AUDIT DONE — all 9 ERT templates (owner-requested, 2026-07-15). **Residence is the ONLY broken one.**
+
+Every verification type's ERT block, its confirmation **object**, and whether it renders the status clause.
+`F()` = residence layout (`residence.formData.*`), `FD(slug,…)` = that slug's layout (`fieldReportDefaults.ts:60,89`).
+
+| # | Line | Type | Object of `metPersonConfirmation` | staying | working | Captured? | Verdict |
+|---|---|---|---|---|---|---|---|
+| 1 | **270** | **RESIDENCE** | **`{{customer_name}}'s stay at the given address`** ← **person-fact, welded** | ❌ | n/a | staying **YES** (`F` :129) | 🔴 **THE BUG** |
+| 2 | 462 | Office | `the office existence at the given address` | n/a | ✅ | working YES (`FD` :332) | ✅ |
+| 3 | 655 | Business | `the business existence at the given address` | n/a | ✅ | working YES (`FD` :538) | ✅ |
+| 4 | **871** | **Residence-cum-Office** | `the residence and office existence` | ✅ | ✅ | both (`FD` :703, :709) | ✅ **reference impl** |
+| 5 | 1014 | Property Individual | `the property existence at the given address` | ❌ | ❌ | neither captured | ✅ n/a |
+| 6 | 1124 | Property APF | `the property existence at the given address` | ❌ | ❌ | neither captured | ✅ n/a |
+| 7 | 1322 | Builder | `the builder office existence` | n/a | ✅ | working YES (`FD` :1191) | ✅ |
+| 8 | 1512 | DSA/Connector | `the DSA/Connector office existence` | ❌ | ❌ | working **NOT captured** | ✅ consistent |
+| 9 | 1683 | NOC | `the NOC office existence` | ❌ | ❌ | working **NOT captured** | ✅ consistent |
+
+**The root cause, in one line: Residence ERT is the only template whose confirmation object is a *person-fact*.**
+Every other ERT confirms an **existence-fact** — *"the office/business/property existence"* — which a guard can
+truthfully confirm **from outside without contradicting anything**. Only *"{{customer_name}}'s **stay**"* is a claim
+about the person, and it is exactly the claim `applicant_staying_status = "Applicant is Shifted From"` refutes.
+That is why 8 of 9 are fine and this one inverts.
+
+**DSA (8) and NOC (9) are NOT bugs** — they don't render `applicant_working_status` because their forms never
+capture it (no `FD('dsa'…)` / `FD('noc'…)` for it). Capture and render agree. Leave them alone.
+
+**Owner decision (2026-07-15): DROP THE WELD.** Reshape line 270 to the proven RCO shape (#4) — an existence-style
+object plus the staying-status clause:
+
+```
+{{met_person_name}} {{metPersonConfirmation met_person_confirmation}} the residence existence at the given address.{{sentenceClause (stayingStatus applicant_staying_status) " The met person also informed that " "."}} Society board {{nameplate society_nameplate_status name_on_society_board "displays"}}.
+```
+
+Renders for CASE-000002-1 as: *"SECURITY confirmed the residence existence at the given address. The met person
+also informed that the applicant has shifted from the given address. Society board …"* — truthful, and it stops
+asserting a stay nobody claimed. **Confirm the exact wording with the owner before shipping (client-facing copy);
+the shape is decided, the words are not.**
+
 ## 3a. Two facts that narrow the fix (verified 2026-07-15)
 
 - **The data is NOT lost — only the narrative drops it.** `apps/api/src/modules/fieldReports/sectionMap.ts:52`
@@ -141,28 +179,31 @@ Blast radius if real: **19 occurrences** of `metPersonConfirmation` across the t
   moved out) — **do not "fix" this by pushing the agent to pick SHIFTED.** The ERT narrative must be able to
   carry a shifted applicant. Worth confirming with the owner that this combination is intended.
 
-## 4. Design questions to settle (owner input likely needed)
+## 4. Design questions — **1 SETTLED, 2 OPEN**
 
-1. **The ERT sentence's correct shape** when the staying status contradicts a "confirmed". The template welds
-   `metPersonConfirmation` to *"'s stay at the given address"*. Options: (a) make the object conditional on
-   `applicant_staying_status` (guard confirmed *the shift*, not *the stay*); (b) keep the verb clause but drop the
-   welded object and append the staying-status clause exactly as Business ERT (line 877) does; (c) rewrite the ERT
-   paragraph. **Recommendation: (b)** — it reuses a proven, shipped clause and is the smallest honest diff.
-   **This is client-facing copy → owner call on the exact wording.**
-2. **⚠️ B2's disposition** — only after reading the device form's option list (see §3 step 1). If exactly two
-   options exist, B2 is defensive hardening (fail-loud on an unknown value), not a bug. **Don't fix a phantom.**
+1. ✅ **SETTLED (owner, 2026-07-15): drop the weld.** Reshape Residence ERT (line 270) to the RCO shape — see §2a
+   for the exact replacement line. Only the **wording** still needs a nod; the shape is decided.
+2. 🔶 **OPEN — ⚠️ B2's disposition.** Decide only after reading the device form's option list for
+   `met_person_confirmation` in `crm-mobile-native` (§3 step 1). Exactly two options ⇒ B2 is defensive hardening
+   (fail-loud on an unknown value), not a bug. **Don't fix a phantom.**
+3. 🔶 **OPEN — retro-fix scope.** Reports already generated carry the wrong sentence. Regenerate historical ERT
+   reports, or forward-only? Snapshot semantics (ADR-0079/0080) make this a real decision. **At minimum,
+   CASE-000002-1's report must be re-rendered and re-read after the fix.**
 3. **Retro-fix scope.** Existing generated reports carry the wrong sentence. Are historical reports regenerated,
    or is the fix forward-only? (Snapshot semantics per ADR-0079/0080 make this a real decision, not a detail.)
 4. **The audit the owner asked for** (see §5) — how wide? Recommendation: every outcome × every helper with a
    defaulting branch.
 
-## 5. The audit the owner explicitly asked for
+## 5. The audit — **ERT slice DONE (§2a); the rest still open**
 
-> *"also we have, ask agent to audit this"*
+> *"also we have, ask agent to audit this"* · *"also check all other verification type for their ert forms"*
 
-**Scope it as: every field the device captures vs. every field the narrative renders, per outcome.** Bug A is
-one instance of a *class*: a catalogued field that no template prints. The audit must answer, for each outcome
-(RESI positive / Shifted / Untraceable / **ERT** / Office variants / Business variants / KYC…):
+**The ERT slice is complete — see §2a.** All 9 ERT templates inventoried against what their forms capture:
+**Residence is the only defect; DSA/NOC's omissions are correct (they don't capture the field).** Don't redo it.
+
+**Still open — the same two classes across the OTHER outcomes** (Positive & Door Open / Door Lock / Shifted /
+Untraceable / NSP / Negative, × every verification type). Bug A and Bug B are instances of classes, and the ERT
+sweep only proves the ERT row. For each remaining outcome, answer:
 
 - Which device fields are **captured but never rendered in the narrative**? (Bug A's class. Note: `sectionMap.ts`
   may still table the value — so this is "the narrative contradicts/omits", not necessarily "data lost".)
