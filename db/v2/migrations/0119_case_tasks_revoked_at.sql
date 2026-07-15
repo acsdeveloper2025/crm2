@@ -20,20 +20,28 @@ COMMENT ON COLUMN case_tasks.revoked_at IS
 
 -- Backfill from the append-only audit trail, which recorded the exact revoke moment
 -- (appendAudit: after_data = {"status":"REVOKED", ...}). Accurate, not a guess from updated_at.
--- Idempotent: only fills rows that are REVOKED and still NULL. Earliest event wins if a task was
--- somehow revoked more than once (the first revoke is the one that ended the agent's hold).
+--
+-- A task can be revoked MORE THAN ONCE: assignTask carries no status guard, so a REVOKED task can be
+-- re-assigned in place (status → ASSIGNED, assigned_at → now()) and later revoked again. Verified in
+-- dev: CASE-000007-2 has revoke events at 06:38 and 08:20 with assigned_at 06:46 between them. So the
+-- event that ended the CURRENT hold is the LAST one at/after the current assigned_at — taking the
+-- earliest would put revoked_at BEFORE assigned_at and render a negative hold.
+--
+-- Re-runnable: recomputes every REVOKED row (derived data, not user input), so an edited migration
+-- re-applied by the tracked runner converges rather than preserving a bad earlier value.
 UPDATE case_tasks ct
-   SET revoked_at = a.first_revoked_at
+   SET revoked_at = a.revoked_at
   FROM (
-    SELECT entity_id, min(created_at) AS first_revoked_at
-      FROM audit_log
-     WHERE entity_type = 'case_task'
-       AND after_data->>'status' = 'REVOKED'
-     GROUP BY entity_id
+    SELECT a.entity_id, max(a.created_at) AS revoked_at
+      FROM audit_log a
+      JOIN case_tasks t ON t.id::text = a.entity_id
+     WHERE a.entity_type = 'case_task'
+       AND a.after_data->>'status' = 'REVOKED'
+       AND (t.assigned_at IS NULL OR a.created_at >= t.assigned_at)
+     GROUP BY a.entity_id
   ) a
  WHERE ct.id::text = a.entity_id
-   AND ct.status = 'REVOKED'
-   AND ct.revoked_at IS NULL;
+   AND ct.status = 'REVOKED';
 
 -- A REVOKED row that predates the audit trail (or whose event was pruned) keeps revoked_at NULL — the
 -- UI then shows no "held" figure rather than inventing one from updated_at.

@@ -89,7 +89,12 @@ const TASK_SELECT_BASE = `
          -- ROUND, unlike completed_elapsed_minutes' CEIL: that one CEILs because it feeds a BAND lookup
          -- (any overspill belongs in the next band). This is a measured duration shown to a human, so
          -- 6h+0.4s must read "6h", not "6h 1m". A sub-30s overrun of the target is immaterial.
-         ROUND(EXTRACT(EPOCH FROM (ct.revoked_at - ct.assigned_at)) / 60.0)::int AS held_minutes,
+         -- The >= guard is defensive: a stale revoked_at older than assigned_at would render a NEGATIVE
+         -- hold. The writers now prevent that (revoke stamps now(); assign clears it), but this column
+         -- is read by a money-adjacent screen — a nonsense number must never reach it, so fail to NULL.
+         CASE WHEN ct.revoked_at >= ct.assigned_at
+              THEN ROUND(EXTRACT(EPOCH FROM (ct.revoked_at - ct.assigned_at)) / 60.0)::int
+         END AS held_minutes,
          ct.completed_elapsed_minutes AS completed_elapsed_minutes,
          COALESCE((SELECT tp.tat_hours FROM tat_policies tp
             WHERE tp.is_active AND tp.effective_from <= now()

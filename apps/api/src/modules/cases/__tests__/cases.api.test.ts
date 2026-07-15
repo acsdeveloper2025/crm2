@@ -1741,7 +1741,7 @@ describe.skipIf(!RUN)('cases API', () => {
      * A revoked task is never `overdue` (nobody holds it), so the first agent's stretch used to vanish on
      * revoke. revoked_at (mig 0119) + heldHours make it visible without touching the overdue rule.
      */
-    it('REVOKE stamps revoked_at → the row reports how long the agent held it (heldHours)', async () => {
+    it('REVOKE stamps revoked_at → the row reports how long the agent held it (heldMinutes)', async () => {
       const { caseId, taskId } = await seedCaseWithTask('HELD');
       const agent = await createUser({ username: 'held_a', name: 'HELD Agent', role: 'FIELD_AGENT' });
       await request(app)
@@ -1771,7 +1771,41 @@ describe.skipIf(!RUN)('cases API', () => {
       expect(row.overdue).toBe(false); // a revoked task is NEVER out of TAT — nobody holds it
     });
 
-    it('a live (non-revoked) task reports no heldHours — nothing has ended', async () => {
+    /*
+     * A REVOKED row can never be re-assigned in place (service.assignTask requires PENDING → 409), so a
+     * task is revoked at most once and revoked_at can never fall behind assigned_at. Pinned here because
+     * dev data DOES contain such a row (CASE-000007-2: an audit revoke event stamped BEFORE the row's own
+     * assignment), which rendered a negative hold — the read guards against it, and this proves the API
+     * cannot create one.
+     */
+    it('a REVOKED task cannot be re-assigned in place → 409, so its hold can never go negative', async () => {
+      const { caseId, taskId } = await seedCaseWithTask('REREV');
+      const a1 = await createUser({ username: 'rerev_a', name: 'REREV One', role: 'FIELD_AGENT' });
+      const a2 = await createUser({ username: 'rerev_b', name: 'REREV Two', role: 'FIELD_AGENT' });
+      const assign = (to: string, version: number) =>
+        request(app)
+          .post(`/api/v2/cases/${caseId}/tasks/${taskId}/assign`)
+          .set(SA)
+          .send({ assignedTo: to, visitType: 'FIELD', fieldRateType: 'LOCAL', billCount: 1, version });
+
+      expect((await assign(a1, 1)).status).toBe(200);
+      expect(
+        (
+          await request(app)
+            .post(`/api/v2/cases/${caseId}/tasks/${taskId}/revoke`)
+            .set(SA)
+            .send({ reason: 'unavailable', version: 2 })
+        ).status,
+      ).toBe(200);
+      const reassignInPlace = await assign(a2, 3);
+      expect(reassignInPlace.status).toBe(409); // TASK_NOT_ASSIGNABLE — use /reassign (a NEW row)
+
+      const list = await request(app).get(`/api/v2/tasks?limit=100`).set(SA);
+      const row = list.body.items.find((t: { id: string }) => t.id === taskId);
+      expect(row.heldMinutes).toBeGreaterThanOrEqual(0); // never negative
+    });
+
+    it('a live (non-revoked) task reports no heldMinutes — nothing has ended', async () => {
       const { caseId, taskId } = await seedCaseWithTask('HELD2');
       const agent = await createUser({ username: 'held_b', name: 'HELD Agent 2', role: 'FIELD_AGENT' });
       await request(app)
