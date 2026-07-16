@@ -1,12 +1,18 @@
 import { logger } from '@crm2/logger';
-import { AppError } from '../errors.js';
-import { caseRepository } from '../../modules/cases/repository.js';
-import { emitTaskUpdate } from '../../modules/cases/case-events.js';
-import { notifyTaskRevoked } from '../../modules/notifications/service.js';
-import { AUTO_REVOKE_REASON, SYSTEM_ACTOR_ID, TASK_ABANDONED_DAYS } from './overdue.js';
+import { AppError } from '../../platform/errors.js';
+import { AUTO_REVOKE_REASON, SYSTEM_ACTOR_ID, TASK_ABANDONED_DAYS } from '../../platform/tat/overdue.js';
+import { caseRepository } from './repository.js';
+import { emitTaskUpdate } from './case-events.js';
+import { notifyTaskRevoked } from '../notifications/service.js';
 
 /**
  * Auto-revoke tasks an agent has held past the abandonment window (ADR-0095).
+ *
+ * Lives in the cases module, not `platform/`: it is domain orchestration (which tasks to take back, who
+ * to tell), and it depends on the cases repository, case events and notifications. `platform/` is the
+ * layer modules are built ON — it deliberately stays free of module deps and takes what it needs by
+ * injection instead (see the notifier seam in platform/jobs). The shared SQL and constants it uses do
+ * belong there, beside the overdue rule, and are imported from platform/tat/overdue.
  *
  * Owner (2026-07-16): "for assign and inprogress task older than 45 days make them auto revoke so
  * backend user understand task auto revoke."

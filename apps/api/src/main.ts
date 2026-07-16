@@ -11,7 +11,7 @@ import {
   ABANDON_SWEEP_FIRST_DELAY_MS,
   ABANDON_SWEEP_INTERVAL_MS,
   runAbandonSweep,
-} from './platform/tat/abandonSweep.js';
+} from './modules/cases/abandonSweep.js';
 
 /**
  * The abandonment sweep's tick (ADR-0095) — crm2's first periodic, unattended writer.
@@ -19,6 +19,8 @@ import {
  * WHY HERE, and not the obvious places:
  *  - NOT `registerJobs()`: `createApp` calls it too, so a timer there would fire in every test process
  *    and would double-fire the day the worker container is uncommented.
+ *  - NOT `platform/`: the sweep is domain orchestration and depends on the cases module; platform stays
+ *    free of module deps (see the injected-notifier seam in platform/jobs).
  *  - NOT the BullMQ jobs engine (ADR-0030): it is dead in prod (no worker container, no Valkey), and its
  *    `jobs` row requires `created_by NOT NULL REFERENCES users` — an unattended sweep has no user.
  *  - NOT node-cron / host crontab: a new dependency, or a trigger that lives outside the repo and outside

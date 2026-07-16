@@ -9,8 +9,8 @@ import {
 } from '@crm2/test-utils';
 import { createApp } from '../../../http/app.js';
 import { setPool } from '../../../platform/db.js';
+import { AUTO_REVOKE_REASON, SYSTEM_ACTOR_ID, TASK_ABANDONED_DAYS } from '../../../platform/tat/overdue.js';
 import { runAbandonSweep } from '../abandonSweep.js';
-import { AUTO_REVOKE_REASON, SYSTEM_ACTOR_ID, TASK_ABANDONED_DAYS } from '../overdue.js';
 
 /**
  * The abandonment sweep (ADR-0095): 45 days after assignment, a task the agent never finished is
