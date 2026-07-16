@@ -3,6 +3,7 @@ import { filterClauses, type AppliedFilter } from '../../platform/pagination.js'
 import { query } from '../../platform/db.js';
 import { composeScopePredicate, taskScopePredicate, type Scope } from '../../platform/scope/index.js';
 import { RATE_LATERAL, COMMISSION_LATERAL } from '../../platform/billing/laterals.js';
+import { BILLABLE_STATUS_SQL, COMMISSIONABLE_STATUS_SQL } from '../../platform/billing/status.js';
 import type { MisColumn } from './reportTypes.js';
 
 /**
@@ -69,9 +70,9 @@ const TASK_SUMMARY_AGG = `
   count(*) FILTER (WHERE ct.verification_outcome = 'REFER')::int AS refer,
   count(*) FILTER (WHERE ct.verification_outcome = 'FRAUD')::int AS fraud`;
 const TASK_MONEY_AGG = `,
-  SUM(rt.bill_amount * ct.bill_count) FILTER (WHERE ct.status = 'COMPLETED')::float8 AS "billTotal",
+  SUM(rt.bill_amount * ct.bill_count) FILTER (WHERE ${BILLABLE_STATUS_SQL})::float8 AS "billTotal",
   SUM(COALESCE(ct.commission_amount, com.commission_amount) * ct.bill_count)
-    FILTER (WHERE ct.status IN ('SUBMITTED','COMPLETED'))::float8 AS "commissionTotal"`;
+    FILTER (WHERE ${COMMISSIONABLE_STATUS_SQL})::float8 AS "commissionTotal"`;
 const CASE_SUMMARY_AGG = `
   count(*)::int AS count,
   count(*) FILTER (WHERE cs.status = 'COMPLETED')::int AS completed,
@@ -81,10 +82,10 @@ const CASE_SUMMARY_AGG = `
   count(*) FILTER (WHERE cs.verification_outcome = 'FRAUD')::int AS fraud`;
 const CASE_MONEY_AGG = `,
   SUM((SELECT COALESCE(SUM(rt.bill_amount * ct.bill_count), 0) FROM case_tasks ct ${RATE_LATERAL}
-       WHERE ct.case_id = cs.id AND ct.status = 'COMPLETED'))::float8 AS "billTotal",
+       WHERE ct.case_id = cs.id AND ${BILLABLE_STATUS_SQL}))::float8 AS "billTotal",
   SUM((SELECT COALESCE(SUM(COALESCE(ct.commission_amount, com.commission_amount) * ct.bill_count), 0)
        FROM case_tasks ct ${COMMISSION_LATERAL}
-       WHERE ct.case_id = cs.id AND ct.status IN ('SUBMITTED','COMPLETED')))::float8 AS "commissionTotal"`;
+       WHERE ct.case_id = cs.id AND ${COMMISSIONABLE_STATUS_SQL}))::float8 AS "commissionTotal"`;
 const NULL_MONEY_AGG = `, NULL::float8 AS "billTotal", NULL::float8 AS "commissionTotal"`;
 
 export interface MisSummaryAgg {

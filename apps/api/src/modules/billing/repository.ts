@@ -10,6 +10,7 @@ import { filterClauses, likeContains, type AppliedFilter } from '../../platform/
 import { query } from '../../platform/db.js';
 import { taskScopePredicate, type Scope } from '../../platform/scope/index.js';
 import { RATE_LATERAL, COMMISSION_LATERAL } from '../../platform/billing/laterals.js';
+import { BILLABLE_STATUS_SQL, COMMISSIONABLE_STATUS_SQL } from '../../platform/billing/status.js';
 
 /*
  * Visibility: every read below is TASK-grain (`FROM case_tasks ct JOIN cases cs`), so they all use the
@@ -82,7 +83,7 @@ export type BillingLineFilterOptions = Pick<
  * column filters cover the detail columns, so the flat grid replaces the old breakdown panels (ADR-0086).
  */
 function buildLinesWhere(o: BillingLineFilterOptions, params: unknown[]): string {
-  const where = [`ct.status = 'COMPLETED'`];
+  const where = [BILLABLE_STATUS_SQL];
   const add = (clause: string, val: unknown) => {
     params.push(val);
     where.push(clause.replace('$?', `$${params.length}`));
@@ -171,7 +172,7 @@ export interface CommissionSummaryOptions {
 
 /** WHERE for the commission summary (mutates `params`). Earned-at range + status + client/product + scope. */
 function buildCommissionSummaryWhere(o: CommissionSummaryOptions, params: unknown[]): string {
-  const where = [`ct.status IN ('SUBMITTED', 'COMPLETED')`];
+  const where = [COMMISSIONABLE_STATUS_SQL];
   const add = (clause: string, val: unknown) => {
     params.push(val);
     where.push(clause.replace('$?', `$${params.length}`));
@@ -216,7 +217,7 @@ export interface CommissionDetailOptions {
 /** WHERE for the commission detail — same earned-at/status/client/product filter as the summary; search also
  *  matches case + task numbers. Mutates `params`. */
 function buildCommissionDetailWhere(o: CommissionDetailOptions, params: unknown[]): string {
-  const where = [`ct.status IN ('SUBMITTED', 'COMPLETED')`];
+  const where = [COMMISSIONABLE_STATUS_SQL];
   const add = (clause: string, val: unknown) => {
     params.push(val);
     where.push(clause.replace('$?', `$${params.length}`));
@@ -321,7 +322,7 @@ export const billingRepository = {
               to_char(${period.start}, 'YYYY-MM-DD') AS period_start,
               count(*)::int AS task_count,
               COALESCE(SUM(ct.bill_count), 0)::int AS billable_units,
-              COALESCE(SUM(rt.bill_amount * ct.bill_count) FILTER (WHERE ct.status = 'COMPLETED'), 0)::float8 AS bill_total,
+              COALESCE(SUM(rt.bill_amount * ct.bill_count) FILTER (WHERE ${BILLABLE_STATUS_SQL}), 0)::float8 AS bill_total,
               COALESCE(SUM(COALESCE(ct.commission_amount, com.commission_amount) * ct.bill_count), 0)::float8 AS commission_total
        ${SUMMARY_FROM} ${clause}
        GROUP BY ct.assigned_to, au.name${groupDims}, ${period.key}, ${period.start}
@@ -354,7 +355,7 @@ export const billingRepository = {
               ct.assigned_to AS agent_id, au.name AS agent_name,
               cl.name AS client_name, p.name AS product_name, vu.name AS unit_name,
               ct.visit_type, rt.client_rate_type, frt.code AS field_rate_type,
-              CASE WHEN ct.status = 'COMPLETED' THEN rt.bill_amount END AS bill_amount,
+              CASE WHEN ${BILLABLE_STATUS_SQL} THEN rt.bill_amount END AS bill_amount,
               COALESCE(ct.commission_amount, com.commission_amount) AS commission_amount,
               ct.bill_count, ct.status,
               to_char(${EARNED_AT}, 'YYYY-MM-DD') AS earned_on,

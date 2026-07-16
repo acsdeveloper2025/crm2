@@ -1,5 +1,6 @@
 import type { FilterField } from '../../platform/pagination.js';
 import { RATE_LATERAL, COMMISSION_LATERAL } from '../../platform/billing/laterals.js';
+import { BILLABLE_STATUS_SQL, COMMISSIONABLE_STATUS_SQL } from '../../platform/billing/status.js';
 
 /**
  * MIS report-type registry (ADR-0084). Report types + their column allow-lists are CODE, not DB
@@ -161,17 +162,27 @@ const TASK_OPERATIONAL: MisReportType = {
     }),
     col('rateTypeName', 'Rate Type Name', 'Rate & Money', 'TEXT', 'frt.name'),
     col('rateTypeCategory', 'Rate Type Category', 'Rate & Money', 'SELECT', 'frt.category'),
-    // Money (billing.view-gated; laterals joined only when allowed; never sortable/filterable)
-    col('billAmount', 'Bill Amount (₹)', 'Rate & Money', 'NUMBER', 'rt.bill_amount', {
-      money: true,
-      defaultVisible: true,
-    }),
+    // Money (billing.view-gated; laterals joined only when allowed; never sortable/filterable).
+    // Status-gated to the SHARED money-status rule (platform/billing/status.ts) so a non-billable task
+    // (REVOKED/PENDING/…) shows NULL, never a phantom bill/commission — the report footer already filtered
+    // the same way, and these per-row columns had drifted un-gated (§REVOKE-BILLING, prod CASE-000004).
+    col(
+      'billAmount',
+      'Bill Amount (₹)',
+      'Rate & Money',
+      'NUMBER',
+      `CASE WHEN ${BILLABLE_STATUS_SQL} THEN rt.bill_amount END`,
+      {
+        money: true,
+        defaultVisible: true,
+      },
+    ),
     col(
       'billLineAmount',
       'Bill Line Total (₹)',
       'Rate & Money',
       'NUMBER',
-      '(rt.bill_amount * ct.bill_count)',
+      `CASE WHEN ${BILLABLE_STATUS_SQL} THEN (rt.bill_amount * ct.bill_count) END`,
       { money: true },
     ),
     col(
@@ -179,7 +190,7 @@ const TASK_OPERATIONAL: MisReportType = {
       'Commission (₹)',
       'Rate & Money',
       'NUMBER',
-      'COALESCE(ct.commission_amount, com.commission_amount)::float8',
+      `CASE WHEN ${COMMISSIONABLE_STATUS_SQL} THEN COALESCE(ct.commission_amount, com.commission_amount)::float8 END`,
       { money: true, defaultVisible: true },
     ),
     // TAT (per-task)
@@ -338,7 +349,7 @@ const CASE_OPERATIONAL: MisReportType = {
       'Bill Total (₹)',
       'Rate & Money',
       'NUMBER',
-      `(SELECT COALESCE(SUM(rt.bill_amount * ct.bill_count), 0)::float8 FROM case_tasks ct ${RATE_LATERAL} WHERE ct.case_id = cs.id AND ct.status = 'COMPLETED')`,
+      `(SELECT COALESCE(SUM(rt.bill_amount * ct.bill_count), 0)::float8 FROM case_tasks ct ${RATE_LATERAL} WHERE ct.case_id = cs.id AND ${BILLABLE_STATUS_SQL})`,
       { money: true, defaultVisible: true },
     ),
     col(
@@ -346,7 +357,7 @@ const CASE_OPERATIONAL: MisReportType = {
       'Commission Total (₹)',
       'Rate & Money',
       'NUMBER',
-      `(SELECT COALESCE(SUM(COALESCE(ct.commission_amount, com.commission_amount) * ct.bill_count), 0)::float8 FROM case_tasks ct ${COMMISSION_LATERAL} WHERE ct.case_id = cs.id AND ct.status IN ('SUBMITTED','COMPLETED'))`,
+      `(SELECT COALESCE(SUM(COALESCE(ct.commission_amount, com.commission_amount) * ct.bill_count), 0)::float8 FROM case_tasks ct ${COMMISSION_LATERAL} WHERE ct.case_id = cs.id AND ${COMMISSIONABLE_STATUS_SQL})`,
       { money: true, defaultVisible: true },
     ),
   ],

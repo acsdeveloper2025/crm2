@@ -2452,3 +2452,51 @@ the ERT defect the same day. Now 5 field-monitoring + 4 cases regression tests, 
   deleted; a full restorable backup of all 25 rows sits at `~/crm2-prod-backups/`. **DEFERRED** — the only
   paths are bypassing an audit control (declined without explicit owner authorisation) or a soft-delete
   status that does not exist (see above).
+
+## §REVOKE-BILLING-2026-07-18 — Revoke → billing/commission audit. Owner's symptom real; two paths FIXED
+
+Owner report: *"when a task is revoked and reassigned, the system generates billing for both tasks
+(duplicate billing), and the revoked task is also considered during billing calculations."*
+
+**The literal claim is FALSE; the symptom is REAL and now FIXED.** A REVOKED task can never produce a
+billing line: `revokeTaskInPlace` (`modules/cases/repository.ts`) matches only
+`status IN ('ASSIGNED','IN_PROGRESS')` — a COMPLETED/SUBMITTED task cannot be revoked — and billing is
+COMPLETED-only. Verified on prod: **CASE-000004** (DHIRAJKUMAR JAISWAL) is the healthy reassign shape
+(`CASE-000004-1` REVOKED → `-2` IN_PROGRESS, history = exactly 2 ASSIGNED events), and the `/billing`
+page emits **0 lines** for it. The duplicate the owner saw was on **MIS**, where the revoked row projected
+a full ₹110 bill + ₹45 commission beside its replacement (G-RB-3 below). Three defects, all reproduced on
+Postgres and fixed on branch `audit/revoke-billing`; the billing/commission split was verified CORRECT and
+deliberately left alone. Owner ruled (2026-07-18): **ADR-0033 stands — a revisit bills separately BY
+DESIGN**; only the N-billable-siblings bugs are fixed (wrong under either rule).
+
+- 🟠 **G-RB-3 — MIS per-row money columns had no status predicate. FIXED.** `mis/reportTypes.ts`
+  `billAmount`/`billLineAmount`/`commissionAmount` resolved for ANY status while the report footer filtered
+  — so a REVOKED task printed a ₹ bill + ₹ commission (observed live on CASE-000004; the ADR-0095 sweep
+  makes REVOKED rows grow). **This is the owner's actual observed bug.** Fixed by gating each column with the
+  new shared `BILLABLE_STATUS_SQL` / `COMMISSIONABLE_STATUS_SQL` (`platform/billing/status.ts`) so a
+  non-billable task shows NULL. Regression: a REVOKED task's MIS row now returns `billAmount/billLineAmount/
+  commissionAmount = null`. **FIXED.**
+- 🔴 **G-RB-1 — `reassignRevokedTask` had NO duplicate guard. FIXED.** Revoke is terminal, so the parent
+  stayed REVOKED forever and the office could dispatch N replacements, each billable
+  (**REPRODUCED: revoke → reassign ×2 → both complete = 2 lines, ₹200 for one verification**). Fixed by
+  the shared guard `repo.hasActiveChildOf` in the service + the widened partial-unique index (mig 0120) as
+  the race backstop → second concurrent reassign = 409 `ACTIVE_REPLACEMENT_EXISTS`. **FIXED.**
+- 🔴 **G-RB-2 — the revisit anti-double-bill guard was defeated by `SUBMITTED`. FIXED.** `hasActiveRevisitOf`
+  and `uq_case_tasks_active_revisit` (mig 0054) listed `PENDING/ASSIGNED/IN_PROGRESS`; mig 0081 added
+  `SUBMITTED` 27 migrations later and neither guard was updated, so a revisit child at SUBMITTED freed the
+  slot (**REPRODUCED: complete → revisit → child to SUBMITTED → revisit again = 3 lines, ₹300**). Fixed by
+  the same shared slot rule (`SUBMITTED` now occupies the slot). **FIXED.**
+- 🟢 **NOT a defect — billing ⟂ commission status filters agree and are correct. WONTFIX (verified).**
+  Billing COMPLETED-only; commission SUBMITTED+COMPLETED (ADR-0047 freezes at submit); MIS footers match.
+  The split is deliberate — the shared-constant extraction preserves BOTH rules as distinct; do not merge.
+  `commissionSummary.commission_total` un-FILTERed at `:325` is correct (outer WHERE constrains status).
+- 🟡 **ADR-0033 doc drift — DEFERRED.** ADR-0033 says *"task_origin is the billing class the commission gate
+  reads"*, but billing reads neither `task_origin` nor `parent_task_id` (only an MIS display column). Billing
+  keys purely on status; outcomes coincide today. Correct the ADR wording — no code bug. **DEFERRED.**
+
+**Root-cause style (one definition, imported — the `TASK_OVERDUE_SQL` precedent).** Two shared rules
+extracted: the money-status rule (`platform/billing/status.ts`, imported by billing + MIS rows/footers) and
+the slot-occupancy rule (`ACTIVE_CHILD_STATUS_SQL` in `cases/repository.ts`, mirrored by mig 0120's index).
+Prod-safe: a 2026-07-18 check found 0 parents with >1 live child, so the widened unique index builds clean.
+Coverage: `billing/__tests__/revoke.doublebill.regression.test.ts` (5 tests), each revert/mutation-verified
+red-before-green. `pnpm verify` green; 1244 api tests pass. Next migration = **0121**.

@@ -587,7 +587,7 @@ export const caseService = {
     const state = await repo.taskAssignmentState(caseId, taskId, await resolveScope(actor));
     if (!state) throw AppError.notFound('TASK_NOT_FOUND');
     if (state.status !== 'COMPLETED') throw AppError.conflict('INVALID_TRANSITION');
-    if (await repo.hasActiveRevisitOf(taskId)) throw AppError.conflict('ACTIVE_REVISIT_EXISTS');
+    if (await repo.hasActiveChildOf(taskId)) throw AppError.conflict('ACTIVE_REVISIT_EXISTS');
     const view = await repo.revisitTask(caseId, taskId, actor.userId, v.reason ?? null);
     emitTaskUpdate(view); // REVISIT re-opens the case (new lineage task) → office views refetch live
     return view;
@@ -607,6 +607,10 @@ export const caseService = {
     const state = await repo.taskAssignmentState(caseId, taskId, await resolveScope(actor));
     if (!state) throw AppError.notFound('TASK_NOT_FOUND');
     if (state.status !== 'REVOKED') throw AppError.conflict('INVALID_TRANSITION');
+    // A REVOKED parent is terminal, so it stays reassignable forever — block a second replacement while
+    // one is still live, else the office spawns N independently billable replacements from one revoke
+    // (§REVOKE-BILLING). The partial-unique index (mig 0120) is the race backstop; this is the clean 409.
+    if (await repo.hasActiveChildOf(taskId)) throw AppError.conflict('ACTIVE_REPLACEMENT_EXISTS');
     // Eligibility against the revoked task's OWN territory — the SAME path as a normal reassign
     // (visit-type pool ∩ FIELD territory; ADR-0078: no org-hierarchy cap, the task was scope-guarded
     // above). The replacement clones that location.

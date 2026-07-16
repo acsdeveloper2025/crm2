@@ -101,8 +101,16 @@ const pgConstraint = (e: unknown): string | undefined =>
   typeof e === 'object' && e !== null ? (e as { constraint?: string }).constraint : undefined;
 const FK_VIOLATION = '23503';
 const UNIQUE_VIOLATION = '23505';
-/** Partial-unique index guarding at most one OPEN revisit per parent (mig 0054). */
-const ACTIVE_REVISIT_INDEX = 'uq_case_tasks_active_revisit';
+/** Partial-unique index guarding at most one LIVE lineage child per parent — covers BOTH a revisit
+ *  (COMPLETED parent) and a reassign replacement (REVOKED parent). Widened + renamed by mig 0120 from
+ *  the revisit-only `uq_case_tasks_active_revisit` (mig 0054), which never constrained reassign
+ *  replacements (origin ORIGINAL) and predated SUBMITTED (mig 0081) → both let a lineage double-bill. */
+const ACTIVE_CHILD_INDEX = 'uq_case_tasks_active_child';
+
+/** The statuses that make a lineage child still OCCUPY its parent's slot; a terminal child
+ *  (COMPLETED/REVOKED/CANCELLED) frees it so a later revisit/reassign is allowed. MUST match
+ *  `uq_case_tasks_active_child` (mig 0120) — the guard and the index are one rule, two enforcers. */
+const ACTIVE_CHILD_STATUS_SQL = `status IN ('PENDING', 'ASSIGNED', 'IN_PROGRESS', 'SUBMITTED')`;
 
 /** Per-applicant call-routing token (ADR-0023): `CC-<base36 epoch>-<rand>`, display-only. */
 const CC_PREFIX = 'CC-';
@@ -1214,13 +1222,15 @@ export const caseRepository = {
 
   // ── Office task intervention: revisit / reassign-after-revoke (ADR-0033, ADR-0032 slice 3) ──
 
-  /** True when an OPEN revisit of this parent already exists — blocks a duplicate follow-up (and the
-   *  double-bill it would cause) until the first revisit is completed or revoked. */
-  async hasActiveRevisitOf(parentTaskId: string): Promise<boolean> {
+  /** True when a LIVE lineage child of this parent already exists — blocks a duplicate follow-up (and the
+   *  double-bill it would cause) until that child reaches a terminal status. Covers BOTH flows: a revisit
+   *  child (COMPLETED parent) and a reassign replacement (REVOKED parent) — origin-agnostic, unlike the old
+   *  revisit-only check that let the office spawn N billable replacements from one revoked task. SUBMITTED
+   *  counts as live (it is still a billable-in-flight child; omitting it freed the slot mid-flight). */
+  async hasActiveChildOf(parentTaskId: string): Promise<boolean> {
     const rows = await query<{ n: number }>(
       `SELECT count(*)::int AS n FROM case_tasks
-        WHERE parent_task_id = $1 AND task_origin = 'REVISIT'
-          AND status IN ('PENDING', 'ASSIGNED', 'IN_PROGRESS')`,
+        WHERE parent_task_id = $1 AND ${ACTIVE_CHILD_STATUS_SQL}`,
       [parentTaskId],
     );
     return (rows[0]?.n ?? 0) > 0;
@@ -1283,10 +1293,10 @@ export const caseRepository = {
       });
     } catch (e) {
       if (pgCode(e) === UNIQUE_VIOLATION) {
-        // The active-revisit partial-unique index is the race backstop for the service pre-check —
+        // The active-child partial-unique index is the race backstop for the service pre-check —
         // a concurrent second revisit of the same parent loses here (no double-bill). The task-number
         // UNIQUE is the other collision (a concurrent add-tasks sharing the seq) → retryable.
-        if (pgConstraint(e) === ACTIVE_REVISIT_INDEX) throw AppError.conflict('ACTIVE_REVISIT_EXISTS');
+        if (pgConstraint(e) === ACTIVE_CHILD_INDEX) throw AppError.conflict('ACTIVE_REVISIT_EXISTS');
         throw AppError.conflict('TASK_NUMBER_CONFLICT');
       }
       throw e;
@@ -1395,7 +1405,13 @@ export const caseRepository = {
         return row;
       });
     } catch (e) {
-      if (pgCode(e) === UNIQUE_VIOLATION) throw AppError.conflict('TASK_NUMBER_CONFLICT');
+      if (pgCode(e) === UNIQUE_VIOLATION) {
+        // The active-child index is the race backstop for the service pre-check — a concurrent second
+        // reassign of the same REVOKED parent loses here (no double-bill). Otherwise it's the task-number
+        // UNIQUE (a concurrent add-tasks sharing the seq) → retryable.
+        if (pgConstraint(e) === ACTIVE_CHILD_INDEX) throw AppError.conflict('ACTIVE_REPLACEMENT_EXISTS');
+        throw AppError.conflict('TASK_NUMBER_CONFLICT');
+      }
       if (pgCode(e) === FK_VIOLATION) throw AppError.badRequest('INVALID_ASSIGNEE');
       throw e;
     }
