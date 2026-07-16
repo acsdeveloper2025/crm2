@@ -106,10 +106,19 @@ billing consequences:
 - **Revoke keeps `assigned_to`** — deliberate (`cases/repository.ts` ~:1471; the device matches on it).
   Anything reasoning "revoked ⇒ unassigned" is wrong.
 - **Commission has snapshot + live paths** (`COALESCE(snapshot, live)`). Two places to get status wrong.
-- **A new source of REVOKED rows shipped 2026-07-17** — the ADR-0095 abandonment sweep auto-revokes
-  ASSIGNED/IN_PROGRESS tasks past 45 days, hourly, in prod. Billing is COMPLETED-only so this *should* be
-  inert, but it means **revoked rows are about to become far more common**. If any money path counts them,
-  this audit just became urgent. Confirm inertness early.
+- **A new source of REVOKED rows is LIVE since 2026-07-17** — the ADR-0095 abandonment sweep auto-revokes
+  ASSIGNED/IN_PROGRESS tasks past 45 days, hourly, on prod. Billing is COMPLETED-only so this *should* be
+  inert, but it means **revoked rows are now far more common than when the duplicate-billing report was
+  written**. If any money path counts them, this audit is urgent rather than routine. **Confirm inertness
+  first** — it is one query:
+  ```sql
+  -- MUST BE 0. An auto-revoked task must never sit in a status either money path counts:
+  -- COMPLETED feeds billing lines (repository.ts:85), SUBMITTED+COMPLETED feed commission (:174,:219).
+  SELECT count(*) FROM case_tasks
+  WHERE remark LIKE 'AUTO-REVOKED%' AND status IN ('COMPLETED','SUBMITTED');
+  ```
+  It also gives the audit a **free test population**: real revoked-then-reassigned lineages on prod to
+  check billing against, which did not exist in volume before.
 - **`/api/v2` is additive-only. Migration BEFORE code** (deploys do not run migrations). Next migration =
   **0121**, next ADR = **0096** (re-verify: `ls db/v2/migrations | tail -1`, `ls docs/adr | tail -2`).
 - **Billing ⟂ commission is a deliberate split** (2026-06 era) — do not re-couple them.
@@ -127,15 +136,33 @@ owner's OK.
 
 ## State at handoff (2026-07-17)
 
-- **crm2 `main` = `8ae54eb`, pushed. `prod` fast-forwarded to the same commit — LIVE on AWS**
-  (deploy `29506656979` green; health 200). CI green: static · secret-scan · test · build · e2e.
+- **crm2 `main` == `prod` == `f40d60a` — branches aligned, LIVE on AWS.** Staging + prod deploys green;
+  health 200 on both. CI green: static · secret-scan · test · build · e2e.
 - **ADR-0095 abandonment sweep is LIVE on prod**: hourly, auto-revokes ASSIGNED/IN_PROGRESS past 45 days,
-  notifies the dispatching backend user. No migration. 9 integration checks.
-  ⏳ **Owner still to run the backlog count** — the first sweep revokes everything already past the window
-  (capped 200/tick, hourly):
+  notifies the dispatching backend user. No migration. 9 integration checks, each revert-verified.
+- ⏳ **THE ONE OPEN NUMBER — owner to run this.** The first sweep revokes the whole historical backlog
+  (capped 200/tick):
   ```sql
   SELECT count(*) FROM case_tasks
   WHERE status IN ('ASSIGNED','IN_PROGRESS') AND assigned_at < now() - interval '45 days';
+  ```
+  It decides two things, and **the sweep has already been running hourly since 2026-07-17 ~14:30 UTC**, so
+  read it as "what is LEFT", not "what was there":
+  1. **Whether hourly is still worth it.** Owner asked 2026-07-17 whether hourly is required — **it is
+     not.** The rule needs nothing of the sort (a task dead 45 days does not care about 23 hours) and the
+     query is index-backed and free (5 shared buffer hits, sub-ms, no rows). Hourly exists **only** because
+     the cadence is coupled to `ABANDON_SWEEP_BATCH` (200/tick): hourly drains 4 800/day, daily 200/day.
+     **Once the backlog is drained, drop to daily** — `ABANDON_SWEEP_INTERVAL_MS` in
+     `modules/cases/abandonSweep.ts`, one constant. If the count is small, do it now.
+  2. **How much agent work was destroyed.** Every IN_PROGRESS revoke wipes that agent's un-uploaded photos
+     and drafts on the device (owner accepted this explicitly). A large first run means several agents at
+     once.
+
+  ⚠️ A task with `assigned_by IS NULL` auto-revokes with **nobody told** — `notifyTaskLifecycle` no-ops on a
+  null recipient. Notifying `assigned_to` too hedges it, but worth counting:
+  ```sql
+  SELECT count(*) FROM case_tasks
+  WHERE status = 'REVOKED' AND remark LIKE 'AUTO-REVOKED%' AND assigned_by IS NULL;
   ```
 - **Mobile `v1.0.83` released** (`crm-mobile-native`) — fixes a staging pin break; v1.0.82's staging APK
   cannot connect on devices that trust ISRG Root X2. Tell testers to install **1.0.83**.
