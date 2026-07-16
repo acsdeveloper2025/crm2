@@ -37,14 +37,26 @@ export interface AbandonSweepResult {
 }
 
 /**
- * The per-tick cap. The FIRST run revokes the entire historical backlog, and every row fires
- * notifications — so the batch is bounded and the remainder is taken on the next tick. At hourly ticks a
- * backlog of any realistic size drains within a day, against a 45-day window.
+ * The per-tick cap. The FIRST run faces the entire historical backlog and every row fires
+ * notifications, so the batch is bounded and the remainder is taken on the next tick.
+ *
+ * ⚠️ The cap and the interval MULTIPLY into the drain rate: at 200/tick, daily drains 200/day. It is a
+ * first-run device only — in steady state a handful of tasks cross the window per day and the cap never
+ * binds. If a tick ever fills the batch the sweep warns (below): that is the signal a backlog is still
+ * draining, and the moment to raise this number rather than wait days for it.
  */
 export const ABANDON_SWEEP_BATCH = 200;
 
-/** How often the api role sweeps. Hourly — see startAbandonSweep in main.ts for why not daily. */
-export const ABANDON_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+/**
+ * How often the api role sweeps. DAILY (owner, 2026-07-17).
+ *
+ * Hourly was never required by the rule: a task dead for 45 days does not care about 23 hours, in steady
+ * state only a handful cross the window per day, and the query is free either way (index-backed, 5 shared
+ * buffer hits, sub-ms, no rows). A deploy also sweeps — startAbandonSweep arms a
+ * setTimeout(ABANDON_SWEEP_FIRST_DELAY_MS) on every boot — so this fires on each deploy AND once a day,
+ * which is ample against a 45-day window.
+ */
+export const ABANDON_SWEEP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 /** Delay before the first tick so boot isn't competing with a sweep for the connection pool. */
 export const ABANDON_SWEEP_FIRST_DELAY_MS = 60 * 1000;
@@ -107,5 +119,17 @@ export async function runAbandonSweep(batch: number = ABANDON_SWEEP_BATCH): Prom
     failed,
     windowDays: TASK_ABANDONED_DAYS,
   });
+
+  // The tick filled its batch, so there is almost certainly more waiting. A warn, not an info: at one
+  // tick a day this is the difference between "drained" and "still draining, at 200/day". It makes the
+  // backlog observable from the log instead of needing a DB query, and it is the trigger to raise
+  // ABANDON_SWEEP_BATCH.
+  if (due.length === batch) {
+    logger.warn('abandon-sweep: batch cap reached — more tasks are still past the window', {
+      batch,
+      windowDays: TASK_ABANDONED_DAYS,
+      hint: 'raise ABANDON_SWEEP_BATCH to drain faster than one batch per tick',
+    });
+  }
   return { revoked, failed };
 }

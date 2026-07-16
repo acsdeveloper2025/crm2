@@ -26,7 +26,7 @@ owner wants informed — would never hear about it. The server knows the age reg
 
 ## Decision
 
-An **hourly sweep in the `api` role** revokes `ASSIGNED`/`IN_PROGRESS` tasks whose `assigned_at` is more
+A **daily sweep in the `api` role** (plus one 60s after every boot) revokes `ASSIGNED`/`IN_PROGRESS` tasks whose `assigned_at` is more
 than **45 days** old, as a system actor, and notifies the office user who dispatched them.
 
 **No migration. No new column. No new dependency. No mobile change.**
@@ -55,7 +55,7 @@ Anchored on `assigned_at`, **not** `started_at`: `IN_PROGRESS` predates `started
 catch. There is deliberately **no** `tat_hours IS NOT NULL` leg (unlike `TASK_OVERDUE_SQL`) — legacy
 re-work rows were born with a NULL TAT, and an abandoned one of those is exactly what must be swept.
 
-### 2. Trigger — an hourly `setInterval` in the `api` boot
+### 2. Trigger — a daily `setInterval` in the `api` boot
 
 This is crm2's first periodic, unattended writer, which is why this ADR exists at all.
 
@@ -70,26 +70,25 @@ This is crm2's first periodic, unattended writer, which is why this ADR exists a
   so a computed label never bumps `updated_at` and never reaches the device. And an un-written task stays
   `ASSIGNED`, so `assignTask`'s PENDING guard makes it unassignable. **A write is mandatory.**
 
-**Hourly, not daily — and the honest reason is the batch cap, not the timer.**
+**Daily** (owner, 2026-07-17 — *"we can drop it to daily from hourly"*).
 
-The rule does not need it: a task dead for 45 days does not care about 23 hours, and in steady state only
-a handful cross the line per day. The cost is ~0 either way (an index-backed `SELECT` returning no rows —
-5 shared buffer hits, sub-millisecond).
+Hourly was never required by the rule: a task dead for 45 days does not care about 23 hours, in steady
+state only a handful cross the line per day, and the query is free either way (index-backed, 5 shared
+buffer hits, sub-millisecond, no rows). A deploy also sweeps — `setTimeout(ABANDON_SWEEP_FIRST_DELAY_MS)`
+fires 60s after every boot — so this runs on each deploy **and** once a day, ample against a 45-day window.
 
-What hourly actually buys is **backlog drain**, because the cadence is coupled to `ABANDON_SWEEP_BATCH`
-(200/tick): hourly drains 4 800/day, daily drains **200/day**. A 3 000-task first run is ~15 hours at
-hourly and ~15 **days** at daily — during which the office keeps not knowing. Change one and you must
-reconsider the other.
+⚠️ **Cadence × `ABANDON_SWEEP_BATCH` is the drain rate.** One decision, not two: at 200/tick, hourly drains
+4 800/day and daily drains **200/day**. That matters only for the FIRST run, which faces the whole
+historical backlog; in steady state the cap never binds. So the sweep **warns when a tick fills its
+batch** — the signal a backlog is still draining and the moment to raise the cap. It makes the question
+answerable from the log rather than a DB query. Shipped hourly on 2026-07-17 and dropped to daily the same
+day, after ~1–2 prod ticks (≤400 rows).
 
-An earlier draft of this ADR justified hourly by timer phase-reset ("a deploy re-anchors the interval so a
-daily tick could never fire"). **That was wrong** — `startAbandonSweep` also arms a
-`setTimeout(ABANDON_SWEEP_FIRST_DELAY_MS)`, so a sweep runs 60s after *every* boot and every deploy
-already triggers one. The interval is only the backstop for long uptime, and at that point daily would
-have been sufficient. Recorded rather than quietly corrected: the reason on the page has to be the reason
-that holds, or the next person optimises against a fiction.
-
-Once the initial backlog has drained, dropping to daily (or raising the cap and going daily) is a
-defensible simplification — nothing about the rule needs the extra ticks.
+An earlier draft justified hourly by timer phase-reset ("a deploy re-anchors the interval so a daily tick
+could never fire"). **That was wrong** — the boot `setTimeout` already means every deploy triggers a
+sweep, so the interval is only the backstop for long uptime and daily was always sufficient. Recorded
+rather than quietly corrected: the reason on the page has to be the reason that holds, or the next person
+optimises against a fiction.
 
 It is registered in `main.ts`'s `ROLE==='api'` branch, **not** `registerJobs()`: `createApp` calls that
 too, so a timer there would fire in every test process and double-fire the day the worker container is

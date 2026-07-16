@@ -42,7 +42,7 @@ import {
 function startAbandonSweep(): void {
   const tick = (): void => {
     void runAbandonSweep().catch((err: unknown) => {
-      // Never let a sweep failure take the API down — it retries next hour.
+      // Never let a sweep failure take the API down — it retries on the next tick.
       logger.error('abandon-sweep tick failed', {
         error: err instanceof Error ? err.message : String(err),
       });

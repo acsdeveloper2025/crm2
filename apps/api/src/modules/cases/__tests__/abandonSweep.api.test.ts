@@ -10,7 +10,7 @@ import {
 import { createApp } from '../../../http/app.js';
 import { setPool } from '../../../platform/db.js';
 import { AUTO_REVOKE_REASON, SYSTEM_ACTOR_ID, TASK_ABANDONED_DAYS } from '../../../platform/tat/overdue.js';
-import { runAbandonSweep } from '../abandonSweep.js';
+import { ABANDON_SWEEP_BATCH, ABANDON_SWEEP_INTERVAL_MS, runAbandonSweep } from '../abandonSweep.js';
 
 /**
  * The abandonment sweep (ADR-0095): 45 days after assignment, a task the agent never finished is
@@ -301,6 +301,15 @@ describe.skipIf(!RUN)('abandonment sweep (ADR-0095)', () => {
     expect(recipients).toContain(assignedBy);
     // ...and the agent, whose device drops the task on TASK_REVOKED.
     expect(recipients).toContain(fa);
+  });
+
+  it('the cadence is DAILY and the cap is the drain rate — one decision, not two', () => {
+    // Owner dropped hourly -> daily (2026-07-17). Hourly was only ever draining the first-run backlog,
+    // and cadence x batch IS the drain rate, so a change to either must be deliberate. Absolute, not
+    // relative: a relative assertion moves with the constant and pins nothing (the window test stayed
+    // green at 45->0 until it was made absolute).
+    expect(ABANDON_SWEEP_INTERVAL_MS).toBe(24 * 60 * 60 * 1000);
+    expect(ABANDON_SWEEP_BATCH).toBe(200);
   });
 
   it('honours the batch cap so the first run cannot stampede', async () => {
