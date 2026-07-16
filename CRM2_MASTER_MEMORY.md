@@ -169,6 +169,7 @@ Governance/operations docs so the system stays maintainable, secure, scalable, r
 
 | Item | Status |
 |---|---|
+| **Abandonment sweep (ADR-0095)** — auto-revoke ASSIGNED/IN_PROGRESS held >45d, hourly in the `api` role; notifies the dispatching backend user so the office can reassign. No migration, no mobile change. crm2's FIRST periodic unattended writer. | **✅ LIVE PROD 2026-07-17** (`8ae54eb`) |
 | db/v2 migration 0001 — verification_units + CPV (CHECK invariants) | ✅ Built (source; not applied to a DB) |
 | db/v2 migration 0002 — clients/products/client_products + CPV FK | ✅ Built (source) |
 | db/v2 seed — 9 field + 59 KYC units | ✅ Built |
