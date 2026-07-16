@@ -33,7 +33,7 @@ import {
   type Scope,
 } from '../../platform/scope/index.js';
 import { COMMISSION_LATERAL } from '../../platform/billing/laterals.js';
-import { REWORK_TAT_HOURS, TASK_OVERDUE_SQL } from '../../platform/tat/overdue.js';
+import { REWORK_TAT_HOURS, TASK_ABANDONED_SQL, TASK_OVERDUE_SQL } from '../../platform/tat/overdue.js';
 
 /** A field photo as a downloadable file (ADR-0060) — storage key + the inputs the server uses to build
  *  the canonical `<caseNumber>_<taskNumber>_<NN>[_<photoType>].<ext>` filename. `seq` is the stable
@@ -889,6 +889,33 @@ export const caseRepository = {
          END
        ORDER BY u.name`,
       params,
+    );
+  },
+
+  /**
+   * Tasks an agent has held past the abandonment window (ADR-0095) — the sweep's input.
+   *
+   * Deliberately UNSCOPED: this is an unattended server sweep, not a user request. There is no actor to
+   * resolve a scope for, and `resolveScope` fail-closes an unknown role to SELF — which would silently
+   * match nothing and make the sweep a no-op.
+   *
+   * Returns `assignedBy` (the office user who dispatched it — the recipient the owner actually wants
+   * told) and `assignedTo` (the agent, whose device must wipe the task) so the caller can notify both
+   * without re-reading each row.
+   *
+   * `limit` caps a tick: the first run revokes the entire historical backlog at once and each row fires
+   * notifications, so the batch is bounded and the remainder is picked up on the next tick.
+   */
+  async listAbandonedTasks(
+    limit: number,
+  ): Promise<Array<{ id: string; caseId: string; assignedTo: string | null; assignedBy: string | null }>> {
+    return query<{ id: string; caseId: string; assignedTo: string | null; assignedBy: string | null }>(
+      `SELECT ct.id, ct.case_id AS "caseId", ct.assigned_to AS "assignedTo", ct.assigned_by AS "assignedBy"
+         FROM case_tasks ct
+        WHERE ${TASK_ABANDONED_SQL}
+        ORDER BY ct.assigned_at ASC
+        LIMIT $1`,
+      [limit],
     );
   },
 
