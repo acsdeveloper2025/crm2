@@ -2511,3 +2511,20 @@ the slot-occupancy rule (`ACTIVE_CHILD_STATUS_SQL` in `cases/repository.ts`, mir
 Prod-safe: a 2026-07-18 check found 0 parents with >1 live child, so the widened unique index builds clean.
 Coverage: `billing/__tests__/revoke.doublebill.regression.test.ts` (5 tests), each revert/mutation-verified
 red-before-green. `pnpm verify` green; 1244 api tests pass. Next migration = **0121**.
+
+### Close-out (2026-07-18) — the two items left open by §REVOKE-BILLING
+
+- **ADR-0033 doc drift → FIXED (was DEFERRED).** A *Correction (2026-07-18)* section now heads
+  `docs/adr/ADR-0033-task-lineage-revisit-and-reassign-after-revoke.md`, following that ADR's own
+  precedent (it already carries a 2026-06-16 correction). It records that billing never reads
+  `task_origin`/`parent_task_id` (status is the only key), and that the "active-sibling guard is
+  sufficient to stop double-billing" claim was false on two axes — both fixed by mig 0120. The ADR's
+  *decisions* are untouched: a revisit still bills separately by design.
+- **Staging CASE-000025 verification artifact → WONTFIX (accepted, not removable).** The 2026-07-18
+  staging browser-verification left a real lineage on `CASE-000025` (`-1` REVOKED bill 0 → `-2` ASSIGNED
+  bill 1). It **cannot be deleted**: a `case_tasks` DELETE cascades into `task_assignment_history`, whose
+  `trg_audit_log_immutable`/append-only guard raises *"audit_log is append-only (DELETE is not
+  permitted)"* — verified by a dry-run that was rolled back (staging unchanged). Removing it would mean
+  bypassing an audit control, declined without explicit owner authorisation — the same disposition as the
+  CASE-000003/000005 prod test rows. The data is valid and realistic (it documents the fix working), so it
+  is **accepted as staging test data**, not a defect.

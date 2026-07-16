@@ -17,6 +17,27 @@ of ownership-bound, via the shared repo method `revokeTaskInPlace`. The statemen
 below that say "the backend never revokes / removed entirely" are superseded by this
 section; everything else (revisit, reassign-after-revoke, verdict history) stands.
 
+## Correction (2026-07-18) — billing never reads `task_origin`; the guard was never enough
+
+Two statements below are wrong about the code as built (found by the §REVOKE-BILLING audit,
+`docs/COMPLIANCE_GAPS_REGISTRY.md`). The **decisions** stand — a revisit IS billed separately and a
+reassign replacement is NOT (owner re-confirmed 2026-07-18) — but the stated mechanism does not exist:
+
+- **"`task_origin` is the billing class the commission gate (slice 5) reads"** (Consequences ▸ Positive)
+  is **not implemented**. Billing reads neither `task_origin` nor `parent_task_id`; it keys purely on
+  status — lines are `COMPLETED`-only, commission `SUBMITTED`+`COMPLETED` (one shared definition in
+  `apps/api/src/platform/billing/status.ts`). The outcomes coincide with this ADR's intent (a revisit
+  child that completes bills; a REVOKED parent never does), so nothing is mis-billed — but any future
+  rule that must distinguish a REVISIT bill from an ORIGINAL one has to be built, not assumed present.
+- **"The active-sibling guard is … sufficient to stop double-billing the same completed task"**
+  (Consequences ▸ Negative) was **false in two ways**, both reproduced on data and fixed 2026-07-18
+  (migration 0120): the guard was scoped `task_origin = 'REVISIT'`, so it never constrained a reassign
+  replacement (which keeps the parent's `ORIGINAL`) — the office could spawn N billable replacements from
+  one revoked task; and it listed `PENDING/ASSIGNED/IN_PROGRESS`, never updated when migration 0081 added
+  `SUBMITTED`, so a child at SUBMITTED vacated the slot. The rule is now one origin-agnostic definition
+  ("a non-terminal child occupies its parent's slot") enforced by `hasActiveChildOf` **and** the widened
+  partial index `uq_case_tasks_active_child`, and it gates **both** revisit and reassign.
+
 ## Context
 
 ADR-0032 (the two-track lifecycle) listed "revisit/recheck + revoke" as slice 3
