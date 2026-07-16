@@ -70,9 +70,26 @@ This is crm2's first periodic, unattended writer, which is why this ADR exists a
   so a computed label never bumps `updated_at` and never reaches the device. And an un-written task stays
   `ASSIGNED`, so `assignTask`'s PENDING guard makes it unassignable. **A write is mandatory.**
 
-**Hourly, not daily:** a deploy recreates the container and `restart: unless-stopped` re-anchors the
-timer's phase, so a long interval on a frequently-deployed box could never fire. Hourly bounds that loss
-to one tick against a 45-day window — which is why this needs no watermark table.
+**Hourly, not daily — and the honest reason is the batch cap, not the timer.**
+
+The rule does not need it: a task dead for 45 days does not care about 23 hours, and in steady state only
+a handful cross the line per day. The cost is ~0 either way (an index-backed `SELECT` returning no rows —
+5 shared buffer hits, sub-millisecond).
+
+What hourly actually buys is **backlog drain**, because the cadence is coupled to `ABANDON_SWEEP_BATCH`
+(200/tick): hourly drains 4 800/day, daily drains **200/day**. A 3 000-task first run is ~15 hours at
+hourly and ~15 **days** at daily — during which the office keeps not knowing. Change one and you must
+reconsider the other.
+
+An earlier draft of this ADR justified hourly by timer phase-reset ("a deploy re-anchors the interval so a
+daily tick could never fire"). **That was wrong** — `startAbandonSweep` also arms a
+`setTimeout(ABANDON_SWEEP_FIRST_DELAY_MS)`, so a sweep runs 60s after *every* boot and every deploy
+already triggers one. The interval is only the backstop for long uptime, and at that point daily would
+have been sufficient. Recorded rather than quietly corrected: the reason on the page has to be the reason
+that holds, or the next person optimises against a fiction.
+
+Once the initial backlog has drained, dropping to daily (or raising the cap and going daily) is a
+defensible simplification — nothing about the rule needs the extra ticks.
 
 It is registered in `main.ts`'s `ROLE==='api'` branch, **not** `registerJobs()`: `createApp` calls that
 too, so a timer there would fire in every test process and double-fire the day the worker container is

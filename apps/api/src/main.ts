@@ -27,10 +27,14 @@ import {
  *    code review. The prod box has no crontab today.
  * So: a plain timer in the one role that is guaranteed to be running.
  *
- * HOURLY, not daily. A deploy recreates the container (`docker-compose up -d`) and `restart:
- * unless-stopped` re-anchors the timer's phase, so a long interval on a frequently-deployed box could
- * never fire at all. Hourly bounds that loss to one tick against a 45-day window, which is why this
- * needs no watermark table.
+ * HOURLY is about the BATCH CAP, not precision. The rule does not need it — a task dead for 45 days does
+ * not care about 23 hours — and the query is index-backed and free either way. But the cadence is coupled
+ * to ABANDON_SWEEP_BATCH (200/tick): hourly drains 4800/day, daily only 200/day, so a large first-run
+ * backlog would take days to clear at daily while the office keeps not knowing. Change one, reconsider
+ * the other. Once the backlog is drained, daily is a fair simplification.
+ *
+ * (Not, as an earlier comment claimed, because a deploy resets the interval's phase — the setTimeout
+ * below already sweeps 60s after every boot, so every deploy triggers one regardless.)
  *
  * `unref()` so the timer never holds the process open during shutdown, and the first tick is delayed so
  * boot is not competing with a sweep for the pool.
