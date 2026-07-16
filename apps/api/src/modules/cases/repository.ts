@@ -1526,9 +1526,12 @@ export const caseRepository = {
         // IS the transition. A re-revoke of an already-REVOKED row never matches and returns early
         // (idempotent), and the row can't be re-assigned in place either (service.assignTask requires
         // PENDING) — so one row is revoked at most once and there is nothing to preserve.
+        // bill_count = 0: a revoked task carries no billable units (owner 2026-07-18, §REVOKE-BILLING) —
+        // the case grid/MIS otherwise show a phantom unit. The assign-time value survives in
+        // task_assignment_history; a replacement's billCount is operator input, never inherited.
         `UPDATE case_tasks
-           SET status = 'REVOKED', remark = $4, version = version + 1, updated_by = $3, updated_at = now(),
-               revoked_at = now()
+           SET status = 'REVOKED', bill_count = 0, remark = $4, version = version + 1, updated_by = $3,
+               updated_at = now(), revoked_at = now()
          WHERE id = $1 AND case_id = $2 AND status IN ('ASSIGNED', 'IN_PROGRESS')
          RETURNING id`,
         [taskId, caseId, actorId, reason],

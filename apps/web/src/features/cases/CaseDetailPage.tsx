@@ -59,6 +59,10 @@ const REVOCABLE = new Set(['ASSIGNED', 'IN_PROGRESS']);
 const REVISITABLE = new Set(['COMPLETED']);
 /** REASSIGN-AFTER-REVOKE (ADR-0033): only a REVOKED task gets a replacement. */
 const REASSIGNABLE = new Set(['REVOKED']);
+/** Statuses in which a lineage child still OCCUPIES its parent's slot (§REVOKE-BILLING) — the FE mirror
+ *  of the server's one-live-child-per-parent guard (`hasActiveChildOf` + mig 0120), so Revisit/Reassign
+ *  hide while a follow-up is in flight instead of 409ing on click. A terminal child frees the slot. */
+const SLOT_HOLDING = new Set(['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'SUBMITTED']);
 
 /** Case-status badge tone (ADR-0032). Mirrors the Pipeline task-status palette; AWAITING_COMPLETION
  *  reads as "under review" (awaiting the office verdict). */
@@ -463,6 +467,11 @@ function TasksSection({
       },
       { replace: true },
     );
+  // Parents whose slot a LIVE lineage child already holds — Revisit/Reassign hide for these rows
+  // (one live follow-up per parent; the server enforces the same rule with a 409).
+  const occupiedParents = new Set(
+    tasks.filter((t) => t.parentTaskId !== null && SLOT_HOLDING.has(t.status)).map((t) => t.parentTaskId),
+  );
   // "+ Add Tasks" lives in this card's header (Zion keeps document-add in the case work surface).
   const [addingTasks, setAddingTasks] = useState(false);
   // The task whose inline finalize form is open (ADR-0025) — separate from the assign accordion.
@@ -801,7 +810,7 @@ function TasksSection({
                         )}
                         {/* Office intervention (ADR-0033): REVISIT a COMPLETED task (client asked for
                             more → a new billed task); REASSIGN a REVOKED task (replacement). */}
-                        {canRework && REVISITABLE.has(t.status) && (
+                        {canRework && REVISITABLE.has(t.status) && !occupiedParents.has(t.id) && (
                           <Button
                             variant="secondary"
                             size="sm"
@@ -815,7 +824,7 @@ function TasksSection({
                             Revisit
                           </Button>
                         )}
-                        {canRework && REASSIGNABLE.has(t.status) && (
+                        {canRework && REASSIGNABLE.has(t.status) && !occupiedParents.has(t.id) && (
                           <Button
                             variant="secondary"
                             size="sm"

@@ -2490,6 +2490,17 @@ DESIGN**; only the N-billable-siblings bugs are fixed (wrong under either rule).
   Billing COMPLETED-only; commission SUBMITTED+COMPLETED (ADR-0047 freezes at submit); MIS footers match.
   The split is deliberate — the shared-constant extraction preserves BOTH rules as distinct; do not merge.
   `commissionSummary.commission_total` un-FILTERed at `:325` is correct (outer WHERE constrains status).
+- 🟠 **Owner-reported from the live page (2026-07-18, CASE-000004 screenshot) — both FIXED.**
+  (a) *"bill count should show 0 after revoke"* — the revoked row kept its assign-time `bill_count` (a
+  phantom unit on the case grid + MIS). `revokeTaskInPlace` now sets `bill_count = 0` (single writer — the
+  office, device and ADR-0095 sweep paths all route through it); migration **0121** backfills rows revoked
+  earlier. The assign-time value survives in `task_assignment_history`; a replacement's `billCount` is
+  operator input, never inherited. **FIXED.**
+  (b) *"it still shows REASSIGN after we reassign — should be disabled"* — the Reassign (and Revisit)
+  action now hides while a live lineage child occupies the parent's slot (`CaseDetailPage.tsx`
+  `occupiedParents`, the FE mirror of `hasActiveChildOf`; the server 409 stays the enforcer). Browser-
+  verified on the dev stack: revoke → BILL 0 + REASSIGN appears; reassign → replacement row appears and
+  the parent's action cell empties; persisted across a full reload. **FIXED.**
 - 🟡 **ADR-0033 doc drift — DEFERRED.** ADR-0033 says *"task_origin is the billing class the commission gate
   reads"*, but billing reads neither `task_origin` nor `parent_task_id` (only an MIS display column). Billing
   keys purely on status; outcomes coincide today. Correct the ADR wording — no code bug. **DEFERRED.**

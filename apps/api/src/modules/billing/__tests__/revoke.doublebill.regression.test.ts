@@ -211,6 +211,9 @@ describe.skipIf(!RUN)('§REVOKE-BILLING: duplicate-billing regressions', () => {
       .send({ reason: 'agent unreachable' });
     expect(rev.status).toBe(200);
     expect(rev.body.status).toBe('REVOKED');
+    // a revoked task carries no billable units (owner 2026-07-18): revoke zeroes bill_count, so the
+    // case grid / MIS never show a phantom unit. Absolute — the assign set it to 1.
+    expect(rev.body.billCount).toBe(0);
 
     expect(await billingLines(caseId)).toEqual({ lineCount: 0, billTotal: 0 });
     const commission = await request(app)
