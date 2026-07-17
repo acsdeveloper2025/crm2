@@ -127,6 +127,20 @@ describe.skipIf(!RUN)('OTP login verification (ADR-0088)', () => {
     expect(row.rows[0].code_encrypted).not.toContain(ch.lastCode()!);
   });
 
+  it('an otp_exempt account skips the new-device OTP gate entirely (Play-review, mig 0122)', async () => {
+    captureChannels(); // a deliverable channel must exist or the gate goes inert (warn-and-allow)
+    const id = await makeUser({ username: 'otpx', role: 'MANAGER', email: EMAIL, phone: PHONE });
+    // control: WITHOUT the flag, a flagged role on an unknown device is challenged.
+    expect((await login('otpx', { deviceId: 'exempt-dev-a' })).status).toBe(401);
+    // Flip the flag the ONLY way prod ever does — a direct DB update. No API/endpoint writes it.
+    await db!.pool.query(`UPDATE users SET otp_exempt = true WHERE id = $1`, [id]);
+    // Now the SAME account on a brand-new, untrusted device logs straight in with no code.
+    const ok = await login('otpx', { deviceId: 'exempt-dev-b' });
+    expect(ok.status).toBe(200);
+    expect(ok.body.error).toBeUndefined();
+    expect(typeof ok.body.tokens.accessToken).toBe('string');
+  });
+
   it('verifies the code → tokens; the device becomes trusted and skips OTP next login', async () => {
     const ch = captureChannels();
     await makeUser({ username: 'otp2', role: 'MANAGER', email: EMAIL, phone: PHONE });

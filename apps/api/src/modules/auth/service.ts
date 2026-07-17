@@ -369,7 +369,13 @@ export const authService = {
     // New-device OTP gate (ADR-0088): a role-flagged account on an untrusted device must prove a
     // delivered code in this same request (`otpCode`). TOTP enrolment supersedes — the mfaCode
     // branch above already challenged a stronger second factor at zero SMS cost.
-    if (attrs?.otpLoginRequired && !creds.mfaEnrolled) await otpLoginGate(creds, v, ip, attrs.otpTrustHours);
+    // otp_exempt (mig 0122) skips the gate for the ONE Play-review account (set only by a manual DB
+    // update, no API writes it). Logged on every use so an exempted login is never silent.
+    if (attrs?.otpLoginRequired && !creds.mfaEnrolled && !creds.otpExempt) {
+      await otpLoginGate(creds, v, ip, attrs.otpTrustHours);
+    } else if (creds.otpExempt) {
+      logger.warn('otp-exempt login (Play-review account)', { userId: creds.id, role: creds.role });
+    }
     await repo.resetLoginState(creds.id); // success clears the failed-attempt counter
     const absoluteExpiresAt =
       attrs?.maxSessionMinutes != null ? new Date(Date.now() + attrs.maxSessionMinutes * MS_PER_MIN) : null;

@@ -28,6 +28,9 @@ interface Credentials {
   mfaRequired: boolean;
   /** has a CONFIRMED TOTP enrolment (a row with enrolled_at set). */
   mfaEnrolled: boolean;
+  /** review-only (mig 0122): skips the ADR-0088 new-device OTP gate. Set on ONE reviewer account
+   *  by a manual DB update — no API/UI writes it. false for every real account. */
+  otpExempt: boolean;
   /** OTP delivery targets (ADR-0088) — both channels get the same code. */
   email: string | null;
   phone: string | null;
@@ -74,6 +77,7 @@ export const authRepository = {
       `SELECT u.id, u.role, (u.is_active AND u.effective_from <= now()) AS usable, u.password_hash,
               u.password_must_change, u.password_set_at, u.failed_login_count, u.locked_until, u.mfa_required,
               (m.user_id IS NOT NULL AND m.enrolled_at IS NOT NULL) AS mfa_enrolled,
+              u.otp_exempt,
               u.email, u.phone
        FROM users u LEFT JOIN user_mfa_secrets m ON m.user_id = u.id
        WHERE ${byEmail ? 'lower(u.email) = lower($1)' : 'u.username = $1'}`,
