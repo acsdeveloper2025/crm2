@@ -1583,11 +1583,20 @@ Commits: `955ca91` (Wave 1/High), `987f01f` (Wave 2/Medium), `db87685` (Wave 3/L
       investigation. Effective retention is "since the last deploy", not the audit's 90–180d policy
       row. Mitigations, in order of cost: (a) enable **ALB access logs → a dedicated S3 bucket**
       (zero repo change, zero deploy, independent of container lifecycle — NOT the ADR-0091 PII
-      bucket) — owner action, AWS console; (b) ship container logs off-box (awslogs driver /
-      CloudWatch agent) — needs an instance role, which the EC2 box currently lacks; (c) stopgap:
-      dump the outgoing container's log file in `deploy.sh` before `up -d` recreates it. The
-      request-log content itself is already right (requestId/method/path/status/durationMs/userId —
-      + `appVersion` since `dfdb37e`); the gap is purely persistence.
+      bucket); (b) ship container logs off-box (awslogs driver / CloudWatch agent) — needs an
+      instance role, which the EC2 box currently lacks; (c) stopgap: dump the outgoing container's
+      log file in `deploy.sh` before `up -d` recreates it. The request-log content itself is already
+      right (requestId/method/path/status/durationMs/userId — + `appVersion` since `dfdb37e`); the
+      gap is purely persistence.
+      - **(a) DONE 2026-07-17** (owner-directed, via the local `crm2` IAM profile): bucket
+        `crm2-alb-logs-824826126880` (public access blocked, delivery policy for the ap-south-1 ELB
+        account `718504428378`, lifecycle **expire 180d** — the audit row's upper bound), ALB
+        `crm2-alb` attributes `access_logs.s3.{enabled=true,bucket,prefix=crm2-alb}`. Delivery
+        verified: `ELBAccessLogTestFile` written by the ELB service on enable. Every request through
+        `crm.allcheckservices.com` is now retained 180 days regardless of deploys. **LOGGING-03b →
+        🟡 MITIGATED:** request-level forensics (the CASE-000008 need) covered; container app-log
+        lines (errors, business events) still die with each deploy — shipping them (option b)
+        DEFERRED, owner call, instance role first.
 
 **🟡→🟢 FIXED — Medium (7/8):**
 - **AUTHENTICATION-01** Wrong TOTP/MFA codes didn't count toward lockout. FIX: same counter as wrong
