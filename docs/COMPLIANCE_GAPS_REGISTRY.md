@@ -1571,6 +1571,23 @@ Commits: `955ca91` (Wave 1/High), `987f01f` (Wave 2/Medium), `db87685` (Wave 3/L
 **🔴→🟢 FIXED — High (1/1):**
 - **LOGGING-03** No Docker log-rotation on any prod service (repeat of the 2026-06-26 disk-exhaustion
   outage's failure mode, different source). FIX: `logging:` cap (20m×10 files) on all 6 services.
+  - **Split (2026-07-17, from the CASE-000008 forensics):** the 14-logging.md audit failed TWO rows —
+    *rotation* (:43) **and** *retention* (:44, whose evidence ends "See LOGGING-03") — and this entry
+    closed both under the rotation fix alone. Honest dispositions:
+    - **LOGGING-03a (rotation)** 🟢 **FIXED** as stated above — the 20m×10 cap closes the
+      disk-exhaustion failure mode. That is all it does.
+    - **LOGGING-03b (retention)** 🔴 **OPEN** — never fixed, silently folded. json-file logs live and
+      die with the container, and `IMAGE_TAG` = the git sha, so **every deploy recreates the api
+      container and destroys 100% of its request logs**. Proven live: the 2026-07-16 prod deploy
+      (17:13:51Z) erased the request logs for the CASE-000008 incident window (11:40–11:42Z) mid-
+      investigation. Effective retention is "since the last deploy", not the audit's 90–180d policy
+      row. Mitigations, in order of cost: (a) enable **ALB access logs → a dedicated S3 bucket**
+      (zero repo change, zero deploy, independent of container lifecycle — NOT the ADR-0091 PII
+      bucket) — owner action, AWS console; (b) ship container logs off-box (awslogs driver /
+      CloudWatch agent) — needs an instance role, which the EC2 box currently lacks; (c) stopgap:
+      dump the outgoing container's log file in `deploy.sh` before `up -d` recreates it. The
+      request-log content itself is already right (requestId/method/path/status/durationMs/userId —
+      + `appVersion` since `dfdb37e`); the gap is purely persistence.
 
 **🟡→🟢 FIXED — Medium (7/8):**
 - **AUTHENTICATION-01** Wrong TOTP/MFA codes didn't count toward lockout. FIX: same counter as wrong
