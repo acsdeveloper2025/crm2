@@ -63,7 +63,7 @@ function securityHeaders() {
   };
 }
 
-/** Observability (Part 36): every API request logs requestId, duration, status, userId. */
+/** Observability (Part 36): every API request logs requestId, duration, status, userId, appVersion. */
 function requestObservability() {
   return (req: Request, res: Response, next: NextFunction): void => {
     const requestId = req.header('x-request-id') ?? randomUUID();
@@ -79,6 +79,10 @@ function requestObservability() {
         status: res.statusCode,
         durationMs: Math.round(durationMs * MS_ROUNDING) / MS_ROUNDING,
         userId: req.auth?.userId ?? null,
+        // The mobile app sends X-App-Version on every call (apiClient.ts); the CASE-000008
+        // forensics could not tell which build a device ran because nothing recorded it.
+        // Bounded — it is a client-supplied header landing in every log line.
+        appVersion: req.header('x-app-version')?.slice(0, 32) ?? null,
       });
     });
     next();
